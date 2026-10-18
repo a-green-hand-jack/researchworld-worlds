@@ -1,0 +1,65 @@
+{
+ "registration": "E4 / direction A held-out predictions. Each section is committed before its grid runs and is scored once.",
+ "A1": {
+  "claim": "Aligned-basis AdamW near collapse: (A1a) the matrix flow from W = diag(a0_k), P = p0 I equals n independent scalar maps; (A1b, A1c) the event-driven phase model predicts per-direction burst times and the alive state over time from the exact state at step K = 300.",
+  "frozen_model": {
+   "commit": "ebc17db61082664b4c8f64e9012815d5b6774517",
+   "file": "code/e4_theory.py",
+   "function": "phase_model_hybrid (v3), default arguments",
+   "md5": "2f894944f71ad618955363ea8e8fe8dd"
+  },
+  "tolerance": "results/e4/a1_tolerance_v2.json (supersedes a1_tolerance.json; revised after review experiment-repo#11 c250, before any held-out result)",
+  "grid": {
+   "driver": "code/e4_a1.py (configs())",
+   "runs": 384,
+   "stats": {
+    "ho1": "n = 32, s = linspace(1.2, 0.3, 32), c/s = 0.93^k",
+    "ho2": "n = 32, s = linspace(2.5, 0.8, 32), c/s = 0.90^k"
+   },
+   "p0": [
+    0.75,
+    1.5,
+    2.5
+   ],
+   "lam": [
+    0.003,
+    0.007,
+    0.015,
+    0.03
+   ],
+   "a0": [
+    0.0003,
+    0.003
+   ],
+   "eta": [
+    0.015,
+    0.03
+   ],
+   "b1": [
+    0.9,
+    0.85
+   ],
+   "b2": [
+    0.995,
+    0.9995
+   ],
+   "eps": "1e-8 (A1 is scoped to this eps; see tolerance scope)",
+   "a0_per_direction": "a0 * exp(0.1 xi_k), xi ~ N(0,1), numpy default_rng(seed + id), seed = 11",
+   "T": 60000,
+   "K": 300,
+   "record_every": 10,
+   "thr": 0.05,
+   "burst": 0.001,
+   "checkpoints": "30 log-spaced from K + 50 to T",
+   "disjoint_from_dev": "every statistics set, p0, lam, a0, eta, b2 and T value differs from code/e4_dev.py; b1 = 0.85 was never used in development; per-direction initial amplitudes are new",
+   "A1a_subset": "a0 = 3e-4, eta = 0.03, lam in {0.003, 0.03}: 48 runs, float64 full-matrix AdamW (W and P dense 32 x 32) vs float64 scalar maps",
+   "ground_truth": "np.longdouble scalar maps, per-step first crossings"
+  },
+  "metrics": "see results/e4/a1_tolerance_v2.json: A1a reduction, A1b burst wait on the collapse set, A1c return wait on the dead-at-K set, A1d alive state at log-spaced checkpoints with four baselines and a margin",
+  "outcome_reporting": "results/e4/a1/a1_score.json and a1_runs.jsonl.gz, whatever the outcome; a failed part is reported as failed; the model is not refit on this grid",
+  "environment": "python 3.11, numpy 2.4.6, CPU (local-compute)",
+  "registration_history": "first registered in 511249d; that job was stopped after about a minute with no output written or read; this revision changes the metrics, the ground-truth precision and the checkpoints, not the grid or the frozen model"
+ },
+ "A2": "to be registered here before the E4 held-out AdamW grid runs (criterion, grid and all baselines)",
+ "A3": "rotated basis: tolerances committed in results/e4/a3_tolerance.json before the A3 development grid (code/e4_a3.py dev_configs, 576 runs); the frozen model, the held-out grid and the per-cell sign predictions are registered here before the held-out grid runs"
+}

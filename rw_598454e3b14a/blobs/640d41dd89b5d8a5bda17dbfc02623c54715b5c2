@@ -1,0 +1,522 @@
+# Study plan v2.8: extending "When do JEPAs collapse?"
+
+Owner: `story-repo` (plan). Objective: `story-repo`#7. Status: **v2.8, directions settled**
+with the requests of `experiment-repo` (#8), `paper-repo` (#9, #11), the feasibility judgements
+v4 and v5 of `idea-review-repo` (#10, #12; `feasibility.md` v5 at 21f54dc) and `idea-repo`'s
+brief v4 (c08a49e), which found concurrent work inside the new cutoff (Sec. 3, "Positioning";
+`internal-review-repo` will judge the positioning, paper-repo#13). v2.4 takes in `idea-repo`'s
+equation-level reading of arXiv 2610.02344 (brief fc92d92): no direction is pre-empted; P1-P4
+are sharpened. v2.5 takes in feasibility v6 (#14, b1494b4) on E10/P3-P4 and `experiment-repo`'s
+measured mu baselines on the delivered runs (112f91e). v2.6 records the corrected mu scoring
+(409a766), direction A's exploratory AdamW finding (e16e822) and E8's registration (7029509). v2.7 records
+E8's bounded GO (feasibility v7, `idea-review-repo` a32c47c, #15) with its six conditions, the
+exit-rule reading they imply and two practice-reference rows (E8-R). v2.8 takes in `idea-repo`'s
+answer to idea-repo#4 (brief v4.2, 5f0fe33, Sec. 5.1 and 5.3; `refs/lit_directions_ABC.md`):
+P1 is confirmed with three qualifications, P4 is re-scoped because the image ResidualPred's gain
+is about 0.31, not 1, B3 is restated against prior work in which SGD noise never revives a
+collapsed direction, and each direction names the prior work it is stated against. Nothing here
+is a result. The plan of the delivered
+study is kept as `plan_v1.md` (its protocols, definitions and pre-registration rules still apply
+where this file does not change them).
+
+Inputs read for this draft: the objective (#7); the released paper (`paper-repo` 6e496ca, sections
+`abstract`, `introduction`, `theory`, `heuristics`, `experiments`, `discussion`, numbers from
+`paper/numbers.tex`); `experiment-repo` 96ecc7d (`results/README.md`, `results/e3/compute.json`,
+`results/e3/summary.json`); the old brief (`idea-repo` b3a8179, cutoff 2026-09-01).
+
+**The cutoff changed.** The objective now excludes only work first published after
+**2026-10-18** (the delivered study used 2026-09-01). `idea-repo` brief v4 Sec. 5: arXiv
+2610.02344 (v1 2026-10-01, "Drive vs. Decay: On the Training Dynamics of JEPAs") linearises the
+JEPA flow at the trivial point, defines a per-mode stability ratio mu_i = gamma_i/sigma_i whose
+count of unstable modes tracks reachable rank, unifies predictor scaling, masking and EMA as
+shifts of mu, and proposes ResidualPred (identity-biased transformer predictor) that raises rank
+in I-JEPA (CIFAR-10/100, STL-10, ImageNet); public code at commit 3176215b (2026-10-01); arXiv
+comment: accepted at NeurIPS 2026, 10 pages main text. The
+delivered paper's framing alone is therefore no longer novel; what may remain distinct (race and
+capture with a stable collapsed point, lambda^race, predictor-decay necessity, pre-registered
+held-out tests) and what the extension adds must be shown against it. Also relevant:
+2609.35288 (lambda-JEPA, layer balance in two-layer linear JEPAs; deep encoders, rung C1).
+
+## 0. What the objective requires (checklist)
+
+| # | Requirement (objective #7) | Where this plan answers it | Delivering position |
+|---|---|---|---|
+| X1 | Start from the delivered paper, its code and results; do not redo them | Sec. 1 (kept), Sec. 5 (keep/revise/add) | all |
+| X2 | Begin from what it leaves open: limitations, untested/failed predictions, settings the theory does not reach (nonlinear/deep encoders, realistic data and architectures, training far from collapse), implications for designing/choosing heuristics | Sec. 1 (L1-L8), Sec. 2-3 (Q1-Q3, directions A-C) | plan: story-repo; theory and experiments: experiment-repo |
+| X3 | Choose the directions that most advance understanding of when and why JEPAs collapse; carry them to new theoretical or empirical results | Sec. 3 (choice and rationale, verifiable statements, exit criteria) | experiment-repo |
+| X4 | Extended paper ready to submit to ICLR 2027, to the venue's submission requirements: LaTeX source in the ICLR 2027 template, compiled PDF | Sec. 5, Sec. 7 | paper-repo (requirements and checker: venue-repo) |
+| X5 | Code and experimental results the claims rest on | Sec. 4, Sec. 7 | experiment-repo (`code/`, `results/`), figtab-repo (`code/figures/`) |
+| X6 | Keep what still holds, revise what the new results change, make clear what the extension adds | Sec. 5 | paper-repo, with figtab-repo for figures/tables |
+| X7 | No work first published after 2026-10-18 | Sec. 6 | idea-repo (prior-work map), every position (code pins, citations) |
+
+## 1. What the delivered paper establishes and leaves open
+
+**Kept unless new results change it** (paper Sec. 4-6): the exact per-mode reduction and fixed
+points (Prop. 1-2, crediting Tian et al. 2021 / PEIRA); the race criterion in the unbalanced
+regime (Def. 1) and the critical weight decay far below the static threshold; held-out linear
+test E1b (rank MAE 0.25 vs 11.2 for the static bound); masking statistics and
+the E2 cyclic-mask test (MAE 0.03 vs 4.04); the ViT step-0 ordering of the SGD arm through weight decay.
+
+**Open** (each item cites where the paper states it):
+- **L1 Optimiser.** Under AdamW the linear rank is nearer the static bound (MAE 5.1) than the race
+  (13.7), insensitivity to the initial scale fails and 2.8% of 72 runs converge (Sec. 6.2); the
+  ViT's AdamW arm (Arm P, the I-JEPA recipe) is not ordered by the step-0 rule (Spearman 0.12,
+  CI [-0.32, 0.47]). Practice trains JEPAs with AdamW, so the theory does not yet reach the
+  optimiser practice uses.
+- **L2 Encoder depth and nonlinearity.** The theory has a single linear encoder layer. A tanh
+  encoder under random masks keeps gaining rank after the race (MAE 20.5) and a two-layer encoder
+  is mispredicted from its initial features (MAE 2.69, Spearman 0.87) (Sec. 6.3).
+- **L3 Far from collapse.** No post-capture stage and no noise floor (round-off re-seeds lost
+  directions in three E2 runs) (Sec. 7). Practice changes hyperparameters during training
+  (I-JEPA weight decay 0.04 -> 0.4, EMA 0.996 -> 1, cosine learning rate), and I-JEPA's RankMe
+  rises then falls (LiDAR); the theory says nothing about late training.
+- **L4 The race was never tested in a realistic JEPA.** In the ViT only a step-0 rule (the
+  analogue of the initial window) was registered; it places the weight-decay transition 2.6x too
+  high (registered tolerance 2x), and its predictor, EMA and masking predictions failed in Arm P
+  (all four masks lower the count, 73.7-108 vs 115, where no change was registered) (Sec. 6.4).
+- **L5 The premise itself is untested beyond linear models.** Whether collapse in a ViT is
+  decided early, near the collapsed solution, has not been measured: the ViT does not start near
+  collapse (LayerNorm, residual stream) and the paper says so.
+- **L6 Deep predictors.** The capture correction was made post hoc and re-tested only for
+  identity-initialised factors (E1c, MAE 0.19 vs 0.72).
+- **L7 EMA.** One pre-registered EMA sign comparison failed (13 of 14 signs).
+- **L8 Design.** Table 1 says which term each heuristic moves, but no heuristic was *chosen* from
+  the theory and tested prospectively.
+
+## 2. Research questions of the extension
+
+- **Q1 (optimiser and normalisation).** What decides survival near collapse under Adam/AdamW,
+  whose normalised per-coordinate updates and decoupled decay change both sides of the
+  competition, and under a layer-normalised target, as practice trains JEPAs?
+- **Q2 (far from collapse).** After capture, with time-varying weight decay, EMA rate and learning
+  rate and with gradient noise, which directions are kept, lost or regained, and what does that
+  imply for choosing a weight-decay schedule and separate predictor decay?
+- **Q3 (from the linear model to a ViT).** Removing one difference between the exact model and
+  an I-JEPA-style ViT at a time (encoder depth, nonlinearity, optimiser, target normalisation,
+  token structure, masks, EMA), where does the race stop predicting rank, and is collapse in the
+  ViT decided early at all?
+
+## 3. The three directions, their verifiable statements and exit criteria
+
+Rationale for the choice. The two largest measured gaps between the theory and practice are the
+optimiser and normalisation (AdamW: linear rank MAE 5.1 static vs 13.7 race, 2.8% of runs
+converged; ViT Arm P Spearman 0.12) and the absence of any statement beyond the near-collapse
+window (late gains at lambda = 0 and in the tanh encoder; I-JEPA's increasing weight decay). The
+ViT failures need a located diagnosis, not a repeat of the same sweeps. These are directions A, B
+and C. Design implications follow from A and B and are tested as predictions (a "should", cut
+first; the delivered paper's design test C4 failed 0/3, so it is not presumed). Deep random-init
+predictors (L6) and the EMA sign (L7) enter only as rungs/rows of C, not as separate studies;
+realistic scale beyond CIFAR-10 is optional.
+
+Theory items are derived, proved where possible and checked numerically by `experiment-repo` (as
+in the delivered study). For each direction the claim may be (a) exact statements for limit
+dynamics, conserved quantities or invariant manifolds, (b) an approximation validated against the
+exact flow, or (c) a located failure; the paper says which. **Held-out discipline (all
+directions):** each new criterion is built on a development grid; before the held-out grid runs,
+the predictions, thresholds and tolerances are committed (`results/<exp>/prediction.json` in a
+commit preceding the results) on a grid disjoint from the development one (new statistics,
+hyperparameters and seeds); nothing is fitted afterwards; failed predictions are reported.
+
+### A. Optimiser and target normalisation near collapse (Q1; L1)
+
+Theory. Per-direction near-collapse dynamics of the linear JEPA (a) under sign descent and Adam
+(limits in epsilon and beta2, decoupled weight decay lr x lambda), including the predictor, whose
+vanishing near-collapse gradient Adam rescales to unit-size steps, and the dependence on the
+parameter basis (Adam is not rotation-invariant); (b) with a layer-normalised target (I-JEPA
+normalises target tokens), its fixed points and their stability. Candidate mechanism, to derive
+and not presume: growth at a speed set by the learning rate rather than the amplitude and a
+different role of a_0 and lambda.
+- Prior work it is stated against (brief v4.2 Sec. 5.3): no collapse analysis of SSL/JEPA under
+  Adam or AdamW exists. The nearest results are:
+  - sign descent makes mode birth from a small seed take bounded time (`sabanayagam2026optimizer`);
+  - the sign-flow analogue of the balance identity under decoupled decay (`jacobs2026never`);
+  - sign descent removes the dependence of the rate on signal strength (`kunstner2024heavy`).
+    The consequence, to derive and test, is that AdamW is less spectrally selective: more
+    survivors at equal decay. A2 therefore also reports survivors under AdamW and under GD on the
+    same held-out configurations;
+  - coupled L2 vs decoupled decay (`tang2025understanding`) and the 1/(eta lambda) clock of
+    decoupled decay (`wang2024set`).
+
+  For (b), I-JEPA layer-normalises the target twice and does not decay 1-D parameters. In the
+  ViT only dimensional collapse is therefore possible, and the gain that weight decay shrinks
+  sits on non-normalised maps such as `predictor_proj`; rungs 4-5 of C read that gain. The only
+  dynamics theory is Bao 2023 (gradient flow); a race on the sphere is open.
+- Verifiable statements: A1 the derived dynamics match exact simulation per direction (registered
+  error metric); A2 on a held-out, pre-registered AdamW grid (horizon chosen from the derived time
+  scale; convergence recorded) the derived criterion's rank error is below that of every baseline
+  (static bound, which already beat the race under AdamW, 5.1 vs 13.7; the delivered race; a
+  hyperparameter-blind baseline such as the median rank of the development grid; the mu count of
+  2610.02344) and within a registered tolerance, with diverged or non-converged runs counted as
+  misses (both scorings reported; E1b excluded 30); A3 the predicted sign of the effect of a_0,
+  lambda and a rotation of the data relative to the coordinate basis; A4 rank under a normalised
+  target on a held-out grid, against the same baselines. With a LayerNorm target the scale cannot
+  vanish, so collapse under A4 is defined on the rank/direction count, fixed before the grid,
+  with a stated treatment of the constant direction under mean subtraction.
+- Development status (experiment-repo e16e822, `theory/ext_A_adamw.md`; exploratory, not
+  registered). Under AdamW the near-collapse competition loses its weight-decay threshold: the
+  window is 0 < p < c/s, and both sides move at learning-rate speed. Collapse is not absorbing:
+  directions re-escape once the beta2 memory has decayed. On the delivered E1b AdamW
+  configurations, higher weight decay gives higher rank. Consequences for the plan:
+  - those configurations are now development data, so A2's held-out grid uses new
+    configurations;
+  - A3's registered sign for lambda comes from the derivation;
+  - lambda^race and the critical-weight-decay statements of the delivered paper are not carried
+    to AdamW unless A2 supports a replacement;
+  - E8's Arm P high -> low prediction (re-escape, A-ii) is a ViT-side check of the same
+    mechanism.
+- Exit: if A2 fails, the AdamW rung of C uses the static bound and the paper reports the failure;
+  no ViT AdamW claim beyond it.
+
+### B. Beyond the near-collapse window: capture, schedules and noise (Q2; L3, L7)
+
+Theory. A stage-wise description: race (delivered), capture, then a post-capture stage in which
+a captured direction sits near the stable fixed point of Prop. 2(b) and its survival is decided
+by the static threshold at the current hyperparameters; with time-varying lambda(t), kappa(t),
+lr(t) this is a moving boundary. A lost direction whose amplitude is small but not zero regrows
+when its window reopens; its regrowth time is set by the amplitude at reopening. This regrowth is
+deterministic. What finite-batch noise does is the open question. Prior work (`chen2023stochastic`,
+Pillaud-Vivien 2022, Pesme 2021; brief v4.2 Sec. 5.3) predicts that multiplicative SGD noise
+leaves collapsed directions invariant and acts as extra decay, shifting the window to
+g_k - D_k/2 and shrinking the effective init. On that account noise never reseeds; only additive
+noise or symmetry breaking revives directions (`ziyin2024remove`); the round-off re-seeding
+seen in three delivered E2 runs (L3) is that additive case. The earlier premise that noise
+keeps a floor from which directions re-escape is therefore a hypothesis against prior work, not an
+assumption.
+- Prior work to cite and distinguish:
+  - staircase/saddle-to-saddle learning without decay (Berthier; Pesme-Flammarion 2023; Jin 2023;
+    Zhang-Saxe-Latham 2025);
+  - alternating gradient flows (`kunin2025alternating`), the closest race-like activation rule,
+    with no decay and no deadline;
+  - schedules: the only weight-decay-schedule ablation is DINO's 0.04 -> 0.4 ramp, which reports
+    accuracy only (`morningstar2024augmentations`). Rank under weight-decay or EMA schedules is
+    measured nowhere, so B2 and E8/E8-R are new measurements either way.
+- Verifiable statements: B1 the stage-wise description against the exact flow on a held-out
+  grid (which directions are kept, lost and regained, and when, within a registered timing
+  tolerance); B2 the consequence for schedules: under a weight-decay warm-up (low during the race,
+  raised after capture) the final rank should approach the static count at the final lambda,
+  under constant lambda the race count, and under an increasing schedule directions should be
+  lost at predicted crossing times; B3 the role of SGD noise (rank vs batch size and learning
+  rate, on held-out cells): the derived window shift g_k - D_k/2 with no reseeding (prior work)
+  against a noise floor with re-escape. The prediction is registered first, and both outcomes are
+  reported.
+- Design rules derived from B (should): the weight-decay schedule and separate predictor decay
+  (Prop. 2(c)), each with a predicted rank effect, tested in the held-out linear grid (B2) and
+  once in the ViT (inside C's switch grid, so at little extra cost).
+- Exit: if B1 fails (losses not timed by crossings), the post-capture claim is reported as
+  failed and the design rules are dropped.
+
+### C. A bridge from the linear model to the ViT (Q3; L2, L4, L5, L6)
+
+A ladder of models, each removing one difference between the exact model and the E3 ViT, with
+the theory's prediction for that rung committed first and the race computed from quantities
+measured during early training (per-direction amplitudes, predictor gains, drive and
+self-prediction statistics; the first x% of training, x fixed in the pre-registration), never
+from the run's own outcome:
+1. deep linear encoder (depth 2-4, small balanced init, decay on every factor; the near-collapse
+   drive is of higher order in the amplitude, so a basin and a power-law dependence on a_0 are
+   expected, to derive; the early phase of deeper homogeneous nets lasts a power of 1/init,
+   `kumar2024early`, so deeper encoders should lose a fixed window more easily (an inference to
+   test); with more than one hidden layer the origin is a local minimum under weight decay,
+   `ziyin2022exact`), and deep predictors with random (non-identity) factors (L6). Near the
+   collapsed point the identification with the window holds with P0 = the product of the
+   predictor factors (brief v4.2);
+2. MLP encoders (tanh, ReLU; width/scale from lazy to rich), race on initial vs aligned
+   features, on E2's Gaussian field and a nonlinear latent-variable model; explains or locates
+   the tanh/random-mask and two-layer failures (prior work: small-init ReLU early phases of about
+   log(1/init) that can leave directions permanently inactive, `boursier2024early`,
+   `min2023early`; the delivered predictor-heavy start is the "upstream" case of
+   `kunin2024get`);
+3. Adam instead of GD and 4. a normalised target, from A, in the rung-2 model;
+5. the E3 ViT, toggling one difference at a time from Arm T (SGD, copy target) towards Arm P
+   (AdamW, EMA, target LN, multi-block masks), instrumented (`code/e3_ijepa.py --force-steps`
+   extended to amplitudes and gains);
+6. **is collapse decided early in the ViT?** a switch grid: weight decay low -> high and
+   high -> low at epoch e in {0, 2, 5, 10, 20, never}, both arms, **5 seeds**, on the 50-epoch
+   schedule (horizon >= the largest switch epoch plus enough to read the final rank), rank also
+   reported at several later epochs. Registered before the grid: the *decision time* statistic
+   (the earliest switch epoch after which the final rank is equivalent to the never-switched
+   run's, by an equivalence test with a stated margin, not by "no significant difference"), and
+   how the recipe's own weight-decay ramp and learning-rate schedule are held when weight decay
+   is switched (in Arm P the switch replaces the ramp's level; stated per arm). The low -> high
+   rows are B2's weight-decay warm-up in the ViT. Practice evidence is open: I-JEPA's own
+   ablation of its 0.04 -> 0.4 ramp vs a fixed 0.05 is mixed on the IN-1% probe and reports no
+   rank (brief fc92d92, `refs/ijepa_recipe.md`).
+- Prior work C is stated against (brief v4.2 Sec. 5.3), to be cited and distinguished:
+  - `kleinman2023critical`: pathway competition in deep linear nets with the same conserved
+    quantity and permanent early deficits, without weight decay;
+  - `lyu2023dichotomy`: weight decay shrinking a large factor switches regime at
+    log(scale)/lambda, the nearest formal analogue of the deadline;
+  - critical-period work (`golatkar2019time`; Achille et al.; Frankle et al.; Fort et al.), on
+    accuracy.
+
+  No SSL paper shows rank being decided in an early, weight-decay-dependent window, so C6 is new
+  evidence whichever way it falls.
+- Verifiable statements: per rung, the race's rank error against baselines (static bound from
+  measured statistics, step-0 rule, initial window, and reading the rank at x% of training: the
+  race must beat early reading; and the mu count); C5 the instrumented race places the Arm T
+  weight-decay transition within a registered factor where the step-0 rule missed by 2.6x; the
+  delivered grid is spaced ~3x, so the new transition rows are spaced <= sqrt(2) around the
+  prediction (otherwise the claim is stated only at the grid's resolution), 5 seeds; C6 the
+  decision time per arm and knob.
+- Exit / reporting: the rung at which the error first exceeds the registered tolerance is a
+  result either way (a located failure). C6's exit applies per arm and switch direction, and
+  only when the late setting is shown to move the rank: D = ">20" **and** the Welch 95% CI of
+  R(20) - R(N) excludes 0. Then the paper states the near-collapse premise as linear-only for that
+  arm and knob, and B carries the ViT story. D = ">20" without that demonstrated difference
+  (row 20 neither equivalent nor shown different, e.g. under-power at n = 5) is reported as
+  "inconclusive at n = 5" and does not trigger the exit. Both tests (equivalence and difference)
+  are reported for every row. D is "undetermined" when the two non-finite scorings (excluded;
+  scored as rank 0) disagree (feasibility v7, conditions 2-3).
+- E8 production (GO, feasibility v7 at `idea-review-repo` a32c47c, relayed in #15): one tracked
+  array, tasks <= 2 h, in priority order (constant rows and the e = 20 and e = 5 rows of every
+  cell first, then e = 10 and e = 2); fallback trigger as in v3 (no task started 60 min after
+  submission, or fewer than half finished 12 h after the first start), and **no CPU fallback**:
+  if the trigger fires, `idea-review-repo` is told, the priority subset runs on what starts, the
+  missing rows are labelled and the horizon is not shortened. Non-finite runs: counted per row,
+  excluded as registered, and a sensitivity scoring them as rank 0. Per-run provenance: GPU
+  model, torch version, `cluster_env.json` hash, code commit, seed. Arms T and P reported
+  separately. One re-run of the whole grid at most, and no second E8 grid before the first is
+  analysed. In Arm T high -> low the amplitude at the switch is reported beside f(e), so that a
+  slow regrowth under SGD is not read as a decided rank.
+- **E8-R, practice reference (should; a ViT design-rule row, cut with them).** Arm P with the
+  recipe's own weight-decay ramp 0.04 -> 0.4 over the 50-epoch schedule, and a constant 0.4 row,
+  5 seeds each (10 runs, about 2-4 GPU-h), same frozen code, environment, horizon and statistic as
+  E8. It ties B2's warm-up claim and C4 (heuristics) to the actual practice: the ramp row is read
+  against constant 0.04 (E8's N) and constant 0.4, with E8's informativeness rule
+  (|Delta| >= 5, CI excluding 0). In E3 at epoch 20, Arm P counts were 116 at wd 0, 116 at 0.04
+  and 115 under the ramp (`results/e3/summary.json`), so Delta may be uninformative; that outcome
+  is itself the reading for C4 (the recipe's ramp acts in a range where weight decay does not
+  move the rank at this horizon) and is reported as such. Its prediction from B's premise is
+  committed as an addendum to `results/e8/prediction.json` before these runs are submitted
+  (lowest-priority tasks of the E8 array or a separate array right after it, whichever does not
+  delay E8). The rows do not enter D. Advised in feasibility v7 at this cost.
+
+### Positioning against 2610.02344 (cross-cutting, required for the keep/revise/add statement)
+
+Not a fourth direction; it runs through A-C and costs little:
+- P1 equation-level map of mu_i to the delivered quantities: **confirmed** by `idea-repo` in
+  idea-repo#4 (brief v4.2 at 5f0fe33, Sec. 5.1; `refs/lit_dvd2610.md`). The paper states three
+  qualifications:
+  1. the headline count (Eq. 6-7) has no weight decay and is the window's upper edge only; it is
+     reported next to the J.1 variant (`dvd_nowd` and `dvd_signed` in P2);
+  2. masked targets and input-space masking are a transfer, worded as "their criterion applied
+     with our masked moments";
+  3. for random or non-commuting predictors their exact object is the unstable-eigenvalue count
+     of Thm A.1, and r_tight bounds the rank of the *linearised* flow (Cor. 3.3), not the final
+     rank. The exceedances measured in P2 (57% / 26%) are what predictor decay produces (modes
+     that escape early die later, the race's point), and the paper says so rather than calling
+     their bound wrong.
+
+  For deep predictors the identification holds with P0 = the product of the factors. Their
+  Prop. J.5 (mimetic init, integrated growth along a decaying identity dose) is the nearest thing
+  to the race and is cited; it is neither gain decay nor a rank predictor. Their reading: the
+  linearisation holds the predictor at its O(1) value; with a scalar predictor their escape
+  condition with encoder weight decay (gamma_i - sigma_i > eta_wd, Prop. J.1) is the delivered
+  g_k(p0) > 0, i.e. the **initial window** that E1b scored at rank MAE 3.7 vs 0.25 for the race
+  and 11.2 for the static bound (1017 held-out runs); their headline count r_tight = #{mu > 1}
+  (Eq. 7-8) omits weight decay, has no lower window edge and is called by them "an upper bound
+  and not a prediction of ERank"; predictor weight decay never enters their theory. It does not
+  treat AdamW vs SGD, schedules or the post-capture stage (beyond an adiabatic result, F.1), or
+  deep/nonlinear encoders except "by analogy" for images, where the initial mu does not separate
+  the predictors (K.1). **Consequence: directions A-C are not pre-empted and are kept unchanged.**
+- P2 baselines from it in **every comparison** of E4-E8 (alongside the static bound, early
+  reading and the step-0 rule). **Done on the delivered E1b/E2 runs** by `experiment-repo`
+  (112f91e: `code/baselines/dvd_mu.py`, `results/baselines/dvd_mu.json`, per-run CSVs), with
+  four variants: `dvd` (their main-text form), `dvd_signed` (their App. C.8; with the predictor
+  fixed it equals the delivered initial window run by run), `dvd_sorted` (their Eq. 31) and
+  `dvd_nowd` (mu > 1 without the weight-decay floor). Measured there (retrospective, since those
+  runs were pre-registered for the race): the race has the lower rank error on every linear and
+  masking arm (e.g. E1b grid 0.25 vs 3.74; E2 cyclic 0.03 vs 1.04). With their paired Eq. 51/Eq. 7
+  predictor side and the exact linearisation added (409a766), the race still has the lower error
+  on the random-predictor arm (0.69 vs 3.02 for their best variant) and the non-commuting arm
+  (0.11 vs 1.28). Their count, stated as a bound, exceeds the measured rank in 57% of aligned E1b
+  runs and 26% of E2 cyclic runs. **Their signed form beats the race on the E2 MLP arm (1.90 vs
+  2.69)**, and both fail on the tanh encoder. The MLP loss is
+  a located failure the paper reports and C rung 2 carries (L2 stays open). Variant rule: every
+  variant is reported; none is chosen as "theirs" after outcomes. For new grids the registered
+  baselines are their published readout (`dvd`, r_tight from the published mu summary) and
+  `dvd_signed`/initial window, fixed in each `prediction.json`;
+- P3 a head-to-head in **their** setting (code pinned at commit 3176215b, environment recorded;
+  torch 2.5.1 is inside their range), in three parts kept distinct:
+  (r) **retrospective, zero compute, never cut:** race, `dvd`, `dvd_signed` and mu-count scored
+  from inputs alone on their public outcomes (`results/tabular_phase_grid/full_sweep_per_run.csv`,
+  810 rows, in their repository) and on their jannis predictor-scale pattern (Tab. 16: only
+  alpha = 0.05 learns; alpha = 0.01 collapses in 4/5 contexts despite mu_50 > 1). Both are
+  labelled retrospective. On their grid the decay is tiny (lr x wd <= 1e-8, the lambda_P -> 0
+  limit), so race = window there is an **implementation consistency check, not a test**, and a
+  tie is not a win;
+  (a) **prospective cells off their grid**, at weight decays where race and window differ, and
+  (b) new seeds/cells of the predictor-scale pattern. A pre-registered test exists only for runs
+  executed after the `prediction.json` is committed. Before any run it registers: the cell list,
+  chosen from inputs alone; the minimum predicted difference in surviving directions at which
+  race and window count as differing (coincident cells are reported as ties); the minimum number
+  of differing cells. If the pilot yields fewer, the extension is stated as non-discriminating,
+  not enlarged. 3 new seeds per cell;
+  **metric:** one primary statistic for both criteria on the same cells, the rank MAE of the
+  thresholded count (>= 1e-3 x max, as in `plan_v1.md`) with Spearman and 95% CI. Their ERank
+  (exp-entropy of normalised singular values) is reported alongside through a registered
+  count-to-ERank map;
+  **cost** is unmeasured, so a single cell is timed first (jannis, 40 epochs, wandb disabled) on
+  local-compute at the loaded rate (<= 1 CPU-h). E10 is sized to <= 10 GPU-h-equivalent and
+  <= ~400 runs in total; a run over ~10 CPU-min goes to Ibex under the v3 job rules;
+- P4 **ResidualPred** as a row of C rung 5 (re-scoped in v2.8; cut with E10 (a)/(b)).
+  - The image ResidualPred (brief v4.2 Sec. 5.1, `ResidualPredPredictor`) has three parts:
+    - a learnable per-head diagonal bias, beta_init = 10, on the context-context attention block
+      only;
+    - a zero-initialised, undecayed MLP fc2;
+    - a final LayerNorm before `proj`.
+  - Its end-to-end gain is therefore **not** about 1: their K.1 measures about 0.31 for both
+    blocks. The identity acts as a token-routing prior (their App. E.3), outside both linear
+    theories.
+  - In the delivered theory a scalar gain above the window makes directions shrink first, so
+    neither theory predicts a gain-based rank benefit.
+  - P4 asks whether the race, computed from the measured gain trajectory exactly as in C5,
+    accounts for ResidualPred's rank relative to the standard predictor.
+    - If yes, the effect is gain-mediated.
+    - If the race predicts no difference and the rank differs, the benefit lies outside the
+      linear theories. It is reported as a located limit of both, not explained away.
+  - Their frozen ResidualPred collapses (I.8), as the delivered E1 result predicts.
+  - Implementation: their `image/` code is CC BY-NC 4.0, so it is **reimplemented** in the
+    delivered ViT. The delivered code lists its differences from the original and carries none
+    of their repository's author-identifying text (anonymity).
+  - Gain: an operational "predictor gain over time" is registered before the instrumented run,
+    e.g. the top singular values of the predictor's feature-space map on a fixed batch, as in
+    their K.1. The initial readout of the reimplementation is checked against their about 0.31,
+    which tests the reimplementation, not either theory.
+  - The prediction (time and set of surviving directions) is committed first. Either outcome is
+    reported.
+  - If the reimplementation does not reproduce their higher rank at our recipe, that is
+    reported as a reimplementation outcome, not as a test of either theory.
+- The paper credits the drive-vs-decay framing and the heuristic unification to 2610.02344
+  (prior work under the cutoff) and states each claim's novelty relative to it; any predictor
+  design the extension recommends is compared with ResidualPred (P4) or the paper says why not.
+- Owners: P1 `idea-repo`; P2-P4 `experiment-repo`; the positioning text `paper-repo` (the
+  framing, the linearisation at the collapsed point with an O(1) predictor, "heuristics shift the
+  per-mode ratio" and masking as Sigma_X1 = p Sigma_XX are credited, as are EMA not changing
+  membership, the frozen identity predictor collapsing (J.6, I.8) and "large encoder weight decay
+  stabilises collapse" (J.1, not novel on its own); still distinct, wording to be
+  checked against their Eq. 7-8 and App. J: race/capture and the separatrix, the decaying
+  predictor gain and the necessity of predictor decay, lambda^race far below the static threshold,
+  the two-sided window and rank non-monotone in p0 and lambda, the pre-registered held-out tests).
+
+### Optional (cut first): realistic scale
+
+A second dataset (CIFAR-100, or a larger-resolution set fetched through an allowed host and
+checked) for C5/C6's main comparison, if C finishes within its compute cap.
+
+**Cut order** (from feasibility v4-v6): optional scale, then E10 (a)/(b) together with P4, then the ViT
+design-rule rows (incl. E8-R), then seeds on exploratory rows (main-claim rows keep 5). Never cut: the held-out
+verification in A and B; the reporting of failed predictions, including the race's located
+failures against mu; the P2 baselines (on E1b/E2 and in E4-E8); the retrospective P3 (r).
+
+## 4. Empirical programme (owned by `experiment-repo`; ids continue the delivered E1-E3)
+
+| id | what | direction | resource | depends on |
+|---|---|---|---|---|
+| E4 | Adam/sign-descent and normalised-target theory checks; held-out AdamW and target-LN grids | A | local-compute (CPU) | A derivation |
+| E5 | Stage-wise/schedule/noise theory checks; held-out schedule grid incl. warm-up, increasing lambda(t), EMA schedule, batch-size/noise | B | CPU | B derivation |
+| E6 | Bridge rungs 1-4: deep linear encoders and random-init deep predictors, MLP encoders (tanh/ReLU, lazy-rich), Adam and normalised target in the MLP | C | CPU | A, B derivations for rungs 3-4 |
+| E7 | Bridge rung 5: instrumented ViT toggles from Arm T to Arm P | C | Ibex GPU | instrumentation |
+| E8 | Bridge rung 6: ViT weight-decay switch grid (decision time; B2 warm-up rows); registered at experiment-repo 7029509 (100 runs, 17-34 GPU-h); **GO** (feasibility v7, a32c47c) under six conditions (Sec. 3 C); E8-R practice-reference rows (recipe ramp 0.04 -> 0.4 and constant 0.4, Arm P, 10 runs, 2-4 GPU-h) after their prediction addendum | C, B | Ibex GPU | existing pipeline; can start first |
+| E9 | Optional second dataset | C | Ibex GPU | E7-E8 within cap |
+| E10 | Head-to-head with 2610.02344 (P3): (r) retrospective scoring on their public 810-run outcomes and Tab. 16 (consistency check where race = window); (a)/(b) prospective cells off their grid and new seeds, registered cell list and differing-cell criterion; <= 10 GPU-h-eq., <= ~400 runs; mu variants as baseline columns in E4-E8 (P2; done on E1b/E2, 112f91e) | positioning | CPU (Ibex if a run > ~10 CPU-min) | P1 (read); timing pilot |
+
+Compute caps (feasibility v4/v5; E8 registered at 17-34 GPU-h and E8-R at 2-4, leaving about 52 GPU-h
+for E7, the C5 transition rows, P4 and E9 at the upper estimates; the number of pre-registered
+cycles binds, and E8 gets at most one whole-grid re-run): ViT work <= ~90 GPU-h in total, each job <= 2 h, seeds packed,
+resumable, tracked, fallback trigger if no start 60 min after submission; CPU grids sized from a
+timed pilot at the loaded local-compute rate. Each grid and its prediction file go to
+`idea-review-repo` for a bounded go/no-go before launch, as before.
+
+**Pre-registration requirements (feasibility v5, #12).** Before a development grid is looked at,
+the tolerances for A1, B1 and C5 are committed; before a held-out or production grid runs, its
+`prediction.json` (predictions, thresholds, tolerances, baselines incl. mu, scoring of diverged/
+non-converged runs), the frozen code commit and the package environment are committed. New ViT
+runs reuse the delivered E3 environment (torch 2.5.1, `results/e3/cluster_env.json`) or record
+the change and re-run one inherited configuration as a check. Gates: derivations, CPU
+development grids (E4-E6, after a loaded-rate pilot) and E7/E8 instrumentation with a <= 1 GPU-h
+pilot are GO; E7/E8 production grids get a bounded go/no-go from `idea-review-repo` on the
+items above. Added by feasibility v6 (#14): GO now on the P2 baselines (E1b/E2 and E4-E6), the
+retrospective P3 (r) and a single-cell E10 timing pilot (<= 1 CPU-h). E10 (a)/(b) production
+gets a bounded go on the cell list with the differing-cell criterion, the primary statistic,
+`prediction.json`, the pilot's seconds per run and the run count within the cap, the frozen
+commit and the environment. The P4 instrumented run gets a bounded go together with E7
+production, on the gain definition and the committed prediction.
+
+Conventions kept from `plan_v1.md`: **5 seeds on every ViT row that carries a main claim** (E8,
+C5 transition rows), 3 on exploratory ViT toggles, >= 5 per linear/MLP configuration, mean with
+95% CI; centred RankMe and the thresholded count with raw RankMe
+alongside; linear probe on frozen target features; every result file names command, config,
+inputs, seed and code revision; libraries released on or before 2026-10-18, pinned.
+**Additive artifacts:** existing `code/` and `results/` paths and the inputs of
+`paper/numbers.tex` stay unchanged; new work goes in new files and directories (`results/e4/`
+etc.); if old code must change, the affected old check is re-run and the change stated.
+
+## 5. Claims: kept, revised, new (for `paper-repo`; claim ids of `paper/CLAIMS.md` at 6e496ca)
+
+| Claim | Status in the extension | What decides it |
+|---|---|---|
+| C1 exact structure (Prop. 1-2, Cor. 3) | kept; framing credited to Tian et al. and to 2610.02344 (prior work under the cutoff); the balance identity p^2 - a^2 = e^{-2 lambda t}(p0^2 - a0^2) is also credited to `kunin2020neural` (Eq. 20, eta -> 0) and `kobayashi2024weight` (Lemma B.1): the identity is not new, the per-direction deadline built on it is | P1, brief v4.2 Sec. 5.3 |
+| C2 race predicts rank (linear, E1b held-out) | kept for linear, novelty restated against mu (their signed criterion = the initial window; race lower error on E1b/E2 linear and masking arms, retrospective, 112f91e); ViT part revised | P1-P3, C5 (instrumented race vs step-0 rule and mu) |
+| C3a predictor acts through drive/decay | kept (linear); depth row revised if L6 re-test changes it; ViT revised | C rung 1, C5 |
+| C3b masking | kept for linear encoders; tanh/MLP failure explained or located, incl. mu's signed form beating the race on the E2 MLP arm (1.90 vs 2.69) | C rung 2; ViT masks in C5 |
+| C3c target update (stop-grad, EMA) | kept; ViT EMA and target normalisation revised/new | A4, C rungs 4-5 |
+| C3d weight decay race thresholds | kept; extended to schedules | B1-B2 |
+| C4 criterion sets heuristics (not supported) | revised | B2 design rules, ViT warm-up rows of C6, the recipe-ramp reference E8-R |
+| C5 where the theory fails (optimiser, normalisation, nonlinearity) | revised | A, C |
+| new N1 near-collapse dynamics under Adam/AdamW | new | A1-A3 |
+| new N2 normalised target | new | A4 |
+| new N3 stage-wise dynamics beyond the near-collapse window (capture, schedules, noise) | new | B1-B3 |
+| new N4 located transfer from linear to ViT (ladder) | new | C rungs 1-5 |
+| new N5 decision time of collapse in a ViT | new | C6 |
+| new N6 race vs the mu criterion of 2610.02344 (signed form = initial window; mu-count without weight decay): retrospective on E1b/E2 and their public grid, prospective on registered off-grid cells; ResidualPred scored by the race from its measured gain trajectory (gain-mediated, or a located limit of both theories) | new | P2-P4 |
+
+Paper structure (owner `paper-repo`, proposed): kept material (setup, exact structure, race,
+E1b/E2) compressed to about 4-4.5 main-text pages with proofs and E1 development set in the
+appendix; three new main results (A, B, C) in about 4-5 pages. The submission is anonymous, so
+the PDF states the contributions without citing the earlier version; the retained / revised /
+new account goes outside the PDF (`paper/CHANGES.md` or the root README, `paper-repo`), mapping
+each section and each abstract, contribution and conclusion claim to its status and evidence
+(theorem, figure/table, results file), with `paper/CLAIMS.md` kept current (internal review,
+paper-repo#14, R1-R3). Inherited and new numbers stay distinguishable in `numbers.tex`. The page
+limit is `venue-repo`'s finding (venue-repo#8).
+
+Figures (owner `figtab-repo` decides): AdamW phase diagram with the derived boundary vs static
+bound (A); rank over time under schedules with predicted loss/keep times (B); ladder plot, error
+per rung for race vs baselines (C); ViT decision-time curves (C6); instrumented ViT transition,
+race vs step-0 (C5).
+
+## 6. Context received (idea-repo#4, answered at `idea-repo` 5f0fe33, brief v4.2)
+
+- The equation-level reading of 2610.02344 (P1) and prior work for A-C are taken into Sec. 3.
+  The bibliography (103 new entries, all arXiv v1 <= 2026-10-17) is in `idea-repo`
+  `refs/refs.bib`; `paper-repo` cites from it.
+- No direction was found already done, so none is re-scoped. What changed:
+  - P4's premise (ResidualPred gain);
+  - B3's noise hypothesis, now stated against prior work;
+  - the credit for the balance identity.
+- Not established in the brief, and not to be relied on until checked: the venues of Tarmoun
+  2021 and Xu 2023; three formulas flagged in the notes (Li-Arora factor, Wan angular value, the
+  Neural Mechanics finite-eta term); main-text-only statements of Sabanayagam-Lucey and Tang.
+
+## 7. Who delivers what (mirrors `assignment.json`)
+
+| Requirement | Position | Delivered path |
+|---|---|---|
+| Extended manuscript in the ICLR 2027 template, compiled PDF, keep/revise/add, venue statements | paper-repo | `paper/` |
+| Figures and tables (kept, revised, new) and their rendering scripts | figtab-repo | `paper/figures/`, `paper/tables/`, `code/figures/` |
+| Theory of A-C (derivations, proofs, numerical checks), experiments E4-E9, code and results incl. pre-registrations | experiment-repo | `code/`, `results/` |
+| ICLR 2027 requirements, template, conformance checker, required delivered paths | venue-repo | feeds paper-repo; a path of its own only if the venue requires one |
+| Prior-work map to 2026-10-18, novelty check, references | idea-repo | feeds paper-repo (`paper/references.bib`) |
+| Feasibility, go/no-go per grid | idea-review-repo | its repository |
+| Plan and assignment | story-repo | its repository |
+| Review of the delivery | internal-review-repo | its repository |
+
+## 8. Milestones (order, not dates)
+
+1. Start at once: P1 (`idea-repo`), E8 (ViT switch grid; needs no new theory; GO, feasibility v7) and the
+   derivations for A and B with their numerical checks; the instrumentation for E7.
+2. Development grids for A, B, C rungs 1-4; then held-out predictions committed and run.
+3. E7 pre-registered from the instrumented pilot; ViT design-rule rows from B2.
+4. Optional E9 within the compute cap.
+5. Figures/tables; manuscript restructure and revision; venue check; review.

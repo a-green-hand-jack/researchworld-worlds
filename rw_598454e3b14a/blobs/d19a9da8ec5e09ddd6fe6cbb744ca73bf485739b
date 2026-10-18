@@ -1,0 +1,470 @@
+"""E2: masking model M2 (theory note Sec. 7). Pre-registered test of how the mask ratio acts through the
+per-direction context/target statistics (sigma_k(r), c_k(r)) and the near-collapse race.
+
+Data: stationary Gaussian field on a cycle of n = 64 sites, Sigma_ij = RHO^d(i,j) (RHO = 0.7, unit variance).
+Masks act by zeroing: x_c = m_c * x (context), x_t = m_t * x (target). Population statistics are exact:
+  S11 = E[x_c x_c^T] = Sigma o G,  S21 = E[x_t x_c^T] = Sigma o F,  G_ij = Pr(i,j in c),  F_ij = Pr(i in t, j in c).
+Mask families (r = target fraction, nominal for multiblock):
+  bern        each site is a target with prob r; context = complement
+  block       one cyclic target block of length round(r n) at a uniform position; context = complement
+  multiblock  union of 4 independent cyclic target blocks of length L (r_nom = 4L/n); context = complement
+  block_nc    one target block that fits inside [0, n) (no wrap; boundaries break translation invariance)
+Cyclic families give circulant statistics -> exactly aligned in the real Fourier basis -> N1 applies per mode.
+block_nc is not circulant -> N1-general (Sec. 6).
+Arms (exp column):
+  pop     population GD (code/linjepa.py simulate), all 4 families x r x lam x p0, 3 seeds
+  sgd     minibatch SGD with sampled fields and sampled masks (B = 64), linear encoder
+  tanh    encoder f(x) = tanh(W x) (elementwise), sampled data; prediction = the linear N1 (near collapse tanh ~ id)
+  mlp     exploratory: f(x) = W2 tanh(W1 x), W1 128 x 64 at standard scale, W2 near collapse (w0); prediction =
+          N1-general on the hidden-feature statistics measured at initialisation (Monte Carlo, the E3 operational
+          predictor of Sec. 9 in a controlled setting); W1 trains, which the prediction ignores
+  nopred  no predictor (P = I fixed), population GD, bern and block: Prop. 6 under masks. Context and target
+          marginals differ, so c_k > sigma_k is possible (bern: iff (2r - 1) Sigma_hat_k > 2r); a direction then
+          grows at g_k = c_k - sigma_k - lam instead of collapsing. Measured per frequency: growth sign of |W U_f|
+          over [0, t_end], t_end = min(T_CAP, 12 / max g_k) (or 1000 if no g_k > 0); the system is linear, so this
+          checks the statistics and the sign rule, not a race
+All other arms: identity predictor P0 = p0 I, copy target (stop-gradient, tau = 0), alpha = 1, Euler step ETA,
+W0 = w0 x orthogonal (no jitter), w0 = 1e-3, weight decay lam on W (W1, W2) and P.
+Usage:
+  python3 code/e2.py predict results/e2   # prediction.json from statistics and initialisation only
+  python3 code/e2.py run results/e2       # simulations -> e2_runs.jsonl
+  python3 code/e2.py analyze results/e2   # scoring -> summary.json, e2_runs.csv
+"""
+import sys, os, json, time, itertools
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+from linjepa import simulate, init_params, escape_score, race_end_time, growth_rate, n1_general, rankme
+
+n = d = 64
+RHO = 0.7
+NB = 4            # blocks in multiblock
+H = 128           # mlp hidden width
+ETA = 0.05
+W0 = 1e-3
+SV_THR = 0.05
+T_CAP = 4000.0
+BATCH = 64
+SEEDS = range(3)
+R_GRID = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+MB_L = [1, 2, 3, 4, 6, 8, 10, 12, 14]
+LAMS = [0.0003, 0.001, 0.003, 0.01]
+P0S = [0.25, 0.5]
+
+idx = np.arange(n)
+DIST = np.minimum(np.abs(idx[:, None] - idx[None]), n - np.abs(idx[:, None] - idx[None]))
+SIGMA = RHO ** DIST
+CHOL = np.linalg.cholesky(SIGMA)
+
+
+def fourier_basis():
+    """Real orthonormal Fourier basis (columns) and the frequency of each column."""
+    cols, freq = [np.ones(n) / np.sqrt(n)], [0]
+    for k in range(1, n // 2):
+        cols += [np.sqrt(2 / n) * np.cos(2 * np.pi * k * idx / n), np.sqrt(2 / n) * np.sin(2 * np.pi * k * idx / n)]
+        freq += [k, k]
+    cols.append(np.cos(np.pi * idx) / np.sqrt(n)); freq.append(n // 2)
+    return np.array(cols).T, np.array(freq)
+
+
+U, FREQ = fourier_basis()
+
+
+def block_len(fam, r):
+    return int(round(r * n)) if fam in ("block", "block_nc") else int(r)
+
+
+def cooccurrence(fam, r):
+    """Exact G (ctx-ctx), F (tgt-ctx) co-occurrence matrices and the target fraction."""
+    if fam == "bern":
+        q = 1 - r
+        G = np.full((n, n), q * q); np.fill_diagonal(G, q)
+        F = np.full((n, n), r * q); np.fill_diagonal(F, 0.0)
+        return G, F, r
+    if fam in ("block", "block_nc"):
+        L = block_len(fam, r)
+        starts = range(n) if fam == "block" else range(n - L + 1)
+        ms = []
+        for s in starts:
+            m = np.zeros(n)
+            m[(s + np.arange(L)) % n] = 1
+            ms.append(m)
+        T = np.array(ms); Cm = 1 - T
+        return Cm.T @ Cm / len(ms), T.T @ Cm / len(ms), float(T.mean())
+    if fam == "multiblock":
+        L = int(r)
+        # number of start positions whose length-L cyclic block covers site i or site j
+        ov = np.maximum(0, L - DIST) + np.maximum(0, L - (n - DIST))
+        ov[DIST == 0] = L
+        cover = 2 * L - ov
+        both_out = (1 - cover / n) ** NB             # Pr(i not in U, j not in U)
+        one_out = (1 - L / n) ** NB
+        G = both_out
+        F = one_out - both_out                       # Pr(i in U, j not in U)
+        return G, F, 1 - one_out
+    raise ValueError(fam)
+
+
+def stats(fam, r):
+    G, F, tf = cooccurrence(fam, r)
+    return SIGMA * G, SIGMA * F, tf
+
+
+def spectra(S11, S21):
+    return np.einsum("ik,ij,jk->k", U, S11, U), np.einsum("ik,ij,jk->k", U, S21, U)
+
+
+def r_list(fam):
+    return MB_L if fam == "multiblock" else R_GRID
+
+
+def r_nominal(fam, r):
+    return NB * r / n if fam == "multiblock" else r
+
+
+def nopred_rates(fam, r, lam):
+    S11, S21, _ = stats(fam, r)
+    s, c = spectra(S11, S21)
+    return c - s - lam
+
+
+def horizon(fam, r, lam, p0, exp=None):
+    if exp == "nopred":
+        g = nopred_rates(fam, r, lam).max()
+        return float(min(T_CAP, 12.0 / g)) if g > 0 else 1000.0
+    S11, S21, _ = stats(fam, r)
+    s, c = spectra(S11, S21)
+    t_race = race_end_time(c, s, lam, lam, 1.0, p0)
+    return float(min(3.0 * t_race + 300.0, T_CAP))
+
+
+def configs():
+    out = []
+    def add(**k):
+        base = dict(p0=0.25, w0=W0, seed=0, eta=ETA)
+        base.update(k); out.append(base)
+    for fam in ["bern", "block", "multiblock", "block_nc"]:
+        for r, lam, p0, s in itertools.product(r_list(fam), LAMS, P0S, SEEDS):
+            add(exp="pop", fam=fam, r=r, lam=lam, p0=p0, seed=s)
+    for exp in ["sgd", "tanh", "mlp"]:
+        for fam, lam, s in itertools.product(["bern", "block"], [0.001, 0.01], SEEDS):
+            for r in R_GRID:
+                add(exp=exp, fam=fam, r=r, lam=lam, p0=0.25, seed=s)
+    for fam, r, lam, s in itertools.product(["bern", "block"], R_GRID, [0.001, 0.01], SEEDS):
+        add(exp="nopred", fam=fam, r=r, lam=lam, p0=1.0, seed=s)
+    for i, c in enumerate(out):
+        c["id"] = i
+    return out
+
+
+# ------------------------------------------------------------------------------------------- sampling
+def sample(rng, fam, r, B):
+    x = rng.standard_normal((B, n)) @ CHOL.T
+    if fam == "bern":
+        t = (rng.random((B, n)) < r).astype(float)
+    elif fam in ("block", "block_nc"):
+        L = block_len(fam, r)
+        s = rng.integers(0, n if fam == "block" else n - L + 1, size=B)
+        t = (((idx[None] - s[:, None]) % n) < L).astype(float)
+    else:
+        L = int(r)
+        t = np.zeros((B, n))
+        for _ in range(NB):
+            s = rng.integers(0, n, size=B)
+            t = np.maximum(t, (((idx[None] - s[:, None]) % n) < L).astype(float))
+    return x * (1 - t), x * t
+
+
+def mlp_init(seed, p0, w0):
+    rng = np.random.default_rng(seed)
+    W1 = rng.standard_normal((H, n)) / np.sqrt(n)
+    Q, _ = np.linalg.qr(rng.standard_normal((H, d)))
+    W2 = w0 * Q.T                                     # d x H, orthonormal rows scaled by w0
+    return rng, W1, W2, p0 * np.eye(d)
+
+
+def feature_stats(cfg, M=200000):
+    """Hidden-feature statistics of the mlp at initialisation, by Monte Carlo (fixed seed, recorded)."""
+    _, W1, _, _ = mlp_init(cfg["seed"], cfg["p0"], cfg["w0"])
+    rng = np.random.default_rng(10 ** 6 + cfg["seed"])
+    S11 = np.zeros((H, H)); S21 = np.zeros((H, H))
+    for _ in range(M // 10000):
+        xc, xt = sample(rng, cfg["fam"], cfg["r"], 10000)
+        hc, ht = np.tanh(xc @ W1.T), np.tanh(xt @ W1.T)
+        S11 += hc.T @ hc; S21 += ht.T @ hc
+    return S11 / M, S21 / M
+
+
+# ------------------------------------------------------------------------------------------- predictions
+def predict_one(cfg):
+    fam, r, lam, p0 = cfg["fam"], cfg["r"], cfg["lam"], cfg["p0"]
+    t_end = horizon(fam, r, lam, p0, cfg["exp"])
+    S11, S21, tf = stats(fam, r)
+    s, c = spectra(S11, S21)
+    out = dict(id=cfg["id"], t_end=t_end, target_frac=tf)
+    if cfg["exp"] == "nopred":
+        g = c - s - lam
+        grow = (g > 0).astype(int)
+        out["pred_grow_freq"] = [int(grow[FREQ == f].sum()) for f in range(n // 2 + 1)]
+        out["rank_pred"] = int(grow.sum())          # directions predicted to grow (corrected Prop. 6)
+        out["rank_pred_equal_marginals"] = 0        # the uncorrected Prop. 6: every direction collapses
+        out["g_max"] = float(g.max())
+        return out
+    if cfg["exp"] == "mlp":
+        Sf11, Sf21 = feature_stats(cfg)
+        _, _, W2, P0 = mlp_init(cfg["seed"], p0, cfg["w0"])
+        out["rank_pred"] = n1_general(Sf11, Sf21, W2, P0, lam, 1.0, ETA, int(t_end / ETA))
+        ev11 = np.linalg.eigvalsh(Sf11)[::-1]
+        sv21 = np.sort(np.linalg.eigvalsh((Sf21 + Sf21.T) / 2))[::-1]
+        out["rank_bound"] = int((np.maximum(sv21, 0) ** 2 >= 4 * lam * ev11).sum())
+        out["rank_window"] = int((p0 * sv21 - p0 ** 2 * ev11 - lam > 0).sum())
+        # the linear-input N1 as a comparison (what the theory would say ignoring the hidden layer)
+        sc = np.array([escape_score(c[k], s[k], lam, lam, 1.0, p0, np.log(cfg["w0"]), t_end=t_end) for k in range(n)])
+        out["rank_pred_linear"] = int((sc >= 0).sum())
+        return out
+    out["rank_bound"] = int(((c > 0) & (c ** 2 >= 4 * lam * s)).sum())
+    out["rank_window"] = int((growth_rate(p0, c, s, lam) > 0).sum())
+    sc = np.array([escape_score(c[k], s[k], lam, lam, 1.0, p0, np.log(cfg["w0"]), t_end=t_end) for k in range(n)])
+    pred = (sc >= 0).astype(int)
+    out["pred_N1"] = pred.tolist(); out["rank_N1"] = int(pred.sum())
+    if fam == "block_nc":                             # not circulant: N1-general is the primary predictor
+        _, W, Ps = init_params(cfg["seed"], n, d, cfg["w0"], p0, 1, None, "identity", "orthogonal", 0.0)
+        out["rank_N1general"] = n1_general(S11, S21, W, Ps[0], lam, 1.0, ETA, int(t_end / ETA))
+        out["rank_pred"] = out["rank_N1general"]
+    else:
+        out["rank_pred"] = out["rank_N1"]
+        out["pred"] = pred.tolist()
+    return out
+
+
+def profiles():
+    """Predicted rank vs mask ratio on a fine grid (nominal w0, identity predictor) and its peak, per (family, lam, p0);
+    also the static-bound and window profiles. Fine grid: bern r in 0.02..0.98; block lengths 1, 3, ..., 63; multiblock L 1..15."""
+    fine = dict(bern=list(np.round(np.arange(0.02, 0.99, 0.02), 2)), block=[L / n for L in range(1, n, 2)],
+                multiblock=list(range(1, 16)))
+    out = {}
+    for fam in ["bern", "block", "multiblock"]:
+        for lam, p0 in itertools.product(LAMS, P0S):
+            rows = []
+            for r in fine[fam]:
+                S11, S21, tf = stats(fam, r)
+                s, c = spectra(S11, S21)
+                t_end = horizon(fam, r, lam, p0)
+                sc = [escape_score(c[k], s[k], lam, lam, 1.0, p0, np.log(W0), t_end=t_end) for k in range(n)]
+                rows.append(dict(r=float(r_nominal(fam, r)), target_frac=float(tf), rank_pred=int(sum(x >= 0 for x in sc)),
+                                 rank_bound=int(((c > 0) & (c ** 2 >= 4 * lam * s)).sum()),
+                                 rank_window=int((growth_rate(p0, c, s, lam) > 0).sum()),
+                                 n_cpos=int((c > 0).sum())))
+            ranks = [x["rank_pred"] for x in rows]
+            pk = int(np.argmax(ranks))
+            out[f"{fam}/lam={lam}/p0={p0}"] = dict(rows=rows, peak_r=rows[pk]["r"], peak_rank=ranks[pk],
+                                                  non_monotone=bool(max(ranks) - ranks[0] >= 2 and max(ranks) - ranks[-1] >= 2))
+    return out
+
+
+def spectra_table():
+    """sigma_k(r), c_k(r) per family on the run grid (Fourier basis), for figures and checks."""
+    out = {}
+    for fam in ["bern", "block", "multiblock"]:
+        for r in r_list(fam):
+            S11, S21, tf = stats(fam, r)
+            s, c = spectra(S11, S21)
+            out[f"{fam}/{r}"] = dict(r=r_nominal(fam, r), target_frac=tf, freq=FREQ.tolist(), sigma=s.tolist(), c=c.tolist())
+    return out
+
+
+def cmd_predict(outdir):
+    cfgs = configs()
+    t0 = time.time()
+    with Pool(int(os.environ.get("NPROC", "8"))) as pool:
+        preds = pool.map(predict_one, cfgs, chunksize=2)
+        prof = profiles()
+    P = {p["id"]: p for p in preds}
+    doc = dict(
+        experiment="E2", status="pre-registered: written from the mask statistics and the initialisation before any E2 run",
+        setup=dict(n=n, d=d, rho=RHO, sigma="RHO^cyclic_distance", eta=ETA, w0=W0, batch=BATCH, multiblock_blocks=NB,
+                   mlp_hidden=H, families=__doc__.split("Mask families")[1].split("Cyclic families")[0].strip()),
+        definitions=dict(
+            rank="number of singular values of W (tanh: W; mlp: W2) above 0.05 at t_end",
+            per_mode="Fourier frequency f survives with multiplicity = number of singular values of W U_f above 0.05 "
+                     "(U_f the 1 or 2 real Fourier columns of frequency f); cyclic families only",
+            converged="rank unchanged over the last 4 of 20 equally spaced checks",
+            fitted_constants="none; capture rule, threshold and race criterion frozen from E1/E1b"),
+        predictors=dict(
+            rank_pred="pop/sgd/tanh, cyclic families: N1 (Sec. 3) on the Fourier spectra (sigma_k(r), c_k(r)); "
+                      "block_nc: N1-general (Sec. 6) on the exact statistics; mlp: N1-general on the hidden-feature "
+                      "statistics at initialisation (Monte Carlo, 2e5 samples)",
+            rank_bound="static threshold #{c_k > 0, c_k^2 >= 4 lam sigma_k} (Tian 2021, Wang 2021, PEIRA)",
+            rank_window="#{g_k(p0) > 0} at initialisation",
+            nopred="rank_pred = #{k: c_k - sigma_k - lam > 0} (directions that grow without a predictor; corrected "
+                   "Prop. 6), pred_grow_freq per frequency; rank_meas for this arm = directions whose amplitude grew"),
+        success_criteria={
+            "pop cyclic (N1)": "per-frequency accuracy >= 0.95; rank MAE <= 1.0; N1 MAE below static-bound MAE and window MAE",
+            "pop peak": "per (family, lam, p0) profile with predicted max rank >= 2: the measured peak r (argmax of the "
+                        "seed-mean rank; ties -> the set of maximisers) contains a predicted maximiser or is within one "
+                        "grid step, in >= 80% of profiles; every profile predicted non-monotone (rise and fall >= 2 over the "
+                        "run grid) is measured non-monotone",
+            "pop block_nc (N1-general)": "rank MAE <= 1.5 and below static-bound MAE",
+            "sgd (mask/sample noise)": "rank MAE to the population N1 <= 1.5",
+            "tanh (decided near collapse)": "rank MAE to the linear N1 <= 1.5; below static-bound MAE",
+            "nopred (Prop. 6 under masks)": "per-frequency growth sign (multiplicity) matches g_k = c_k - sigma_k - lam > 0 "
+                                            "in >= 0.99 of frequencies; the uncorrected rule (all collapse) is wrong in "
+                                            "every config with a predicted growing direction",
+            "mlp (exploratory)": "rank MAE to N1-general on initial feature statistics <= 2 and below the static bound on the "
+                                 "same statistics; Spearman with measured rank reported"},
+        profiles=prof, spectra=spectra_table(),
+        runs=[dict(cfg, **{k: v for k, v in P[cfg["id"]].items() if k != "id"}) for cfg in cfgs],
+        seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv))
+    json.dump(doc, open(os.path.join(outdir, "prediction.json"), "w"))
+    print("prediction.json:", len(cfgs), "configs", f"{time.time()-t0:.0f}s")
+
+
+# ------------------------------------------------------------------------------------------- runs
+def train_sampled(cfg, T, checks=20):
+    """Minibatch training with sampled fields and masks. kind: sgd (linear), tanh, mlp."""
+    kind, lam, p0, eta = cfg["exp"], cfg["lam"], cfg["p0"], cfg["eta"]
+    if kind == "mlp":
+        rng, W1, W, P = mlp_init(cfg["seed"], p0, cfg["w0"])
+    else:
+        rng, W, Ps = init_params(cfg["seed"], n, d, cfg["w0"], p0, 1, None, "identity", "orthogonal", 0.0)
+        P = Ps[0]
+    rng = np.random.default_rng(5000 + cfg["seed"])
+    check_at = set(np.linspace(0, T, checks + 1).astype(int)[1:].tolist())
+    ranks, diverged = [], None
+    for t in range(T):
+        xc, xt = sample(rng, cfg["fam"], cfg["r"], BATCH)
+        if kind == "mlp":
+            ac, at = np.tanh(xc @ W1.T), np.tanh(xt @ W1.T)
+            hc, ht = ac @ W.T, at @ W.T
+        elif kind == "tanh":
+            hc, ht = np.tanh(xc @ W.T), np.tanh(xt @ W.T)
+        else:
+            hc, ht = xc @ W.T, xt @ W.T
+        e = hc @ P.T - ht                              # B x d
+        gP = e.T @ hc / BATCH
+        gh = e @ P                                     # dL/dh_c
+        if kind == "mlp":
+            gW = gh.T @ ac / BATCH
+            gA = (gh @ W) * (1 - ac ** 2)
+            gW1 = gA.T @ xc / BATCH
+            W1 = W1 - eta * (gW1 + lam * W1)
+        elif kind == "tanh":
+            gW = (gh * (1 - hc ** 2)).T @ xc / BATCH
+        else:
+            gW = gh.T @ xc / BATCH
+        W = W - eta * (gW + lam * W)
+        P = P - eta * (gP + lam * P)
+        if t % 50 == 0:
+            for M in [W, P]:
+                M[np.abs(M) < 1e-150] = 0.0
+            if not (np.isfinite(W).all() and np.abs(W).max() < 1e10):
+                diverged = (t + 1) * eta
+                break
+        if (t + 1) in check_at:
+            ranks.append(((t + 1) * eta, int((np.linalg.svd(W, compute_uv=False) > SV_THR).sum())))
+    out = dict(W=W, P=P, ranks=ranks, diverged=diverged)
+    if kind == "mlp":
+        out["W1"] = W1
+    return out
+
+
+def run_nopred(cfg):
+    fam, r, lam = cfg["fam"], cfg["r"], cfg["lam"]
+    t_end = horizon(fam, r, lam, cfg["p0"], "nopred")
+    T = int(t_end / cfg["eta"])
+    S11, S21, _ = stats(fam, r)
+    _, W, _ = init_params(cfg["seed"], n, d, cfg["w0"], 1.0, 1, None, "identity", "orthogonal", 0.0)
+    W_init = W.copy()
+    a0 = [np.linalg.norm(W @ U[:, FREQ == f]) for f in range(n // 2 + 1)]
+    for t in range(T):
+        W = W + cfg["eta"] * (W @ S21 - W @ S11 - lam * W)     # stop-gradient copy target, P = I
+        if t % 50 == 0:
+            W[np.abs(W) < 1e-150] = 0.0
+    a1 = [np.linalg.norm(W @ U[:, FREQ == f]) for f in range(n // 2 + 1)]
+    grow = [int(b > a) for a, b in zip(a0, a1)]
+    # multiplicity: per frequency, directions whose singular value grew (cos and sin columns separately)
+    mult = []
+    for f in range(n // 2 + 1):
+        cols = U[:, FREQ == f]
+        s0 = np.linalg.svd(W_init @ cols, compute_uv=False)
+        s1 = np.linalg.svd(W @ cols, compute_uv=False)
+        mult.append(int((s1 > s0).sum()))
+    sv = np.linalg.svd(W, compute_uv=False)
+    return dict(id=cfg["id"], t_end=t_end, steps=T, diverged=None, rank_t=[], rank_meas=int(sum(mult)),
+                surv_freq=mult, grow_freq_any=grow, rank_sv=int((sv > SV_THR).sum()), sv_top=[float(x) for x in sv[:8]],
+                converged=True, rankme=rankme(sv), log_amp_ratio=[float(np.log(b / a)) if a > 0 and b > 0 else None
+                                                                for a, b in zip(a0, a1)])
+
+
+def run_one(cfg):
+    if cfg["exp"] == "nopred":
+        return run_nopred(cfg)
+    fam, r, lam, p0 = cfg["fam"], cfg["r"], cfg["lam"], cfg["p0"]
+    t_end = horizon(fam, r, lam, p0)
+    T = int(t_end / cfg["eta"])
+    if cfg["exp"] == "pop":
+        S11, S21, _ = stats(fam, r)
+        out = simulate(S11, S21, d, lam, lam, p0=p0, w0=cfg["w0"], eta=cfg["eta"], T=T, alpha=1.0, seed=cfg["seed"],
+                       w_init="orthogonal", jitter=0.0, rank_checks=20, sv_thr=SV_THR)
+    else:
+        out = train_sampled(cfg, T)
+    res = dict(id=cfg["id"], t_end=t_end, steps=T, diverged=out["diverged"], rank_t=out["ranks"])
+    if out["diverged"] is not None:
+        return dict(res, rank_meas=None, converged=False)
+    W = out["W"]
+    sv = np.linalg.svd(W, compute_uv=False)
+    res.update(rank_meas=int((sv > SV_THR).sum()), rankme=rankme(sv), sv_top=[float(x) for x in sv[:8]],
+               converged=len(set(x for _, x in out["ranks"][-4:])) == 1,
+               p_final=float(np.linalg.svd(out["P"], compute_uv=False).max()))
+    if cfg["exp"] != "mlp":
+        surv = []
+        for f in range(n // 2 + 1):
+            cols = U[:, FREQ == f]
+            surv.append(int((np.linalg.svd(W @ cols, compute_uv=False) > SV_THR).sum()))
+        res["surv_freq"] = surv
+    else:
+        rng = np.random.default_rng(777)
+        x = rng.standard_normal((4096, n)) @ CHOL.T
+        z = np.tanh(x @ out["W1"].T) @ W.T
+        res["rankme_embed"] = rankme(np.linalg.svd(z - z.mean(0), compute_uv=False))
+    return res
+
+
+def run_one_safe(cfg):
+    try:
+        return run_one(cfg)
+    except Exception as e:
+        return dict(id=cfg["id"], diverged=None, rank_meas=None, error=repr(e))
+
+
+def cmd_run(outdir):
+    assert os.path.exists(os.path.join(outdir, "prediction.json")), "pre-register first"
+    cfgs = configs()
+    t0 = time.time()
+    res = []
+    order = sorted(cfgs, key=lambda c: -(horizon(c["fam"], c["r"], c["lam"], c["p0"], c["exp"]) * (6 if c["exp"] in ("sgd", "tanh", "mlp") else 1)))
+    with Pool(int(os.environ.get("NPROC", "8"))) as pool:
+        for i, r in enumerate(pool.imap_unordered(run_one_safe, order, chunksize=1)):
+            res.append(r)
+            if (i + 1) % 100 == 0:
+                print(f"{i+1}/{len(cfgs)} done, {time.time()-t0:.0f}s", flush=True)
+    res.sort(key=lambda r: r["id"])
+    with open(os.path.join(outdir, "e2_runs.jsonl"), "w") as f:
+        for r in res:
+            f.write(json.dumps(r) + "\n")
+    json.dump(dict(runs=len(res), seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv),
+                   nproc=int(os.environ.get("NPROC", "8"))), open(os.path.join(outdir, "e2_meta.json"), "w"), indent=1)
+    print("HUTIAN_WAKE: E2 finished", len(res), "runs", f"{time.time()-t0:.0f}s", flush=True)
+
+
+if __name__ == "__main__":
+    cmd, outdir = sys.argv[1], sys.argv[2]
+    os.makedirs(outdir, exist_ok=True)
+    if cmd == "predict":
+        cmd_predict(outdir)
+    elif cmd == "run":
+        cmd_run(outdir)
+    elif cmd == "analyze":
+        from e2_analyze import main
+        main(outdir)

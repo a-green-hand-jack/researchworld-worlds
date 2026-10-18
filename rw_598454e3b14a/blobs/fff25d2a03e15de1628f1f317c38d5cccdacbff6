@@ -1,0 +1,200 @@
+"""Direction A (plan v2.5): per-direction near-collapse dynamics of the linear JEPA under AdamW, aligned basis.
+
+Exact part (A1a). With S11, S21 diagonal, W diagonal and P = p0 I, AdamW's coordinate-wise update keeps every
+off-diagonal entry at zero (zero gradient, zero moments), so the matrix flow is n independent scalar AdamW maps on
+(a_k, p_k) with G_a = -a p (c - p s), G_p = -a^2 (c - p s).  `scalar_adamw` integrates them (vectorised over modes).
+
+Phase model (A1b; theory/ext_A_adamw.md Sec. A-ii'). After a short sign-like transient (K steps, integrated
+exactly), a mode outside the window (h(p) = p (c - p s) < 0) oscillates around a = 0 while its gradient no longer
+feeds the second moment: Adam is then heavy-ball GD on a frozen, decaying preconditioner,
+    a_{t+1} = (1 - eta lam) a_t - eta m_t / (sigma_t + eps),  m_t = b1 m_{t-1} + (1 - b1) (-h) a_t,
+    sigma_t^2 = v_K b2^{t-K} / (1 - b2^t),     p_t = p_K (1 - eta lam)^{t-K}   (G_p ~ a^2 is negligible).
+With q = eta (1 - b1) (-h) / ((sigma + eps)(1 - b1^t)) the per-step factor is the spectral radius of
+z^2 - (1 + b1 - q) z + b1 = 0 (times 1 - eta lam): |z| = sqrt(b1) while the roots are complex, and a real root below
+-1 once q > 2 (1 + b1), the loss of stability that brings the mode back.  Inside the window (h > 0) the largest
+root exceeds 1 and the mode grows.  The mode is predicted alive again (|a| > thr) when sum_t log|z_t| has climbed
+from log|a_K| to log(thr); once alive, p reaches c/s at the lr speed and the mode is predicted to stay alive.
+"""
+import numpy as np
+
+
+def scalar_adamw(c, s, a0, p0, lam, eta, T, b1=0.9, b2=0.999, eps=1e-8, checks=(), keep=()):
+    """Exact scalar AdamW maps for all modes at once. Returns states at `checks` steps and full state at `keep`."""
+    c = np.asarray(c, float); s = np.asarray(s, float)
+    a = np.broadcast_to(np.asarray(a0, float), c.shape).copy(); p = np.broadcast_to(np.asarray(p0, float), c.shape).copy()
+    ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c)
+    checks = set(checks); keep = set(keep); hist = {}; states = {}
+    for t in range(1, T + 1):
+        r = c - p * s
+        ga = -a * p * r; gp = -a * a * r
+        ma = b1 * ma + (1 - b1) * ga; va = b2 * va + (1 - b2) * ga * ga
+        mp = b1 * mp + (1 - b1) * gp; vp = b2 * vp + (1 - b2) * gp * gp
+        bc1, bc2 = 1 - b1 ** t, 1 - b2 ** t
+        a = a * (1 - eta * lam) - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps)
+        p = p * (1 - eta * lam) - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+        if t in checks:
+            hist[t] = (np.abs(a).copy(), p.copy())
+        if t in keep:
+            states[t] = dict(a=a.copy(), p=p.copy(), ma=ma.copy(), va=va.copy(), mp=mp.copy(), vp=vp.copy())
+    return hist, states
+
+
+def radius(q, b1):
+    """Spectral radius (signed log) of z^2 - (1 + b1 - q) z + b1 = 0, vectorised; q may be negative (inside window)."""
+    B = 1 + b1 - q
+    disc = B * B - 4 * b1
+    out = np.full(np.shape(q), 0.5 * np.log(b1))
+    real = disc >= 0
+    sq = np.sqrt(np.where(real, disc, 0.0))
+    zmax = np.maximum(np.abs((B + sq) / 2), np.abs((B - sq) / 2))
+    return np.where(real, np.log(zmax), out)
+
+
+def phase_model(c, s, state, K, lam, eta, T, thr, b1=0.9, b2=0.999, eps=1e-8, checks=()):
+    """Predicted alive/dead state per mode at `checks` (> K) and the predicted re-escape step (inf if none by T),
+    from the exact state at step K. Vectorised over modes; per-step factors in closed form, summed over t."""
+    c = np.asarray(c, float); s = np.asarray(s, float)
+    a, p, va = np.abs(state["a"]), state["p"], state["va"]
+    alive = a > thr
+    loga = np.log(np.maximum(a, 1e-300))
+    t = np.arange(K + 1, T + 1)[:, None]
+    pt = p[None, :] * (1 - eta * lam) ** (t - K)
+    h = pt * (c - pt * s)
+    sig = np.sqrt(va[None, :] * b2 ** (t - K) / (1 - b2 ** t))
+    q = eta * (1 - b1) * (-h) / ((sig + eps) * (1 - b1 ** t))
+    lr = radius(q, b1) + np.log(1 - eta * lam)
+    path = loga[None, :] + np.cumsum(lr, axis=0)
+    cross = path >= np.log(thr)
+    first = np.where(cross.any(axis=0), K + 1 + np.argmax(cross, axis=0), np.inf)
+    first = np.where(alive, K, first)
+    pred = {tc: (first <= tc) for tc in checks}
+    return pred, first
+
+
+def measured_escape(c, s, a0, p0, lam, eta, T, thr, K, b1=0.9, b2=0.999, eps=1e-8, every=10):
+    """Exact re-escape step after K (first checked step with |a| > thr), on a grid of `every` steps."""
+    checks = list(range(K, T + 1, every))
+    hist, _ = scalar_adamw(c, s, a0, p0, lam, eta, T, b1, b2, eps, checks=checks)
+    A = np.array([hist[t][0] for t in checks])
+    up = A > thr
+    first = np.where(up.any(axis=0), np.array(checks)[np.argmax(up, axis=0)], np.inf)
+    return first, A, checks
+
+
+def phase_model_full(c, s, state, K, lam, eta, T, b1=0.9, b2=0.999, eps=1e-8, thr=0.05, burst=1e-3, checks=()):
+    """Phase model v1 (development): burst step from the stability loss (phase_model with threshold `burst`);
+    alive from K on if |a_K| > thr; otherwise alive from the burst step on (capture assumed above thr)."""
+    a, p = np.abs(state["a"]), state["p"]
+    h = p * (np.asarray(c) - p * np.asarray(s))
+    _, tb = phase_model(c, s, state, K, lam, eta, T, burst, b1, b2, eps)
+    alive_from = np.where(a > thr, K, tb)
+    return dict(burst=np.where(a > burst, np.inf, tb), outside=(h < 0) & (a <= burst),
+                alive={t: alive_from <= t for t in checks})
+
+
+def _exact_segment(c, s, st, t0, n, lam, eta, b1, b2, eps):
+    """Exact scalar AdamW for n steps from state st at absolute step t0 (vector t0 per mode). Returns new state."""
+    a, p, ma, va, mp, vp = (st[k].copy() for k in ("a", "p", "ma", "va", "mp", "vp"))
+    for j in range(1, n + 1):
+        t = t0 + j
+        r = c - p * s
+        ga = -a * p * r; gp = -a * a * r
+        ma = b1 * ma + (1 - b1) * ga; va = b2 * va + (1 - b2) * ga * ga
+        mp = b1 * mp + (1 - b1) * gp; vp = b2 * vp + (1 - b2) * gp * gp
+        bc1, bc2 = 1 - b1 ** t, 1 - b2 ** t
+        a = a * (1 - eta * lam) - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps)
+        p = p * (1 - eta * lam) - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+    return dict(a=a, p=p, ma=ma, va=va, mp=mp, vp=vp)
+
+
+def _segment(c, s, st, ts, todo, alive_from, thr, n_steps, lam, eta, b1, b2, eps):
+    """Exact scalar AdamW for n_steps from state st at per-mode absolute steps ts; records into alive_from the first
+    step with |a| > thr for modes in todo. Returns the new state."""
+    a, p, ma, va, mp, vp = (st[q].copy() for q in ("a", "p", "ma", "va", "mp", "vp"))
+    for j in range(1, n_steps + 1):
+        t = ts + j
+        r = c - p * s; ga = -a * p * r; gp = -a * a * r
+        ma = b1 * ma + (1 - b1) * ga; va = b2 * va + (1 - b2) * ga * ga
+        mp = b1 * mp + (1 - b1) * gp; vp = b2 * vp + (1 - b2) * gp * gp
+        bc1, bc2 = 1 - b1 ** t, 1 - b2 ** t
+        a = a * (1 - eta * lam) - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps)
+        p = p * (1 - eta * lam) - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+        up = todo & (np.abs(a) > thr) & ~np.isfinite(alive_from)
+        alive_from[up] = t[up]
+    return dict(a=a, p=p, ma=ma, va=va, mp=mp, vp=vp)
+
+
+def phase_model_hybrid(c, s, state, K, lam, eta, T, b1=0.9, b2=0.999, eps=1e-8, thr=0.05, burst=1e-3, checks=(),
+                       seed_amp=1e-6, seg=600, seg_eos=1500, max_events=8):
+    """Phase model v3 (development): event-driven. The linear stretches are in closed form: the collapse wait of
+    A-ii' (heavy-ball on a decaying second moment until the stability loss) and the hover wait of A-iii' (quasi-static
+    p with h = lam p^2 sigma_p / a^2, a growing at eta (h / sigma_a - lam) per step, until sigma_p's memory decays to
+    p's edge-of-stability level eta a^2 s (1 - b1) / (2 (1 + b1))). The short nonlinear events (burst and capture,
+    `seg` steps; edge-of-stability chatter, `seg_eos` steps) are integrated exactly from a re-seeded state.
+    Per mode: alive from the first step with predicted |a| > thr, and the A1b burst step."""
+    c = np.asarray(c, float); s = np.asarray(s, float); n = c.size
+    a0 = np.abs(state["a"]); h0 = state["p"] * (c - state["p"] * s)
+    _, tb = phase_model(c, s, state, K, lam, eta, T, burst, b1, b2, eps)
+    burst_step = np.where(a0 > burst, np.inf, tb)
+    alive_from = np.full(n, np.inf); alive_from[a0 > thr] = K
+    eos = eta * s * (1 - b1) / (2 * (1 + b1))
+    cur = {k: np.array(v, float).copy() for k, v in state.items()}; t_cur = np.full(n, float(K))
+    todo = ~(a0 > thr)
+    for _ in range(max_events):
+        todo &= t_cur < T
+        if not todo.any():
+            break
+        a, p = np.abs(cur["a"]), cur["p"]; h = p * (c - p * s)
+        collapsed = todo & ((h < 0) | (a < seed_amp))
+        hover = todo & ~collapsed
+        new = {q: cur[q].copy() for q in cur}; t_new = t_cur.copy(); event = np.zeros(n, bool); nseg = np.zeros(n, int)
+        # (i) collapse wait, closed form, then re-seed at the stability loss on the z = -1 eigenvector
+        for k in np.where(collapsed)[0]:
+            stk = {q: np.array([cur[q][k]]) for q in cur}
+            _, tk = phase_model(c[k:k + 1], s[k:k + 1], stk, int(t_cur[k]), lam, eta, T, seed_amp, b1, b2, eps)
+            if not np.isfinite(tk[0]) or tk[0] >= T:
+                todo[k] = False; continue
+            dt = tk[0] - t_cur[k]
+            pk = cur["p"][k] * (1 - eta * lam) ** dt; hk = pk * (c[k] - pk * s[k])
+            new["a"][k] = seed_amp; new["p"][k] = pk; new["ma"][k] = (1 - b1) * hk * seed_amp / (1 + b1)
+            new["va"][k] = cur["va"][k] * b2 ** dt; new["vp"][k] = cur["vp"][k] * b2 ** dt; new["mp"][k] = 0.0
+            t_new[k] = tk[0]; event[k] = True; nseg[k] = seg
+        # (ii) hover wait, closed form per step, until thr (alive) or p's edge of stability (then exact chatter)
+        if hover.any():
+            idx = np.where(hover)[0]
+            la = np.log(a[idx]); pc = c[idx] / s[idx]
+            for k_i, k in enumerate(idx):
+                tt0 = t_cur[k]; lak = la[k_i]
+                u = np.arange(1, int(T - tt0) + 1)
+                if u.size == 0:
+                    todo[k] = False; continue
+                dec = b2 ** u / (1 - b2 ** (tt0 + u))
+                sa = np.sqrt(cur["va"][k] * dec) + eps; spm = np.sqrt(cur["vp"][k] * dec)
+                done = False
+                for i in range(u.size):
+                    av2 = np.exp(2 * lak)
+                    if spm[i] <= eos[k] * av2:          # p reaches its edge of stability: exact chatter segment
+                        pk = pc[k_i] - lam * pc[k_i] * spm[i] / (av2 * s[k])
+                        new["a"][k] = np.exp(lak); new["p"][k] = pk
+                        new["mp"][k] = -lam * pk * spm[i]; new["vp"][k] = spm[i] ** 2 * (1 - b2 ** (tt0 + u[i]))
+                        hk = lam * pk ** 2 * spm[i] / av2
+                        new["ma"][k] = -np.exp(lak) * hk; new["va"][k] = (sa[i] - eps) ** 2 * (1 - b2 ** (tt0 + u[i]))
+                        t_new[k] = tt0 + u[i]; event[k] = True; nseg[k] = seg_eos; done = True; break
+                    lak += eta * (lam * pc[k_i] ** 2 * spm[i] / av2 / sa[i] - lam)
+                    if lak >= np.log(thr):
+                        alive_from[k] = tt0 + u[i]; todo[k] = False; done = True; break
+                if not done:
+                    todo[k] = False
+        # (iii) exact event segments (vectorised over the modes that have one; lengths seg or seg_eos)
+        ev = todo & event
+        if not ev.any():
+            break
+        for L in sorted(set(nseg[ev].tolist())):
+            m = ev & (nseg == L)
+            out = _segment(c, s, new, t_new, m, alive_from, thr, L, lam, eta, b1, b2, eps)
+            for q in cur:
+                cur[q] = np.where(m, out[q], cur[q])
+            t_cur = np.where(m, t_new + L, t_cur)
+        todo &= ~np.isfinite(alive_from)
+    return dict(burst=burst_step, outside=(h0 < 0) & (a0 <= burst), alive={t: alive_from <= t for t in checks},
+                alive_from=alive_from)

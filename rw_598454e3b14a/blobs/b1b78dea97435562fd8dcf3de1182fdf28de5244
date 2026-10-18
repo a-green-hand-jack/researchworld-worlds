@@ -1,0 +1,74 @@
+{
+ "definitions": {
+  "S": "dead at a checkpoint at or after the per-step first crossing of 0.05 (alive_from; alive at K counts from K)",
+  "pair_class": "the truth's |a| at the checkpoint of a wrong (S) pair: hover >= 0.025, collapse < 1e-3, intermediate otherwise",
+  "direction_class": "step-level minimum |a| after the first crossing, same thresholds",
+  "rankbad": "checkpoints with |predicted rank - true rank| > 1; *_by_class: with at least one wrong (S) pair of that class; *_only: of that class alone"
+ },
+ "attribution": {
+  "directions": {
+   "hover": 317,
+   "collapse": 452,
+   "intermediate": 209
+  },
+  "wrong_pairs_total": 8163,
+  "wrong_S_pairs": {
+   "hover": 4963,
+   "collapse": 534,
+   "intermediate": 30
+  },
+  "rankbad_total": 2214,
+  "rankbad_S": 1968,
+  "rankbad_by_class": {
+   "hover": 1897,
+   "collapse": 264,
+   "intermediate": 23
+  },
+  "rankbad_only": {
+   "hover": 1692,
+   "collapse": 63,
+   "intermediate": 2
+  },
+  "wrong_S_pairs_by_direction_class": {
+   "hover": 1420,
+   "collapse": 2673,
+   "intermediate": 1434
+  },
+  "alive_check_mismatch": 0,
+  "shares": {
+   "wrong_pairs_of_all": {
+    "hover": 0.6079872595859366,
+    "collapse": 0.06541712605659684,
+    "intermediate": 0.003675119441381845
+   },
+   "rankbad_any_of_all": {
+    "hover": 0.8568202348690154,
+    "collapse": 0.11924119241192412,
+    "intermediate": 0.01038843721770551
+   },
+   "rankbad_only_of_all": {
+    "hover": 0.7642276422764228,
+    "collapse": 0.028455284552845527,
+    "intermediate": 0.0009033423667570009
+   },
+   "directions_of_S": {
+    "hover": 0.32413087934560325,
+    "collapse": 0.4621676891615542,
+    "intermediate": 0.21370143149284254
+   }
+  }
+ },
+ "id23_k20": {
+  "first_crossing_step": 3213,
+  "min_after_crossing": 0.0435118068125804,
+  "min_step": 6968,
+  "peak_before_drop": 0.0536750791541785,
+  "first_below_step": 4436,
+  "back_above_step": 7152,
+  "checkpoint_min_after_crossing": 0.04724786157834215
+ },
+ "runs_recomputed": 286,
+ "seconds": 95.70614457130432,
+ "command": "python3 code/checks/e4_a1_mechanism.py",
+ "input": "results/e4/a1/a1_runs.jsonl.gz"
+}

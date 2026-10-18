@@ -1,0 +1,44 @@
+"""F1: per-direction drive vs decay near the collapsed solution (illustrative linear model).
+Analytic curves only, no simulation. Panel (b): gain-dependent rate g_k(p) and its positive window (p-,p+); with weight decay survival is decided by the race along the decaying gain p(t), not by g_k(p0)>0. Rates follow the linear flow in the paper's Setup, isotropic predictor P=p*I and
+aligned eigenbasis: mode k grows at g_k = p*c_k - (p^2*sigma_k + lambda_W)  (drive p*c_k, decay p^2*s_k + lam).
+Illustrative statistics (not measured): sigma_k = 1, c_k = 0.9**k, d = 32.
+"""
+import numpy as np, sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs
+import matplotlib.pyplot as plt
+
+def make(outdir):
+    fs.setup()
+    k = np.arange(32); s = np.ones(32); c = 0.9 ** k
+    fig, axs = plt.subplots(1, 2, figsize=(fs.TEXTWIDTH, 2.0), constrained_layout=True)
+    ax = axs[0]
+    p, lam = 0.5, 0.0
+    drive, decay = p * c, p**2 * s + lam
+    ax.plot(k, drive, color=fs.COL["drive"], marker="o", ms=2.5, label=r"drive $p\,c_k$")
+    ax.plot(k, decay, color=fs.COL["decay"], ls="--", label=r"decay $p^2\sigma_k+\lambda_W$")
+    surv = drive > decay
+    ax.fill_between(k, 0, 1.05, where=surv, color=fs.COL["ok"], alpha=0.15, lw=0, step="mid")
+    ax.set_xlabel("direction index $k$"); ax.set_ylabel("rate (per unit embedding scale)")
+    ax.set_ylim(0, 1.05); ax.set_xlim(0, 31)
+    ax.text(0.3, 0.95, "growing", color=fs.COL["ok"], fontsize=7, va="top")
+    ax.legend(frameon=False, loc="center right"); ax.set_title(r"(a) drive vs decay, $p=0.5$, $\lambda_W=0$")
+    ax = axs[1]
+    lam, p0 = 0.01, 1.0
+    p = np.linspace(0, 1.15, 400)
+    for i, kk in enumerate([0, 4, 8]):
+        col = ["#0072B2", "#D55E00", "#009E73"][i]
+        g = p * c[kk] - p**2 * s[kk] - lam
+        ax.plot(p, g, color=col, ls=fs.LS[i], label=rf"$k={kk}$")
+        r = np.sqrt(c[kk] ** 2 - 4 * lam * s[kk]); pm, pp = (c[kk] - r) / 2 / s[kk], (c[kk] + r) / 2 / s[kk]
+        ax.plot([pm, pp], [-0.04 - 0.045 * i] * 2, color=col, lw=3, solid_capstyle="butt", zorder=1)
+    ax.axhline(0, color="k", lw=0.6)
+    ax.annotate("", xy=(0.04, -0.4), xytext=(0.7, -0.4), arrowprops=dict(arrowstyle="-|>", color=fs.COL["grey"], lw=1.0))
+    ax.text(0.37, -0.37, r"$p(t)=p_0e^{-\alpha\lambda_P t}$ decays", ha="center", va="bottom", fontsize=6.3, color=fs.COL["grey"])
+    ax.set_xlabel("predictor gain $p$"); ax.set_ylabel(r"net rate $g_k(p)$"); ax.set_xlim(0, 1.15); ax.set_ylim(-0.46, 0.3)
+    ax.set_title(r"(b) $g_k(p)$, window $(p_-^k,p_+^k)$ as bars, $\lambda_W=0.01$", fontsize=7.5)
+    ax.legend(frameon=False, loc="upper right", fontsize=6.5)
+    fs.save(fig, "fig1_drive_vs_decay", outdir)
+
+if __name__ == "__main__":
+    make(sys.argv[1] if len(sys.argv) > 1 else "../../paper/figures")

@@ -1,0 +1,108 @@
+# Measured compute envelope for the JEPA-collapse study
+
+Owner: `idea-review-repo` (feasibility). **Feasibility evidence, not a study result**: these are
+throughput and acquisition measurements made before the plan commits experiments, to bound what the
+study can finish. Every number below traces to a raw file in this directory or to a recorded command.
+Estimates derived from measurements are labelled **ESTIMATE**.
+
+Written 2026-10-11, turn 2 (execution `25a8e7ade216`). Judge against the plan revision that
+`story-repo` delivers (requested in `story-repo#4`); idea-repo's scope hypothesis (BRIEF.md §6 at
+`3110e421d28e`) is what was measured.
+
+## 1. Environment measured
+
+- Sandbox: 8 CPUs, 32 GB RAM, no GPU (world contract).
+- `local-compute` container: own CPU/memory allocation (design: as many as the sandbox); verified
+  equivalent throughput (§3).
+- Software: Python 3.11.2, `torch 2.13.0+cpu` (PyPI release 2026-07-08 — the latest release before the
+  R8 cutoff 2026-09-01; torch 2.14.1 of 2026-09-30 is post-cutoff and was rejected for this reason),
+  `numpy 2.4.6`, `pyarrow` + `pillow` for data loading. Installed from `download.pytorch.org/whl/cpu`
+  and PyPI via `research-network`.
+
+## 2. What was measured (benchmark: `bench_jepa_cpu.py`, raw: `bench_raw.json` etc.)
+
+A faithful JEPA training step — trainable context encoder over **visible** patches, narrow trainable
+predictor over **masked target positions**, EMA target encoder (no grad) over **masked target** patches,
+MSE loss, Adam, per-step EMA update — at the two scales idea-repo's minimum credible scope names.
+Synthetic tensors carry the real shapes (CIFAR-10: 3×32×32, patch 4 → 64 patches); data content is
+irrelevant to throughput. Batch 256 everywhere (the `b128` config name is stale; the `batch` field is
+authoritative).
+
+| Setup (trainable params) | 8 thr | 4 thr | 2 thr | s / CIFAR-10 epoch (196 steps, 8 thr) |
+|---|---|---|---|---|
+| Linear JEPA, 784→512→256 + linear predictor (0.6 M) | 224 st/s | — | — | 0.9 s |
+| ViT d192 L6 + pred d64 L2 (2.77 M) | 3.58 | 3.10 | 1.81 | 55 s |
+| ViT d192 L12 (5.44 M) | 1.81 | 1.15 | 0.65 | 108 s |
+| ViT d256 L8 (6.43 M) | 1.67 | 1.12 | 0.64 | 117 s |
+
+Masking ratio m (workhorse ViT d192 L6, 8 thr): m=0.5 → 3.73, m=0.75 → 3.58, m=0.9 → 2.97 st/s.
+The grid's masking sweep moves per-step cost by ≤ ~20% — no budget blow-up.
+
+`local-compute` verification: single job 3.69 st/s (`bench_localcompute.json`) ≈ sandbox 3.58;
+job completed cleanly with exit status recorded by the world. Concurrency: two simultaneous
+local-compute jobs (`bench_conc1/2.json`) ran at 3.18 and 3.07 st/s each — ~87% of solo, aggregate
+~6.2 st/s, i.e. near-linear gain with mild contention. 4+ concurrent jobs untested (see §5).
+
+Spectral measurement overhead (covariance + eigendecomposition per checkpoint, d≤256): O(d³) ≈
+10⁷–10⁸ FLOPs per step, ≪ a ViT step — negligible by reasoning, not measured. Linear probe on frozen
+features: logistic regression, seconds — negligible.
+
+## 3. Envelope (ESTIMATES from the measured rates)
+
+Per-run cost, workhorse ViT d192 L6, CIFAR-10, batch 256, 196 steps/epoch:
+
+| Run length | One 8-thread job | 4 concurrent jobs (aggregate 6.2–7.2 st/s) |
+|---|---|---|
+| 30 epochs | ~28 min | ~4×28 / 1.7 ≈ 66 min for 4 runs |
+| 50 epochs | ~46 min | ~1.8 h for 4 runs |
+| 100 epochs | ~1.5 h | ~3.5 h for 4 runs |
+
+Grid budget the resources support (ESTIMATE, with the caveat that the 4-job aggregate extrapolates
+the measured 2-job point):
+
+- A phase-diagram grid of **54 nonlinear runs** (3 heuristics × 6 settings × 3 seeds) at 30–50
+  epochs: ~26–41 h sequential, **~7–12 h wall at 4 concurrent jobs** — feasible inside a few turns
+  if runs go to `local-compute` (turns only pay for coordination, not compute; a job outlives the
+  turn and wakes its owner).
+- Linear-theory vehicle: ~224–307 st/s ⇒ a 50 k-step run ≈ 3 min; **hundreds of runs, or dense
+  boundary scans, are effectively free**. The quantitative theory-vs-measurement grid (R2, R4)
+  should live here, with the nonlinear grid for qualitative confirmation.
+- Total nonlinear-run budget to plan around: **~50–150 runs** at the workhorse scale. d192 L12 /
+  d256 L8 only as spot checks (~2–3× per-run cost); ImageNet or larger ViTs, video JEPAs: out of
+  the envelope (would be weeks on CPU) — this confirms BRIEF.md §6's limit and the paper must state
+  it.
+
+## 4. Data acquisition (measured)
+
+- CIFAR-10 via Hugging Face `uoft-cs/cifar10` parquet through `research-network`: HTTP 200,
+  119 705 255 bytes, 50 000 rows, columns `img` (PNG bytes) + `label`; readable with
+  `pyarrow` (verified). MNIST is smaller (≈ 12 MB) and same channel — not separately tested.
+- The direct `cs.toronto.edu` CIFAR URL is **not** reachable (403 via the proxy): pin the HF
+  parquet (URL + size + row count above) as the acquisition source. Pinning is `experiment-repo`'s
+  job; the reachability fact is the feasibility part and is settled.
+- Storage: 120 MB parquet fits everywhere (sandbox /tmp is 4 GB; models are 3–7 M params).
+
+## 5. Open items for the feasibility assessment (waiting on the plan, `story-repo#4`)
+
+- ~~>2 concurrent `local-compute` jobs untested~~ **Measured (turn 3):** 4 concurrent jobs ran at
+  3.04 / 2.76 / 0.74 / 1.95 st/s → aggregate 8.49 st/s = 2.37× solo. Contention uneven — plan with
+  aggregate, expect stragglers (raw: `bench_conc4_*.json`).
+- ~~Tier-B-scale anchor missing~~ **Measured (turn 3):** ViT d128/L4 on synthetic 16×16 (16
+  patches) runs at 2.21 st/s — *slower* than the larger d192/L6 workhorse (3.58 st/s): small dims
+  map to worse CPU kernels, so per-run costs must come from measured points, and the workhorse is
+  near the cost sweet spot (raw: `bench_tierb.json`).
+- `numpy 2.4.6` release date checked: 2026-05-18, pre-cutoff — R8-clean with `torch 2.13.0+cpu`.
+- Number of epochs the rank/rank-collapse measurements actually need remains a study question for
+  `experiment-repo`; the plan assessment (`plan_feasibility_rev2.md`) brackets it (Tier C ≤ 60,
+  30 if rank is stable).
+- Any deviation of the plan's final grid from the measured setups (batch, patch size, image size,
+  model width/depth, mask schedule, per-step spectral logging) changes per-step cost; re-measure on
+  request before the grid is committed.
+
+## 6. Verdict on scope (as hypothesised by idea-repo, not yet a plan assessment)
+
+The minimum credible scope — linear/deep-linear JEPA on synthetic data (quantitative tests) plus
+small nonlinear JEPAs on CIFAR-10/MNIST (qualitative tests), all three heuristics — is **feasible on
+this world's compute within a few turns of wall-clock**, provided the nonlinear grid is bounded
+(~≤100 runs at the workhorse scale) and runs as `local-compute` jobs rather than in-turn waits.
+ImageNet-scale or larger models are infeasible and must stay out of the plan.

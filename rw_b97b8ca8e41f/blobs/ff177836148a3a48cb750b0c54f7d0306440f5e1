@@ -1,0 +1,251 @@
+# NeurIPS 2026 submission requirements for this delivery
+
+This is the venue brief for the objective in `venue-repo`#1: deliver a complete paper that
+could be submitted to **NeurIPS 2026** (main track), written to the venue's submission
+requirements, consisting of the LaTeX source in the NeurIPS template, the compiled PDF, and
+the code and experimental results the paper's claims rest on.
+
+**Venue:** The Fortieth Annual Conference on Neural Information Processing Systems
+(NeurIPS 2026), **Main Track**, double-blind reviewing.
+
+**Sources** (all accessed 2026-10-11 through the `neurips-and-ctan` resource; verbatim
+quotations below are from these documents):
+
+1. Call for Papers: https://neurips.cc/Conferences/2026/CallForPapers
+2. Main Track Handbook V2026.3: https://neurips.cc/Conferences/2026/MainTrackHandbook
+3. Official formatting instructions and style files:
+   https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip
+   (contains `neurips_2026.tex`, `neurips_2026.sty`, `checklist.tex`; the same three files,
+   byte-identical, are in `template/` of this repository)
+
+Requirements marked **[binding]** are enforced on the delivered submission through
+`venue-artifacts.json` (declared required paths) and this brief.
+
+## 1. What the delivered submission consists of
+
+In the venue's own terms (Main Track Handbook, "Paper Formatting Instructions"):
+
+> All submissions must be in PDF format, and in a single PDF file include, in this suggested order
+> - The submitted paper content
+> - Paper references
+> - Appendices containing any other supporting textual information e.g. proofs, experimental details (code and data will be submitted in a separate file).
+> - The NeurIPS paper checklist
+
+Supplementary material ("Code and Data Submission"): "may also be submitted separately in a
+single ZIP file of up to 100MB ... and, as with the main submission, be anonymized."
+
+**[binding] Delivered paths.** This delivery maps the objective's named artifacts to the
+following paths, declared in `venue-artifacts.json` and required to be nonempty in the
+approved delivery:
+
+| Path | What it is |
+|---|---|
+| `paper.tex` | Main LaTeX source of the paper, built on the NeurIPS 2026 template |
+| `neurips_2026.sty` | The official NeurIPS 2026 style file, unmodified |
+| `checklist.tex` | The completed NeurIPS paper checklist, `\input` from `paper.tex` |
+| `paper.pdf` | The compiled PDF of the paper (single PDF: content, references, appendices, checklist) |
+| `code/` | The code the paper's claims rest on (the venue's "supplementary ZIP" content, delivered as a directory) |
+| `results/` | The experimental results the paper's claims rest on |
+
+`paper.tex`, `neurips_2026.sty`, `checklist.tex` and `paper.pdf` belong at the root of the
+report owner's repository (the delivery root). `code/` and `results/` are delivered by the
+position the work assignment gives them to, at those same paths. Everything else (figure
+sources, extra files, internal notes) is free in name and layout; only the six paths above
+are fixed.
+
+The official template files to build from are in `template/` of this repository
+(`neurips_2026.tex` is the venue's own formatting-instructions shell; replace author,
+title, abstract and text). Verified to compile with the provided TeX Live 2026
+(`pdflatex`), producing a 12-page PDF for the instructions shell.
+
+## 2. Page limit **[binding]**
+
+From the formatting instructions (`neurips_2026.tex`, "Style"):
+
+> Papers may only be up to **nine** pages long, including figures. Papers that exceed the
+> page limit will not be reviewed (or in any other way considered) for presentation at the
+> conference.
+> Additional pages *containing acknowledgments, references, checklist, and optional technical
+> appendices* do not count as content pages.
+
+Main Track Handbook, "Paper Formatting Instructions":
+
+> The main text of a submitted paper is limited to nine content pages, including all figures
+> and tables. Additional pages containing references, optional technical appendices and
+> mandatory paper checklist do not count as content pages. If your submission is accepted,
+> you will be allowed an additional content page for the camera-ready version. The maximum
+> file size is 50MB.
+
+So: **at most 9 content pages** (including all figures and tables); references, appendices
+and the checklist are additional and unlimited. The camera-ready extra page does not apply
+(this is a submission-standard delivery, not an accepted paper).
+
+## 3. Template and style **[binding]**
+
+- The only supported style file is `neurips_2026.sty` (LaTeX2e). "Previous style files for
+  LaTeX 2.09, Microsoft Word, and RTF are no longer supported." The Word template has been
+  discontinued; the LaTeX style file "is the only template we will accept".
+- "Tweaking the style files may be grounds for desk rejection"; do not modify the text
+  rectangle (5.5 in wide x 9 in long, 1.5 in left margin), font sizes (10 pt, 11 pt
+  leading, Times New Roman), or any style parameters. "Submissions that violate the NeurIPS
+  style (e.g., by decreasing margins or font sizes) or page limits may be desk rejected."
+- Submission mode: `\usepackage{neurips_2026}` (default = `main` option, Main Track) with
+  **neither** `final` nor `preprint` — "At submission time, please omit the `final` and
+  `preprint` options. This will anonymize your submission and add line numbers to aid
+  review." The `final` option is only for accepted papers; `preprint` is for arXiv-style
+  non-anonymous versions. Do not refer to the line numbers in the text.
+
+## 4. Double-blind anonymity **[binding]**
+
+Main Track Handbook, "Double-blind Reviewing: For Authors":
+
+> All submissions must be anonymized and may not contain any identifying information that
+> may violate the double-blind reviewing policy. This policy applies to any supplementary
+> or linked material as well, including code. If you are including links to any external
+> material, it is your responsibility to guarantee anonymous browsing. Please do not include
+> acknowledgments at submission time. If you need to cite one of your own papers, you should
+  do so with adequate anonymization to preserve double-blind reviewing. For instance, write
+  "In the previous work of Smith et al. [1]..." rather than "In our previous work [1]...".
+  Papers violating this policy will be desk rejected.
+
+- No author names, affiliations, acknowledgments, or identifying links anywhere, including
+  `code/`.
+- The `ack` environment from the style file automatically hides acknowledgments in the
+  anonymized submission; do not include an acknowledgments section.
+- Cite any prior work of the "authors" in third person.
+
+## 5. NeurIPS paper checklist **[binding]**
+
+From `checklist.tex` (official file):
+
+> Do not remove the checklist: **The papers not including the checklist will be desk
+  rejected.** The checklist should follow the references and follow the (optional)
+  supplemental material. The checklist does NOT count towards the page limit.
+
+Requirements for the delivered `checklist.tex`:
+
+- Keep the section heading "NeurIPS Paper Checklist", the checklist subsection headings,
+  questions and guidelines; **delete the instruction block** (between `%%% BEGIN
+  INSTRUCTIONS %%%` and `%%% END INSTRUCTIONS %%%`) and **do not modify the questions**;
+  use only the provided macros `\answerYes{}`, `\answerNo{}`, `\answerNA{}` for answers.
+- Every one of the 17 questions gets an answer (Yes/No/NA) plus a short 1--2 sentence
+  justification immediately after it (`\answerNA` and `\answerNo` are acceptable with a
+  proper justification; `\answerTODO` in the delivered file means the checklist is not done).
+- The questions cover: claims; limitations; theory assumptions and proofs; experimental
+  result reproducibility; open access to data and code; experimental setting/details;
+  experiment statistical significance; experiments compute resources; code of ethics;
+  broader impacts; safeguards; licenses for existing assets; new assets; crowdsourcing and
+  research with human subjects; IRB approvals; declaration of LLM usage.
+- `\input{checklist.tex}` after `\newpage` at the end of `paper.tex`, after references and
+  appendices (as the official template does).
+- The paper is encouraged to include a separate "Limitations" section (checklist item 2);
+  claims in the abstract and introduction must match the paper's actual contributions.
+
+## 6. Citations and references
+
+- `natbib` is loaded by the style file. "Citations may be author/year or numeric, as long as
+  you maintain internal consistency. As to the format of the references themselves, any
+  style is acceptable as long as it is used consistently."
+- References: unnumbered first-level heading ("References"), after acknowledgments
+  (camera-ready) / at the end of content (submission); font size may be reduced to
+  `small` (9 pt); the reference section does not count toward the page limit.
+- Study-specific constraint (from the objective, stricter than the venue's policy): no
+  paper, preprint, code release or other written work first published after 1 September
+  2026 may be used. The venue's own "contemporaneous work" rule (work appearing online
+  after March 1, 2026 is contemporaneous, not prior work) does not relax the objective's
+  cutoff.
+
+## 7. PDF properties **[binding]**
+
+- "Please prepare submission files with paper size 'US Letter,' and not, for example, 'A4.'"
+- "You should directly generate PDF files using `pdflatex`."
+- "Your PDF file must only contain Type 1 or Embedded TrueType fonts" (no Type 3 fonts;
+  avoid `\bbold`, use `amsfonts`).
+- Pages should be numbered (automatic in submission mode).
+- Maximum PDF file size 50 MB.
+
+## 8. Appendices
+
+- Technical appendices (proofs, additional results, experimental details) go in the single
+  PDF after the references, before the checklist; "do not upload a separate PDF file for the
+  appendix. There is no page limit for the technical appendices."
+- "Think of the appendix as 'optional reading' for reviewers. The paper must be able to
+  stand alone without the appendix; for example, adding critical experiments that support
+  the main claims to an appendix is inappropriate." Results needed for the main claims
+  belong in the 9 content pages.
+- Proofs may appear in supplemental material, but then the paper should carry a proof
+  sketch; "any informal proof provided in the core of the paper should be complemented by
+  formal proofs provided in appendix or supplemental material" (checklist item 3).
+
+## 9. Code and data (`code/`, `results/`) **[binding]**
+
+Main Track Handbook, "Code and Data Submission" / "Code Guidelines":
+
+- Supplementary code/data is "a single ZIP file of up to 100MB", anonymized like the main
+  submission. For this delivery the ZIP's content is delivered as the `code/` and `results/`
+  directories instead (nothing needs to be zipped; the size guide of 100 MB still signals
+  the expected scale).
+- "Your code submission should include training and evaluation code, specification of
+  dependencies, etc."
+- "Your code submission ideally should be self-contained and executable. If this is not the
+  case, you must explain why" (e.g., specialized hardware required).
+- Data guidelines: if a new dataset is submitted, answer the relevant checklist questions;
+  license and access restrictions should be described. The experimental scope is the plan's
+  to settle: if the study uses only synthetic/self-generated experiments, the dataset items
+  of the checklist are expected to be N/A; if the plan uses real data (e.g. an image dataset
+  for a JEPA), then the data guidelines above apply and the dataset/license checklist items
+  (licenses for existing assets, new assets) must be answered for those assets accordingly.
+- For accepted papers NeurIPS asks for de-anonymized links; that does not apply here (see
+  section 12).
+
+The delivered `code/` and `results/` must be the material the paper's claims rest on:
+enough to reproduce or check the paper's experiments (scripts, configurations, seeds where
+fixed, and the numeric results referenced by figures and tables), with a README stating how
+to run what, and which input each result was produced from.
+
+## 10. Contribution type (submission-form field, record in the brief for the plan)
+
+Authors choose one of: General; Theory ("The main contribution is via analyses and
+proofs"); Use-Inspired; Concept & Feasibility; Negative Results. A paper whose contribution
+is a theory of JEPA collapse tested empirically is most naturally **Theory** (with the
+empirical tests) or **General**; the report owner should record the choice; no in-paper
+markup is required (it is entered in the submission form, not the manuscript).
+
+## 11. Dates (context, not binding on the delivery)
+
+- Abstract deadline: May 4, 2026 (AOE); full paper deadline (including supplementary):
+  May 6, 2026 (AOE); notification: September 24, 2026.
+- These deadlines are in the past relative to the working date (2026-10-11); the objective
+  asks for a paper that *could be submitted*, i.e. compliance with the requirements, not an
+  actual submission.
+
+## 12. What this delivery cannot establish (recorded honestly)
+
+- No actual OpenReview submission, profile, or author list: the delivery is anonymized
+  submission-standard material; OpenReview setup, conflicts of interest, institutional
+  eligibility, and the submission form fields (contribution type, author entry) cannot be
+  exercised here.
+- No acceptance, camera-ready version, or de-anonymization step: the delivery is to
+  submission standard only.
+- The venue declares **no license** for anything, and NeurIPS's own dataset/model licensing
+  best practices are recorded as guidance only.
+- Dual submission policy: nothing about this delivery is concurrently submitted elsewhere;
+  the policy binds the hypothetical submission, not this work.
+- Ethics: this delivery records no position on the study's experimental scope (the plan
+  settles it). If the study involves no human subjects, no crowdsourcing, no new data
+  collection, and no datasets of real people, the relevant checklist items are expected to
+  be NA, answered with justification; if the plan includes real datasets, answer the
+  dataset and license items for those assets as above.
+
+## 13. Checklist of checks the report owner should run before delivery
+
+1. `paper.tex` loads `\usepackage{neurips_2026}` with no `final`/`preprint` option.
+2. `neurips_2026.sty` in the delivery is byte-identical to `template/neurips_2026.sty`.
+3. `paper.pdf` compiles from the delivered sources with `pdflatex` (TeX Live 2026 provided),
+   US Letter, no Type 3 fonts, pages numbered.
+4. Content pages (through the end of the main text, excluding references, appendices,
+   checklist) number at most 9.
+5. `checklist.tex` has no `\answerTODO` and no instruction block; questions unmodified.
+6. Nothing identifying anywhere in `paper.tex`, `code/`, `results/`.
+7. `code/` and `results/` are nonempty, with a README and provenance (which inputs produced
+   which results).

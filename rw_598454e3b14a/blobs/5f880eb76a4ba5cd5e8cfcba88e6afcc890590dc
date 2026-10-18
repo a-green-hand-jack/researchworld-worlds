@@ -1,0 +1,35 @@
+"""Development only (A1 v4): the captured state under AdamW. 80-bit scalar maps for 48 random runs of a development
+grid; |a_T| and |p_T| against c/s, the late-window chatter amplitude, and alive at T against c/s > thr.
+Usage: python3 code/checks/e4_settled_state.py dev2|dev3"""
+import sys, json, gzip, numpy as np, os; os.environ['OMP_NUM_THREADS']='1'; sys.path.insert(0,'code'); import e4_a1 as A
+from multiprocessing import Pool
+G=sys.argv[1]
+if G=='dev3': import e4_dev3; cf=e4_dev3.configs()
+else:
+    import e4_dev as dev, e4_dev2; A.STATS=dict(dev.STATS); cf=e4_dev2.configs()
+def sim(cfg):
+    c,s=A.stats(cfg['stats']); L=np.longdouble; c,s=c.astype(L),s.astype(L)
+    eta,lam,b1,b2,eps=L(cfg['eta']),L(cfg['lam']),L(cfg['b1']),L(cfg['b2']),L(1e-8)
+    a=A.init_a(cfg).astype(L); p=np.full(c.shape,L(cfg['p0'])); ma=np.zeros_like(c); va=ma.copy(); mp=ma.copy(); vp=ma.copy(); dec=1-eta*lam
+    amax_late=np.zeros_like(c); amin_late=np.full_like(c,np.inf)
+    for t in range(1,A.T+1):
+        r=c-p*s; ga=-a*p*r; gp=-a*a*r
+        ma=b1*ma+(1-b1)*ga; va=b2*va+(1-b2)*ga*ga; mp=b1*mp+(1-b1)*gp; vp=b2*vp+(1-b2)*gp*gp
+        bc1,bc2=1-b1**t,1-b2**t
+        a=a*dec-eta*(ma/bc1)/(np.sqrt(va/bc2)+eps); p=p*dec-eta*(mp/bc1)/(np.sqrt(vp/bc2)+eps)
+        if t>A.T-5000: amax_late=np.maximum(amax_late,abs(a)); amin_late=np.minimum(amin_late,abs(a))
+    return dict(id=cfg['id'], a=np.abs(a).astype(float).tolist(), p=p.astype(float).tolist(), pc=(c/s).astype(float).tolist(),
+                amax=amax_late.astype(float).tolist(), amin=amin_late.astype(float).tolist())
+idx=np.random.default_rng(1).choice(len(cf),48,replace=False)
+with Pool(8) as P: out=P.map(sim,[cf[i] for i in idx])
+
+a=np.concatenate([o['a'] for o in out]); p=np.concatenate([o['p'] for o in out]); pc=np.concatenate([o['pc'] for o in out])
+amax=np.concatenate([o['amax'] for o in out]); amin=np.concatenate([o['amin'] for o in out])
+cap=a>1e-3
+print(G,'directions',a.size,'captured at T',cap.sum())
+rr=a[cap]/pc[cap]; print(' a_T/(c/s) quantiles 1/10/50/90/99%', np.round(np.quantile(rr,[.01,.1,.5,.9,.99]),3))
+print(' |p_T|/(c/s) quantiles', np.round(np.quantile(np.abs(p[cap])/pc[cap],[.01,.1,.5,.9,.99]),3))
+print(' late-window (last 5000 steps) amax/amin quantiles', np.round(np.quantile(amax[cap]/amin[cap],[.5,.9,.99]),3))
+alive=a>A.THR; pred=cap&(pc>A.THR)
+print(' among captured: alive_T == (c/s > thr):', (alive[cap]==pred[cap]).mean(), ' n disagree', (alive[cap]!=pred[cap]).sum())
+print(' not captured at T:', (~cap).sum(), 'of which c/s>thr', ((~cap)&(pc>A.THR)).sum())

@@ -1,0 +1,16 @@
+\section{Related work}
+\label{sec:related}
+
+\paragraph{JEPAs and non-contrastive learning.}
+I-JEPA~\citep{assran2023ijepa} and V-JEPA~\citep{bardes2024vjepa} instantiate JEPAs~\citep{lecun2022path} with an EMA target encoder and a narrow predictor, and report that predictor depth and masking strategy matter.
+Like BYOL, SimSiam, DINO and data2vec~\citep{grill2020byol,chen2021simsiam,caron2021dino,baevski2022data2vec} they avoid collapse architecturally rather than through regularisers on the embedding statistics~\citep{zbontar2021barlow,bardes2022vicreg,balestriero2025lejepa}.
+Dimensional collapse is measured by the effective rank~\citep{jing2022dimensional,garrido2023rankme}, which in I-JEPA rises and then falls~\citep{thilak2024lidar}.
+
+\paragraph{Theory of non-contrastive dynamics, and our position.}
+For linear BYOL/SimSiam, \citet{tian2021understanding} show on an invariant manifold that ties the predictor to the encoder that weight decay makes the collapsed point stable, that a mode survives only from outside a basin, and that all modes collapse above a threshold in weight decay.
+With an optimal ridge predictor \citet{ponce2025dual} and \citet{arbel2026peira} give the static rule $c^2\ge4\lambda$ ($c_k^2\ge4\lambda\sigma_k$ here), and \citet{wang2021directset} an analogous variance threshold for a directly set predictor; without the stop-gradient every mode collapses~\citep{halvagal2023implicit}; \citet{littwin2024jepa} solve deep linear self-distillation; and from small initialisation linear networks learn modes one at a time~\citep{saxe2014exact,simon2023stepwise,li2021greedy}.
+We recover these results as limits (\cref{app:related}).
+\citet{demelocosta2026drive} linearise the linear-JEPA flow at the collapsed point with the predictor fixed, bound the rank by the number of modes whose drive-to-decay ratio exceeds one, read predictor scale, masking, EMA and encoder weight decay as shifts of that ratio, and propose an identity-biased predictor for I-JEPA.
+In our aligned model their escape condition is $g_k(p_0)>0$, our initial window: on our held-out aligned runs it errs by \DvdAlignedMae{} directions (race \DvdAlignedRaceMae{}) and the measured rank exceeds it in \DvdAlignedOver{} of runs (\cref{app:related}); they have no predictor weight decay, with which the collapsed point is an attractor and the gain leaves the window.
+For such unbalanced starts ($p_0\gg a_0$), off Tian et al.'s balanced manifold, we locate the basin boundary as a race.
+The reduction, fixed points and balanced basin (\cref{prop:reduction,prop:fixed}, \cref{cor:alpha1}) are known in substance; the race criterion (\cref{def:race}), its thresholds \eqref{eq:lamrace} and the predictions of \cref{sec:heuristics} that follow from the predictor's decay are new, and we test them as forward predictors of the rank.

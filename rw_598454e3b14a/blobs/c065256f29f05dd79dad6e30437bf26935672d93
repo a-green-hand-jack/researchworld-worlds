@@ -1,0 +1,13 @@
+"""Direction A, exploratory: per-direction column norms ||W e_k|| of the matrix AdamW flow from the E1b init
+(random orthogonal W, w0 = 1e-4), every 4000 steps; the rotated-basis counterpart of e4_reduction.py.
+Usage: python3 code/checks/e4_rotated_modes.py > results/e4/explore/rotated_modes.txt"""
+import sys, os, numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")); sys.path.insert(0, os.path.dirname(__file__))
+from e4_reduction import matrix_adamw
+from e1b import SIG, C, n, d
+for p0, lam in [(2.0, 0.005), (2.0, 0.05), (0.5, 0.005)]:
+    rng = np.random.default_rng(0); Q, _ = np.linalg.qr(rng.standard_normal((d, n))); jit = np.exp(0.1 * rng.standard_normal(n))
+    out = matrix_adamw(1e-4 * Q * jit, p0 * np.eye(d), lam, 0.02, 40000, every=4000)
+    print(f"p0={p0} lam={lam}: ||W e_k||, k = 0..23 (c_k/s_k = 0.92^k)")
+    for t, nr, sv in out:
+        print(f" {t:6d}", " ".join(f"{x:.0e}" if x < 0.05 else f"{x:.2f}" for x in nr))

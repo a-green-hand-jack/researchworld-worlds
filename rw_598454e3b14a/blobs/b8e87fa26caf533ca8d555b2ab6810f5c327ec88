@@ -1,0 +1,99 @@
+{
+ "source": "experiment-repo 883c59deff1c results/e1/e1_runs.jsonl, code/linjepa.py",
+ "T_long": 40000.0,
+ "labels_stable_20000_to_40000": true,
+ "groups": {
+  "lam=0": {
+   "runs": 180,
+   "e1_label_vs_long_mode_disagree": 40,
+   "e1_rank_meas_vs_long_rank_differs_runs": 25,
+   "race_pred_as_in_E1": {
+    "mode_acc_vs_long": 0.9911458333333333,
+    "rank_exact_vs_long": 0.8277777777777777,
+    "rank_mae_vs_long": 0.2833333333333333,
+    "rank_mae_vs_e1_label": 0.07222222222222222
+   },
+   "race_pred_t_end_inf": {
+    "mode_acc_vs_long": 0.9895833333333334,
+    "rank_exact_vs_long": 0.7777777777777778,
+    "rank_mae_vs_long": 0.3333333333333333,
+    "rank_mae_vs_e1_label": 0.5555555555555556
+   },
+   "static_window": {
+    "mode_acc_vs_long": 0.9895833333333334,
+    "rank_exact_vs_long": 0.7777777777777778,
+    "rank_mae_vs_long": 0.3333333333333333,
+    "rank_mae_vs_e1_label": 0.5555555555555556
+   }
+  },
+  "lam>0, race finished before t_end": {
+   "runs": 680,
+   "e1_label_vs_long_mode_disagree": 14,
+   "e1_rank_meas_vs_long_rank_differs_runs": 14,
+   "race_pred_as_in_E1": {
+    "mode_acc_vs_long": 0.9962775735294118,
+    "rank_exact_vs_long": 0.8823529411764706,
+    "rank_mae_vs_long": 0.11911764705882352,
+    "rank_mae_vs_e1_label": 0.09852941176470588
+   },
+   "race_pred_t_end_inf": {
+    "mode_acc_vs_long": 0.9962775735294118,
+    "rank_exact_vs_long": 0.8823529411764706,
+    "rank_mae_vs_long": 0.11911764705882352,
+    "rank_mae_vs_e1_label": 0.09852941176470588
+   },
+   "static_window": {
+    "mode_acc_vs_long": 0.8846507352941176,
+    "rank_exact_vs_long": 0.25,
+    "rank_mae_vs_long": 3.6911764705882355,
+    "rank_mae_vs_e1_label": 3.7058823529411766
+   }
+  },
+  "lam>0, race not finished by t_end=1500": {
+   "runs": 220,
+   "e1_label_vs_long_mode_disagree": 173,
+   "e1_rank_meas_vs_long_rank_differs_runs": 98,
+   "race_pred_as_in_E1": {
+    "mode_acc_vs_long": 0.9768465909090909,
+    "rank_exact_vs_long": 0.5772727272727273,
+    "rank_mae_vs_long": 0.740909090909091,
+    "rank_mae_vs_e1_label": 0.045454545454545456
+   },
+   "race_pred_t_end_inf": {
+    "mode_acc_vs_long": 0.9961647727272728,
+    "rank_exact_vs_long": 0.9227272727272727,
+    "rank_mae_vs_long": 0.12272727272727273,
+    "rank_mae_vs_e1_label": 0.8454545454545455
+   },
+   "static_window": {
+    "mode_acc_vs_long": 0.8933238636363636,
+    "rank_exact_vs_long": 0.20454545454545456,
+    "rank_mae_vs_long": 3.4136363636363636,
+    "rank_mae_vs_e1_label": 2.7545454545454544
+   }
+  },
+  "all": {
+   "runs": 1080,
+   "e1_label_vs_long_mode_disagree": 227,
+   "e1_rank_meas_vs_long_rank_differs_runs": 137,
+   "race_pred_as_in_E1": {
+    "mode_acc_vs_long": 0.9914641203703703,
+    "rank_exact_vs_long": 0.8111111111111111,
+    "rank_mae_vs_long": 0.27314814814814814,
+    "rank_mae_vs_e1_label": 0.08333333333333333
+   },
+   "race_pred_t_end_inf": {
+    "mode_acc_vs_long": 0.9951388888888889,
+    "rank_exact_vs_long": 0.8731481481481481,
+    "rank_mae_vs_long": 0.15555555555555556,
+    "rank_mae_vs_e1_label": 0.32685185185185184
+   },
+   "static_window": {
+    "mode_acc_vs_long": 0.90390625,
+    "rank_exact_vs_long": 0.3287037037037037,
+    "rank_mae_vs_long": 3.075,
+    "rank_mae_vs_e1_label": 2.987037037037037
+   }
+  }
+ }
+}

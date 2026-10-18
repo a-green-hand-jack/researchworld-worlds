@@ -1,0 +1,65 @@
+"""E1b runs whose Euler iteration diverged at eta = 0.1, re-run at a smaller step (internal-review experiment-repo#2).
+
+The theory is for gradient flow; the step size is a numerical choice. Every E1b run recorded as diverged in
+results/e1b/e1b_runs.jsonl is re-run with eta = ETA_SMALL (same t_end, 4x the steps, same seed and initialisation),
+and its pre-registered prediction is recomputed with the same step (the N1-general predictor integrates its linear
+system with the run's Euler step; nothing else changes). The pre-registered criterion for randpred/noncomm
+(rank MAE <= 1.0, exact >= 50%, MAE below the static bound) is reported with and without these runs, scored both with the predictions as pre-registered (eta = 0.1; the test)
+and with N1-general recomputed at the new step (diagnostic).
+Usage: python3 code/checks/e1b_small_eta.py   -> results/checks/e1b_small_eta.json"""
+import sys, os, json, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))
+import e1b
+from linjepa import n1_general
+
+ROOT = os.path.dirname(os.path.dirname(HERE))
+ETA_SMALL = 0.025
+
+
+def one(cfg):
+    c = dict(cfg, eta=ETA_SMALL)
+    t0 = time.time()
+    m = e1b.run_one(c)
+    W0, P0 = e1b.init_of(c)
+    S11, S21 = e1b.stats(c)
+    pred = n1_general(S11, S21, W0, P0, c["lam"], c["alpha"], ETA_SMALL, int(round(m["t_end"] / ETA_SMALL)), depth=c["depth"],
+                      kappa=c["kappa"])
+    return dict(id=cfg["id"], exp=cfg["exp"], depth=cfg["depth"], width=cfg["width"], p0=cfg["p0"], lam=cfg["lam"],
+                seed=cfg["seed"], eta=ETA_SMALL, t_end=m["t_end"], diverged=m["diverged"], rank_meas=m["rank_meas"],
+                converged=m.get("converged"), rank_pred_eta0p1=cfg["rank_pred"], rank_pred=pred, rank_bound=cfg["rank_bound"],
+                seconds=time.time() - t0)
+
+
+def crit(rr, key="rank_pred"):
+    e = np.array([r[key] - r["rank_meas"] for r in rr]); b = np.array([r["rank_bound"] - r["rank_meas"] for r in rr])
+    return dict(runs=len(rr), mae=float(np.abs(e).mean()), exact=float((e == 0).mean()), mae_bound=float(np.abs(b).mean()),
+                passed=bool(np.abs(e).mean() <= 1.0 and (e == 0).mean() >= 0.5 and np.abs(e).mean() < np.abs(b).mean()))
+
+
+if __name__ == "__main__":
+    t0 = time.time()
+    P = json.load(open(os.path.join(ROOT, "results/e1b/prediction.json")))
+    M = {r["id"]: r for r in map(json.loads, open(os.path.join(ROOT, "results/e1b/e1b_runs.jsonl")))}
+    div = [c for c in P["runs"] if M[c["id"]].get("diverged") is not None]
+    with Pool(8) as pool:
+        res = pool.map(one, div, chunksize=1)
+    ok = [r for r in res if r["rank_meas"] is not None]
+    # the pre-registered randpred/noncomm criterion, measured runs at eta = 0.1 plus the re-run ones
+    base = [dict(rank_pred=c["rank_pred"], rank_pred_eta0p1=c["rank_pred"], rank_meas=M[c["id"]]["rank_meas"], rank_bound=c["rank_bound"])
+            for c in P["runs"] if c["exp"] in ("randpred", "noncomm") and M[c["id"]]["rank_meas"] is not None]
+    added = [r for r in ok if r["exp"] in ("randpred", "noncomm")]
+    S = dict(note=__doc__.split("Usage")[0].strip(), eta=ETA_SMALL, diverged_at_eta0p1=len(div),
+             still_diverged=sum(r["diverged"] is not None for r in res), rescored=len(ok),
+             prediction_changed_by_eta=sum(r["rank_pred"] != r["rank_pred_eta0p1"] for r in res),
+             randpred_noncomm_without=crit(base),
+             randpred_noncomm_with_preregistered=crit(base + added, "rank_pred_eta0p1"),
+             rerun_only_preregistered=crit(added, "rank_pred_eta0p1") if added else None,
+             randpred_noncomm_with_recomputed=crit(base + added), rerun_only_recomputed=crit(added) if added else None, seconds=time.time() - t0, per_run=res)
+    json.dump(S, open(os.path.join(ROOT, "results/checks/e1b_small_eta.json"), "w"), indent=1)
+    for k, v in S.items():
+        if k not in ("per_run", "note"):
+            print(k, v)

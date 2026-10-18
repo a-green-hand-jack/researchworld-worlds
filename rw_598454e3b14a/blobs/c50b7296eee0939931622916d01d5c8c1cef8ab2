@@ -1,0 +1,216 @@
+"""E4 / A1 held-out scoring (results/e4/a1_tolerance_v2.json; registration results/e4/prediction.json, section A1).
+The phase model is frozen at the commit named in prediction.json (code/e4_theory.py phase_model_hybrid, v3).
+Grid disjoint from the development grid (code/e4_dev.py): new data statistics (n = 32), new p0, lam, a0, eta, b1,
+beta2 values and per-direction initial amplitudes a0_k = a0 exp(0.1 xi_k) with new seeds; T = 60000 steps.
+Ground truth: the exact scalar AdamW maps in np.longdouble (80-bit), with per-step first-crossing times.
+A1a: the aligned matrix AdamW flow (float64) against the float64 scalar maps on a registered subset.
+Usage: python3 code/e4_a1.py run results/e4/a1 [NPROC]     (runs, scores, writes a1_runs.jsonl.gz, a1_score.json)"""
+import sys, os, json, time, itertools, gzip, hashlib
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+import e4_theory as th
+
+K, T, EVERY, THR, BURST = 300, 60000, 10, 0.05, 1e-3
+STATS = {
+    "ho1": (np.linspace(1.2, 0.3, 32), 0.93),     # s_k, c_k / s_k = 0.93^k
+    "ho2": (np.linspace(2.5, 0.8, 32), 0.90),
+}
+A1A_SUBSET = lambda cfg: cfg["a0"] == 3e-4 and cfg["eta"] == 0.03 and cfg["lam"] in (0.003, 0.03)
+
+
+def stats(name):
+    s, r = STATS[name]
+    return s * r ** np.arange(s.size), s
+
+
+def configs():
+    out = []
+    for st, p0, lam, a0, eta, b1, b2, seed in itertools.product(STATS, [0.75, 1.5, 2.5], [0.003, 0.007, 0.015, 0.03],
+                                                                 [3e-4, 3e-3], [0.015, 0.03], [0.9, 0.85],
+                                                                 [0.995, 0.9995], [11]):
+        out.append(dict(id=len(out), stats=st, p0=p0, lam=lam, a0=a0, eta=eta, b1=b1, b2=b2, seed=seed))
+    return out
+
+
+def init_a(cfg):
+    c, _ = stats(cfg["stats"])
+    return cfg["a0"] * np.exp(0.1 * np.random.default_rng(cfg["seed"] + cfg["id"]).standard_normal(c.size))
+
+
+def matrix_aligned(cfg, checks):
+    """Matrix AdamW (W d x n, P d x d, both full matrices) from W = diag(a0_k), P = p0 I: A1a."""
+    c, s = stats(cfg["stats"]); n = c.size; eta, lam, b1, b2, eps = cfg["eta"], cfg["lam"], cfg["b1"], cfg["b2"], 1e-8
+    W = np.diag(init_a(cfg)); P = cfg["p0"] * np.eye(n); S11, S21 = np.diag(s), np.diag(c)
+    m = [np.zeros_like(W), np.zeros_like(P)]; v = [np.zeros_like(W), np.zeros_like(P)]; out = {}
+    for t in range(1, T + 1):
+        R = P @ W @ S11 - W @ S21
+        g = [P.T @ R, R @ W.T]; x = [W, P]
+        for i in range(2):
+            m[i] = b1 * m[i] + (1 - b1) * g[i]; v[i] = b2 * v[i] + (1 - b2) * g[i] ** 2
+            x[i] = x[i] * (1 - eta * lam) - eta * (m[i] / (1 - b1 ** t)) / (np.sqrt(v[i] / (1 - b2 ** t)) + eps)
+        W, P = x
+        if t in checks:
+            out[t] = np.linalg.norm(W, axis=0)
+    return out
+
+
+CHECKS = [int(x) for x in np.unique(np.round(np.geomspace(K + 50, T, 30)))]
+
+
+def truth(cfg):
+    """Exact scalar AdamW in np.longdouble: state at K, first step after K with |a| > BURST and > THR,
+    alive state at CHECKS, min |a| after K."""
+    c, s = stats(cfg["stats"]); L = np.longdouble
+    c, s = c.astype(L), s.astype(L); eta, lam, b1, b2, eps = L(cfg["eta"]), L(cfg["lam"]), L(cfg["b1"]), L(cfg["b2"]), L(1e-8)
+    a = init_a(cfg).astype(L); p = np.full(c.shape, L(cfg["p0"]))
+    ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c)
+    burst = np.zeros(c.size, int); alive = np.zeros(c.size, int); amin = np.full(c.size, np.inf, L)
+    states, cks = None, set(CHECKS); at = {}; dec = 1 - eta * lam
+    for t in range(1, T + 1):
+        r = c - p * s
+        ga = -a * p * r; gp = -a * a * r
+        ma = b1 * ma + (1 - b1) * ga; va = b2 * va + (1 - b2) * ga * ga
+        mp = b1 * mp + (1 - b1) * gp; vp = b2 * vp + (1 - b2) * gp * gp
+        bc1, bc2 = 1 - b1 ** t, 1 - b2 ** t
+        a = a * dec - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps)
+        p = p * dec - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+        if t == K:
+            states = dict(a=a.astype(float), p=p.astype(float), ma=ma.astype(float), va=va.astype(float),
+                          mp=mp.astype(float), vp=vp.astype(float))
+        elif t > K:
+            A = np.abs(a); amin = np.minimum(amin, A)
+            burst[(burst == 0) & (A > BURST)] = t; alive[(alive == 0) & (A > THR)] = t
+            if t in cks:
+                at[t] = (A > THR).tolist()
+    fin = bool(np.isfinite(a).all() and np.isfinite(p).all())
+    nz = lambda x: [int(v) if v else None for v in x]
+    return dict(finite=fin, state_K={k: v.tolist() for k, v in states.items()}, burst=nz(burst), alive_from=nz(alive),
+                alive=[at[t] for t in CHECKS], min_log10_absa=[float(np.log10(v)) if v > 0 else None for v in amin],
+                subnormal=bool((amin < np.finfo(L).tiny).any()))
+
+
+def run_one(cfg):
+    c, s = stats(cfg["stats"])
+    r = dict(cfg, checkpoints=CHECKS, **truth(cfg))
+    stK = {k: np.array(v) for k, v in r["state_K"].items()}
+    o = th.phase_model_hybrid(c, s, stK, K, cfg["lam"], cfg["eta"], T, b1=cfg["b1"], b2=cfg["b2"], checks=CHECKS)
+    fl = lambda x: [None if not np.isfinite(v) else float(v) for v in x]
+    r.update(pred_burst=fl(o["burst"]), pred_alive_from=fl(o["alive_from"]), pred_alive=[o["alive"][t].tolist() for t in CHECKS])
+    if A1A_SUBSET(cfg):
+        hist, _ = th.scalar_adamw(c, s, init_a(cfg), cfg["p0"], cfg["lam"], cfg["eta"], T, cfg["b1"], cfg["b2"], checks=CHECKS)
+        M = matrix_aligned(cfg, set(CHECKS))
+        r["a1a_scalar_absa"] = [hist[t][0].tolist() for t in CHECKS]; r["a1a_matrix_absa"] = [M[t].tolist() for t in CHECKS]
+    return r
+
+
+def _waits(pred, meas, mask):
+    """|ln(pred wait / measured wait)| over mask where both happen; misses where exactly one happens."""
+    e, miss, n = [], 0, 0
+    for k in np.where(mask)[0]:
+        tp, tm = pred[k], meas[k]
+        if tp is None and tm is None:
+            continue
+        n += 1
+        if tp is None or tm is None:
+            miss += 1
+        else:
+            e.append(abs(np.log(max(tp - K, 1.0) / (tm - K))))
+    return e, miss, n
+
+
+def _summ(e, miss, n):
+    e = np.array(e)
+    return dict(scored=n, median=float(np.median(e)) if e.size else None, p90=float(np.quantile(e, 0.9)) if e.size else None,
+                misses=miss, miss_share=miss / max(n, 1))
+
+
+def score(runs, sel=lambda r: True):
+    runs = [r for r in runs if sel(r)]
+    acc = {k: ([], 0, 0) for k in ("b", "b_entry", "c")}
+    waits = {"b": [], "c": []}; masks = []
+    st = dict(model=[], all_alive=[], persistence_K=[], static_bound=[], majority_oracle=[])
+    rk = {k: [] for k in st}; a1a_s, a1a_r = [], []; nonfinite = subnormal = 0
+    for r in runs:
+        c, sv = stats(r["stats"]); n = c.size
+        aK = np.abs(np.array(r["state_K"]["a"])); pK = np.array(r["state_K"]["p"]); hK = pK * (c - pK * sv)
+        setb = (hK < 0) & (aK <= BURST); sete = (hK >= 0) & (aK <= BURST); setc = aK <= THR
+        if not r["finite"]:
+            nonfinite += 1
+            for key, m in (("b", setb), ("c", setc)):
+                e, mi, nn = acc[key]; acc[key] = (e, mi + int(m.sum()), nn + int(m.sum()))
+            for k in st:
+                st[k].append(np.zeros(len(CHECKS) * n)); rk[k].append(np.zeros(len(CHECKS)))
+            continue
+        subnormal += r["subnormal"]
+        for key, pred, meas, m in (("b", r["pred_burst"], r["burst"], setb), ("b_entry", r["pred_burst"], r["burst"], sete),
+                                   ("c", r["pred_alive_from"], r["alive_from"], setc)):
+            e, mi, nn = _waits(pred, meas, m); E, MI, NN = acc[key]; acc[key] = (E + e, MI + mi, NN + nn)
+        for key, meas, m in (("b", r["burst"], setb), ("c", r["alive_from"], setc)):
+            waits[key] += [(r["id"], k, meas[k]) for k in np.where(m)[0]]
+        A = np.array(r["alive"], bool)
+        preds = dict(model=np.array(r["pred_alive"], bool), all_alive=np.ones_like(A),
+                     persistence_K=np.broadcast_to(aK > THR, A.shape), static_bound=np.broadcast_to(c ** 2 >= 4 * r["lam"] * sv, A.shape),
+                     majority_oracle=np.broadcast_to(A.mean(0) >= 0.5, A.shape))
+        for k, P in preds.items():
+            st[k].append((P == A).ravel().astype(float)); rk[k].append((np.abs(P.sum(1) - A.sum(1)) <= 1).astype(float))
+        if "a1a_matrix_absa" in r:
+            Mx = np.array(r["a1a_matrix_absa"]) > THR; Sx = np.array(r["a1a_scalar_absa"]) > THR
+            a1a_s.append(float((Mx == Sx).mean())); a1a_r.append(float((Mx.sum(1) == Sx.sum(1)).mean()))
+    res = dict(runs=len(runs), nonfinite_runs=nonfinite, subnormal_runs=int(subnormal))
+    res["A1a"] = dict(runs=len(a1a_s), state_agreement=float(np.mean(a1a_s)) if a1a_s else None,
+                      rank_equal=float(np.mean(a1a_r)) if a1a_r else None)
+    res["A1a"]["pass"] = bool(a1a_s) and res["A1a"]["state_agreement"] >= 0.99 and res["A1a"]["rank_equal"] >= 0.99
+    for key, name, med, p90 in (("b", "A1b", 0.05, 0.15), ("c", "A1c", 0.10, 0.30)):
+        out = _summ(*acc[key])
+        w = np.array([x[2] - K for x in waits[key] if x[2] is not None], float)
+        W = float(np.median(w)) if w.size else None
+        base = np.abs(np.log(W / w)) if w.size else np.array([])
+        out["constant_wait_oracle"] = dict(wait=W, median=float(np.median(base)) if base.size else None,
+                                           p90=float(np.quantile(base, 0.9)) if base.size else None)
+        out["pass"] = (out["median"] is not None and out["median"] <= med and out["p90"] <= p90 and out["miss_share"] <= 0.05
+                       and out["median"] <= 0.5 * out["constant_wait_oracle"]["median"])
+        res[name] = out
+    res["A1b_window_entry_reported_only"] = _summ(*acc["b_entry"])
+    err = {k: 1 - float(np.concatenate(v).mean()) for k, v in st.items()} if runs else {}
+    rerr = {k: 1 - float(np.concatenate(v).mean()) for k, v in rk.items()} if runs else {}
+    bl = [k for k in err if k != "model"]
+    res["A1d"] = dict(error_rate=err, rank_within_1_failure=rerr, checkpoints=CHECKS)
+    if runs:
+        be, br = min(err[k] for k in bl), min(rerr[k] for k in bl)
+        res["A1d"]["pass"] = (1 - err["model"] >= 0.90 and 1 - rerr["model"] >= 0.90 and err["model"] <= 0.5 * be
+                              and rerr["model"] <= max(0.5 * br, 0.02))
+    return res
+
+
+def score_all(runs):
+    res = score(runs)
+    res["splits_reported_only"] = {f"{k}={v}": {key: score(runs, lambda r, k=k, v=v: r[k] == v)[key] for key in ("A1b", "A1c", "A1d")}
+                                   for k, vals in (("b1", (0.9, 0.85)), ("b2", (0.995, 0.9995)), ("stats", tuple(STATS)))
+                                   for v in vals}
+    return res
+
+
+if __name__ == "__main__":
+    cmd, outdir = sys.argv[1], sys.argv[2]
+    nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    os.makedirs(outdir, exist_ok=True)
+    cfgs = configs()
+    if cmd == "list":
+        print(len(cfgs), "runs;", sum(A1A_SUBSET(c) for c in cfgs), "with the A1a matrix check"); sys.exit()
+    t0 = time.time(); runs = []
+    with Pool(nproc) as pool:
+        for i, r in enumerate(pool.imap(run_one, cfgs)):
+            runs.append(r)
+            if (i + 1) % 96 == 0:
+                print(f"{i+1}/{len(cfgs)} {time.time()-t0:.0f}s", flush=True)
+    with gzip.open(os.path.join(outdir, "a1_runs.jsonl.gz"), "wt") as f:
+        for r in runs:
+            f.write(json.dumps(r) + "\n")
+    res = score_all(runs)
+    res.update(runs=len(runs), seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv),
+               e4_theory_md5=hashlib.md5(open(os.path.join(os.path.dirname(__file__), "e4_theory.py"), "rb").read()).hexdigest())
+    json.dump(res, open(os.path.join(outdir, "a1_score.json"), "w"), indent=1)
+    print(json.dumps({k: v for k, v in res.items() if k != "splits_reported_only"}, indent=1))
+    print("HUTIAN_WAKE: E4 A1 held-out scored", flush=True)

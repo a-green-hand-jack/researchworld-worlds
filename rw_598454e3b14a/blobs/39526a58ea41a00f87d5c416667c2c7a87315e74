@@ -1,0 +1,64 @@
+{
+ "version": 2,
+ "status": "v2 (revision_2). v1 was committed in 7a04f53 before the development grid; v2 after it and before any model, sign or held-out registration. The sign predictions and the frozen model are registered with the A3 held-out grid in results/e4/prediction.json section A3, after development; nothing is refit on the held-out grid.",
+ "claim": "Plan v2.8 Sec. 3 A, statement A3: the predicted sign of the effect of a0, lambda and a rotation of the problem relative to the coordinate basis on the rank under AdamW; with the model that gives the signs checked against the rank level (A1-type), since signs alone can be right for the wrong reason.",
+ "setting": "Linear JEPA, full batch, AdamW with decoupled decay, eps = 1e-8. The aligned problem of A1 conjugated by orthogonal maps (code/e4_a3.py docstring): U(theta) on the data side, V(theta) on the representation side, theta in [0, 1], theta = 0 aligned (A1's exact scalar reduction), theta = 1 a Haar-random basis per seed. Under gradient descent the rank does not depend on theta (equivariance); any theta effect is Adam's.",
+ "ground_truth": {
+  "map": "matrix AdamW (dense W, P), no flush of small entries; float64 for theta > 0 (unless the precision rule below switches it), long double (np.longdouble, 80-bit on this host) for theta = 0 (A1's exact map, whose float64 truth underflows at b2 = 0.9995)",
+  "precision_check": {
+   "subset": "every 10th held-out id among theta > 0 runs (code/e4_a3.py precision_jobs), each re-run twice: float64 with each a0_k multiplied by 1 +- 1e-15 (signs from seed 99991 + id; the floor), and long double",
+   "floor": "F = |rank_tavg(f64, perturbed) - rank_tavg(f64)| over the subset; its median and p90 are reported beside A3r's tolerance",
+   "precision_difference": "Dp = rank_tavg(long double) - rank_tavg(f64), per subset run",
+   "switch": "the whole theta > 0 held-out truth is recomputed in long double and scored on it iff (a) median |Dp| > p90 of F, or (b) a signed bias: the paired 95% t-CI of mean Dp excludes 0 and |mean Dp| >= 0.25; otherwise float64 stands. Decided on the truth alone, before the model is scored; both truths' scores are reported if switched",
+   "floor_use": "the floor is not subtracted from any error; A3r reports, beside each median error, the floor's median, and states when a model's median rank error is within the floor's p90 (indistinguishable from the truth's own sensitivity)"
+  },
+  "alive": "rank at a checkpoint = number of singular values of W above 0.05 (the delivered rank, code/e1b.py), computed at every checkpoint. Direction-level: direction k alive iff ||W u_k|| > 0.05 (u_k the k-th data eigenvector; A1's threshold); the per-direction count rank_dir is reported alongside, without tolerance",
+  "checkpoints": "code/e4_a3.py checkpoints(T): 20 log-spaced steps up to T/200, then 200 evenly spaced up to T",
+  "time_average": "rank_tavg = mean SV rank over the checkpoints in [T/2, T]; alive_frac_k = share of those checkpoints at which direction k is alive (the rank under AdamW does not settle: E1b AdamW rank fluctuates by 1-3 at 200k steps, review c240); rank_dir_tavg reported alongside",
+  "nonfinite": "a run with a non-finite amplitude is a miss in A3r and excluded from A3s pairs (counted and reported)"
+ },
+ "A3r": {
+  "what": "level check of the model that gives the signs: predicted rank_tavg and alive_frac_k against the truth, per held-out run",
+  "metrics": {
+   "rank_error": "|rank_tavg_pred - rank_tavg_meas| per run, on the SV rank",
+   "alive_frac_error": "mean over directions of |alive_frac_pred - alive_frac_meas| per run (a model or baseline giving a binary state has alive_frac in {0, 1})",
+   "dir_rank_error": "the same on rank_dir_tavg, reported without tolerance"
+  },
+  "baselines": {
+   "static_bound": "c^2 >= 4 lam s (delivered static threshold)",
+   "aligned_model": "A1's frozen phase model (scalar maps) applied per direction as if theta = 0",
+   "race": "the delivered GD race N1 at the run's hyperparameters (code/e1b.py)",
+   "mu_count": "the 2610.02344 r_tight count at initialisation and its no-weight-decay form (code/baselines/dvd_mu.py variants; rotation-invariant, and all variants coincide here since P0 = p0 I)",
+   "all_alive": "every direction alive",
+   "dev_median": "the median rank_tavg of the development grid at the run's lam (hyperparameter-blind apart from lam)"
+  },
+  "pass": "median rank_error <= 1.0 and p90 <= 3.0; median alive_frac_error <= 0.10; and each median <= 0.5 x the best baseline's median on the same runs"
+ },
+ "A3s": {
+  "what": "sign of the effect of one factor on rank_tavg, per held-out cell: lam (low -> high), a0 (low -> high), theta (0 -> 1 and 0 -> 0.5), paired over seeds (same rotations and jitter); at least 8 seeds per cell",
+  "measured_sign": "'+' or '-' iff the paired 95% t-CI of the mean difference of rank_tavg (SV rank) excludes 0 and |mean difference| >= 0.5; '0' otherwise",
+  "predicted_sign": "registered per (cell, factor) before the held-out grid runs, from the frozen model by this rule: Delta_pred = mean over the cell's seeds of the model's paired difference of predicted rank_tavg; '+' or '-' iff |Delta_pred| >= 0.5, '0' otherwise (the measured rule's size threshold). The registered signs are the rule's output; none is set by hand",
+  "baselines": {
+   "gd_account": "the delivered race/static account: lam '-', a0 '+', theta '0' (equivariance)",
+   "aligned_model": "A1's model: theta '0'; lam and a0 signs from it at theta = 0",
+   "static_bound": "lam '-' (or '0' where the count does not change), a0 '0', theta '0'",
+   "mu_count": "as static_bound at initialisation (lam '-' or '0', a0 '0', theta '0')"
+  },
+  "pass": "(1) precision: among (cell, factor) pairs with a nonzero predicted sign, measured = predicted in >= 0.80 and measured = opposite in <= 0.05; (2) recall: among pairs with a nonzero measured sign, predicted = measured in >= 0.80 (so a '0' predicted where an effect is measured counts against the model); (3) separation: on the pairs where the predicted sign differs from a baseline's and the measured sign is nonzero, measured = predicted in >= 0.80, for every baseline (reported 'no separation' for a baseline with no such pairs); (4) among pairs predicted '0', the share measured nonzero is reported",
+  "baseline_scores": "each baseline's signs are scored by (1)-(2) too and reported beside the model's"
+ },
+ "reporting": "A3r and A3s pass or fail separately, pooled; splits by statistics set, side and theta reported without tolerance; the shared-preconditioner scale (median and rms of sqrt(vhat)) reported per run as the mechanism's observable",
+ "scope": "eps = 1e-8, full batch, b1 = 0.9 on development; the held-out grid's b1, b2, eta and statistics are registered with it. Minibatch noise is outside A3.",
+ "revision_2": {
+  "when": "2026-10-18, after the 576-run development grid v1 (code at 7a04f53, results/e4/a3dev, 3e21b7b) had run and been summarised on the per-direction count, and before the A3 model, the per-cell signs or the held-out grid are registered; no held-out run exists.",
+  "reason": "review experiment-repo#11 c269 points 1-3 (internal-review-repo 32f10b7b checks/e4_a3_rank_definition.json, e4_a3_truth_floor.json): (1) the paper's rank is the count of singular values of W above 0.05, and under AdamW at theta > 0 the per-direction count exceeds it by 0.24-2.32 (mean 0.45-1.45 by side), more than A3r's tolerance; (2) A3s as v1 let a model predicting theta '0' everywhere pass; (3) a relative 1e-15 change of a0 at float64 moves rank_tavg by a median 0.33 (p90 0.52), so v1's precision trigger would fire on the truth's own sensitivity, which long double shares.",
+  "changes": [
+   "rank and rank_tavg are the SV count (ground_truth.alive, ground_truth.rank), recorded at every checkpoint",
+   "A3s gains a recall condition and a registered sign rule for the model",
+   "the precision switch is decided against a measured 1e-15 floor; theta = 0 runs are long double outright",
+   "development grid v2 (results/e4/a3dev2) re-runs the development configurations with these definitions; v1 stays in results/e4/a3dev as run"
+  ],
+  "stricter": "each change makes the rules stricter or aligns them with the delivered definitions; no tolerance is loosened"
+ },
+ "version_1": "7a04f53:results/e4/a3_tolerance.json (git)"
+}

@@ -1,0 +1,49 @@
+{
+ "configs": [
+  {
+   "config": "lam0.01_p01_w01e-4",
+   "lam": 0.01,
+   "p0": 1.0,
+   "alpha": 1.0,
+   "w0": 0.0001,
+   "seed": 0,
+   "t_end": 897.3521791321788,
+   "steps": 8973,
+   "max_dev_from_simulate": 0.0,
+   "rank_meas": 5,
+   "rank_pred": 5
+  },
+  {
+   "config": "lam0.01_p00.25_w01e-4",
+   "lam": 0.01,
+   "p0": 0.25,
+   "alpha": 1.0,
+   "w0": 0.0001,
+   "seed": 0,
+   "t_end": 717.1339121865931,
+   "steps": 7171,
+   "max_dev_from_simulate": 0.0,
+   "rank_meas": 8,
+   "rank_pred": 7
+  }
+ ],
+ "columns": {
+  "config": "config label",
+  "seed": "init seed",
+  "k": "input mode (c_k = 0.9^k, sigma_k = 1)",
+  "step": "GD step",
+  "t": "time = 0.1 step",
+  "a_k": "measured |W e_k|",
+  "p_k": "measured predictor gain along mode k's embedding direction",
+  "p_pred": "A1 predictor gain p0 exp(-alpha lam t)",
+  "pred_log_a": "race prediction log a_k(0) + F_k(t)",
+  "F_k": "closed-form race exponent F_k(t) (copy target)",
+  "nullcline_a": "capture nullcline sqrt(lam p/(c_k - p sigma_k)); empty if c_k <= p sigma_k",
+  "g_k": "growth rate p c_k - p^2 sigma_k - lam at p_pred",
+  "R_k": "N1 race score (survive iff >= 0)",
+  "pred": "N1 predicted survival",
+  "surv": "measured survival |W e_k| > 0.05 at t_end"
+ },
+ "command": "code/e1_traj.py results/e1",
+ "numpy": "2.4.6"
+}

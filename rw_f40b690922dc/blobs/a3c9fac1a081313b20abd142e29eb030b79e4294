@@ -1,0 +1,218 @@
+# Prior work: collapse dynamics in non-contrastive / self-distillation SSL and JEPA (verified 2026-10-17)
+
+- **Cutoff check:** every arXiv id and v1 date below was checked on arxiv.org/abs, with OpenAlex as a second source. All are before 2026-09-01.
+- **Excluded:** JEPA-collapse papers the search turned up from after the cutoff were not read and are not used.
+- **Venue:** taken from the arXiv comment unless marked "(venue unverified)".
+
+## A. Predictor, stop-gradient and EMA dynamics
+
+### 1. Tian, Chen & Ganguli, ICML 2021 (DirectPred)
+arXiv 2102.06810, v1 2021-02-12.
+
+- **Setting.** Linear BYOL/SimSiam:
+  - Loss J = ½ E||W_p W x1 − SG(W_a x2)||^2.
+  - Weight decay η, predictor learning-rate ratio α_p, EMA rate β.
+- **Invariant and no-stop-gradient result.**
+  - Invariant: WW^T = α_p^{-1} W_p^T W_p + e^{−2ηt} C.
+  - Without stop-gradient, the dynamics follow vec(W)' = −H vec(W) with H PSD, so W → 0.
+- **Assumptions.** X = I, X' = σ^2 I, W_p symmetric, W_a = τW.
+- **Mode dynamics.** W_p and F align (Thm 3). Each mode then obeys:
+  - p_j' = α_p s_j [τ − (1+σ^2) p_j] − η p_j
+  - s_j' = 2 p_j s_j [τ − (1+σ^2) p_j] − 2η s_j
+- **On the invariant parabola.**
+  - p_j' = p_j Δ_j, with Δ_j = τ p_j − (1+σ^2) p_j^2 − η.
+  - Fixed points: p*_± = [τ ± √(τ^2 − 4η(1+σ^2))] / (2(1+σ^2)).
+- **Three regimes.**
+  - η = 0: the origin is a saddle.
+  - 0 < η < τ^2/(4(1+σ^2)): the origin is stable, and mode j collapses iff p_j < p*_−.
+  - η > τ^2/(4(1+σ^2)): every mode collapses.
+- **Effect of the knobs.**
+  - Smaller τ (slower EMA) or larger η enlarges the collapse basin. EMA acts as an "automatic curriculum".
+  - Larger α_p shrinks the basin. If α_p is too large, s_j cannot grow.
+- **Relation to our insight.**
+  - This is already an explicit per-mode drive (τ p_j) vs decay ((1+σ^2) p_j^2 + η) comparison, covering EMA and predictor learning rate.
+  - The drive is quadratic at the origin. Under any η > 0 the collapsed point is therefore linearly stable, and survival is a basin condition plus a global discriminant.
+  - It assumes isotropic data and a symmetric predictor. It has no masking, depth or width.
+
+### 2. Wang, Chen, Du & Tian, "Towards demystifying representation learning with non-contrastive self-supervision"
+arXiv 2110.04947, v1 2021-10-11 (venue unverified).
+
+- **Setting.** DirectSet(α): W_p = F^α/||F^α|| + εI. Augmentation noise lies only on a nuisance subspace B. Initialisation W = δI.
+- **Dynamics.**
+  - λ_B' = λ_B[−(1+σ^2)|λ_B|^{4α} + |λ_B|^{2α} − η]
+  - λ_S' = λ_S[−|λ_S|^{4α} + |λ_S|^{2α} − η]
+- **Thm 1.** If η ∈ (1/(4(1+σ^2)), 1/4) and δ is large enough, then W → c P_S.
+- **Survival threshold.** A feature is discarded iff σ^2 > 1/(4η) − 1. Weight decay acts as the rank threshold. There is no EMA and no masking.
+
+### 3. Halvagal, Laborieux & Zenke, NeurIPS 2023
+arXiv 2212.04858, v1 2022-12-09.
+
+- **Setting.** Closed-form predictor W_P = C_z^α.
+- **Mode dynamics.**
+  - Euclidean loss: z_m' = η λ_m (1 − λ_m) z_m.
+  - Cosine loss: modes are coupled.
+  - Without stop-gradient: −(1 − λ_m)^2, so everything collapses.
+  - Without a predictor: 0, so nothing is learned.
+- **Results.**
+  - Predictor eigenvalues act as per-mode learning-rate multipliers.
+  - IsoLoss trains without EMA.
+  - DirectPred without EMA on CIFAR-10 drops from 92.0 to 12.1.
+- **Relation.** It gives linear growth rates, but with no weight decay there is no rank-selection threshold.
+
+### 4. Wen & Li, "The mechanism of prediction head in non-contrastive SSL"
+arXiv 2205.06226, v1 2022-05-12 (NeurIPS 2022; venue unverified).
+
+- **Setting.** Two-layer ReLU network with BN, sparse-coding data, identity-initialised predictor.
+- **Result.** With a predictor, all features are learned (Thm 4.1). Without one, only strong features are learned (Thm 4.3).
+- **Mechanism.** A substitution effect, then an acceleration effect.
+- **Relation.** The predictor rescues weak directions. This is qualitative; no threshold is given.
+
+### 5. Richemond et al., "The edge of orthogonality"
+arXiv 2302.04817, v1 2023-02-09 (ICML 2023; venue unverified on arXiv).
+
+- **Result.** The batchwise optimal linear predictor is an orthogonal projection. EMA and stop-gradient then orthonormalise, and the rank of the predictor grows during training.
+
+### 6. Zhuo, Wang, Ma & Wang, "Rank differential mechanism", ICLR 2023
+arXiv 2303.02387, v1 2023-03-04.
+
+- **Thm 2.** The optimal predictor is W* = C_+ C_z^{-1}, with ω_i = λ_+i/λ_zi ∈ [0, 1].
+- **Thms 3–4.** Asymmetric modules (predictor, EMA, centring) act as low-pass filters that raise effective rank over iterations.
+- **SymSimSiam.** It shows severe dimensional collapse.
+
+### 7. Zhang et al., "How does SimSiam avoid collapse without negative samples?", ICLR 2022
+arXiv 2203.16262, v1 2022-03-30.
+
+- **Result.** The gradient splits into a centre (mean) part and a residual part. The predictor de-centres, which counters complete collapse.
+
+### 8. Tang et al., "Understanding self-predictive learning for RL", ICML 2023
+arXiv 2212.03319, v1 2022-12-06.
+
+- **Thm 1.** With an optimal predictor and a semi-gradient update, Φ^TΦ is conserved, so there is no collapse.
+- **Finite rates.** With a finite predictor learning rate and a target network, collapse is partial (appendix).
+- **Relation.** This is the fast-predictor limit.
+
+### 9. Bagatella et al., "TD-JEPA"
+arXiv 2510.00739, v1 2025-10-01 (ICLR 2026; venue unverified).
+
+- **Result.** With optimal predictors, the dynamics preserve encoder covariances (Thm 2). This is again the fast-predictor limit.
+
+### 10. Bao, "Feature normalization prevents collapse of non-contrastive learning dynamics"
+arXiv 2309.16109, v1 2023-09-28. Neural Computation 2025 (per OpenAlex).
+
+- **L2 loss.** w_j' = w_j^2 {1 − (1+σ^2) w_j} − ρ w_j. This is third order: a quadratic drive against a linear decay.
+- **Cosine loss.** The dynamics become sixth order, and a stable non-collapsed equilibrium survives stronger weight decay.
+
+### 11. Littwin et al., "How JEPA avoids noisy features", NeurIPS 2024
+arXiv 2407.03475, v1 2024-07-03.
+
+- **Setting.** Depth-L linear encoder and linear decoder. Loss ½ E||V W̄ x − SG(W̄) y||^2. Diagonal covariances, with λ_i = Σ_yx,ii and ρ_i = λ_i/σ_i^2. Small balanced initialisation ε. No EMA and no weight decay.
+- **Per-feature dynamics.**
+  - JEPA: w' = λ w^{3−1/L} − λ w^3/ρ, with w(∞) = ρ^L.
+  - MAE: w' = λ w^{2−1/L} − λ w^3/ρ.
+- **Critical time.** t*_jepa = (1/λ) Σ_{n=1}^{2L−1} L/(n ρ^{2L−n−1} ε^{n/L}) + Θ(log ε).
+- **Consequences.** JEPA learns high-ρ features first, and this needs L > 1. Large depth gives a low-rank encoder.
+- **Relation.** There is no decay floor, so every feature eventually survives. The model has no EMA and no masking.
+
+## B. Origin-stability and stepwise theories (contrastive and Barlow-type)
+
+### 12. Ziyin, Lubana, Ueda & Tanaka, ICLR 2023
+arXiv 2210.00638, v1 2022-10-02.
+
+- **Near the origin.** L ≈ −Tr[W B W^T] + (1/8) Var||W(x − χ)||^2. The paper states that "the local geometry … around the origin crucially decides" collapse.
+- **Collapse criterion.** Subspace i collapses iff ((1−α)/N) c_i + γ ≥ a_i.
+- **Scope.** Contrastive and decorrelation losses only. No predictor, stop-gradient or EMA.
+
+### 13. Jing, Vincent, LeCun & Tian, ICLR 2022
+arXiv 2110.09348, v1 2021-10-18.
+
+- **Augmentation.** If the data-minus-augmentation term X has negative eigenvalues, then W has vanishing singular values.
+- **Two-layer linear networks.** Weights align, and implicit regularisation collapses dimensions.
+- **Method.** DirectCLR.
+
+### 14. Simon et al., "On the stepwise nature of SSL", ICML 2023
+arXiv 2303.15438, v1 2023-03-27.
+
+- **Near the origin.** dW/dt ≈ 4WΓ, so W ≈ W(0) e^{4Γt}.
+- **Stepwise learning.** Modes are learned one at a time, with τ_j = −log(s_j(0)^2 γ_j)/(8γ_j). Modes with γ_j ≤ 0 never grow.
+
+### 15. Esser, Mukherjee & Ghoshdastidar, "Representation learning dynamics of self-supervised models"
+arXiv 2309.02011, v1 2023-09-05.
+
+- **Result.** Naive SSL gradient dynamics collapse. Exact Grassmannian gradient dynamics are given.
+
+## C. Recent equilibrium and stability theory for stop-gradient, EMA and JEPA (2025–2026)
+
+### 16. Ponce, Terver, Hebert & Arbel, "Dual perspectives on non-contrastive SSL"
+arXiv 2507.01028, v1 2025-06-18 (abstract only read).
+
+- **Optimisation view.** Stop-gradient and EMA do not optimise any smooth function, yet they avoid collapse.
+- **Linear case.** Without stop-gradient or EMA, minimisation always collapses.
+- **Equilibria.** The stop-gradient and EMA equilibria are algebraic varieties and are generally asymptotically stable.
+
+### 17. Arbel, Terver & Ponce, "PEIRA"
+arXiv 2605.17671, v1 2026-05-17.
+
+- **Setting.** Stop-gradient, an optimal ridge predictor, and an encoder-norm regulariser λ.
+- **Lyapunov function.** L = ⅓ Tr(N + λI)^3 − ½ Tr Σ^2.
+- **Spectral filter.** f_ε(c, λ) = ½(|c| + ε√(c^2 − 4λ)) · 1[c^2 ≥ 4λ]. A canonical correlation c survives only if c^2 ≥ 4λ.
+- **Stability.** Total collapse is stable (Prop 4.2). EMA has the same equilibria, but its stability is left open.
+- **Relation.** A per-direction threshold for a JEPA-like objective, from an equilibrium analysis rather than early-time dynamics. No masking and no predictor scaling.
+
+### 18. Yao, Li & Liu, "A minimal model of representation collapse: frustration, stop-gradient, and dynamics"
+arXiv 2604.09979, v1 2026-04-11.
+
+- **Mechanism.** Collapse driven by frustrated samples on a slow timescale. Stop-gradient plus a shared head allows non-collapsed fixed points.
+
+## D. Other related works
+
+### Empirical and mechanistic
+- **Li, Efros & Pathak, ECCV 2022** (2209.15007, 2022-09-29): SimSiam partially collapses when the model is small relative to the data.
+- **Jha et al.** (2402.14957, 2024-02-22): the common stability mechanism. SimSiam needs a fast predictor learning rate, while BYOL tolerates a slow one thanks to EMA.
+
+### EMA and anti-collapse methods
+- **Busbridge et al., NeurIPS 2023** (2307.13813, 2023-07-25): EMA scaling rule ρ → ρ^κ.
+- **Mo & Tong, C-JEPA** (2410.19560, 2024-10-25): adds VICReg terms to I-JEPA.
+- **Balestriero & LeCun, LeJEPA** (2511.08544, 2025-11-11): the SIGReg regulariser.
+
+### JEPA theory on other questions
+- **Van Assel et al.** (2505.12477, 2025-05-18): joint embedding vs reconstruction, in closed form.
+- **Yu et al.** (2509.12249, 2025-09-12): auxiliary tasks; no unhealthy collapse at zero loss.
+- **Mikulasch & Zenke, ICML 2026** (2605.03517, 2026-05-05): latent distribution matching.
+- **Korchinski, Favero & Wyart** (2605.27734, 2026-05-26): sample complexity of latent prediction.
+- **Cai & Shi** (2608.01383, 2026-08-02): identifiability theory of masked prediction and mask schedules.
+- **Cui et al.** (2606.27014, 2026-06-25): a generalisation theory for JEPA world models.
+- **Yamada, SiamJEPA** (2607.04044, 2026-07-04).
+
+### Unverified (dates from OpenAlex only; not read)
+- Gorgan Mohammadi, Halvagal & Zenke (bioRxiv 2025.11.25.690220).
+- PhiNets (2024).
+- Khetarpal et al. (2024).
+
+## Ranked closest prior work
+
+1. **Tian, Chen & Ganguli 2021.** Per-mode drive vs decay, with EMA (τ) and predictor learning rate (α_p). Reviewers will treat it as the baseline.
+2. **PEIRA (Arbel et al. 2026) with Ponce et al. 2025.** Survival threshold c^2 ≥ 4λ for JEPA-style stop-gradient; EMA stability left open.
+3. **Ziyin et al. 2023.** "Origin geometry decides collapse", for contrastive losses only.
+4. **Littwin et al. 2024.** JEPA per-feature ODE with depth; no decay.
+5. **Wang, Chen, Du & Tian 2021.** Weight-decay feature threshold σ^2 < 1/(4η) − 1.
+
+Runners-up:
+- Simon et al. 2023
+- Halvagal et al. 2023
+- Bao 2023
+- Tang et al. 2023 and TD-JEPA (the fast-predictor limit)
+
+## Gap (what prior work does not cover)
+
+1. **No linear-stability criterion at the collapsed point for JEPA or self-distillation.**
+   - In Tian, Wang, Bao and PEIRA the drive is quadratic at the origin, so under any decay total collapse is locally stable. Survival then reduces to a basin condition plus a discriminant.
+   - Littwin has no decay at all.
+   - True first-order per-direction criteria exist only for contrastive and Barlow-type losses (Ziyin, Jing, Simon).
+   - **The paper must either:**
+     - (a) show a first-order drive in its JEPA setting, for example from a predictor that is O(1) at initialisation, from width/depth scaling or from a non-balanced initialisation; or
+     - (b) state its criterion as an early-time basin condition.
+   - Otherwise reviewers will equate it with Tian 2021.
+2. **No theory of how predictor width, depth or scaling moves the per-direction threshold.**
+3. **No collapse-dynamics theory of the masking ratio.**
+4. **EMA is treated only qualitatively or left open.** No per-direction threshold depends on the EMA rate in a way validated across regimes.
+5. **Prior thresholds rely on strong assumptions** (isotropic or commuting data, symmetric or optimal predictors). None links them to the reachable rank in realistic I-JEPA- or V-JEPA-style JEPAs.

@@ -1,0 +1,36 @@
+{
+  "config_id": "c_scale_low",
+  "data": {
+    "dataset": "CIFAR-10",
+    "files": {
+      "test-00000-of-00001.parquet": {
+        "bytes": 23940850,
+        "sha256": "841389e6f2d64f28bf17310e430aebac20ec3ba611a3c5e231dc93c645ce84de"
+      },
+      "train-00000-of-00001.parquet": {
+        "bytes": 119705255,
+        "sha256": "8428b53a88a11ac374111006708df51469e315a22ac6d66470afd9c78d2ae883"
+      }
+    },
+    "normalization": "train-channel mean and standard deviation",
+    "source": "Hugging Face dataset uoft-cs/cifar10, plain_text parquet",
+    "source_revision": "0b2714987fa478483af9968de7c934580d0bb9a2",
+    "test_rows": 10000,
+    "train_rows": 50000
+  },
+  "masking": {
+    "fraction_semantics": "expected_masked_fraction; per-example masked count is Binomial(64, mask_fraction)",
+    "geometry": "independent_per_patch_no_contiguous_blocks",
+    "rank_evaluation_policy": "one fixed seeded Bernoulli context mask reused at every checkpoint",
+    "rank_evaluation_sampler": "independent_patch_bernoulli",
+    "sampler": "independent_patch_bernoulli",
+    "training_policy": "independent Bernoulli patch visibility resampled for every training batch"
+  },
+  "numpy": "2.4.6",
+  "pillow": "11.1.0",
+  "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.36",
+  "pyarrow": "18.1.0",
+  "python": "3.11.2 (main, Oct  7 2026, 12:35:07) [GCC 12.2.0]",
+  "tier": "C_real_cifar10",
+  "torch": "2.13.0+cpu"
+}

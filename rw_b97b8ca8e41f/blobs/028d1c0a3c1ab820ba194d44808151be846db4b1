@@ -1,0 +1,1134 @@
+#!/usr/bin/env python3
+"""Run the reproducible linear-JEPA collapse study."""
+from __future__ import annotations
+
+import argparse
+import csv
+import gzip
+import json
+import math
+import os
+import platform
+import sys
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable
+
+import numpy as np
+
+CHECKPOINTS = (0, 10, 50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000)
+DATA_DIMENSION = 16
+EMBED_DIMENSION = 16
+LEARNING_RATE = 0.01
+STEPS = 30_000
+WEIGHT_DECAY = 0.005
+INITIAL_WEIGHT = 1.0e-3
+RANK_THRESHOLD = 1.0e-2
+INITIAL_LOGNOISE = 0.15
+SEEDS = tuple(range(8))
+VALIDATION_SEEDS = tuple(range(5))
+
+
+@dataclass(frozen=True)
+class ExperimentConfig:
+    experiment: str
+    config_id: str
+    architecture: str
+    mask_fraction: float
+    predictor_scale: float
+    predictor_width: int
+    ema_tau: float
+    weight_decay: float = WEIGHT_DECAY
+    learning_rate: float = LEARNING_RATE
+    steps: int = STEPS
+    data_dimension: int = DATA_DIMENSION
+    embedding_dimension: int = EMBED_DIMENSION
+    initial_weight: float = INITIAL_WEIGHT
+    initial_lognoise: float = INITIAL_LOGNOISE
+    predictor_lr_ratio: float = 1.0
+    predictor_weight_decay: float = WEIGHT_DECAY
+    predictor_depth: int = 1
+    signal_scale: float = 1.0
+    differentiate_target: bool = False
+    off_diagonal_noise: float = 0.0
+    covariance_model: str = "stationary_masking_fourier"
+
+
+@dataclass
+class SimulationResult:
+    trajectory_rows: list[dict[str, Any]]
+    summary: dict[str, Any]
+    spectra_by_step: dict[int, np.ndarray]
+
+
+def format_number(value: float, digits: int = 3) -> str:
+    return f"{value:.{digits}f}".replace("-", "n").replace(".", "p")
+
+
+def make_config_id(prefix: str, **values: Any) -> str:
+    parts = [prefix]
+    for key, value in values.items():
+        if isinstance(value, float):
+            encoded = format_number(value)
+        else:
+            encoded = str(value)
+        parts.append(f"{key}{encoded}")
+    return "_".join(parts)
+
+
+def make_covariances(
+    data_dimension: int,
+    mask_fraction: float,
+    signal_scale: float = 1.0,
+) -> dict[str, np.ndarray]:
+    mode_index = np.arange(data_dimension, dtype=float)
+    spectrum = np.geomspace(3.0, 0.05, data_dimension)
+    mean_spectrum = float(np.mean(spectrum))
+    context_probability = 1.0 - mask_fraction
+    context_variance = context_probability * (
+        context_probability * spectrum + (1.0 - context_probability) * mean_spectrum
+    )
+    target_variance = (1.0 - context_probability) * (
+        context_probability * spectrum + (1.0 - context_probability) * mean_spectrum
+    )
+    cross_covariance = signal_scale * context_probability * (1.0 - context_probability) * (
+        spectrum - mean_spectrum
+    )
+    frequency = mode_index / max(data_dimension - 1, 1)
+    normalizer = np.sqrt(np.maximum(context_variance * target_variance, 1.0e-30))
+    correlation = np.divide(
+        cross_covariance,
+        normalizer,
+        out=np.zeros_like(cross_covariance),
+        where=normalizer > 0.0,
+    )
+    return {
+        "context_variance": context_variance,
+        "target_variance": target_variance,
+        "cross_covariance": cross_covariance,
+        "correlation": correlation,
+        "frequency": frequency,
+        "spectrum": spectrum,
+        "mean_spectrum": np.asarray(mean_spectrum),
+        "context_probability": np.asarray(context_probability),
+        "signal_scale": np.asarray(signal_scale),
+    }
+
+
+def effective_rank(eigenvalues: np.ndarray) -> float:
+    values = np.clip(np.asarray(eigenvalues, dtype=float), 0.0, None)
+    total = float(values.sum())
+    if total <= 0.0:
+        return 0.0
+    probabilities = values[values > 0.0] / total
+    return float(np.exp(-np.sum(probabilities * np.log(probabilities))))
+
+
+def threshold_rank(eigenvalues: np.ndarray, relative_threshold: float = RANK_THRESHOLD) -> int:
+    values = np.clip(np.asarray(eigenvalues, dtype=float), 0.0, None)
+    maximum = float(values.max(initial=0.0))
+    if maximum <= 0.0:
+        return 0
+    return int(np.sum(values / maximum >= relative_threshold))
+
+
+def theory_prediction(
+    context_variance: np.ndarray,
+    cross_covariance: np.ndarray,
+    predictor_scale: float,
+    weight_decay: float,
+    initial_weight: float,
+    rank_threshold_value: float,
+    predictor_lr_ratio: float = 1.0,
+    predictor_weight_decay: float = WEIGHT_DECAY,
+    predictor_depth: int = 1,
+    active_width: int | None = None,
+) -> dict[str, np.ndarray | int | float]:
+    discriminant = cross_covariance**2 - 4.0 * context_variance * weight_decay
+    eligible = (discriminant > 0.0) & (cross_covariance > 0.0) & (context_variance > 0.0)
+    roots_lower = np.full_like(discriminant, np.nan)
+    roots_upper = np.full_like(discriminant, np.nan)
+    valid = eligible
+    nonzero_context = valid & (context_variance > 0.0)
+    roots_lower[nonzero_context] = (
+        cross_covariance[nonzero_context] - np.sqrt(discriminant[nonzero_context])
+    ) / (2.0 * context_variance[nonzero_context])
+    roots_upper[nonzero_context] = (
+        cross_covariance[nonzero_context] + np.sqrt(discriminant[nonzero_context])
+    ) / (2.0 * context_variance[nonzero_context])
+    initial_rate = (
+        predictor_scale * cross_covariance
+        - predictor_scale**2 * context_variance
+        - weight_decay
+    )
+    predictor_decay_rate = predictor_depth * predictor_lr_ratio * predictor_weight_decay
+    if predictor_decay_rate > 0.0:
+        time_grid = np.linspace(0.0, 12.0 / predictor_decay_rate, 4_001)
+        predictor_path = predictor_scale * np.exp(-predictor_decay_rate * time_grid)
+        rates = (
+            predictor_path[None, :] * cross_covariance[:, None]
+            - predictor_path[None, :] ** 2 * context_variance[:, None]
+            - weight_decay
+        )
+        increments = 0.5 * (rates[:, :-1] + rates[:, 1:]) * np.diff(time_grid)[None, :]
+        cumulative_gain = np.concatenate(
+            [np.zeros((len(context_variance), 1)), np.cumsum(increments, axis=1)],
+            axis=1,
+        )
+        maximum_cumulative_gain = np.max(cumulative_gain, axis=1)
+    else:
+        maximum_cumulative_gain = np.full_like(context_variance, np.inf)
+    if active_width is not None:
+        active_modes = np.arange(len(context_variance)) < active_width
+        initial_rate = np.where(active_modes, initial_rate, -weight_decay)
+        maximum_cumulative_gain = np.where(active_modes, maximum_cumulative_gain, -np.inf)
+        eligible = eligible & active_modes
+    required_gain = math.log(rank_threshold_value / initial_weight)
+    early_gain_survival = maximum_cumulative_gain >= required_gain
+    return {
+        "discriminant": discriminant,
+        "root_lower": roots_lower,
+        "root_upper": roots_upper,
+        "fixed_point_eligible": eligible,
+        "initial_rate": initial_rate,
+        "maximum_cumulative_gain": maximum_cumulative_gain,
+        "required_gain": required_gain,
+        "early_gain_survival": early_gain_survival,
+        "fixed_point_rank": int(np.sum(eligible)),
+        "initial_rate_rank": int(np.sum(initial_rate > 0.0)),
+        "early_gain_rank": int(np.sum(early_gain_survival)),
+        "predictor_decay_rate": predictor_decay_rate,
+    }
+
+
+def snapshot_reduced(
+    weights: np.ndarray,
+    predictors: np.ndarray,
+    target_weights: np.ndarray,
+    context_variance: np.ndarray,
+    target_variance: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    representation_eigenvalues = weights**2 * context_variance
+    predictor_eigenvalues = predictors**2
+    target_eigenvalues = target_weights**2 * target_variance
+    return representation_eigenvalues, predictor_eigenvalues, target_eigenvalues
+
+
+def snapshot_full(
+    encoder: np.ndarray,
+    predictor: np.ndarray,
+    target_encoder: np.ndarray,
+    context_variance: np.ndarray,
+    target_variance: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    context_covariance = np.diag(context_variance)
+    target_covariance = np.diag(target_variance)
+    representation_covariance = encoder @ context_covariance @ encoder.T
+    predictor_covariance = predictor @ predictor.T
+    target_representation_covariance = target_encoder @ target_covariance @ target_encoder.T
+    return (
+        np.linalg.eigvalsh(representation_covariance)[::-1],
+        np.linalg.eigvalsh(predictor_covariance)[::-1],
+        np.linalg.eigvalsh(target_representation_covariance)[::-1],
+    )
+
+
+def common_metadata(config: ExperimentConfig, seed: int, step: int) -> dict[str, Any]:
+    return {
+        "experiment": config.experiment,
+        "run_id": f"{config.config_id}_seed{seed}",
+        "config_id": config.config_id,
+        "seed": seed,
+        "architecture": config.architecture,
+        "mask_fraction": config.mask_fraction,
+        "predictor_scale": config.predictor_scale,
+        "predictor_width": config.predictor_width,
+        "ema_tau": config.ema_tau,
+        "predictor_lr_ratio": config.predictor_lr_ratio,
+        "predictor_weight_decay": config.predictor_weight_decay,
+        "predictor_depth": config.predictor_depth,
+        "signal_scale": config.signal_scale,
+        "weight_decay": config.weight_decay,
+        "learning_rate": config.learning_rate,
+        "steps": config.steps,
+        "data_dimension": config.data_dimension,
+        "embedding_dimension": config.embedding_dimension,
+        "initial_weight": config.initial_weight,
+        "rank_threshold": RANK_THRESHOLD,
+        "step": step,
+        "time": step * config.learning_rate,
+        "status": "final",
+        "covariance_model": config.covariance_model,
+    }
+
+
+def trajectory_rows_reduced(
+    config: ExperimentConfig,
+    seed: int,
+    step: int,
+    weights: np.ndarray,
+    predictors: np.ndarray,
+    target_weights: np.ndarray,
+    covariances: dict[str, np.ndarray],
+    prediction: dict[str, Any],
+) -> list[dict[str, Any]]:
+    context_variance = covariances["context_variance"]
+    target_variance = covariances["target_variance"]
+    cross_covariance = covariances["cross_covariance"]
+    frequency = covariances["frequency"]
+    representation_eigenvalues, predictor_eigenvalues, target_eigenvalues = snapshot_reduced(
+        weights, predictors, target_weights, context_variance, target_variance
+    )
+    rows: list[dict[str, Any]] = []
+    for mode_index in range(len(weights)):
+        row = common_metadata(config, seed, step)
+        row.update(
+            {
+                "direction_index": mode_index,
+                "frequency": frequency[mode_index],
+                "context_variance": context_variance[mode_index],
+                "target_variance": target_variance[mode_index],
+                "cross_covariance": cross_covariance[mode_index],
+                "theory_correlation": covariances["correlation"][mode_index],
+                "theory_root_lower": prediction["root_lower"][mode_index],
+                "theory_root_upper": prediction["root_upper"][mode_index],
+                "theory_fixed_point_eligible": bool(prediction["fixed_point_eligible"][mode_index]),
+                "theory_initial_rate": prediction["initial_rate"][mode_index],
+                "theory_max_cumulative_gain": prediction["maximum_cumulative_gain"][mode_index],
+                "theory_early_gain_survival": bool(prediction["early_gain_survival"][mode_index]),
+                "mode_amplitude": abs(weights[mode_index]),
+                "target_mode_amplitude": abs(target_weights[mode_index]),
+                "predictor_amplitude": abs(predictors[mode_index]),
+                "representation_eigenvalue": representation_eigenvalues[mode_index],
+                "predictor_eigenvalue": predictor_eigenvalues[mode_index],
+                "target_representation_eigenvalue": target_eigenvalues[mode_index],
+                "measured_growth_rate": (
+                    predictors[mode_index] * cross_covariance[mode_index]
+                    - predictors[mode_index] ** 2 * context_variance[mode_index]
+                    - config.weight_decay
+                ),
+            }
+        )
+        rows.append(row)
+    return rows
+
+
+def simulate_reduced(
+    config: ExperimentConfig,
+    seed: int,
+    covariances: dict[str, np.ndarray],
+    theory: dict[str, Any],
+) -> SimulationResult:
+    random_generator = np.random.default_rng(seed)
+    context_variance = covariances["context_variance"]
+    target_variance = covariances["target_variance"]
+    cross_covariance = covariances["cross_covariance"]
+    weights = config.initial_weight * np.exp(
+        config.initial_lognoise * random_generator.normal(size=config.data_dimension)
+    )
+    target_weights = weights.copy()
+    initial_representation_eigenvalues = weights**2 * context_variance
+    predictor_factors: np.ndarray | None = None
+    if config.architecture == "shared_scalar":
+        predictor_state = float(config.predictor_scale)
+        predictors = np.full(config.data_dimension, predictor_state, dtype=float)
+    elif config.architecture == "deep":
+        factor_scale = config.predictor_scale ** (1.0 / config.predictor_depth)
+        predictor_factors = np.full(config.data_dimension, factor_scale, dtype=float)
+        predictors = predictor_factors ** config.predictor_depth
+    else:
+        predictors = np.full(config.data_dimension, config.predictor_scale, dtype=float)
+        if config.architecture == "bottleneck":
+            predictors[config.predictor_width :] = 0.0
+    trajectory_rows: list[dict[str, Any]] = []
+    spectra_by_step: dict[int, np.ndarray] = {}
+    checkpoints = set(CHECKPOINTS)
+    for step in range(config.steps + 1):
+        if step in checkpoints:
+            representation_eigenvalues, _, _ = snapshot_reduced(
+                weights, predictors, target_weights, context_variance, target_variance
+            )
+            spectra_by_step[step] = np.sort(representation_eigenvalues)[::-1]
+            trajectory_rows.extend(
+                trajectory_rows_reduced(
+                    config, seed, step, weights, predictors, target_weights, covariances, theory
+                )
+            )
+        if step == config.steps:
+            break
+        residual = predictors * weights * context_variance - target_weights * cross_covariance
+        encoder_gradient = predictors * residual + config.weight_decay * weights
+        if config.differentiate_target:
+            encoder_gradient = (
+                encoder_gradient
+                + target_variance * weights
+                - predictors * weights * cross_covariance
+            )
+        if config.architecture == "shared_scalar":
+            predictor_gradient = config.predictor_lr_ratio * (
+                float(np.mean(residual * weights))
+                + config.predictor_weight_decay * predictor_state
+            )
+            predictor_state -= config.learning_rate * predictor_gradient
+            predictors.fill(predictor_state)
+        elif config.architecture == "deep":
+            factor_gradient = config.predictor_lr_ratio * (
+                predictor_factors ** (config.predictor_depth - 1)
+                * residual * weights
+                + config.predictor_weight_decay * predictor_factors
+            )
+            predictor_factors -= config.learning_rate * factor_gradient
+            predictors = predictor_factors ** config.predictor_depth
+        else:
+            predictor_gradient = config.predictor_lr_ratio * (
+                residual * weights + config.predictor_weight_decay * predictors
+            )
+            if config.architecture == "bottleneck":
+                predictor_gradient[config.predictor_width :] = 0.0
+            predictors -= config.learning_rate * predictor_gradient
+            if config.architecture == "bottleneck":
+                predictors[config.predictor_width :] = 0.0
+        weights -= config.learning_rate * encoder_gradient
+        target_weights = config.ema_tau * target_weights + (1.0 - config.ema_tau) * weights
+    representation_eigenvalues, predictor_eigenvalues, target_eigenvalues = snapshot_reduced(
+        weights, predictors, target_weights, context_variance, target_variance
+    )
+    summary = summary_from_spectra(
+        config=config,
+        seed=seed,
+        representation_eigenvalues=representation_eigenvalues,
+        predictor_eigenvalues=predictor_eigenvalues,
+        target_eigenvalues=target_eigenvalues,
+        theory=theory,
+        initial_representation_eigenvalues=initial_representation_eigenvalues,
+        mode_representation_eigenvalues=representation_eigenvalues,
+    )
+    return SimulationResult(trajectory_rows, summary, spectra_by_step)
+
+
+def simulate_full(
+    config: ExperimentConfig,
+    seed: int,
+    covariances: dict[str, np.ndarray],
+    theory: dict[str, Any],
+) -> SimulationResult:
+    random_generator = np.random.default_rng(seed)
+    context_variance = covariances["context_variance"]
+    target_variance = covariances["target_variance"]
+    cross_covariance = covariances["cross_covariance"]
+    diagonal_weights = config.initial_weight * np.exp(config.initial_lognoise * random_generator.normal(size=config.data_dimension))
+    encoder = np.diag(diagonal_weights)
+    if config.off_diagonal_noise > 0.0:
+        encoder += config.off_diagonal_noise * config.initial_weight * random_generator.normal(
+            size=(config.embedding_dimension, config.data_dimension)
+        )
+    predictor = config.predictor_scale * np.eye(config.embedding_dimension)
+    target_encoder = encoder.copy()
+    initial_representation_spectrum, _, _ = snapshot_full(
+        encoder, predictor, target_encoder, context_variance, target_variance
+    )
+    context_covariance = np.diag(context_variance)
+    target_covariance = np.diag(target_variance)
+    cross_covariance_matrix = np.diag(cross_covariance)
+    trajectory_rows: list[dict[str, Any]] = []
+    spectra_by_step: dict[int, np.ndarray] = {}
+    checkpoints = set(CHECKPOINTS)
+    for step in range(config.steps + 1):
+        if step in checkpoints:
+            representation_eigenvalues, predictor_eigenvalues, target_eigenvalues = snapshot_full(
+                encoder, predictor, target_encoder, context_variance, target_variance
+            )
+            spectra_by_step[step] = representation_eigenvalues.copy()
+            for direction_index in range(config.embedding_dimension):
+                row = common_metadata(config, seed, step)
+                row.update(
+                    {
+                        "direction_index": direction_index,
+                        "frequency": np.nan,
+                        "context_variance": np.nan,
+                        "target_variance": np.nan,
+                        "cross_covariance": np.nan,
+                        "theory_correlation": np.nan,
+                        "theory_root_lower": np.nan,
+                        "theory_root_upper": np.nan,
+                        "theory_fixed_point_eligible": np.nan,
+                        "theory_initial_rate": np.nan,
+                        "theory_max_cumulative_gain": np.nan,
+                        "theory_early_gain_survival": np.nan,
+                        "mode_amplitude": np.nan,
+                        "target_mode_amplitude": np.nan,
+                        "predictor_amplitude": np.nan,
+                        "representation_eigenvalue": representation_eigenvalues[direction_index],
+                        "predictor_eigenvalue": predictor_eigenvalues[direction_index],
+                        "target_representation_eigenvalue": target_eigenvalues[direction_index],
+                        "measured_growth_rate": np.nan,
+                    }
+                )
+                trajectory_rows.append(row)
+        if step == config.steps:
+            break
+        residual = predictor @ encoder @ context_covariance - target_encoder @ cross_covariance_matrix.T
+        encoder_gradient = predictor.T @ residual + config.weight_decay * encoder
+        predictor_gradient = residual @ encoder.T + config.predictor_weight_decay * predictor
+        if config.differentiate_target:
+            encoder_gradient = (
+                encoder_gradient
+                - predictor @ encoder @ cross_covariance_matrix.T
+                + target_encoder @ target_covariance
+            )
+        encoder -= config.learning_rate * encoder_gradient
+        predictor -= config.learning_rate * predictor_gradient
+        target_encoder = config.ema_tau * target_encoder + (1.0 - config.ema_tau) * encoder
+    representation_eigenvalues, predictor_eigenvalues, target_eigenvalues = snapshot_full(
+        encoder, predictor, target_encoder, context_variance, target_variance
+    )
+    summary = summary_from_spectra(
+        config=config,
+        seed=seed,
+        representation_eigenvalues=representation_eigenvalues,
+        predictor_eigenvalues=predictor_eigenvalues,
+        target_eigenvalues=target_eigenvalues,
+        theory=theory,
+        initial_representation_eigenvalues=initial_representation_spectrum,
+        mode_representation_eigenvalues=representation_eigenvalues,
+    )
+    return SimulationResult(trajectory_rows, summary, spectra_by_step)
+
+
+def summary_from_spectra(
+    config: ExperimentConfig,
+    seed: int,
+    representation_eigenvalues: np.ndarray,
+    predictor_eigenvalues: np.ndarray,
+    target_eigenvalues: np.ndarray,
+    theory: dict[str, Any],
+    initial_representation_eigenvalues: np.ndarray | None = None,
+    mode_representation_eigenvalues: np.ndarray | None = None,
+) -> dict[str, Any]:
+    summary = common_metadata(config, seed, config.steps)
+    if initial_representation_eigenvalues is None or mode_representation_eigenvalues is None:
+        collapse_aware_rank = 0
+    else:
+        final_modes = np.asarray(mode_representation_eigenvalues, dtype=float)
+        initial_modes = np.asarray(initial_representation_eigenvalues, dtype=float)
+        final_max = float(np.max(final_modes, initial=0.0))
+        collapse_aware_rank = int(np.sum(
+            (final_modes >= RANK_THRESHOLD * final_max) & (final_modes > initial_modes)
+        )) if final_max > 0.0 else 0
+    summary.update(
+        {
+            "final_effective_rank": effective_rank(representation_eigenvalues),
+            "final_threshold_rank": threshold_rank(representation_eigenvalues),
+            "final_predictor_effective_rank": effective_rank(predictor_eigenvalues),
+            "final_target_effective_rank": effective_rank(target_eigenvalues),
+            "final_representation_trace": float(np.sum(representation_eigenvalues)),
+            "final_max_representation_eigenvalue": float(np.max(representation_eigenvalues, initial=0.0)),
+            "final_absolute_rank": int(np.sum(representation_eigenvalues >= 1.0e-12)),
+            "collapse_aware_rank": collapse_aware_rank,
+            "collapsed": bool(np.max(representation_eigenvalues, initial=0.0) < 1.0e-12),
+            "theory_fixed_point_rank": theory["fixed_point_rank"],
+            "theory_initial_rate_rank": theory["initial_rate_rank"],
+            "theory_early_gain_rank": theory["early_gain_rank"],
+            "theory_required_gain": theory["required_gain"],
+            "theory_predictor_decay_rate": theory["predictor_decay_rate"],
+            "differentiate_target": config.differentiate_target,
+            "signal_scale": config.signal_scale,
+            "off_diagonal_noise": config.off_diagonal_noise,
+        }
+    )
+    return summary
+
+
+def add_prediction_rows(
+    prediction_rows: list[dict[str, Any]],
+    config: ExperimentConfig,
+    covariances: dict[str, np.ndarray],
+    theory: dict[str, Any],
+) -> None:
+    active_modes = np.ones(config.data_dimension, dtype=bool)
+    if config.architecture == "bottleneck":
+        active_modes[config.predictor_width :] = False
+    for mode_index in range(config.data_dimension):
+        prediction_rows.append(
+            {
+                "experiment": config.experiment,
+                "config_id": config.config_id,
+                "architecture": config.architecture,
+                "mask_fraction": config.mask_fraction,
+                "predictor_scale": config.predictor_scale,
+                "predictor_width": config.predictor_width,
+                "ema_tau": config.ema_tau,
+                "predictor_lr_ratio": config.predictor_lr_ratio,
+                "predictor_weight_decay": config.predictor_weight_decay,
+                "predictor_depth": config.predictor_depth,
+                "signal_scale": config.signal_scale,
+                "weight_decay": config.weight_decay,
+                "covariance_model": config.covariance_model,
+                "learning_rate": config.learning_rate,
+                "steps": config.steps,
+                "direction_index": mode_index,
+                "frequency": covariances["frequency"][mode_index],
+                "context_variance": covariances["context_variance"][mode_index],
+                "target_variance": covariances["target_variance"][mode_index],
+                "cross_covariance": covariances["cross_covariance"][mode_index],
+                "theory_correlation": covariances["correlation"][mode_index],
+                "theory_discriminant": theory["discriminant"][mode_index],
+                "theory_root_lower": theory["root_lower"][mode_index],
+                "theory_root_upper": theory["root_upper"][mode_index],
+                "theory_fixed_point_eligible": bool(theory["fixed_point_eligible"][mode_index]),
+                "theory_initial_rate": theory["initial_rate"][mode_index],
+                "theory_max_cumulative_gain": theory["maximum_cumulative_gain"][mode_index],
+                "theory_early_gain_survival": bool(theory["early_gain_survival"][mode_index]),
+                "theory_predictor_decay_rate": theory["predictor_decay_rate"],
+                "predictor_active": bool(active_modes[mode_index]),
+                "theory_model_scope": (
+                    "modewise_reduced_model"
+                    if config.architecture in {"diagonal", "bottleneck"}
+                    else "modewise_reference_not_shared_predictor_solution"
+                ),
+            }
+        )
+
+
+def write_csv(path: Path, rows: Iterable[dict[str, Any]], fieldnames: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "wt", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def aggregate_metric(values: list[float]) -> tuple[float, float, float, float, float]:
+    array = np.asarray(values, dtype=float)
+    count = len(array)
+    mean = float(np.mean(array)) if count else float("nan")
+    standard_deviation = float(np.std(array, ddof=1)) if count > 1 else 0.0
+    standard_error = standard_deviation / math.sqrt(count) if count else float("nan")
+    margin = 1.96 * standard_error if count else float("nan")
+    return mean, standard_deviation, standard_error, mean - margin, mean + margin
+
+
+def primary_parameter(config: dict[str, Any]) -> tuple[str, str]:
+    experiment = config["experiment"]
+    if experiment == "predictor_scale":
+        return "predictor_scale", str(config["predictor_scale"])
+    if experiment == "masking":
+        return "mask_fraction", str(config["mask_fraction"])
+    if experiment == "target_ema":
+        return "ema_tau", str(config["ema_tau"])
+    if experiment == "predictor_design":
+        if config["architecture"] == "bottleneck":
+            return "predictor_width", str(config["predictor_width"])
+        return "architecture", str(config["architecture"])
+    if experiment == "stop_gradient_ablation":
+        return "target_gradient", str(config["differentiate_target"])
+    return "configuration", config["config_id"]
+
+
+def make_claim_metrics(
+    summaries: list[dict[str, Any]],
+    comparisons: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for summary in summaries:
+        if summary["experiment"] == "ode_vs_full":
+            continue
+        grouped.setdefault((summary["experiment"], summary["config_id"]), []).append(summary)
+    rows: list[dict[str, Any]] = []
+    metric_specs = (
+        ("final_threshold_rank", "realized_threshold_rank", "theory_early_gain_rank"),
+        ("final_effective_rank", "realized_effective_rank", "theory_fixed_point_rank"),
+    )
+    for (experiment, config_id), group in sorted(grouped.items()):
+        reference = group[0]
+        parameter, parameter_value = primary_parameter(reference)
+        for metric_name, output_name, theory_name in metric_specs:
+            values = [float(item[metric_name]) for item in group]
+            mean, standard_deviation, standard_error, ci_low, ci_high = aggregate_metric(values)
+            theory_value = float(np.mean([item[theory_name] for item in group]))
+            rows.append(
+                {
+                    "claim_id": {
+                        "predictor_scale": "C3_predictor_scale",
+                        "masking": "C4_masking",
+                        "target_ema": "C5_target_ema",
+                        "predictor_design": "C2_predictor_design",
+                        "stop_gradient_ablation": "C6_stop_gradient",
+                    }.get(experiment, "C1_rank_dynamics"),
+                    "experiment": experiment,
+                    "config_id": config_id,
+                    "metric": output_name,
+                    "parameter": parameter,
+                    "parameter_value": parameter_value,
+                    "n_seeds": len(values),
+                    "mean": mean,
+                    "std": standard_deviation,
+                    "standard_error": standard_error,
+                    "ci95_low": ci_low,
+                    "ci95_high": ci_high,
+                    "theory_prediction": theory_value,
+                    "mean_minus_theory": mean - theory_value,
+                    "status": "final",
+                }
+            )
+    comparison_groups: dict[str, list[dict[str, Any]]] = {}
+    for comparison in comparisons:
+        comparison_groups.setdefault(comparison["config_id"], []).append(comparison)
+    for config_id, group in sorted(comparison_groups.items()):
+        for metric in ("final_rank_difference", "max_spectral_relative_error", "max_trajectory_relative_error"):
+            values = [float(item[metric]) for item in group]
+            mean, standard_deviation, standard_error, ci_low, ci_high = aggregate_metric(values)
+            rows.append(
+                {
+                    "claim_id": "C1_reduced_vs_full",
+                    "experiment": "ode_vs_full",
+                    "config_id": config_id,
+                    "metric": metric,
+                    "parameter": "configuration",
+                    "parameter_value": config_id,
+                    "n_seeds": len(values),
+                    "mean": mean,
+                    "std": standard_deviation,
+                    "standard_error": standard_error,
+                    "ci95_low": ci_low,
+                    "ci95_high": ci_high,
+                    "theory_prediction": 0.0,
+                    "mean_minus_theory": mean,
+                    "status": "final",
+                }
+            )
+    return rows
+
+
+def config_dict(config: ExperimentConfig) -> dict[str, Any]:
+    return {
+        "experiment": config.experiment,
+        "config_id": config.config_id,
+        "architecture": config.architecture,
+        "mask_fraction": config.mask_fraction,
+        "predictor_scale": config.predictor_scale,
+        "predictor_width": config.predictor_width,
+        "ema_tau": config.ema_tau,
+        "weight_decay": config.weight_decay,
+        "learning_rate": config.learning_rate,
+        "steps": config.steps,
+        "data_dimension": config.data_dimension,
+        "embedding_dimension": config.embedding_dimension,
+        "initial_weight": config.initial_weight,
+        "initial_lognoise": config.initial_lognoise,
+        "predictor_lr_ratio": config.predictor_lr_ratio,
+        "predictor_weight_decay": config.predictor_weight_decay,
+        "predictor_depth": config.predictor_depth,
+        "signal_scale": config.signal_scale,
+        "differentiate_target": config.differentiate_target,
+        "off_diagonal_noise": config.off_diagonal_noise,
+        "covariance_model": config.covariance_model,
+        "checkpoints": list(CHECKPOINTS),
+        "rank_threshold": RANK_THRESHOLD,
+        "seed_policy": "numpy.default_rng(seed), seeds are listed in results/README.md",
+    }
+
+
+def build_configs() -> tuple[list[ExperimentConfig], list[ExperimentConfig]]:
+    configs: list[ExperimentConfig] = []
+    reference_mask = 0.65
+    for predictor_scale in (0.1, 0.25, 0.5, 1.0, 1.5, 2.0):
+        configs.append(
+            ExperimentConfig(
+                experiment="predictor_scale",
+                config_id=make_config_id("scale", p=predictor_scale),
+                architecture="diagonal",
+                mask_fraction=reference_mask,
+                predictor_scale=predictor_scale,
+                predictor_width=DATA_DIMENSION,
+                ema_tau=0.0,
+            )
+        )
+    for mask_fraction in (0.0, 0.15, 0.35, 0.5, 0.65, 0.8, 0.95, 1.0):
+        configs.append(
+            ExperimentConfig(
+                experiment="masking",
+                config_id=make_config_id("mask", m=mask_fraction),
+                architecture="diagonal",
+                mask_fraction=mask_fraction,
+                predictor_scale=0.5,
+                predictor_width=DATA_DIMENSION,
+                ema_tau=0.0,
+            )
+        )
+    for ema_tau in (0.0, 0.99, 0.9999):
+        configs.append(
+            ExperimentConfig(
+                experiment="target_ema",
+                config_id=make_config_id("ema", tau=ema_tau),
+                architecture="diagonal",
+                mask_fraction=reference_mask,
+                predictor_scale=0.5,
+                predictor_width=DATA_DIMENSION,
+                ema_tau=ema_tau,
+            )
+        )
+    configs.extend(
+        [
+            ExperimentConfig(
+                experiment="predictor_design",
+                config_id="design_diagonal",
+                architecture="diagonal",
+                mask_fraction=reference_mask,
+                predictor_scale=0.5,
+                predictor_width=DATA_DIMENSION,
+                ema_tau=0.0,
+            ),
+            ExperimentConfig(
+                experiment="predictor_design",
+                config_id="design_shared_scalar",
+                architecture="shared_scalar",
+                mask_fraction=reference_mask,
+                predictor_scale=0.5,
+                predictor_width=1,
+                ema_tau=0.0,
+            ),
+            ExperimentConfig(
+                experiment="predictor_design",
+                config_id="design_deep2",
+                architecture="deep",
+                mask_fraction=reference_mask,
+                predictor_scale=0.5,
+                predictor_width=DATA_DIMENSION,
+                predictor_depth=2,
+                ema_tau=0.0,
+            ),
+        ]
+    )
+    for predictor_width in (2, 4, 8, 16):
+        configs.append(
+            ExperimentConfig(
+                experiment="predictor_design",
+                config_id=make_config_id("design_bottleneck", k=predictor_width),
+                architecture="bottleneck",
+                mask_fraction=reference_mask,
+                predictor_scale=0.5,
+                predictor_width=predictor_width,
+                ema_tau=0.0,
+            )
+        )
+    for weight_decay in (0.0, 0.005, 0.02):
+        configs.append(
+            ExperimentConfig(
+                experiment="weight_decay",
+                config_id=make_config_id("decay", l=weight_decay),
+                architecture="diagonal",
+                mask_fraction=reference_mask,
+                predictor_scale=0.5,
+                predictor_width=DATA_DIMENSION,
+                ema_tau=0.0,
+                weight_decay=weight_decay,
+            )
+        )
+        configs.append(
+            ExperimentConfig(
+                experiment="decay_calibration",
+                config_id=make_config_id("decay_null", l=weight_decay),
+                architecture="diagonal",
+                mask_fraction=reference_mask,
+                predictor_scale=0.5,
+                predictor_width=DATA_DIMENSION,
+                ema_tau=0.0,
+                weight_decay=weight_decay,
+                signal_scale=0.0,
+            )
+        )
+    for predictor_lr_ratio in (0.25, 1.0, 4.0):
+        configs.append(
+            ExperimentConfig(
+                experiment="predictor_dynamics",
+                config_id=make_config_id("alpha", a=predictor_lr_ratio),
+                architecture="diagonal",
+                mask_fraction=reference_mask,
+                predictor_scale=0.5,
+                predictor_width=DATA_DIMENSION,
+                ema_tau=0.0,
+                predictor_lr_ratio=predictor_lr_ratio,
+            )
+        )
+    for predictor_lr_ratio in (0.25, 1.0, 4.0):
+        configs.append(
+            ExperimentConfig(
+                experiment="predictor_dynamics_fixed_decay_rate",
+                config_id=make_config_id("alpha_fixed_lp", a=predictor_lr_ratio),
+                architecture="diagonal",
+                mask_fraction=reference_mask,
+                predictor_scale=0.5,
+                predictor_width=DATA_DIMENSION,
+                ema_tau=0.0,
+                predictor_lr_ratio=predictor_lr_ratio,
+                predictor_weight_decay=WEIGHT_DECAY / predictor_lr_ratio,
+            )
+        )
+    for predictor_weight_decay in (0.0, 0.005, 0.02):
+        configs.append(
+            ExperimentConfig(
+                experiment="predictor_dynamics",
+                config_id=make_config_id("lambda_p", lp=predictor_weight_decay),
+                architecture="diagonal",
+                mask_fraction=reference_mask,
+                predictor_scale=0.5,
+                predictor_width=DATA_DIMENSION,
+                ema_tau=0.0,
+                predictor_weight_decay=predictor_weight_decay,
+            )
+        )
+    for predictor_depth in (1, 2, 3):
+        configs.append(
+            ExperimentConfig(
+                experiment="predictor_depth",
+                config_id=make_config_id("depth", l=predictor_depth),
+                architecture="deep",
+                mask_fraction=reference_mask,
+                predictor_scale=0.5,
+                predictor_width=DATA_DIMENSION,
+                predictor_depth=predictor_depth,
+                ema_tau=0.0,
+            )
+        )
+    configs.append(
+        ExperimentConfig(
+            experiment="stop_gradient_ablation",
+            config_id="target_gradient_enabled",
+            architecture="diagonal",
+            mask_fraction=reference_mask,
+            predictor_scale=0.5,
+            predictor_width=DATA_DIMENSION,
+            ema_tau=0.0,
+            differentiate_target=True,
+        )
+    )
+    validation_configs: list[ExperimentConfig] = []
+    for predictor_scale in (0.25, 0.5, 1.0, 1.5):
+        for weight_decay in (0.003, 0.01):
+            validation_configs.append(
+                ExperimentConfig(
+                    experiment="ode_vs_full",
+                    config_id=make_config_id("validate", p=predictor_scale, l=weight_decay),
+                    architecture="diagonal",
+                    mask_fraction=reference_mask,
+                    predictor_scale=predictor_scale,
+                    predictor_width=DATA_DIMENSION,
+                    ema_tau=0.0,
+                    weight_decay=weight_decay,
+                )
+            )
+    return configs, validation_configs
+
+
+def comparison_for_validation(
+    config_id: str,
+    seed: int,
+    reduced: SimulationResult,
+    full: SimulationResult,
+) -> dict[str, Any]:
+    rank_difference = abs(
+        int(reduced.summary["final_threshold_rank"]) - int(full.summary["final_threshold_rank"])
+    )
+    max_spectral_relative_error = 0.0
+    max_trajectory_relative_error = 0.0
+    for step in CHECKPOINTS:
+        reduced_spectrum = np.sort(reduced.spectra_by_step[step])[::-1]
+        full_spectrum = np.sort(full.spectra_by_step[step])[::-1]
+        denominator = max(float(np.max(reduced_spectrum, initial=0.0)), 1.0e-12)
+        relative_error = float(np.max(np.abs(reduced_spectrum - full_spectrum)) / denominator)
+        max_trajectory_relative_error = max(max_trajectory_relative_error, relative_error)
+        if step == CHECKPOINTS[-1]:
+            max_spectral_relative_error = relative_error
+    return {
+        "config_id": config_id,
+        "seed": seed,
+        "final_rank_difference": rank_difference,
+        "max_spectral_relative_error": max_spectral_relative_error,
+        "max_trajectory_relative_error": max_trajectory_relative_error,
+        "status": "final",
+    }
+
+
+def run(output_directory: Path) -> None:
+    start_time = time.time()
+    output_directory.mkdir(parents=True, exist_ok=True)
+    for subdirectory in ("raw", "derived", "configs"):
+        (output_directory / subdirectory).mkdir(parents=True, exist_ok=True)
+    configs, validation_configs = build_configs()
+    all_configs = configs + validation_configs
+    with (output_directory / "configs" / "experiment_grid.json").open("w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "global": {
+                    "checkpoints": list(CHECKPOINTS),
+                    "rank_threshold": RANK_THRESHOLD,
+                    "seeds": list(SEEDS),
+                    "validation_seeds": list(VALIDATION_SEEDS),
+                },
+                "configs": [config_dict(config) for config in all_configs],
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+    trajectory_rows: list[dict[str, Any]] = []
+    summary_rows: list[dict[str, Any]] = []
+    prediction_rows: list[dict[str, Any]] = []
+    comparisons: list[dict[str, Any]] = []
+    for config in configs:
+        covariances = make_covariances(
+            config.data_dimension, config.mask_fraction, config.signal_scale
+        )
+        theory = theory_prediction(
+            covariances["context_variance"],
+            covariances["cross_covariance"],
+            config.predictor_scale,
+            config.weight_decay,
+            config.initial_weight,
+            RANK_THRESHOLD,
+            config.predictor_lr_ratio,
+            config.predictor_weight_decay,
+            config.predictor_depth,
+            config.predictor_width if config.architecture == "bottleneck" else None,
+        )
+        add_prediction_rows(prediction_rows, config, covariances, theory)
+        for seed in SEEDS:
+            simulation = simulate_reduced(config, seed, covariances, theory)
+            trajectory_rows.extend(simulation.trajectory_rows)
+            summary_rows.append(simulation.summary)
+    for config in validation_configs:
+        covariances = make_covariances(
+            config.data_dimension, config.mask_fraction, config.signal_scale
+        )
+        theory = theory_prediction(
+            covariances["context_variance"],
+            covariances["cross_covariance"],
+            config.predictor_scale,
+            config.weight_decay,
+            config.initial_weight,
+            RANK_THRESHOLD,
+            config.predictor_lr_ratio,
+            config.predictor_weight_decay,
+            config.predictor_depth,
+            config.predictor_width if config.architecture == "bottleneck" else None,
+        )
+        add_prediction_rows(prediction_rows, config, covariances, theory)
+        for seed in VALIDATION_SEEDS:
+            reduced_config = ExperimentConfig(**{**config.__dict__, "architecture": "diagonal"})
+            reduced = simulate_reduced(reduced_config, seed, covariances, theory)
+            full = simulate_full(config, seed, covariances, theory)
+            trajectory_rows.extend(reduced.trajectory_rows)
+            trajectory_rows.extend(full.trajectory_rows)
+            summary_rows.append(reduced.summary)
+            summary_rows.append(full.summary)
+            comparisons.append(comparison_for_validation(config.config_id, seed, reduced, full))
+    trajectory_fields = [
+        "experiment", "run_id", "config_id", "seed", "architecture", "mask_fraction", "predictor_scale",
+        "predictor_width", "ema_tau", "predictor_lr_ratio", "predictor_weight_decay", "predictor_depth",
+        "signal_scale", "weight_decay", "covariance_model", "learning_rate", "steps", "data_dimension",
+        "embedding_dimension", "initial_weight", "rank_threshold", "step", "time", "status", "direction_index",
+        "frequency", "context_variance", "target_variance", "cross_covariance", "theory_correlation",
+        "theory_root_lower", "theory_root_upper", "theory_fixed_point_eligible", "theory_initial_rate",
+        "theory_max_cumulative_gain", "theory_early_gain_survival", "theory_predictor_decay_rate",
+        "mode_amplitude", "target_mode_amplitude",
+        "predictor_amplitude", "representation_eigenvalue", "predictor_eigenvalue", "target_representation_eigenvalue",
+        "measured_growth_rate",
+    ]
+    summary_fields = [
+        "experiment", "run_id", "config_id", "seed", "architecture", "mask_fraction", "predictor_scale",
+        "predictor_width", "ema_tau", "predictor_lr_ratio", "predictor_weight_decay", "predictor_depth",
+        "signal_scale", "weight_decay", "learning_rate", "steps", "data_dimension",
+        "embedding_dimension", "initial_weight", "rank_threshold", "step", "time", "status",
+        "final_effective_rank", "final_threshold_rank", "final_predictor_effective_rank", "final_target_effective_rank",
+        "final_representation_trace", "final_max_representation_eigenvalue", "final_absolute_rank", "collapse_aware_rank", "collapsed", "theory_fixed_point_rank",
+        "theory_initial_rate_rank", "theory_early_gain_rank", "theory_required_gain", "theory_predictor_decay_rate",
+        "differentiate_target", "off_diagonal_noise", "covariance_model",
+    ]
+    prediction_fields = [
+        "experiment", "config_id", "architecture", "mask_fraction", "predictor_scale", "predictor_width", "ema_tau",
+        "predictor_lr_ratio", "predictor_weight_decay", "predictor_depth", "signal_scale", "weight_decay", "covariance_model",
+        "learning_rate", "steps", "direction_index", "frequency", "context_variance",
+        "target_variance", "cross_covariance", "theory_correlation", "theory_discriminant", "theory_root_lower",
+        "theory_root_upper", "theory_fixed_point_eligible", "theory_initial_rate", "theory_max_cumulative_gain",
+        "theory_early_gain_survival", "theory_predictor_decay_rate", "predictor_active", "theory_model_scope",
+    ]
+    comparison_fields = [
+        "config_id", "seed", "final_rank_difference", "max_spectral_relative_error",
+        "max_trajectory_relative_error", "status",
+    ]
+    write_csv(output_directory / "raw" / "trajectories.csv.gz", trajectory_rows, trajectory_fields)
+    write_csv(output_directory / "raw" / "run_summary.csv", summary_rows, summary_fields)
+    write_csv(output_directory / "raw" / "theory_predictions.csv", prediction_rows, prediction_fields)
+    write_csv(output_directory / "raw" / "ode_vs_full.csv", comparisons, comparison_fields)
+    claim_rows = make_claim_metrics(summary_rows, comparisons)
+    claim_fields = [
+        "claim_id", "experiment", "config_id", "metric", "parameter", "parameter_value", "n_seeds", "mean", "std",
+        "standard_error", "ci95_low", "ci95_high", "theory_prediction", "mean_minus_theory", "status",
+    ]
+    write_csv(output_directory / "derived" / "claim_metrics.csv", claim_rows, claim_fields)
+    metadata = {
+        "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "wall_clock_seconds": time.time() - start_time,
+        "python": sys.version,
+        "numpy": np.__version__,
+        "platform": platform.platform(),
+        "processor": platform.processor(),
+        "cpu_count": os.cpu_count(),
+        "command": "python code/run_experiments.py --output results",
+        "study_scope": "Expected-gradient linear JEPA with diagonal synthetic covariances; no external data.",
+    }
+    with (output_directory / "derived" / "compute_summary.json").open("w", encoding="utf-8") as handle:
+        json.dump(metadata, handle, indent=2, sort_keys=True)
+    with (output_directory / "derived" / "claim_index.json").open("w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "C1_reduced_vs_full": {
+                    "claim": "The mode-wise reduced dynamics reproduce the full expected-gradient linear JEPA dynamics.",
+                    "files": ["raw/trajectories.csv.gz", "raw/ode_vs_full.csv", "derived/claim_metrics.csv"],
+                    "limitation": "Validation uses diagonal covariances and expected gradients; it is not a nonlinear-network test.",
+                },
+                "C2_predictor_design": {
+                    "claim": "Shared or bottleneck predictors alter realized rank relative to independent mode predictors.",
+                    "files": ["raw/trajectories.csv.gz", "raw/run_summary.csv", "derived/claim_metrics.csv"],
+                    "limitation": "The shared predictor is a scalar P=pI and the bottleneck selects the leading synthetic modes.",
+                },
+                "C3_predictor_scale": {
+                    "claim": "Predictor initialization has a non-monotone effect: too small lacks drive and too large loses modes before growth.",
+                    "files": ["raw/trajectories.csv.gz", "raw/theory_predictions.csv", "derived/claim_metrics.csv"],
+                    "limitation": "The early-gain prediction freezes predictor decay at its near-collapse approximation.",
+                },
+                "C4_masking": {
+                    "claim": "Increasing the synthetic masking fraction lowers cross-view predictability and realized rank.",
+                    "files": ["raw/theory_predictions.csv", "raw/run_summary.csv", "derived/claim_metrics.csv"],
+                    "limitation": "Masking is represented by a documented covariance model, not image patches.",
+                },
+                "C5_target_ema": {
+                    "claim": "A sufficiently slow target EMA reduces realized rank while leaving the fixed-point eligibility bound unchanged.",
+                    "files": ["raw/trajectories.csv.gz", "raw/run_summary.csv", "derived/claim_metrics.csv"],
+                    "limitation": "Only the linear target-EMA dynamics are tested.",
+                },
+                "C6_stop_gradient": {
+                    "claim": "Removing stop-gradient from the target branch collapses every tested mode under positive weight decay.",
+                    "files": ["raw/trajectories.csv.gz", "raw/run_summary.csv", "derived/claim_metrics.csv"],
+                    "limitation": "The ablation uses the same linear covariance model and target equal to online weights.",
+                },
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", type=Path, default=Path("results"))
+    args = parser.parse_args()
+    run(args.output)
+
+
+if __name__ == "__main__":
+    main()

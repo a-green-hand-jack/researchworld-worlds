@@ -1,0 +1,225 @@
+"""Baseline: the drive-vs-decay stability-ratio criterion of De Melo Costa et al. (arXiv 2610.02344v1,
+submitted 2026-10-01; code github.com/jose-melo/drive-vs-decay @ 3176215, 2026-10-01), scored on the
+delivered held-out linear runs (E1b) and masking runs (E2) against the same measured ranks as our race (N1).
+
+Their criterion (paper Sec. 3.2-3.3, Eq. 4-8, Table 3):
+  linearise W at W = Wa = 0 with the predictor Wp held at its initial value (their Lemma 3.4);
+  drive gamma = c_k q_l, decay sigma = a_k p_l, where a_k, c_k are eigen/singular values of Sigma_11, Sigma_X1
+  along data mode k and p_l, q_l eigenvalues of Wp^T Wp, Wp^T M2 (singular-value form: p_l = s_l^2,
+  q_l = s_l with s_l the singular values of Wp; no feature-side target mask here, M2 = I);
+  pairing of a_k and c_k: eigenvector-paired absolute form (their Eq. 51, used for their main-text r_tight);
+  Eq. (31) (independently sorted singular values) and the signed paired form (App. C.8) as variants;
+  weight decay enters as an additive floor (Table 3): a pair (k, l) is unstable iff c_k q_l > a_k p_l + lam;
+  the EMA rate does not move the boundary (constant term of their characteristic equation);
+  predicted rank = r_tight = min(|pi_l U|, |pi_k U|, d, N) with U the unstable pairs (Cor. 3.3).
+  'dvd_nowd' is the same count without the weight-decay floor (the mu > 1 boundary of their Eq. 6).
+Predictor side (review experiment-repo#11): 'dvd', 'dvd_signed', 'dvd_sorted' take q_l = s_l, the singular value of
+  Wp (the Eq. 31 proxy, also what their code 3176215 _compute_multimode_mu uses). Eq. 7/51 define q_l along
+  predictor mode l; paired on the eigenvectors v_l of Wp^T Wp that is q_l = v_l^T Wp^T v_l, |q_l| <= s_l:
+  'dvd_pq' (Eq. 51 paired, absolute c_k and q_l) and 'dvd_pq_signed' (Eq. 7 paired, signed c_k and q_l).
+  'dvd_exact' is the same linearisation without their decoupling (the route of their App. A.5):
+  dW/dt = -Wp^T Wp W S11 + Wp^T W S21 - lam W, i.e. J = S21^T (x) Wp^T - S11 (x) Wp^T Wp - lam I; U = the
+  invariant subspace of eigenvalues with Re > 0; |pi_k U| = dimension of the data-side (row) span of its
+  eigenvectors as matrices, |pi_l U| = dimension of their column span, predicted rank min(|pi_k U|, |pi_l U|, d).
+  All variants coincide when Wp is a multiple of the identity and the data spectra are aligned.
+  'ass32' marks runs inside their Assumption 3.2 (Sigma_11, Sigma_X1, Wp^T Wp and Wp share an eigenbasis);
+  E1b randpred and noncomm, E2 block_nc and MLP-feature statistics fall outside it.
+Their r_tight is an upper bound, not a prediction of ERank (their Prop. C.4), so each score also reports
+'exceed', the share of runs whose measured rank is above the predicted count; near collapse their Cor. 3.3 with
+Lemma 3.4 says it should be near 0.
+In the aligned arms (identity predictor, total gain p0) the criterion coincides with the delivered
+'static initial window' #{p0 c_k - p0^2 s_k - lam > 0}; this script recomputes it from their definition.
+Arms outside their framework are skipped: no stop-gradient (nosg), fixed P = I (nopred, E1b), Adam;
+finite-batch arms (E1b batch, E2 sgd) are scored with population statistics, as for N1.
+Usage: python3 code/baselines/dvd_mu.py results/baselines
+Inputs: results/e1b/e1b_runs.csv, results/e2/e2_runs.csv (measured ranks), code/e1b.py, code/e2.py (statistics, inits).
+"""
+import sys, os, json, csv
+import numpy as np
+from scipy.stats import spearmanr
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import e1b, e2
+from linjepa import init_params, predictor_product
+
+def r_tight(a, c, s_pred, lam):
+    """a, c: data-mode spectra (length K); s_pred: predictor singular values (length L)."""
+    p, q = s_pred ** 2, s_pred
+    U = (np.outer(c, q) > np.outer(a, p) + lam)
+    return int(min(U.any(1).sum(), U.any(0).sum()))
+
+def q_paired(P):
+    """Eq. 7/51 predictor side on the eigenvectors v_l of P^T P: p_l eigenvalue, q_l = v_l^T P^T v_l (signed)."""
+    p, V = np.linalg.eigh(P.T @ P)
+    return np.clip(p, 0, None), np.einsum("ik,ij,jk->k", V, P.T, V)
+
+def _span(M, tol=1e-7):
+    if M.shape[1] == 0: return 0
+    sv = np.linalg.svd(M, compute_uv=False)
+    return int((sv > tol * max(sv[0], 1e-300)).sum())
+
+def exact_count(S11, S21, P, lam):
+    """Exact linearisation at W = 0 with P fixed (no decoupling): predicted rank min(|pi_k U|, |pi_l U|, d)."""
+    d = P.shape[0]
+    p0 = P[0, 0]
+    if np.allclose(P, p0 * np.eye(d)):                       # J = (p0 S21 - p0^2 S11)^T (x) I - lam
+        M = p0 * S21 - p0 ** 2 * S11
+        ev, V = np.linalg.eig(M.T)
+        sel = ev.real > lam
+        k = _span(np.hstack([V[:, sel].real, V[:, sel].imag]))
+        return min(k, d)
+    J = np.kron(S21.T, P.T) - np.kron(S11, P.T @ P) - lam * np.eye(d * S11.shape[0])
+    ev, V = np.linalg.eig(J)
+    sel = ev.real > 0
+    if not sel.any(): return 0
+    rows, cols = [], []
+    for v in V[:, sel].T:
+        for part in (v.real, v.imag):
+            M = part.reshape(d, S11.shape[0], order="F")       # vec stacks columns
+            rows.append(M.T); cols.append(M)
+    return min(_span(np.hstack(rows)), _span(np.hstack(cols)), d)
+
+def in_ass32(S11, S21, P, tol=1e-8):
+    """Their Assumption 3.2: Sigma_11, Sigma_X1, P^T P and P commute and are normal (shared eigenbasis)."""
+    Ms = [S11, S21] if np.allclose(P, P[0, 0] * np.eye(P.shape[0])) else [S11, S21, P, P.T @ P]
+    sc = max(np.abs(M).max() for M in Ms) ** 2
+    comm = max(np.abs(A @ B - B @ A).max() for A in Ms for B in Ms)
+    norm = max(np.abs(M @ M.T - M.T @ M).max() for M in Ms)
+    return bool(max(comm, norm) <= tol * sc)
+
+def variants(S11, S21, P, lam):
+    sp = np.linalg.svd(P, compute_uv=False)
+    pp, qp = q_paired(P)
+    out = {}
+    a, c = spectra_paired(S11, S21)
+    out["dvd"] = r_tight(a, c, sp, lam); out["dvd_nowd"] = r_tight(a, c, sp, 0.0)
+    out["dvd_pq"] = r_tight_pq(a, c, pp, np.abs(qp), lam)
+    a, c = spectra_sorted(S11, S21)
+    out["dvd_sorted"] = r_tight(a, c, sp, lam)
+    a, c = spectra_signed(S11, S21)
+    out["dvd_signed"] = r_tight(a, c, sp, lam)
+    out["dvd_pq_signed"] = r_tight_pq(a, c, pp, qp, lam)
+    out["dvd_exact"] = exact_count(S11, S21, P, lam)
+    out["ass32"] = int(in_ass32(S11, S21, P))
+    return out
+
+def r_tight_pq(a, c, p, q, lam):
+    U = (np.outer(c, q) > np.outer(a, p) + lam)
+    return int(min(U.any(1).sum(), U.any(0).sum()))
+
+def spectra_sorted(S11, S21):
+    """Their Eq. (31): a_k, c_k as singular values of Sigma_11, Sigma_X1, each sorted independently."""
+    return np.sort(np.linalg.svd(S11, compute_uv=False))[::-1], np.sort(np.linalg.svd(S21, compute_uv=False))[::-1]
+
+def spectra_paired(S11, S21):
+    """Their Eq. (51), eigenvector-paired absolute form: a_k eigenvalues of Sigma_11, c_k = |u_k^T Sigma_X1 u_k|
+    on the same eigenvectors u_k (exact pairing when Sigma_11 and Sigma_X1 share an eigenbasis)."""
+    a, U = np.linalg.eigh(S11)
+    return a, np.abs(np.einsum("ik,ij,jk->k", U, S21, U))
+
+def spectra_signed(S11, S21):
+    """Their signed form (App. C.8): c_k = u_k^T Sigma_X1 u_k with its sign (no growth along anti-correlated modes)."""
+    a, U = np.linalg.eigh(S11)
+    return a, np.einsum("ik,ij,jk->k", U, (S21 + S21.T) / 2, U)
+
+def boot(x, B=2000, seed=0):
+    x = np.asarray(x, float); r = np.random.default_rng(seed)
+    m = r.choice(x, (B, x.size)).mean(1)
+    return [float(x.mean()), float(np.quantile(m, 0.025)), float(np.quantile(m, 0.975))]
+
+def score(rows, key):
+    e = np.array([r[key] - r["rank_meas"] for r in rows if r.get(key) is not None], float)
+    if e.size == 0: return None
+    pr = np.array([r[key] for r in rows if r.get(key) is not None], float)
+    me = np.array([r["rank_meas"] for r in rows if r.get(key) is not None], float)
+    rho = float(spearmanr(pr, me)[0]) if pr.std() > 0 and me.std() > 0 else None
+    return dict(n=int(e.size), mae=boot(np.abs(e)), exact=boot(e == 0), bias=float(e.mean()), spearman=rho,
+                over=float((e > 0).mean()), exceed=float((e < 0).mean()))
+
+def e1b_rows():
+    cfgs = {c["id"]: c for c in e1b.configs()}
+    out = []
+    for r in csv.DictReader(open("results/e1b/e1b_runs.csv")):
+        if r["diverged"] or r["rank_meas"] == "": continue
+        cfg = cfgs[int(r["id"])]
+        S11, S21 = e1b.stats(cfg)
+        W0, P0 = e1b.init_of(cfg)
+        lam = cfg["lam"]
+        row = dict(exp=cfg["exp"], id=cfg["id"], rank_meas=int(r["rank_meas"]),
+                   rank_pred=int(r["rank_pred"]) if r["rank_pred"] else None,
+                   rank_bound=int(r["rank_bound"]) if r["rank_bound"] else None,
+                   rank_window=int(r["rank_window"]) if r["rank_window"] else None)
+        if cfg["exp"] in ("nosg", "nopred", "adam"):
+            continue                                          # outside their framework (no stop-grad / fixed P / Adam)
+        row.update(variants(S11, S21, P0, lam))
+        out.append(row)
+    return out
+
+def e2_rows():
+    cfgs = {c["id"]: c for c in e2.configs()}
+    out = []
+    for r in csv.DictReader(open("results/e2/e2_runs.csv")):
+        if r.get("diverged") or r.get("error") or r.get("rank_meas", "") == "": continue
+        cfg = cfgs[int(r["id"])]
+        lam, p0 = cfg["lam"], cfg["p0"]
+        if cfg["exp"] == "mlp":
+            S11, S21 = e2.feature_stats(cfg)
+        else:
+            S11, S21, _ = e2.stats(cfg["fam"], cfg["r"])
+        P0 = (1.0 if cfg["exp"] == "nopred" else p0) * np.eye(e2.d)
+        row = dict(exp=cfg["exp"], fam=cfg["fam"], id=cfg["id"], rank_meas=int(float(r["rank_meas"])),
+                   rank_pred=int(float(r["rank_pred"])) if r.get("rank_pred") not in (None, "") else None,
+                   rank_bound=int(float(r["rank_bound"])) if r.get("rank_bound") not in (None, "") else None,
+                   rank_window=int(float(r["rank_window"])) if r.get("rank_window") not in (None, "") else None)
+        row.update(variants(S11, S21, P0, lam))
+        out.append(row)
+    return out
+
+KEYS = ["rank_pred", "dvd", "dvd_nowd", "dvd_sorted", "dvd_signed", "dvd_pq", "dvd_pq_signed", "dvd_exact",
+        "rank_window", "rank_bound"]
+FAITHFUL = ["dvd", "dvd_signed", "dvd_sorted", "dvd_pq", "dvd_pq_signed", "dvd_exact"]   # with the weight-decay floor
+
+def main(outdir):
+    os.makedirs(outdir, exist_ok=True)
+    res = {}
+    for name, rows, groups in [("e1b", e1b_rows(), ["grid", "ema_alpha", "depth", "randpred", "noncomm", "batch", "balanced"]),
+                               ("e2", e2_rows(), ["pop", "sgd", "tanh", "mlp", "nopred"])]:
+        res[name] = {}
+        sets = {g: [r for r in rows if r["exp"] == g] for g in groups}
+        if name == "e1b":
+            sets["N1_aligned_all (grid+ema_alpha+depth)"] = [r for r in rows if r["exp"] in ("grid", "ema_alpha", "depth")]
+            sets["randpred+noncomm"] = [r for r in rows if r["exp"] in ("randpred", "noncomm")]
+        else:
+            sets["pop cyclic (bern+block+multiblock)"] = [r for r in rows if r["exp"] == "pop" and r["fam"] != "block_nc"]
+        for g, rs in sets.items():
+            if not rs: continue
+            res[name][g] = {k: score(rs, k) for k in KEYS
+                            if any(r.get(k) is not None for r in rs)}
+            res[name][g]["runs"] = len(rs)
+            res[name][g]["ass32_share"] = float(np.mean([r["ass32"] for r in rs]))
+            fv = {k: res[name][g][k]["mae"][0] for k in FAITHFUL if res[name][g].get(k)}
+            kb = min(fv, key=fv.get)
+            res[name][g]["dvd_best"] = dict(key=kb, mae=fv[kb], exceed=res[name][g][kb]["exceed"],
+                                            note="lowest-MAE faithful variant on this arm (oracle choice, favours the baseline)")
+        with open(os.path.join(outdir, f"dvd_{name}_runs.csv"), "w", newline="") as f:
+            keys = sorted({k for r in rows for k in r})
+            w = csv.DictWriter(f, keys); w.writeheader(); w.writerows(rows)
+    doc = dict(what="drive-vs-decay mu criterion (arXiv 2610.02344v1) vs our race N1 (rank_pred) on delivered runs",
+               definition=__doc__, keys=dict(rank_pred="delivered race prediction (N1 / N1-general), as pre-registered",
+               dvd="their r_tight (Eq. 51-52, eigenvector-paired absolute form, the main-text metric) with the weight-decay floor of Table 3",
+               dvd_nowd="the same without weight decay (mu > 1)", dvd_signed="their signed form (App. C.8): paired, c_k with sign, with weight decay", dvd_sorted="their Eq. (31) form: data spectra sorted independently, with weight decay",
+               dvd_pq="Eq. 51 paired on both sides: |c_k| on eigenvectors of Sigma_11, |q_l| = |v_l^T Wp^T v_l| on eigenvectors of Wp^T Wp, with weight decay",
+               dvd_pq_signed="Eq. 7 paired, signed c_k and q_l, with weight decay",
+               dvd_exact="exact linearisation at W = 0 with Wp fixed, no decoupling (their App. A.5 route), with weight decay",
+               ass32="1 if the run satisfies their Assumption 3.2 (shared eigenbasis of Sigma_11, Sigma_X1, Wp, Wp^T Wp)",
+               rank_window="delivered static initial window (as delivered)", rank_bound="static threshold c^2 >= 4 lam s"), stat="MAE and exact-match rate of predicted vs measured rank, "
+               "bootstrap 95% CI over runs [mean, lo, hi]; bias = mean(pred - meas); over = share of runs predicted above the measured rank; exceed = share of runs whose measured rank is above the prediction (their r_tight is stated as an upper bound, their Prop. C.4, so exceed is the bound's violation rate); spearman = rank correlation of predicted and measured rank over runs (their own evaluation statistic)",
+               command="python3 code/baselines/dvd_mu.py results/baselines",
+               inputs=["results/e1b/e1b_runs.csv", "results/e2/e2_runs.csv", "code/e1b.py", "code/e2.py"],
+               numpy=np.__version__, results=res)
+    json.dump(doc, open(os.path.join(outdir, "dvd_mu.json"), "w"), indent=1)
+    for name in res:
+        for g, v in res[name].items():
+            print(name, g, v["runs"], v["dvd_best"]["key"], {k: (round(x["mae"][0], 2), round(x["exceed"], 2)) for k, x in v.items() if isinstance(x, dict) and "mae" in x and isinstance(x["mae"], list)})
+
+if __name__ == "__main__":
+    main(sys.argv[1])

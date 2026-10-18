@@ -1,0 +1,14 @@
+"""Verify that delivered supplied assets remain byte-for-byte unchanged."""
+from hashlib import sha256
+from pathlib import Path
+
+EXPECTED = {
+    Path("outputs/figure.png"): "dd9a0239b64f7b26632c70d7019dd0767ef87320c952553bf736e97e643c7744",
+    Path("outputs/reference.pdf"): "d7755732fa69614489e67554a5ff27d122fb4f6c0d53add58da6aae7ff710f7b",
+}
+
+for path, expected in EXPECTED.items():
+    actual = sha256(path.read_bytes()).hexdigest()
+    if actual != expected:
+        raise SystemExit(f"{path}: expected {expected}, got {actual}")
+    print(f"{path}: {actual}")

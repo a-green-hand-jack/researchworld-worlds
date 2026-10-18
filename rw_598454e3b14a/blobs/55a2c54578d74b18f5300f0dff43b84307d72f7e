@@ -1,0 +1,99 @@
+"""Referee checks of experiment-repo's derivation note rev. 2 (theory/derivations.md at a61cb8a) and of the
+E1b convergence rule announced in experiment-repo#2. Three parts, each self-contained:
+
+ (1) E1b stopping rule "stop when no singular value crosses 0.05 over the last 20% of steps", applied at the
+     E1 horizons to the E1 orthogonal race runs (reduced per-mode flow, which matches E1's GD exactly:
+     checks/e1_reduced_matches_gd.py). Does "no crossing in [0.8T, T]" certify the final labels (t = 40000)?
+ (2) Frozen target (tau = 1, kappa = 0), note Sec. 4 row "no exponential growth and no collapse":
+     scalar mode with wbar = w0 fixed. Fixed points: p^2 sigma = c|w0| - lam, so a non-zero state exists
+     iff c|w0| > lam; otherwise p -> 0 and w -> 0.
+ (3) Leading-order race threshold lam_k^race ~ h_k(p0)/(alpha log(1/w0)) (note Sec. 3) against the lam at
+     which N1 (escape_score) changes sign.
+Usage: python3 checks/e1b_rules.py E1_RUNS_JSONL LINJEPA_PY   (times in units t = eta * step, as E1's code)
+"""
+import sys, json, importlib.util
+import numpy as np
+
+runs_path, lin_path = sys.argv[1], sys.argv[2]
+spec = importlib.util.spec_from_file_location("linjepa", lin_path); lin = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(lin)
+out = {"source": "experiment-repo 883c59deff1c results/e1/e1_runs.jsonl; code/linjepa.py at ccbee08"}
+
+# ---------------- (1) stopping rule ----------------
+n = d = 32; C = 0.9 ** np.arange(n); S = np.ones(n); ETA = 0.1; THR = 0.05; T_LONG = 40000.0; T_REC = 3000
+R = [json.loads(l) for l in open(runs_path)]
+R = [r for r in R if r["exp"] == "race" and r["init"] == "orthogonal"]
+def init_norms(seed, w0):
+    rng = np.random.default_rng(seed)
+    Q, _ = np.linalg.qr(rng.standard_normal((d, n)))
+    return w0 * np.exp(0.1 * rng.standard_normal(n))
+a = np.array([init_norms(r["seed"], r["w0"]) for r in R])
+lam = np.array([r["lam"] for r in R])[:, None]; alpha = np.array([r["alpha"] for r in R])[:, None]
+p = np.broadcast_to(np.array([r["p0"] for r in R])[:, None], a.shape).copy()
+rec = np.zeros((T_REC + 1, len(R), n), bool); rec[0] = a > THR
+spt = int(round(1 / ETA))
+for i in range(1, int(T_LONG / ETA) + 1):
+    da = a * (p * C - p ** 2 * S - lam); dp = alpha * ((C - p * S) * a ** 2 - lam * p)
+    a += ETA * da; p += ETA * dp; a[a < 1e-150] = 0.0
+    if i % spt == 0 and i // spt <= T_REC:
+        rec[i // spt] = a > THR
+final = a > THR
+def rule(T):
+    """labels at T, and whether the 20% rule declares convergence at T (no label change on [0.8T, T])"""
+    T = np.asarray(T, int); lab = rec[T, np.arange(len(R))]
+    quiet = np.array([not (rec[int(0.8 * t):t + 1, j] != rec[t, j]).any() for j, t in enumerate(T)])
+    return lab, quiet
+part1 = {}
+for name, T in [("T = E1 t_end of each run", np.array([int(round(r["t_end"])) for r in R])),
+                ("T = 1500", np.full(len(R), 1500)), ("T = 3000", np.full(len(R), 3000))]:
+    lab, quiet = rule(T)
+    wrong = (lab != final).any(1)
+    ent = {}
+    for g, m in [("lam=0", lam[:, 0] == 0), ("lam>0", lam[:, 0] > 0)]:
+        q = quiet & m
+        ent[g] = dict(runs=int(m.sum()), rule_says_converged=int(q.sum()),
+                      of_which_labels_not_final=int((q & wrong).sum()),
+                      of_which_rank_not_final=int((q & (lab.sum(1) != final.sum(1))).sum()))
+    part1[name] = ent
+out["1_stopping_rule"] = part1
+
+# ---------------- (2) frozen target ----------------
+def frozen(c, s, lam_, alpha_, p0, w0, T=20000.0, dt=0.05):
+    w, pp = w0, p0
+    for _ in range(int(T / dt)):
+        dw = pp * c * w0 - (pp ** 2 * s + lam_) * w
+        dpp = alpha_ * ((c * w0 - pp * s * w) * w - lam_ * pp)
+        w += dt * dw; pp += dt * dpp
+    return w, pp
+part2 = []
+for c in (1.0, 0.5, 0.1):
+    for lam_ in (0.002, 0.01, 0.05):
+        for w0 in (1e-2, 1e-1):
+            w, pp = frozen(c, 1.0, lam_, 1.0, 1.0, w0)
+            pstar2 = (c * w0 - lam_) / 1.0
+            part2.append(dict(c=c, lam=lam_, w0=w0, p0=1.0, alpha=1.0, w_T=w, p_T=pp,
+                              predicted_nonzero=bool(pstar2 > 0),
+                              predicted_p=float(np.sqrt(pstar2)) if pstar2 > 0 else 0.0))
+out["2_frozen_target_T20000"] = part2
+
+# ---------------- (3) leading-order race threshold ----------------
+def lam_N1(c, s, alpha_, p0, w0):
+    lo, hi = 1e-6, c * c / (4 * s) * 0.999999
+    if lin.escape_score(c, s, hi, hi, alpha_, p0, np.log(w0)) >= 0:
+        return hi
+    for _ in range(60):
+        mid = np.sqrt(lo * hi)
+        if lin.escape_score(c, s, mid, mid, alpha_, p0, np.log(w0)) >= 0: lo = mid
+        else: hi = mid
+    return float(np.sqrt(lo * hi))
+part3 = []
+for c in (1.0, 0.5, 0.25):
+    for w0 in (1e-2, 1e-4):
+        for alpha_ in (0.25, 1.0, 4.0):
+            p0 = 1.0; h = c * p0 - 0.5 * p0 ** 2
+            lo_ = h / (alpha_ * np.log(1 / w0)) if h > 0 else 0.0
+            part3.append(dict(c=c, sigma=1.0, p0=p0, w0=w0, alpha=alpha_, lam_N1=lam_N1(c, 1.0, alpha_, p0, w0),
+                              lam_leading_order=lo_, static=c * c / 4))
+out["3_race_threshold"] = part3
+json.dump(out, open("checks/e1b_rules.json", "w"), indent=1)
+print(json.dumps(out, indent=1))

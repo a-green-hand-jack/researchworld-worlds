@@ -1,0 +1,64 @@
+"""Shared figure style for the paper (NeurIPS 2026 single-column layout).
+
+Every generator in figures/src imports this module so that sizes, fonts and
+colors are identical across figures.
+"""
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+# NeurIPS style: single column, \textwidth = 5.5 in, Times body text.
+TEXTWIDTH = 5.5  # inches
+FULL = (TEXTWIDTH, 1.9)
+HALF = (TEXTWIDTH / 2, 1.9)
+
+# Okabe-Ito hues in an order validated for adjacent-pair CVD separation
+# (dataviz validate_palette.js, light mode: worst adjacent deutan dE 11.0).
+# Assign in this fixed order and keep each condition's color across figures.
+COLORS = ["#0072B2", "#D55E00", "#009E73", "#E69F00", "#CC79A7"]
+MARKERS = ["o", "s", "^", "D", "v"]  # secondary encoding, same order
+THEORY = "#222222"  # theoretical predictions: dark, dashed
+SEQ_CMAP = "viridis"  # magnitude (e.g. effective rank)
+DIV_CMAP = "RdBu_r"  # signed quantities (e.g. drive minus decay)
+
+RC = {
+    "font.family": "serif",
+    "font.serif": ["STIXGeneral", "Times New Roman", "Times", "DejaVu Serif"],
+    "mathtext.fontset": "stix",
+    "font.size": 8,
+    "axes.labelsize": 8,
+    "axes.titlesize": 8,
+    "legend.fontsize": 7,
+    "xtick.labelsize": 7,
+    "ytick.labelsize": 7,
+    "axes.linewidth": 0.6,
+    "axes.spines.top": False,
+    "axes.spines.right": False,
+    "axes.grid": True,
+    "grid.color": "#e6e6e6",
+    "grid.linewidth": 0.5,
+    "lines.linewidth": 1.2,
+    "lines.markersize": 3.5,
+    "xtick.major.width": 0.6,
+    "ytick.major.width": 0.6,
+    "legend.frameon": False,
+    "figure.dpi": 150,
+    "savefig.bbox": "tight",
+    "savefig.pad_inches": 0.02,
+    "pdf.fonttype": 42,  # embed TrueType fonts in the PDF
+    "ps.fonttype": 42,
+}
+
+
+def apply():
+    mpl.rcParams.update(RC)
+    mpl.rcParams["axes.prop_cycle"] = mpl.cycler(color=COLORS)
+
+
+def save(fig, name):
+    """Save figures/<name>.pdf (vector, for the paper) and a PNG preview."""
+    import pathlib
+    out = pathlib.Path(__file__).resolve().parents[1]
+    fig.savefig(out / f"{name}.pdf", metadata={"CreationDate": None})
+    (out / "preview").mkdir(exist_ok=True)
+    fig.savefig(out / "preview" / f"{name}.png", dpi=200)
+    plt.close(fig)

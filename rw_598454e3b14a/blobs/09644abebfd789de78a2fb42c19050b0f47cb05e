@@ -1,0 +1,129 @@
+"""Round-off check of E2's cyclic population runs (paper-repo request experiment-repo#9, item 1; cause found by
+internal-review-repo a407dfe checks/e2_roundoff.json).
+
+simulate() runs in float64 on 64x64 matrices, so a direction cannot dip below roughly the rounding level of the
+leading directions (~1e-16 x the largest amplitude): round-off keeps re-seeding it. The exact reduced
+per-Fourier-column flow (as in code/checks/e2_long_horizon.py, which reproduces simulate() exactly in 645/648 runs)
+is re-integrated with a relative amplitude floor: after each Euler step a_k <- max(a_k, rel x max_j a_j), for
+rel = 0 (exact arithmetic, no flush), 1e-18, 1e-17, 1e-16, 1e-15. Each run's per-frequency survival at t_end is
+compared with the measured one (results/e2/e2_runs.jsonl) and its rank with the pre-registered prediction
+(results/e2/prediction.json); the same flows continued to T_LONG = 40000 give the long-horizon rank with the floor.
+Also reported per config: the smallest relative amplitude any direction reaches before t_end in exact arithmetic.
+Usage: python3 code/checks/e2_roundoff.py   -> results/checks/e2_roundoff.json  (~25 min on 8 CPUs)"""
+import sys, os, json, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))
+import e2
+
+ROOT = os.path.dirname(os.path.dirname(HERE))
+T_LONG = 40000.0
+FLOORS = [0.0, 1e-18, 1e-17, 1e-16, 1e-15]
+
+
+def flow(c, s, a0, p0, lam, eta, n_end, n_long, rels):
+    """Reduced flow (code/linjepa.py reduced_flow, copy target, alpha = 1, lam_W = lam_P = lam) with a relative
+    amplitude floor, one row per floor in `rels`; returns amplitudes at step n_end and n_long and the minimum
+    relative amplitude before n_end (per floor)."""
+    rel = np.asarray(rels, float)[:, None]
+    a = np.tile(np.asarray(a0, float), (rel.shape[0], 1)); p = np.full_like(a, p0)
+    a_end = None; minrel = np.full(rel.shape[0], np.inf)
+    for i in range(1, n_long + 1):
+        da = -p ** 2 * s * a + p * c * a - lam * a
+        dp = (c * a - p * s * a) * a - lam * p
+        a = a + eta * da; p = p + eta * dp
+        a = np.maximum(a, rel * a.max(1, keepdims=True))
+        if i <= n_end:
+            minrel = np.minimum(minrel, a.min(1) / a.max(1))
+        if i == n_end:
+            a_end = a.copy()
+    return a_end, a, minrel
+
+
+def labels_freq(a):
+    return [int((a[e2.FREQ == f] > e2.SV_THR).sum()) for f in range(e2.n // 2 + 1)]
+
+
+def one(key):
+    fam, r, lam, p0, t_end, w0 = key
+    S11, S21, _ = e2.stats(fam, r)
+    s, c = e2.spectra(S11, S21)
+    a0 = np.full(e2.n, w0)
+    n_end = int(round(t_end / e2.ETA)); n_long = int(round(max(T_LONG, 2 * t_end) / e2.ETA))
+    out = {}
+    ae, al, mr = flow(c, s, a0, p0, lam, e2.ETA, n_end, n_long, FLOORS)
+    for j, rel in enumerate(FLOORS):
+        out[f"{rel:g}"] = dict(freq_t_end=labels_freq(ae[j]), rank_t_end=int((ae[j] > e2.SV_THR).sum()),
+                               rank_long=int((al[j] > e2.SV_THR).sum()), min_rel_amp_before_t_end=float(mr[j]))
+    return out
+
+
+def boot(x, B=2000, seed=0):
+    x = np.asarray(x, float)
+    rng = np.random.default_rng(seed); bs = x[rng.integers(0, x.size, (B, x.size))].mean(1)
+    return [float(x.mean()), float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))]
+
+
+if __name__ == "__main__":
+    t0 = time.time()
+    P = json.load(open(os.path.join(ROOT, "results/e2/prediction.json")))
+    M = {r["id"]: r for r in map(json.loads, open(os.path.join(ROOT, "results/e2/e2_runs.jsonl")))}
+    runs = [c for c in P["runs"] if c["exp"] == "pop" and c["fam"] in ("bern", "block", "multiblock")]
+    keys = sorted({(c["fam"], c["r"], c["lam"], c["p0"], c["t_end"], c["w0"]) for c in runs})
+    if os.environ.get("E2_ROUNDOFF_TEST"):   # smoke test of the scoring on a few short configs
+        T_LONG = 100.0
+        runs = [c for c in runs if c["t_end"] < 200 or (c["fam"] == "bern" and c["r"] in (0.4, 0.9) and c["lam"] in (3e-4, 3e-3))][:60]
+        keys = sorted({(c["fam"], c["r"], c["lam"], c["p0"], c["t_end"], c["w0"]) for c in runs})
+    cache = os.environ.get("E2_ROUNDOFF_CACHE")     # optional file of the flows (keyed by config), so the scoring below can be re-run alone
+    if cache and os.path.exists(cache):
+        res = {tuple(k): v for k, v in json.load(open(cache))}
+    else:
+        with Pool(8) as pool:
+            res = dict(zip(keys, pool.map(one, keys, chunksize=2)))
+        if cache:
+            json.dump([[list(k), v] for k, v in res.items()], open(cache, "w"))
+    per = []
+    for c in runs:
+        k = (c["fam"], c["r"], c["lam"], c["p0"], c["t_end"], c["w0"]); m = M[c["id"]]
+        row = dict(id=c["id"], fam=c["fam"], r=c["r"], lam=c["lam"], p0=c["p0"], seed=c["seed"], t_end=c["t_end"],
+                   rank_meas=m["rank_meas"], rank_pred=c["rank_pred"])
+        for fl, v in res[k].items():
+            row[f"floor={fl}"] = dict(matches_measured=bool(m.get("surv_freq") == v["freq_t_end"]), rank_t_end=v["rank_t_end"],
+                                      rank_long=v["rank_long"], min_rel_amp_before_t_end=v["min_rel_amp_before_t_end"])
+        per.append(row)
+    S = dict(note=__doc__.split("Usage")[0].strip(), floors=FLOORS, T_long=T_LONG, configs=len(keys), runs=len(per))
+    S["by_floor"] = {}
+    for fl in FLOORS:
+        f = f"floor={fl:g}"
+        S["by_floor"][f] = dict(
+            runs_flow_matches_measured=int(sum(r[f]["matches_measured"] for r in per)),
+            mismatched=[dict(fam=r["fam"], r=r["r"], lam=r["lam"], p0=r["p0"], seed=r["seed"], rank_meas=r["rank_meas"], rank_flow=r[f]["rank_t_end"])
+                        for r in per if not r[f]["matches_measured"]],
+            configs_dipping_below_floor_scale=int(len({(r["fam"], r["r"], r["lam"], r["p0"]) for r in per
+                                                       if fl > 0 and r[f"floor=0"]["min_rel_amp_before_t_end"] < fl})),
+            pred_exact_vs_flow_t_end=boot([r["rank_pred"] == r[f]["rank_t_end"] for r in per]),
+            pred_mae_vs_flow_t_end=boot([abs(r["rank_pred"] - r[f]["rank_t_end"]) for r in per]),
+            pred_exact_vs_flow_long=boot([r["rank_pred"] == r[f]["rank_long"] for r in per]),
+            pred_mae_vs_flow_long=boot([abs(r["rank_pred"] - r[f]["rank_long"]) for r in per]))
+    cases = {"a: bern r=0.4 lam=3e-4 p0=0.5": (0.4, 3e-4, 0.5), "b: bern r=0.9 lam=3e-3 p0=0.25 (peak miss)": (0.9, 3e-3, 0.25)}
+    S["cases"] = {}
+    for name, (r_, l_, p_) in cases.items():
+        rr = [r for r in per if r["fam"] == "bern" and abs(r["r"] - r_) < 1e-9 and abs(r["lam"] - l_) < 1e-12 and abs(r["p0"] - p_) < 1e-12]
+        S["cases"][name] = dict(runs=len(rr), rank_meas=[r["rank_meas"] for r in rr], rank_pred=rr[0]["rank_pred"] if rr else None,
+                                **{f"floor={fl:g}": dict(rank_t_end=rr[0][f"floor={fl:g}"]["rank_t_end"], rank_long=rr[0][f"floor={fl:g}"]["rank_long"],
+                                            matches_measured=[r[f"floor={fl:g}"]["matches_measured"] for r in rr])
+                                   for fl in FLOORS},
+                                min_rel_amp_before_t_end_exact=rr[0]["floor=0"]["min_rel_amp_before_t_end"])
+    lr = [r for r in per if abs(r["lam"] - 3e-4) < 1e-12]
+    S["lam=3e-4"] = dict(runs=len(lr),
+                         measured_t_end_differs_from_exact_long=int(sum(r["rank_meas"] != r["floor=0"]["rank_long"] for r in lr)),
+                         measured_t_end_differs_from_floor_1e16_long=int(sum(r["rank_meas"] != r["floor=1e-16"]["rank_long"] for r in lr)),
+                         pred_mae_vs_measured_t_end=boot([abs(r["rank_pred"] - r["rank_meas"]) for r in lr]),
+                         pred_mae_vs_exact_long=boot([abs(r["rank_pred"] - r["floor=0"]["rank_long"]) for r in lr]),
+                         pred_exact_vs_exact_long=boot([r["rank_pred"] == r["floor=0"]["rank_long"] for r in lr]))
+    S["seconds"] = time.time() - t0
+    S["per_run"] = per
+    json.dump(S, open(os.path.join(ROOT, "results/checks/e2_roundoff.json"), "w"), indent=1)
+    print(json.dumps({k: v for k, v in S.items() if k not in ("per_run", "note")}, indent=1)[:6000])

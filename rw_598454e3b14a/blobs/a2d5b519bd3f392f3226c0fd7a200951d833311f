@@ -1,0 +1,18 @@
+# Synthetic check of e8_analyze.score_prediction (amendment_1.prediction_scoring): late/strong, early, late with f(20) < 0.5,
+# uninformative, non-finite disagreement, missing rows. Run: python3 code/checks/e8_scoring_synthetic.py
+import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')); import numpy as np, e8_analyze as A
+g=np.random.default_rng(0)
+def run(final, ok=True): return dict(ok=ok, count={50: final+g.normal(0,1), 45: final}, rankme={50:final})
+def rows(N, Z, sw, okmask=None):
+    R={"N":[run(N) for _ in range(5)], 0:[run(Z) for _ in range(5)]}
+    for e,v in sw.items(): R[e]=[run(v) for _ in range(5)]
+    return R
+cases={"late_strong": rows(40,10,{2:12,5:12,10:12,20:13}),
+       "early": rows(40,10,{2:40,5:40,10:40,20:40}),
+       "late_weak_f": rows(40,10,{2:28,5:30,10:31,20:31}),
+       "uninf": rows(40,39,{2:40,5:40,10:40,20:40})}
+for k,R in cases.items():
+    prim=A.decision(R,0.2); r=dict(primary=prim, D_final=prim["D"])
+    print(k, prim["D"], prim.get("reading"), A.score_prediction(r, A.PRED["T_lo2hi"])["verdict"])
+r=dict(primary=A.decision(cases["late_strong"],0.2), D_final="undetermined"); print("nf-disagree", A.score_prediction(r,{})["verdict"])
+R=cases["late_strong"]; R[20]=R[20][:3]; prim=A.decision(R,0.2); print("missing", prim["D"], A.score_prediction(dict(primary=prim,D_final=prim["D"]),{})["verdict"])

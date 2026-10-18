@@ -1,0 +1,39 @@
+"""T3: E1b held-out results against the pre-registered success criteria (results/e1b/prediction.json `success_criteria`; numbers from summary.json).
+Every pre-registered criterion is listed (7 rows, one per criterion; AdamW's two parts share one verdict), the failed ones included."""
+import os, sys
+sys.path.insert(0, os.path.dirname(__file__))
+import common
+
+def make(outdir, tabdir):
+    s, path = common.load_e1b_summary()
+    cr = s["criteria"]; A = s["N1_aligned_all"]
+    ci = lambda z, f="{:.2f}": (f + " [" + f + ", " + f + "]").format(*z)
+    g = cr["grid/ema_alpha/depth (N1)"]; gn = cr["randpred/noncomm (N1-general)"]; ad = cr["adam (Sec. 8, directional)"]; es = cr["ema_alpha signs"]; ba = cr["batch (Sec. 8, directional)"]
+    n_ok = sum(abs(d["diff"]) <= 1 for d in ad["w0_insensitivity"]); n_cell = len(ad["w0_insensitivity"])
+    nsg = s["nosg"]["runs"] + s["nopred"]["runs"]
+    bal = s["balanced"]["runs"]
+    P = lambda ok: r"\textbf{pass}" if ok else r"\textbf{fail}"
+    batch_ok = all(abs(c["rank_by_batch"][-1] - c["pred_population"]) <= 1 for c in ba["cells"])
+    mono = all(all(x <= y for x, y in zip(c["rank_by_batch"], c["rank_by_batch"][1:])) for c in ba["cells"])
+    rows = [
+        (rf"aligned: $p_0\times\lambda$, EMA$\times\alpha$, depth ({A['runs']})", r"mode acc.\ $\ge0.95$, MAE $\le0.5$, below static baselines",
+         rf"acc.\ {ci(A['mode_acc'], '{:.3f}')}; MAE {ci(A['rank_pred']['mae'])}; window {A['rank_window']['mae'][0]:.1f}, bound {A['rank_bound']['mae'][0]:.1f}", P(g["passed"])),
+        (rf"balanced regime ({bal})", r"exact rank $\ge90\%$ (Tian basin, Cor.~3a)", rf"exact in {bal}/{bal} runs (both)", P(cr["balanced"]["passed"])),
+        (rf"no stop-grad., no predictor ({nsg})", r"rank 0 in every run", rf"max rank {cr['nosg/nopred']['max_rank']}", P(cr["nosg/nopred"]["passed"])),
+        (rf"random predictors, non-commuting stats ({s['randpred']['runs'] + s['noncomm']['runs']}$^\dagger$)", r"MAE $\le1$, exact $\ge50\%$, below bound",
+         rf"MAE {gn['rank_mae']:.2f}; exact {gn['exact']:.2f}; bound {gn['bound_mae']:.1f}", P(gn["passed"])),
+        (r"EMA rate$\times\alpha$, two regimes", r"rank order over $\kappa$ matches prediction at each adjacent pair",
+         rf"{es['agree']}/{es['of']} pairs agree", P(es["passed"])),
+        (r"AdamW (i), (ii): one criterion", r"(i) $|\Delta\text{rank}|\le1$ at each $(p_0,\lambda)$ ($w_0$-insensitivity); (ii) MAE to static bound $<$ MAE to SGD-clock N1",
+         rf"(i) {n_ok}/{n_cell} cells, max $|\Delta|={ad['max_abs_diff']:.0f}$; (ii) {ad['mae_to_static_bound']:.1f} vs {ad['mae_to_N1_sgd_clock']:.1f}", P(ad["passed_i"] and ad["passed_ii"])),
+        (r"finite batch $B=8,32,128$", r"rank non-decreasing in $B$; $B{=}128$ within 1 of N1", ("monotone at both $p_0$" if mono else "not monotone") + ("; within 1 of N1" if batch_ok else "; not within 1 of N1"), P(ba["passed"])),
+    ]
+    L = [r"{\small", r"\newcolumntype{R}[1]{>{\raggedright\arraybackslash}p{#1}}",
+         r"\begin{tabular}{@{}R{0.25\linewidth}R{0.27\linewidth}R{0.27\linewidth}c@{}}", r"\toprule",
+         r"Arm (runs) & Pre-registered criterion & Observed & Verdict \\", r"\midrule"]
+    for r in rows:
+        L.append(" & ".join(r) + r" \\ \addlinespace[1.5pt]")
+    L += [r"\bottomrule", r"\end{tabular}", r"}"]
+    os.makedirs(tabdir, exist_ok=True)
+    open(os.path.join(tabdir, "tab_e1b.tex"), "w").write("\n".join(L) + "\n")
+    common.record_inputs(tabdir, "tab_e1b", [path])

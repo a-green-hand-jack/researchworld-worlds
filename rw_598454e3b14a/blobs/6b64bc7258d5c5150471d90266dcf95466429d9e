@@ -1,0 +1,65 @@
+"""F6: E2 masking. (a,b) rank vs mask ratio r for Bernoulli and block masks (population GD, p0=0.25); (c) no-predictor arm
+(growing directions vs r, corrected Prop. 6 against the 'all collapse' rule); (d) the negative result: tanh encoder with
+Bernoulli masks keeps recruiting directions after the race. Measured = mean over 3 seeds (bars: min-max); predictions
+are the pre-registered ones from results/e2/prediction.json (carried in e2_runs.csv)."""
+import os, sys
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+import matplotlib.pyplot as plt
+
+LAMS = [0.0003, 0.001, 0.003, 0.01]
+LCOL = [fs.COL["drive"], fs.COL["ok"], fs.COL["gold"], fs.COL["decay"]]
+
+def prof(rows, exp, fam, lam, p0):
+    s = [r for r in rows if r["exp"] == exp and r["fam"] == fam and r["lam"] == lam and r["p0"] == p0]
+    out = []
+    for r_ in sorted(set(r["r"] for r in s)):
+        z = [r for r in s if r["r"] == r_]
+        m = np.array([r["rank_meas"] for r in z], float)
+        out.append((r_, m.mean(), m.min(), m.max(), z[0]["rank_pred"], z[0]["rank_bound"], len(z), np.mean([r["target_frac"] for r in z])))
+    return np.array(out)
+
+def make(outdir):
+    fs.setup()
+    rows, S, paths = common.load_e2()
+    fig, axs = plt.subplots(2, 2, figsize=(fs.TEXTWIDTH, 3.9), constrained_layout=True)
+    for ax, fam, title in [(axs[0, 0], "bern", "(a) Bernoulli masks, population GD"), (axs[0, 1], "block", "(b) block masks, population GD")]:
+        for i, lam in enumerate(LAMS):
+            P = prof(rows, "pop", fam, lam, 0.25)
+            ax.errorbar(P[:, 0], P[:, 1], yerr=[P[:, 1] - P[:, 2], P[:, 3] - P[:, 1]], color=LCOL[i], marker=fs.MARK[i], ls="none", capsize=1.2, zorder=3, label=f"{lam:g}")
+            ax.plot(P[:, 0], P[:, 4], color=LCOL[i], lw=1.0, zorder=2)
+        P = prof(rows, "pop", fam, 0.01, 0.25)
+        ax.plot(P[:, 0], P[:, 5], color=fs.COL["grey"], ls="-.", lw=0.9, label="static bound ($\\lambda{=}10^{-2}$)")
+        ax.set_title(title, fontsize=7.5); ax.set_xlabel("target fraction $r$"); ax.set_ylim(-0.5, 17)
+        if fam == "bern": ax.set_ylabel("rank (of 64)")
+    from matplotlib.lines import Line2D
+    hs = [Line2D([], [], color=LCOL[i], marker=fs.MARK[i], ms=3, lw=1.0, label=f"$\\lambda{{=}}${lam:g}") for i, lam in enumerate(LAMS)]
+    hs.append(Line2D([], [], color=fs.COL["grey"], ls="-.", lw=0.9, label="static bound, $\\lambda{=}10^{-2}$"))
+    axs[0, 1].legend(handles=hs, fontsize=5.8, frameon=False, loc="upper left", ncol=1, title="markers measured, lines predicted", title_fontsize=5.8)
+    # (c) no-predictor arm
+    ax = axs[1, 0]
+    for i, (fam, lam, col, ls, mfc) in enumerate([("bern", 0.001, fs.COL["bad"], "-", fs.COL["bad"]), ("bern", 0.01, fs.COL["bad"], "--", "none"),
+                                                   ("block", 0.001, fs.COL["net"], "-", fs.COL["net"]), ("block", 0.01, fs.COL["net"], "--", "none")]):
+        P = prof(rows, "nopred", fam, lam, 1.0); dx = (i - 1.5) * 0.012
+        ax.errorbar(P[:, 0] + dx, P[:, 1], yerr=[P[:, 1] - P[:, 2], P[:, 3] - P[:, 1]], color=col, marker=fs.MARK[i], mfc=mfc, ls="none", capsize=1.2, zorder=3)
+        ax.plot(P[:, 0], P[:, 4], color=col, ls=ls, lw=1.0, label=f"{'Bernoulli' if fam == 'bern' else 'block'}, $\\lambda{{=}}${lam:g}")
+    ax.axhline(0, color=fs.COL["grey"], ls=":", lw=1.0, zorder=1)
+    ax.text(0.02, 0.2, "dotted: 'all collapse' rule", transform=ax.transAxes, fontsize=5.8, color=fs.COL["grey"], va="bottom")
+    ax.set_title("(c) no predictor ($P{=}I$): directions that grow", fontsize=7.5); ax.set_xlabel("target fraction $r$"); ax.set_ylabel("directions that grow")
+    ax.set_ylim(-0.6, 10.5)
+    ax.legend(fontsize=5.8, frameon=False, loc="upper left", title="markers measured, lines predicted", title_fontsize=5.8)
+    # (d) tanh encoder
+    ax = axs[1, 1]
+    cfg = [("bern", 0.001, 0.3, fs.COL["drive"], "-"), ("bern", 0.001, 0.5, fs.COL["decay"], "-"), ("bern", 0.001, 0.9, fs.COL["gold"], "-"), ("block", 0.001, 0.9, fs.COL["net"], "--")]
+    for i, (fam, lam, r_, col, ls) in enumerate(cfg):
+        z = [r for r in rows if r["exp"] == "tanh" and r["fam"] == fam and r["lam"] == lam and r["r"] == r_]
+        T = np.array([[a[1] for a in r["rank_t"]] for r in z], float); tt = np.array([a[0] for a in z[0]["rank_t"]]) / z[0]["t_end"]
+        ax.plot(tt, T.mean(0), color=col, ls=ls, marker=fs.MARK[i], ms=2.5, label=f"{'Bernoulli' if fam == 'bern' else 'block'}, $r{{=}}${r_:g}")
+        ax.fill_between(tt, T.min(0), T.max(0), color=col, alpha=0.18, lw=0)
+        ax.plot([1.02], [z[0]["rank_pred"]], marker="<", color=col, mfc="none", ms=5, clip_on=False, ls="none")
+    ax.set_xlim(0, 1.06); ax.set_ylim(-1, 96); ax.set_yticks([0, 20, 40, 60])
+    ax.set_title("(d) tanh encoder, $\\lambda{=}10^{-3}$: rank over training", fontsize=7.5); ax.set_xlabel("$t/t_{\\mathrm{end}}$"); ax.set_ylabel("rank of $W$")
+    ax.legend(fontsize=5.8, frameon=False, loc="upper left", ncol=2, columnspacing=0.8, title="open triangles: predicted rank", title_fontsize=5.8)
+    fs.save(fig, "fig6_e2_masking", outdir)
+    common.record_inputs(outdir, "fig6_e2_masking", paths)

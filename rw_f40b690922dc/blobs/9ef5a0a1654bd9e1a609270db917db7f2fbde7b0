@@ -1,0 +1,39 @@
+# Venue requirements: NeurIPS 2026 Main Track (double-blind)
+
+Sources (fetched 2026-10-17): https://neurips.cc/Conferences/2026/CallForPapers, https://neurips.cc/Conferences/2026/MainTrackHandbook
+(section "Paper Formatting Instructions"), and the official template zip
+https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip (copied unmodified to `template/`;
+`neurips_2026.sty` sha256 `c3fc2894e83d2517ca18b66741d6c595986d97957dc08ec08bb2125a7ec4555a`).
+
+The objective asks for a paper "that could be submitted to NeurIPS 2026": LaTeX source in the NeurIPS template, compiled PDF, and the code and
+experimental results the claims rest on. The real 2026 deadlines (full paper 6 May 2026) are past; the submission portal is out of scope, so
+"submittable" means: complies with everything below.
+
+## Hard requirements (desk-reject risk)
+| # | Requirement | Source | How checked |
+|---|---|---|---|
+| 1 | Use `neurips_2026.sty` unmodified; default (no `final`/`preprint`) option `\usepackage{neurips_2026}` (= `main` track, anonymous, line numbers). Do not change margins, fonts, spacing. | template, handbook | `tools/check_submission.py` (sty hash, option, no geometry/fullpage/savetrees) |
+| 2 | Main text <= 9 content pages incl. all figures and tables. References, technical appendices, checklist are extra and uncounted. | handbook | page where References/appendix/checklist start; verify visually |
+| 3 | Single PDF, order: paper, references, appendices, checklist. <= 50 MB. US Letter. | handbook, template | checker |
+| 4 | NeurIPS Paper Checklist (`checklist.tex`) included after references/appendix; keep question text and headings, delete the instruction block (keep heading "NeurIPS Paper Checklist"), answer with `\answerYes/\answerNo/\answerNA` plus a 1-2 sentence justification (for Yes: point to section). No `answerTODO` left. Missing checklist = desk reject. | checklist.tex, handbook | checker |
+| 5 | Fonts: Type 1 or embedded TrueType only, no Type 3; generate with pdflatex. | template | checker |
+| 6 | Double-blind: no author names/affiliations, no acknowledgments or funding section (use the `ack` environment, which the style hides), no "under review" text, own prior work cited in third person; code and any linked material also anonymous; no external links that break anonymity. | handbook | grep source/PDF/code for names, usernames, hostnames, URLs |
+| 7 | Contribution type must be chosen at submission (General / Theory / Use-Inspired / Concept & Feasibility / Negative Results); this is a form field, not in the PDF. Recommendation: Theory or General (theory + empirical test); record the choice in the paper cover note if one exists. | handbook | judgement |
+| 8 | Supplementary code/data: single ZIP <= 100 MB, anonymized, training and evaluation code, dependency specification, self-contained and executable (or explain why not) per paperswithcode releasing-research-code guidelines. No separate appendix PDF. | handbook | `code/` with README (commands to reproduce each figure/table), pinned requirements, seeds; ZIP size check |
+| 9 | Appendix is optional reading: the paper must stand alone, critical experiments must be in the main text. | template | review |
+| 10 | LLM/agent use: must be documented in the experimental setup only if it is an important/original/non-standard component of the method; authors are responsible for all content; no hallucinated citations or plots. Every reference must be a real, verifiable paper; every figure generated from committed results. | handbook | review |
+| 11 | Per the objective: no work first published after 2026-09-01 may be used or cited. | objective | check citation dates |
+
+## Style notes (from the template)
+Text block 5.5 x 9 in, 10 pt / 11 pt leading, Times; headings: sentence case, bold, flush left; no vertical rules in tables, use booktabs; table
+caption above the table, figure caption below the figure; captions should state the take-away; figures legible in B/W as well as colour; figure widths as multiples of `\linewidth`; `natbib` is loaded (any consistent citation style); display math with LaTeX environments, not `$$`; references may be `\small`; pages numbered.
+
+## What cannot be established
+- The actual official NeurIPS 2026 submission/ OpenReview acceptance cannot be exercised here; only conformance to the published rules is checkable.
+- The checklist "funding / competing interests" disclosure link in the template (`.../PaperInformation/FundingDisclosure`) returns 404 and concerns the camera-ready only; nothing to supply at submission.
+- Page-count check by text extraction is heuristic when References begin mid-page; confirm by looking at the rendered pages.
+
+## Files in this repository
+- `template/neurips_2026.tex|.sty`, `template/checklist.tex`: official, unmodified; paper-repo should start from these.
+- `tools/check_submission.py PAPER.pdf [SRC_DIR]`: automated conformance check (needs `pypdf`).
+- `venue-artifacts.json`: the paths required nonempty in the approved delivery.

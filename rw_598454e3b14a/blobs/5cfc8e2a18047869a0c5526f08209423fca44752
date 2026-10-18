@@ -1,0 +1,41 @@
+"""F11 (appendix): E3 count of online-token directions over training (seed mean, band = min-max over 3 seeds; 20 epochs). (a) Arm T weight-decay
+sweep; (b) Arm P: baseline, copy target, EMA 0.9, no stop-gradient; (c) total variance of the online token features relative to the start
+(log scale) for no stop-gradient in both arms against their baselines: the scale collapse the count does not show."""
+import os, sys
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+import matplotlib.pyplot as plt
+
+def series(tr, name, key):
+    z = [t for (n, s), t in tr.items() if n == name]
+    L = min(len(t["epoch"]) for t in z)
+    ep = np.array(z[0]["epoch"][:L], float); A = np.array([[np.nan if v is None else v for v in t[key][:L]] for t in z], float)
+    return ep, A
+
+def make(outdir):
+    fs.setup()
+    rows, S, F, paths = common.load_e3()
+    tr, tpath = common.load_e3_traj()
+    fig, axs = plt.subplots(1, 3, figsize=(fs.TEXTWIDTH, 2.1), constrained_layout=True)
+    def line(ax, name, key, color, ls, label, mk=None, norm=False):
+        ep, A = series(tr, name, key)
+        if norm: A = A / A[:, :1]
+        ax.fill_between(ep, np.nanmin(A, 0), np.nanmax(A, 0), color=color, alpha=0.18, lw=0)
+        ax.plot(ep, np.nanmean(A, 0), color=color, ls=ls, lw=1.0, label=label)
+    wds = [("T_wd0", "0"), ("T_wd0.001", "$10^{-3}$"), ("T_wd0.003", "$3{\\cdot}10^{-3}$"), ("T_wd0.01", "0.01"), ("T_wd0.03", "0.03"), ("T_wd0.1", "0.1")]
+    cm = plt.get_cmap("viridis")
+    for i, (n, lab) in enumerate(wds): line(axs[0], n, "online_tok_count_1e3", cm(i / 5.5 * 0.9), "-", lab)
+    axs[0].set_title("(a) Arm T, weight decay", fontsize=7.2); axs[0].legend(fontsize=5.5, frameon=False, title="wd", title_fontsize=5.5, ncol=3, loc="upper left", columnspacing=0.8, handlelength=1.2)
+    axs[0].set_ylim(0, 70)
+    for n, c, ls, lab in (("P_base", fs.COL["decay"], "-", "baseline"), ("P_ema0.9", fs.COL["gold"], "-", "EMA 0.9"), ("P_copy", fs.COL["drive"], "-", "copy target"), ("P_nosg", "k", "--", "no stop-grad")):
+        line(axs[1], n, "online_tok_count_1e3", c, ls, lab)
+    axs[1].set_title("(b) Arm P, target", fontsize=7.2); axs[1].legend(fontsize=5.5, frameon=False, loc="upper left")
+    for n, c, ls, lab in (("P_base", fs.COL["decay"], "-", "P baseline"), ("P_nosg", fs.COL["decay"], "--", "P no stop-grad"), ("T_wd0.01", fs.COL["drive"], "-", "T baseline"), ("T_nosg", fs.COL["drive"], "--", "T no stop-grad")):
+        line(axs[2], n, "online_tok_total_var", c, ls, lab, norm=True)
+    axs[2].set_yscale("log"); axs[2].set_title("(c) total variance / start", fontsize=7.2); axs[2].legend(fontsize=5.5, frameon=False, loc="lower left", ncol=2, columnspacing=0.8, handlelength=1.6); axs[2].set_ylim(top=3)
+    lo = axs[2].get_ylim()[0]; axs[2].set_ylim(bottom=lo / 80)
+    axs[0].set_ylabel("count of directions"); axs[2].set_ylabel("")
+    for a in axs: a.set_xlabel("epoch"); a.set_xlim(0, 20)
+    fs.save(fig, "fig11_e3_dynamics", outdir)
+    common.record_inputs(outdir, "fig11_e3_dynamics", paths + [tpath])

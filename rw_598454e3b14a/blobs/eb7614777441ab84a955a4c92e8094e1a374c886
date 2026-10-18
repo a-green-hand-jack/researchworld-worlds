@@ -1,0 +1,341 @@
+"""Linear JEPA simulator and near-collapse theory.
+
+Model: context embedding z1 = W x1, target z2 = sg(Wbar) x2, prediction P z1, with
+P = P_L ... P_1 (depth L >= 1). Loss
+    L = 1/2 E || P W x1 - Wbar x2 ||^2 + lam_W/2 ||W||^2 + lam_P/2 sum_l ||P_l||^2.
+Wbar = W (stop-gradient copy, kappa=None) or an EMA of W with continuous rate kappa
+(discrete momentum m = 1 - eta*kappa).
+Population gradients only need S11 = E[x1 x1^T] and S21 = E[x2 x1^T].
+"""
+import numpy as np
+
+
+def predictor_product(Ps):
+    P = Ps[0]
+    for Q in Ps[1:]:
+        P = Q @ P
+    return P
+
+
+def init_params(seed, n, d, w0=1e-3, p0=1.0, depth=1, width=None, pred_init="identity", w_init="gaussian",
+                jitter=0.1):
+    """Initial W (d x n) and predictor factors, drawn from default_rng(seed) in a fixed order.
+    Returns (rng, W, Ps); the rng continues with the minibatch draws of simulate()."""
+    rng = np.random.default_rng(seed)
+    if w_init == "orthogonal":
+        assert d >= n
+        Q, _ = np.linalg.qr(rng.standard_normal((d, n)))
+        W = w0 * Q * np.exp(jitter * rng.standard_normal(n))   # orthogonal columns, norms ~ w0
+    else:
+        W = w0 * rng.standard_normal((d, n)) / np.sqrt(n)
+    if width is None:
+        width = d
+    dims = [d] + [width] * (depth - 1) + [d]
+    Ps = []
+    for l in range(depth):
+        if pred_init == "identity":
+            assert dims[l] == dims[l + 1]
+            Ps.append(p0 ** (1.0 / depth) * np.eye(dims[l]))
+        else:
+            Ps.append(p0 * rng.standard_normal((dims[l + 1], dims[l])) / np.sqrt(dims[l]))
+    return rng, W, Ps
+
+
+def simulate(S11, S21, d, lam_W, lam_P, p0=1.0, w0=1e-3, eta=0.05, T=4000, alpha=1.0,
+             kappa=None, depth=1, width=None, pred_init="identity", seed=0, record_every=0,
+             sampler=None, batch=None, w_init="gaussian", jitter=0.1, stopgrad=True, S22=None,
+             optimizer="gd", betas=(0.9, 0.999), eps=1e-8, rank_checks=0, sv_thr=0.05):
+    """Gradient descent on the population loss (sampler=None) or on minibatches.
+
+    pred_init: 'identity' -> P_1 = p0 I (depth 1) or each factor p0^(1/L) I;
+               'gaussian' -> factors with iid N(0, p0^2/width_in) entries.
+    sampler(rng, batch) -> (x1, x2) arrays of shape (batch, n) for SGD.
+    alpha = 0 freezes the predictor (with p0 = 1: no predictor, P = I).
+    stopgrad=False: the gradient also flows through the target branch (needs S22 = E[x2 x2^T]).
+    optimizer 'adam': AdamW with decoupled weight decay, param *= (1 - eta*lam); lr eta (predictor eta*alpha).
+    rank_checks > 0: record the rank (singular values above sv_thr) at that many equally spaced steps.
+    Returns dict with final W, P, singular values, and optional trajectory of mode norms.
+    """
+    n = S11.shape[0]
+    rng, W, Ps = init_params(seed, n, d, w0, p0, depth, width, pred_init, w_init, jitter)
+    if width is None:
+        width = d
+    dims = [d] + [width] * (depth - 1) + [d]
+    Wb = W.copy()
+    W_init = W.copy()
+    P_init = predictor_product(Ps).copy()
+    if optimizer == "adam":
+        mom = [np.zeros_like(W)] + [np.zeros_like(Q) for Q in Ps]
+        vel = [np.zeros_like(W)] + [np.zeros_like(Q) for Q in Ps]
+    traj = []
+    ranks = []
+    check_at = set(np.linspace(0, T, rank_checks + 1).astype(int)[1:].tolist()) if rank_checks else set()
+    diverged = None
+    for t in range(T):
+        if record_every and t % record_every == 0:
+            traj.append((t * eta, np.linalg.norm(W, axis=0).copy(),
+                         np.linalg.svd(predictor_product(Ps), compute_uv=False).copy()))
+        tgt = W if kappa is None else Wb
+        P = predictor_product(Ps)
+        if sampler is None:
+            R = P @ W @ S11 - tgt @ S21            # d x n : E[(P W x1 - tgt x2) x1^T]
+            if not stopgrad:
+                R2 = P @ W @ S21.T - tgt @ S22     # E[(P W x1 - W x2) x2^T]
+        else:
+            x1, x2 = sampler(rng, batch)
+            E = x1 @ (P @ W).T - x2 @ tgt.T          # batch x d residuals
+            R = E.T @ x1 / batch
+            if not stopgrad:
+                R2 = E.T @ x2 / batch
+        gW = P.T @ R
+        if not stopgrad:
+            gW = gW - R2
+        # gradient wrt P (d x d) is R W^T ; chain to factors
+        GP = R @ W.T
+        gPs = []
+        if depth == 1:
+            gPs.append(GP)
+        for l in range(depth if depth > 1 else 0):
+            left = np.eye(dims[-1])
+            for Q in Ps[l + 1:][::-1]:
+                left = left @ Q
+            right = np.eye(dims[0])
+            for Q in Ps[:l]:
+                right = Q @ right
+            gPs.append(left.T @ GP @ right.T)
+        if optimizer == "gd":
+            W = W - eta * (gW + lam_W * W)
+            for l in range(depth):
+                Ps[l] = Ps[l] - eta * alpha * (gPs[l] + lam_P * Ps[l])
+        else:
+            b1, b2 = betas
+            grads = [gW] + gPs
+            params = [W] + Ps
+            lrs = [eta] + [eta * alpha] * depth
+            lams = [lam_W] + [lam_P] * depth
+            for i in range(len(params)):
+                mom[i] = b1 * mom[i] + (1 - b1) * grads[i]
+                vel[i] = b2 * vel[i] + (1 - b2) * grads[i] ** 2
+                mh = mom[i] / (1 - b1 ** (t + 1)); vh = vel[i] / (1 - b2 ** (t + 1))
+                params[i] = params[i] * (1 - lrs[i] * lams[i]) - lrs[i] * mh / (np.sqrt(vh) + eps)
+            W = params[0]; Ps = params[1:]
+        if kappa is not None:
+            Wb = Wb + eta * kappa * (W - Wb)
+        if t % 50 == 0:   # flush values far below any measured scale (avoids slow subnormal arithmetic)
+            for M in [W, Wb] + Ps:
+                M[np.abs(M) < 1e-150] = 0.0
+            if not all(np.isfinite(M).all() and np.abs(M).max() < 1e10 for M in [W] + Ps):
+                diverged = (t + 1) * eta   # numerical blow-up of the iteration: stop and report it
+                break
+        if (t + 1) in check_at:
+            ranks.append(((t + 1) * eta, int((np.linalg.svd(W, compute_uv=False) > sv_thr).sum())))
+    P = predictor_product(Ps)
+    if diverged is not None:
+        return dict(W=W, P=P, W_init=W_init, P_init=P_init, sv=None, mode_norms=None, traj=traj, ranks=ranks,
+                    diverged=diverged)
+    return dict(W=W, P=P, W_init=W_init, P_init=P_init, sv=np.linalg.svd(W, compute_uv=False),
+                mode_norms=np.linalg.norm(W, axis=0), traj=traj, ranks=ranks, diverged=None)
+
+
+# ---------------------------------------------------------------- theory (isotropic predictor)
+
+def growth_rate(p, c, s, lam_W, kappa=None):
+    """Linearised growth rate of mode (c, s) with scalar predictor gain p.
+    Stop-gradient: g = p c - p^2 s - lam_W. EMA with rate kappa: largest root of
+    (g + p^2 s + lam_W)(g + kappa) = p c kappa."""
+    a = p ** 2 * s + lam_W
+    if kappa is None:
+        return p * c - a
+    # g^2 + (a + kappa) g + kappa (a - p c) = 0
+    B = a + kappa
+    disc = B ** 2 - 4 * kappa * (a - p * c)
+    return (-B + np.sqrt(np.maximum(disc, 0))) / 2
+
+
+def window(c, s, lam_W):
+    """Roots p_- <= p_+ of p c - p^2 s = lam_W (for c > 0); NaN if no window."""
+    disc = c ** 2 - 4 * lam_W * s
+    sq = np.sqrt(np.where(disc >= 0, disc, np.nan))
+    return (c - sq) / (2 * s), (c + sq) / (2 * s)
+
+
+def race_exponent(c, s, lam_W, lam_P, alpha, p0, kappa=None, ngrid=4000):
+    """Max over t of the log-amplitude gain F(t) = int_0^t g(p(tau)) dtau with
+    p(t) = p0 exp(-alpha lam_P t) (predictor drifting under its own weight decay,
+    valid while the mode is small). Returns (Fmax, t_at_max, p_at_max).
+    Numerical quadrature so the EMA rate can be used too."""
+    c = np.atleast_1d(np.asarray(c, float)); s = np.broadcast_to(s, c.shape).astype(float)
+    if lam_P == 0 or alpha == 0:
+        g0 = growth_rate(p0, c, s, lam_W, kappa)
+        return np.where(g0 > 0, np.inf, 0.0), None, None
+    # integrate in log p: dt = dlogp / (alpha lam_P)
+    pmin = 1e-6 * p0
+    logp = np.linspace(np.log(p0), np.log(pmin), ngrid)
+    dt = (logp[0] - logp[1]) / (alpha * lam_P)
+    p = np.exp(logp)
+    g = growth_rate(p[:, None], c[None, :], s[None, :], lam_W, kappa)
+    F = np.concatenate([np.zeros((1, c.size)), np.cumsum(0.5 * (g[1:] + g[:-1]) * dt, axis=0)])
+    i = F.argmax(0)
+    return F[i, np.arange(c.size)], i * dt, p[i]
+
+
+def escape_score(c, s, lam_W, lam_P, alpha, p0, logw0, kappa=None, t_end=np.inf, depth=1, ngrid=6000,
+                 obs_thr=0.05, depth_nullcline=False):
+    """Analytic (race) escape criterion for a mode (c, s) starting at log-amplitude logw0.
+    While small, the mode's log-amplitude follows logw0 + F(t), F(t) = int g(p(tau)) dtau,
+    with the predictor drifting under its own weight decay, p(t) = p0 exp(-depth*alpha*lam_P*t).
+    The mode captures the predictor once its drive on it, (c - p s) a^2, balances the decay lam_P p,
+    i.e. a^2 >= lam_P p / (c - p s), and this must happen while the mode still grows (p >= p_-).
+    Score = max over such t <= t_end of [logw0 + F(t) - 1/2 log(lam_P p/(c - p s))]; escape iff >= 0.
+    lam_P = 0: the predictor does not drift; escape iff g(p0) > 0 and the mode reaches obs_thr by t_end.
+    depth_nullcline=True (post-hoc correction after E1b, internal-review experiment-repo#2): for a depth-L predictor
+    of identity-initialised factors q I with decay on every factor, p = q^L and
+    dp/dt = alpha L [p^(2-2/L) (c - p s) a^2 - lam_P p], so capture needs a^2 >= lam_P p^(2/L-1) / (c - p s)
+    (the depth-1 nullcline for L = 1). Default False keeps the pre-registered E1b criterion."""
+    g0 = float(growth_rate(p0, c, s, lam_W, kappa))
+    if lam_P == 0 or alpha == 0:
+        if g0 <= 0:
+            return -np.inf
+        return float(logw0 + g0 * t_end - np.log(obs_thr))
+    pm, _ = window(np.asarray(c, float), np.asarray(s, float), lam_W)
+    if not np.isfinite(pm) or pm >= p0:
+        return -np.inf
+    rate = depth * alpha * lam_P
+    logp = np.linspace(np.log(p0), np.log(max(pm, 1e-12 * p0)), ngrid)
+    dt = (logp[0] - logp[1]) / rate
+    p = np.exp(logp)
+    t = np.arange(ngrid) * dt
+    g = growth_rate(p, c, s, lam_W, kappa)
+    F = np.concatenate([[0.0], np.cumsum(0.5 * (g[1:] + g[:-1]) * dt)])
+    gap = c - p * s
+    pe = p ** (2.0 / depth - 1.0) if depth_nullcline else p
+    thr = np.where(gap > 0, 0.5 * np.log(lam_P * pe / np.maximum(gap, 1e-300)), np.inf)
+    val = (logw0 + F - thr)[t <= t_end]
+    return float(val.max()) if val.size else -np.inf
+
+
+def reduced_flow(c, s, a0, p0, lam_W, lam_P, alpha=1.0, eta=0.1, T=10000, kappa=None, floor=1e-150):
+    """Per-mode reduced dynamics (exact for co-diagonal S11, S21, isotropic depth-1 predictor and
+    orthogonal encoder columns): a = |w_k|, p = predictor gain along w_k, abar = EMA target amplitude.
+        da/dt = -p^2 s a + p c abar - lam_W a,   dp/dt = alpha[(c abar - p s a) a - lam_P p]
+    (abar = a for a stop-gradient target). Vectorised over modes; same Euler step as simulate().
+    Values below `floor` are set to 0 after each step, as in simulate() (floor=0: no flush)."""
+    a = np.asarray(a0, float).copy(); p = np.full_like(a, p0); ab = a.copy()
+    c = np.asarray(c, float); s = np.asarray(s, float)
+    for _ in range(T):
+        tb = a if kappa is None else ab
+        da = -p ** 2 * s * a + p * c * tb - lam_W * a
+        dp = alpha * ((c * tb - p * s * a) * a - lam_P * p)
+        a = a + eta * da; p = p + eta * dp
+        if kappa is not None:
+            ab = ab + eta * kappa * (a - ab)
+        if floor > 0:
+            a[np.abs(a) < floor] = 0.0; ab[np.abs(ab) < floor] = 0.0; p[np.abs(p) < floor] = 0.0
+    return a, p
+
+
+def race_end_time(c, s, lam_W, lam_P, alpha, p0, depth=1):
+    """Time at which the drifting predictor leaves the growth window of every mode (p(t) = p_-)."""
+    pm, _ = window(np.asarray(c, float), np.asarray(s, float), lam_W)
+    pm = pm[np.isfinite(pm) & (pm > 0) & (pm < p0)]
+    if lam_P == 0 or pm.size == 0:
+        return 0.0
+    return float(np.log(p0 / pm.min()) / (depth * alpha * lam_P))
+
+
+def sv_rank(W, thr=0.05):
+    return int((np.linalg.svd(W, compute_uv=False) > thr).sum())
+
+
+def rankme(Z_sv, eps=1e-12):
+    """RankMe (Garrido et al. 2023): exp of the entropy of normalised singular values."""
+    p = Z_sv / (Z_sv.sum() + eps) + eps
+    return float(np.exp(-(p * np.log(p)).sum()))
+
+
+def race_closed_form(c, s, lam, alpha, p0, logw0, depth=1):
+    """Closed form of the race (copy target, lam_W = lam_P = lam, aligned mode, p0 > p_-):
+    F* = (1/(L alpha lam)) [c (p0 - p_-) - s (p0^2 - p_-^2)/2 - lam log(p0/p_-)]  (max of the near-collapse
+    log-gain, reached when the decaying predictor leaves the window at p_-), capture evaluated at p_-:
+    score = logw0 + F* - 1/2 log(lam p_- / (c - p_- s)); survival iff score >= 0. Returns (score, F*)."""
+    c = np.asarray(c, float); s = np.broadcast_to(np.asarray(s, float), c.shape)
+    disc = c * c - 4 * lam * s
+    ok = disc >= 0
+    pm = np.where(ok, (c - np.sqrt(np.where(ok, disc, 0))) / (2 * s), np.nan)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        F = (c * (p0 - pm) - s * (p0 ** 2 - pm ** 2) / 2 - lam * np.log(p0 / pm)) / (depth * alpha * lam)
+        cap = 0.5 * np.log(lam * pm / (c - pm * s))
+    ok &= p0 > pm
+    F = np.where(ok, F, -np.inf)
+    return np.where(ok, logw0 + F - cap, -np.inf), F
+
+
+def scalar_race_alpha1(c, s, lam, p0, w0, T, dt=0.01):
+    """Exact reduction of an aligned mode for alpha = 1 and a copy target (balance identity, credit
+    Tian et al. 2021 for the invariant; form as in internal-review-repo checks/race_exact_vs_nearcollapse.py):
+    dw/dt = (p c - p^2 s - lam) w,  p = sqrt(w^2 + exp(-2 lam t)(p0^2 - w0^2)). RK4; returns w(T)."""
+    w = np.asarray(w0, float) * np.ones_like(np.asarray(c, float)); D0 = p0 ** 2 - w ** 2
+    def f(t, w):
+        p = np.sqrt(np.maximum(w * w + np.exp(-2 * lam * t) * D0, 0))
+        return (p * c - p * p * s - lam) * w
+    t = 0.0
+    for _ in range(int(round(T / dt))):
+        k1 = f(t, w); k2 = f(t + dt / 2, w + dt / 2 * k1); k3 = f(t + dt / 2, w + dt / 2 * k2); k4 = f(t + dt, w + dt * k3)
+        w = w + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4); t += dt
+    return w
+
+
+def n1_general(S11, S21, W0, P0, lam, alpha, eta, T, depth=1, kappa=None, check_every=10, obs_thr=0.05):
+    """Criterion N1-general (theory note Sec. 6; approximation). Integrates the near-collapse linear system
+        W' = P(t)^T Wbar S21 - P(t)^T P(t) W S11 - lam W,  P(t) = (1 - eta alpha lam)^(depth*step) P0
+    (the predictor drifts under its own weight decay only, A1) with the same Euler step as simulate(), from the
+    actual W0, P0. At every check, each singular triplet (s_i, a_i, u_i) of W_lin gets effective scalars
+    p_i = a_i^T P a_i, q_i = |P a_i|^2, c_i = u_i^T S21 u_i, sig_i = u_i^T S11 u_i, a growth rate
+    g_i = p_i c_i - q_i sig_i - lam (EMA: the root of growth_rate with p^2 s -> q sig) and a capture scale
+    s_i^2 >= lam p_i / (c_i - p_i sig_i) (lam > 0) or s_i >= obs_thr (lam = 0). A direction counts if it grows and
+    is captured. Returns the maximum count over checks (the predicted rank)."""
+    W = W0.copy(); Wb = W.copy(); P = P0.copy()
+    dec = (1 - eta * alpha * lam) ** depth
+    best = 0
+    logscale = 0.0          # the system is linear: W is kept O(1) and its scale carried in log form
+    for step in range(T + 1):
+        nrm = np.abs(W).max()
+        if not np.isfinite(nrm):
+            break                      # cannot happen with the rescaling below; guard rather than return garbage
+        if nrm > 1e30 or (0 < nrm < 1e-30):
+            W = W / nrm; Wb = Wb / nrm; logscale += np.log(nrm)
+        if step % check_every == 0:
+            # flush entries more than 150 orders of magnitude below the largest (denormal range breaks LAPACK's SVD)
+            m = np.abs(W).max()
+            W[np.abs(W) < 1e-150 * m] = 0.0
+            if kappa is not None:
+                Wb[np.abs(Wb) < 1e-150 * m] = 0.0
+            try:
+                U, sv, Vt = np.linalg.svd(W, full_matrices=False)
+            except np.linalg.LinAlgError:
+                import scipy.linalg
+                U, sv, Vt = scipy.linalg.svd(W, full_matrices=False, lapack_driver="gesvd")
+            sv = sv * np.exp(min(logscale, 700.0))
+            PU = P @ U
+            p = np.einsum("ij,ij->j", U, PU); q = (PU ** 2).sum(0)
+            c = np.einsum("ij,jk,ik->i", Vt, S21, Vt); sg = np.einsum("ij,jk,ik->i", Vt, S11, Vt)
+            if kappa is None:
+                g = p * c - q * sg - lam
+            else:
+                a = q * sg + lam; B = a + kappa
+                g = (-B + np.sqrt(np.maximum(B ** 2 - 4 * kappa * (a - p * c), 0))) / 2
+            gap = c - p * sg
+            if lam > 0:
+                ok = (g > 0) & (gap > 0) & (sv ** 2 * np.maximum(gap, 1e-300) >= lam * np.abs(p))
+            else:
+                ok = (g > 0) & (sv >= obs_thr)
+            best = max(best, int(ok.sum()))
+        if step == T:
+            break
+        tgt = W if kappa is None else Wb
+        G = tgt @ S21 - P @ W @ S11
+        W = W + eta * (P.T @ G - lam * W)
+        P = P * dec
+        if kappa is not None:
+            Wb = Wb + eta * kappa * (W - Wb)
+    return best

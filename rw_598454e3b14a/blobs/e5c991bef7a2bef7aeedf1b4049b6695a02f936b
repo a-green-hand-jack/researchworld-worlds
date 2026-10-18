@@ -1,0 +1,16 @@
+{\footnotesize
+\newcolumntype{R}[1]{>{\raggedright\arraybackslash}p{#1}}
+\begin{tabular}{@{}R{0.26\linewidth}R{0.28\linewidth}R{0.29\linewidth}c@{}}
+\toprule
+Arm (runs) & Pre-registered criterion & Observed & Verdict \\
+\midrule
+population GD, cyclic masks (648) & per-frequency acc.\ $\ge0.95$; MAE $\le1$, below window and static bound & acc.\ 0.999; MAE 0.03; window 1.04, bound 4.04; exact rank vs $t{=}4\!\cdot\!10^4$: 0.94 (0.76 at $\lambda{=}3{\cdot}10^{-4}$) & \textbf{pass} \\ \addlinespace[1.5pt]
+rank peak in $r$ (17 profiles) & peak within one step in $\ge80\%$; every predicted rise-and-fall confirmed (Bernoulli only) & peak 100\%; rise-and-fall 2/3 & \textbf{fail} \\ \addlinespace[1.5pt]
+non-cyclic block (216), general criterion & MAE $\le1.5$, below static bound & MAE 0.19; bound 3.0; circulant approx.\ 0.64 & \textbf{pass} \\ \addlinespace[1.5pt]
+SGD with mask and sample noise (108) & MAE to population prediction $\le1.5$ & MAE 0.47 & \textbf{pass} \\ \addlinespace[1.5pt]
+tanh encoder (108) & MAE $\le1.5$, below static bound & MAE 10.6; bound 10.6 & \textbf{fail} \\ \addlinespace[1.5pt]
+two-layer tanh encoder, exploratory (108) & MAE $\le2$ and below static bound & MAE 2.69 (linear 1.74); bound 3.75; Spearman 0.87 & \textbf{fail} \\ \addlinespace[1.5pt]
+no predictor, masked (108) & growth sign at $\ge99\%$ of frequencies; ``all collapse'' wrong wherever growth is predicted & acc.\ 1.00; ``all collapse'' wrong in 18/18 configs & \textbf{pass} \\ \addlinespace[1.5pt]
+\bottomrule
+\end{tabular}
+}

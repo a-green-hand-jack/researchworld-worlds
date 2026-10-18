@@ -1,0 +1,7 @@
+\section{Limitations and conclusion}
+\label{sec:discussion}
+
+With weight decay collapse is an attractor, escaped by outgrowing the predictor's decay; the race predicts held-out linear JEPAs' rank, also under masking; in a ViT only its weight-decay ordering held.
+Limitations: the theory treats the linear model near collapse under population gradient flow, with no noise floor and no post-capture stage; the depth correction is post hoc, re-tested only for identity-initialised factors, the closed form needs \cref{ass:aligned} and its general form is tested only in linear models, and E1 is a development set.
+AdamW is at most partly supported, one EMA sign test failed, a predicted fall of the rank at high $r$ held in \EtwoNonmonoConf{} of \EtwoNonmonoPred{} profiles, and under random masks a tanh encoder gains rank after the race and a two-layer encoder is mispredicted, worse than the stability count.
+The ViT tests only a step-0 rule, which misplaces the weight-decay transition; its predictor, EMA and mask predictions failed.

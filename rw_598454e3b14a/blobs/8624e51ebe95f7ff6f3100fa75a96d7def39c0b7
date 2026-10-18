@@ -1,0 +1,2042 @@
+{
+ "experiment": "E3",
+ "status": "pre-registered: computed from each run's own initialisation (step-0 force decomposition, metrics at step 0) and hyperparameters, before any E3 sweep run",
+ "note": "E3 frozen grid, forward predictions from initialisation, Ibex job scripts and scoring.\n\nGrid (frozen after the E3 pilot; results/e3_pilot/): one factor at a time around two baselines, 3 seeds each.\n- Arm P (\"practice\"): our 32x32 scaling of the I-JEPA recipe (code/e3_ijepa.py defaults: AdamW, target LayerNorm,\n  lr warmup+cosine, wd cosine 0.04->0.4, EMA 0.996->1), schedules defined over FULL_EPOCHS, each sweep run is\n  its first RUN_EPOCHS epochs.\n- Arm T (\"theory-aligned\"): SGD momentum 0.9, constant lr 0.05, copy target (stop-grad, tau=0), no target LayerNorm,\n  no LayerNorm inside the predictor, weight decay on every parameter (norm gains included), constant wd.\n  Baseline wd 1e-2 (the predictor and target factors need lam > 0: the theory's alpha effect vanishes at lam = 0).",
+ "definitions": {
+  "space": "online encoder token embeddings (the space the loss acts on and the force decomposition is computed in); target-encoder and mean-pooled ranks are reported alongside",
+  "rank_count": "eigenvalues of the centred token covariance >= 1e-3 x the largest, on the first 10000 CIFAR-10 test images, at the end of the run (epoch RUN_EPOCHS)",
+  "rankme_c": "exp-entropy of the normalised singular values of the centred embeddings; raw RankMe alongside",
+  "complete_collapse": "total centred variance < 1e-6 x its value at init, or centred RankMe < 1.5",
+  "dimensional_collapse": "count < 0.5 x the count at init (at init the count is ~27 of 128)",
+  "horizon": "20 epochs = 3900 steps of a 50-epoch schedule",
+  "seeds": [
+   0,
+   1,
+   2
+  ]
+ },
+ "predictor": "Linearised race over the run's horizon T from the step-0 forces only.\n    Per eigendirection k of the online token covariance at init (eigenvalue e_k): the gradient part (drive D_k +\n    self-prediction S_k, x 1/(1-momentum) for SGD with momentum, whose steady-state step is that much larger) scales\n    with lr(t); the decoupled decay part L_k with lr(t) wd(t). log e_k(T) = log e_k + sum_t rate_k(t), and growth\n    saturates at the initial top eigenvalue. Predicted count = #{e_k(T) >= 1e-3 max_j e_j(T)} (the measured count's\n    rule); predicted total-variance ratio = sum e(T) / sum e(0).",
+ "development": "the horizon rule was written after the 13 GPU pilot runs (results/e3_pilot/), and checked on them (development only); none of the sweep runs below had been run when this file was written",
+ "critical_wd": {
+  "arm_T": 0.01412537544622754,
+  "arm_P_constant": null,
+  "arm_P_large_chosen": 5.5,
+  "arm_P_large_rule": "fallback: the horizon rule predicts no Arm P transition for wd <= 1e2, so 2 x critical is undefined; wd_large = 5 / sum_t lr(t) over the horizon, where decoupled decay alone would shrink every weight by e^-5 (constant wd)",
+  "arm_P_beyond_grid": 15848.93192461114,
+  "arm_P_beyond_grid_note": "diagnostic only: there lr x wd > 1 for part of the horizon (lr0 = 0.0003), so decoupled decay is no longer a contraction and the linearised rule is outside its range",
+  "rule": "smallest wd (log grid 1e-4..1e2) with predicted count < 0.5 x count at init in >= 2 of 3 seeds"
+ },
+ "adamw_note": "under AdamW the step-0 update is lr sign(g) per parameter (Adam's first step), so the horizon rule is insensitive to gradient scale and the predictor lr multiplier never enters the encoder's step-0 force: in Arm P it predicts nearly equal counts for the predictor factors; their directions are registered from the theory signs instead",
+ "masking_from_M2": {
+  "rank_N1general": {
+   "targets1": "undetermined",
+   "ctx0.4": "undetermined",
+   "tscale_hi": "undetermined",
+   "tscale_lo": "undetermined"
+  },
+  "rank_N1": {
+   "targets1": "equal",
+   "ctx0.4": "undetermined",
+   "tscale_hi": "undetermined",
+   "tscale_lo": "undetermined"
+  }
+ },
+ "masking_note": "the linear M2 proxy (results/e3/mask_stats.json) leaves the order of the mask settings undetermined (it changes with lam, p0), so no masking direction is registered from it; the masking predictions are the horizon rule's",
+ "success_criteria": {
+  "C-rank (forward, primary)": "Spearman rho between the predicted count (horizon rule, mean over seeds) and the measured online-token count at the end of the run (mean over seeds), within each arm (nosg configs excluded, see the predictor note), >= 0.5 and its bootstrap 95% CI (over configs) excludes 0",
+  "C-dir (forward)": "for each factor, each adjacent pair of grid values (each mask setting against the base) whose predicted mean counts differ by more than the tolerance max(2, sd_a + sd_b) (sd = sample standard deviation of the predicted count over the 3 seeds) has a predicted sign; the measured centred RankMe change has that sign in >= 2 of 3 seeds (plan default). Every other pair is registered as an explicit null ('no predicted difference'), which holds if the measured mean counts differ by at most max(2, sd_a + sd_b) of the measured counts. Scored as the fractions of signed pairs and of nulls that hold, and listed",
+  "C-loc wd (forward)": "location of the dimensional-collapse transition in weight decay (Arm T wd sweep): the observed transition (geometric midpoint of the last healthy and first collapsed grid value; collapsed = online count < 0.5 x its value at init in >= 2 of 3 seeds) lies within a factor of 2 of the predicted critical wd (plan default for log-scaled knobs)",
+  "C-theory signs (forward)": "signs from theory/derivations.md Sec. 4 independent of the init forces: rank falls with weight decay (both arms), with the predictor lr multiplier (both arms, lam > 0) and with predictor depth (Arm P); nosg ends in complete collapse (total online variance < 1e-6 x init, or centred RankMe < 1.5; Prop. 5); frozen target at standard init does not collapse (online count >= 0.5 x init; Sec. 4 frozen row with c|w0| > lam); EMA rate changes the count by less than the seed spread at matched schedule (EMA changes time scales, not the threshold) - each scored per seed majority",
+  "C-diag (diagnostic, not forward)": "the count of directions with measured drive+decay > 0 at step 800 and 3200 (force decomposition during the run) vs the final count: Spearman within arm"
+ },
+ "configs": {
+  "P_base": {
+   "arm": "P",
+   "factor": "base",
+   "value": null,
+   "over": {},
+   "count_pred": 97.66666666666667,
+   "tv_ratio_pred": 50.32015709790849,
+   "window": 98.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.47265193786336,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.79040770034691,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_pdepth1": {
+   "arm": "P",
+   "factor": "pred_depth",
+   "value": 1,
+   "over": {
+    "pred_depth": 1
+   },
+   "count_pred": 101.33333333333333,
+   "tv_ratio_pred": 51.92224788580503,
+   "window": 102.33333333333333,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 98,
+     "tv_ratio": 47.98302918726749,
+     "window": 99,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 103,
+     "tv_ratio": 55.41638878271827,
+     "window": 104,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 103,
+     "tv_ratio": 52.36732568742931,
+     "window": 104,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_pdepth6": {
+   "arm": "P",
+   "factor": "pred_depth",
+   "value": 6,
+   "over": {
+    "pred_depth": 6
+   },
+   "count_pred": 103.0,
+   "tv_ratio_pred": 53.13978787820562,
+   "window": 104.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 100,
+     "tv_ratio": 48.962274680886246,
+     "window": 101,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 106,
+     "tv_ratio": 57.58686222149088,
+     "window": 107,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 103,
+     "tv_ratio": 52.8702267322397,
+     "window": 104,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_pwidth128": {
+   "arm": "P",
+   "factor": "pred_width",
+   "value": 128,
+   "over": {
+    "pred_width": 128
+   },
+   "count_pred": 100.66666666666667,
+   "tv_ratio_pred": 51.86216284204364,
+   "window": 101.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 100,
+     "tv_ratio": 48.962274680885194,
+     "window": 101,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 98,
+     "tv_ratio": 53.24068394062361,
+     "window": 99,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 104,
+     "tv_ratio": 53.38352990462212,
+     "window": 105,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_plr0.1": {
+   "arm": "P",
+   "factor": "pred_lr_mult",
+   "value": 0.1,
+   "over": {
+    "pred_lr_mult": 0.1
+   },
+   "count_pred": 97.66666666666667,
+   "tv_ratio_pred": 50.32015709790849,
+   "window": 98.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.47265193786336,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.79040770034691,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_plr10": {
+   "arm": "P",
+   "factor": "pred_lr_mult",
+   "value": 10,
+   "over": {
+    "pred_lr_mult": 10
+   },
+   "count_pred": 97.66666666666667,
+   "tv_ratio_pred": 50.32015709790849,
+   "window": 98.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.47265193786336,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.79040770034691,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_pinit0.1": {
+   "arm": "P",
+   "factor": "pred_init_scale",
+   "value": 0.1,
+   "over": {
+    "pred_init_scale": 0.1
+   },
+   "count_pred": 98.0,
+   "tv_ratio_pred": 50.329538869065146,
+   "window": 99.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 100,
+     "tv_ratio": 48.500795331679925,
+     "window": 101,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.7904096200003,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_pinit3": {
+   "arm": "P",
+   "factor": "pred_init_scale",
+   "value": 3,
+   "over": {
+    "pred_init_scale": 3
+   },
+   "count_pred": 101.33333333333333,
+   "tv_ratio_pred": 52.23853236037518,
+   "window": 102.33333333333333,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 102,
+     "tv_ratio": 49.94152017452949,
+     "window": 103,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 103,
+     "tv_ratio": 55.95704536616563,
+     "window": 104,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 99,
+     "tv_ratio": 50.81703154043042,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_targets1": {
+   "arm": "P",
+   "factor": "mask",
+   "value": "targets1",
+   "over": {
+    "n_targets": 1
+   },
+   "count_pred": 98.0,
+   "tv_ratio_pred": 50.31433055775587,
+   "window": 99.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 101,
+     "tv_ratio": 48.968431413967,
+     "window": 102,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.697455732049775,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 96,
+     "tv_ratio": 49.27710452725083,
+     "window": 97,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_ctx0.4": {
+   "arm": "P",
+   "factor": "mask",
+   "value": "ctx0.4",
+   "over": {
+    "context_scale": [
+     0.4,
+     0.5
+    ]
+   },
+   "count_pred": 98.66666666666667,
+   "tv_ratio_pred": 50.835556529879916,
+   "window": 99.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 100,
+     "tv_ratio": 48.9622746873426,
+     "window": 101,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 98,
+     "tv_ratio": 53.240684030299576,
+     "window": 99,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 98,
+     "tv_ratio": 50.30371087199759,
+     "window": 99,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_tscale_hi": {
+   "arm": "P",
+   "factor": "mask",
+   "value": "tscale_hi",
+   "over": {
+    "target_scale": [
+     0.3,
+     0.4
+    ]
+   },
+   "count_pred": 75.66666666666667,
+   "tv_ratio_pred": 32.73580256466948,
+   "window": 68.33333333333333,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 100,
+     "tv_ratio": 48.47468511429253,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 32,
+     "tv_ratio": 0.9689212104587338,
+     "window": 9,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 95,
+     "tv_ratio": 48.76380136925716,
+     "window": 96,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_tscale_lo": {
+   "arm": "P",
+   "factor": "mask",
+   "value": "tscale_lo",
+   "over": {
+    "target_scale": [
+     0.05,
+     0.1
+    ]
+   },
+   "count_pred": 98.0,
+   "tv_ratio_pred": 50.49335439663051,
+   "window": 99.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 100,
+     "tv_ratio": 48.96227468093034,
+     "window": 101,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 98,
+     "tv_ratio": 53.24068394062361,
+     "window": 99,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 96,
+     "tv_ratio": 49.277104568337556,
+     "window": 97,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_nosg": {
+   "arm": "P",
+   "factor": "target",
+   "value": "nosg",
+   "over": {
+    "target": "nosg"
+   },
+   "count_pred": 97.66666666666667,
+   "tv_ratio_pred": 50.32015709790849,
+   "window": 98.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.47265193786336,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.79040770034691,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_copy": {
+   "arm": "P",
+   "factor": "target",
+   "value": "copy",
+   "over": {
+    "target": "copy"
+   },
+   "count_pred": 97.66666666666667,
+   "tv_ratio_pred": 50.32015709790849,
+   "window": 98.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.47265193786336,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.79040770034691,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_ema0.9": {
+   "arm": "P",
+   "factor": "target",
+   "value": "ema0.9",
+   "over": {
+    "ema": [
+     0.9,
+     0.9
+    ]
+   },
+   "count_pred": 97.66666666666667,
+   "tv_ratio_pred": 50.32015709790849,
+   "window": 98.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.47265193786336,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.79040770034691,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_ema0.99": {
+   "arm": "P",
+   "factor": "target",
+   "value": "ema0.99",
+   "over": {
+    "ema": [
+     0.99,
+     0.99
+    ]
+   },
+   "count_pred": 97.66666666666667,
+   "tv_ratio_pred": 50.32015709790849,
+   "window": 98.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.47265193786336,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.79040770034691,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_ema0.999": {
+   "arm": "P",
+   "factor": "target",
+   "value": "ema0.999",
+   "over": {
+    "ema": [
+     0.999,
+     0.999
+    ]
+   },
+   "count_pred": 97.66666666666667,
+   "tv_ratio_pred": 50.32015709790849,
+   "window": 98.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.47265193786336,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.79040770034691,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_frozen": {
+   "arm": "P",
+   "factor": "target",
+   "value": "frozen",
+   "over": {
+    "target": "frozen"
+   },
+   "count_pred": 97.66666666666667,
+   "tv_ratio_pred": 50.32015709790849,
+   "window": 98.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.47265193786336,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.79040770034691,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_wd0": {
+   "arm": "P",
+   "factor": "wd",
+   "value": 0.0,
+   "over": {
+    "wd": [
+     0.0,
+     0.0
+    ]
+   },
+   "count_pred": 97.66666666666667,
+   "tv_ratio_pred": 50.32015709804947,
+   "window": 98.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.472651938224956,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.79040770040827,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_wd0.04": {
+   "arm": "P",
+   "factor": "wd",
+   "value": 0.04,
+   "over": {
+    "wd": [
+     0.04,
+     0.04
+    ]
+   },
+   "count_pred": 97.66666666666667,
+   "tv_ratio_pred": 50.320157097984996,
+   "window": 98.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.47265193805934,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.790407700380435,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "P_wdlarge": {
+   "arm": "P",
+   "factor": "wd",
+   "value": 5.5,
+   "over": {
+    "wd": [
+     5.5,
+     5.5
+    ]
+   },
+   "count_pred": 97.66666666666667,
+   "tv_ratio_pred": 50.320157096308925,
+   "window": 98.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.47265193409167,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.790407699319914,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_wd0": {
+   "arm": "T",
+   "factor": "wd",
+   "value": 0.0,
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.0,
+     0.0
+    ]
+   },
+   "count_pred": 54.666666666666664,
+   "tv_ratio_pred": 2.4144028496229875,
+   "window": 95.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 52,
+     "tv_ratio": 2.266303478874492,
+     "window": 115,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 31,
+     "tv_ratio": 1.8891720431449313,
+     "window": 52,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 81,
+     "tv_ratio": 3.0877330268495387,
+     "window": 120,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_wd0.001": {
+   "arm": "T",
+   "factor": "wd",
+   "value": 0.001,
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.001,
+     0.001
+    ]
+   },
+   "count_pred": 35.666666666666664,
+   "tv_ratio_pred": 1.666513934083694,
+   "window": 63.666666666666664,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 38,
+     "tv_ratio": 1.5914448480001673,
+     "window": 75,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 26,
+     "tv_ratio": 1.1994051193548327,
+     "window": 15,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 43,
+     "tv_ratio": 2.208691834896082,
+     "window": 101,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_wd0.003": {
+   "arm": "T",
+   "factor": "wd",
+   "value": 0.003,
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.003,
+     0.003
+    ]
+   },
+   "count_pred": 30.333333333333332,
+   "tv_ratio_pred": 0.8156559515939875,
+   "window": 12.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 32,
+     "tv_ratio": 0.77691511012838,
+     "window": 14,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 27,
+     "tv_ratio": 0.38111072986424654,
+     "window": 3,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 32,
+     "tv_ratio": 1.2889420147893358,
+     "window": 19,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_wd0.01": {
+   "arm": "T",
+   "factor": "wd",
+   "value": 0.01,
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.01,
+     0.01
+    ]
+   },
+   "count_pred": 18.0,
+   "tv_ratio_pred": 0.05249454137613918,
+   "window": 1.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 18,
+     "tv_ratio": 0.06511116722937602,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 17,
+     "tv_ratio": 0.02412794705404156,
+     "window": 1,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 19,
+     "tv_ratio": 0.06824450984499998,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_wd0.03": {
+   "arm": "T",
+   "factor": "wd",
+   "value": 0.03,
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.03,
+     0.03
+    ]
+   },
+   "count_pred": 7.0,
+   "tv_ratio_pred": 0.00044333347561348557,
+   "window": 1.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 4,
+     "tv_ratio": 0.0008133991564781782,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 8,
+     "tv_ratio": 0.00022837193599510014,
+     "window": 1,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 9,
+     "tv_ratio": 0.0002882293343671784,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_wd0.1": {
+   "arm": "T",
+   "factor": "wd",
+   "value": 0.1,
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.1,
+     0.1
+    ]
+   },
+   "count_pred": 2.3333333333333335,
+   "tv_ratio_pred": 1.1313628560400573e-09,
+   "window": 1.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 1,
+     "tv_ratio": 2.6386145510390187e-09,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 4,
+     "tv_ratio": 1.4023776863935765e-10,
+     "window": 1,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 2,
+     "tv_ratio": 6.152362484417958e-10,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_plr0.1": {
+   "arm": "T",
+   "factor": "pred_lr_mult",
+   "value": 0.1,
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.01,
+     0.01
+    ],
+    "pred_lr_mult": 0.1
+   },
+   "count_pred": 18.0,
+   "tv_ratio_pred": 0.05249454137613918,
+   "window": 1.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 18,
+     "tv_ratio": 0.06511116722937602,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 17,
+     "tv_ratio": 0.02412794705404156,
+     "window": 1,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 19,
+     "tv_ratio": 0.06824450984499998,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_plr10": {
+   "arm": "T",
+   "factor": "pred_lr_mult",
+   "value": 10,
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.01,
+     0.01
+    ],
+    "pred_lr_mult": 10
+   },
+   "count_pred": 18.0,
+   "tv_ratio_pred": 0.05249454137613918,
+   "window": 1.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 18,
+     "tv_ratio": 0.06511116722937602,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 17,
+     "tv_ratio": 0.02412794705404156,
+     "window": 1,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 19,
+     "tv_ratio": 0.06824450984499998,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_pinit0.3": {
+   "arm": "T",
+   "factor": "pred_init_scale",
+   "value": 0.3,
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.01,
+     0.01
+    ],
+    "pred_init_scale": 0.3
+   },
+   "count_pred": 20.0,
+   "tv_ratio_pred": 0.023697008393359642,
+   "window": 0.6666666666666666,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 19,
+     "tv_ratio": 0.02471321330991548,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 19,
+     "tv_ratio": 0.02652382688446061,
+     "window": 0,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 22,
+     "tv_ratio": 0.019853984985702844,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_pinit3": {
+   "arm": "T",
+   "factor": "pred_init_scale",
+   "value": 3,
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.01,
+     0.01
+    ],
+    "pred_init_scale": 3
+   },
+   "count_pred": 115.33333333333333,
+   "tv_ratio_pred": 58.20227297759379,
+   "window": 115.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 121,
+     "tv_ratio": 58.76490432159443,
+     "window": 122,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 102,
+     "tv_ratio": 53.21826528775024,
+     "window": 101,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 123,
+     "tv_ratio": 62.6236493234367,
+     "window": 124,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_nosg": {
+   "arm": "T",
+   "factor": "target",
+   "value": "nosg",
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "nosg",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.01,
+     0.01
+    ]
+   },
+   "count_pred": 18.0,
+   "tv_ratio_pred": 0.05249454137613918,
+   "window": 1.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 18,
+     "tv_ratio": 0.06511116722937602,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 17,
+     "tv_ratio": 0.02412794705404156,
+     "window": 1,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 19,
+     "tv_ratio": 0.06824450984499998,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_frozen": {
+   "arm": "T",
+   "factor": "target",
+   "value": "frozen",
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "frozen",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.01,
+     0.01
+    ]
+   },
+   "count_pred": 18.0,
+   "tv_ratio_pred": 0.05249454137613918,
+   "window": 1.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 18,
+     "tv_ratio": 0.06511116722937602,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 17,
+     "tv_ratio": 0.02412794705404156,
+     "window": 1,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 19,
+     "tv_ratio": 0.06824450984499998,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  },
+  "T_ema0.99": {
+   "arm": "T",
+   "factor": "target",
+   "value": "ema0.99",
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "ema",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.01,
+     0.01
+    ],
+    "ema": [
+     0.99,
+     0.99
+    ]
+   },
+   "count_pred": 18.0,
+   "tv_ratio_pred": 0.05249454137613918,
+   "window": 1.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 18,
+     "tv_ratio": 0.06511116722937602,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.493047595760334,
+     "online_total_var": 65.11306458676526
+    },
+    {
+     "seed": 1,
+     "count": 17,
+     "tv_ratio": 0.02412794705404156,
+     "window": 1,
+     "count0": 32,
+     "online_count_1e3": 26,
+     "online_rankme_c": 30.816346459083764,
+     "online_total_var": 69.50977082198204
+    },
+    {
+     "seed": 2,
+     "count": 19,
+     "tv_ratio": 0.06824450984499998,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27,
+     "online_rankme_c": 31.23294267405327,
+     "online_total_var": 68.93746609183219
+    }
+   ]
+  }
+ },
+ "directions": [
+  {
+   "factor": "pred_depth",
+   "low": "P_pdepth1",
+   "high": "P_base",
+   "low_value": 1,
+   "high_value": 3,
+   "d_count_pred": -3.666666666666657,
+   "tolerance": 4.041451884327381,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "pred_depth",
+   "low": "P_base",
+   "high": "P_pdepth6",
+   "low_value": 3,
+   "high_value": 6,
+   "d_count_pred": 5.333333333333329,
+   "tolerance": 4.1547005383792515,
+   "sign": 1,
+   "registered": "sign"
+  },
+  {
+   "factor": "pred_width",
+   "low": "P_base",
+   "high": "P_pwidth128",
+   "low_value": 64,
+   "high_value": 128,
+   "d_count_pred": 3.0,
+   "tolerance": 4.209751001683145,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "pred_lr_mult P",
+   "low": "P_plr0.1",
+   "high": "P_base",
+   "low_value": 0.1,
+   "high_value": 1,
+   "d_count_pred": 0.0,
+   "tolerance": 2.3094010767585034,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "pred_lr_mult P",
+   "low": "P_base",
+   "high": "P_plr10",
+   "low_value": 1,
+   "high_value": 10,
+   "d_count_pred": 0.0,
+   "tolerance": 2.3094010767585034,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "pred_init_scale P",
+   "low": "P_pinit0.1",
+   "high": "P_base",
+   "low_value": 0.1,
+   "high_value": 1,
+   "d_count_pred": -0.3333333333333286,
+   "tolerance": 2.886751345948129,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "pred_init_scale P",
+   "low": "P_base",
+   "high": "P_pinit3",
+   "low_value": 1,
+   "high_value": 3,
+   "d_count_pred": 3.666666666666657,
+   "tolerance": 3.2363665378453845,
+   "sign": 1,
+   "registered": "sign"
+  },
+  {
+   "factor": "wd P",
+   "low": "P_wd0",
+   "high": "P_wd0.04",
+   "low_value": 0,
+   "high_value": 0.04,
+   "d_count_pred": 0.0,
+   "tolerance": 2.3094010767585034,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "wd P",
+   "low": "P_wd0.04",
+   "high": "P_wdlarge",
+   "low_value": 0.04,
+   "high_value": 5.5,
+   "d_count_pred": 0.0,
+   "tolerance": 2.3094010767585034,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "ema P",
+   "low": "P_copy",
+   "high": "P_ema0.9",
+   "low_value": 0,
+   "high_value": 0.9,
+   "d_count_pred": 0.0,
+   "tolerance": 2.3094010767585034,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "ema P",
+   "low": "P_ema0.9",
+   "high": "P_ema0.99",
+   "low_value": 0.9,
+   "high_value": 0.99,
+   "d_count_pred": 0.0,
+   "tolerance": 2.3094010767585034,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "ema P",
+   "low": "P_ema0.99",
+   "high": "P_ema0.999",
+   "low_value": 0.99,
+   "high_value": 0.999,
+   "d_count_pred": 0.0,
+   "tolerance": 2.3094010767585034,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "wd T",
+   "low": "T_wd0",
+   "high": "T_wd0.001",
+   "low_value": 0.0,
+   "high_value": 0.001,
+   "d_count_pred": -19.0,
+   "tolerance": 33.8433350249215,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "wd T",
+   "low": "T_wd0.001",
+   "high": "T_wd0.003",
+   "low_value": 0.001,
+   "high_value": 0.003,
+   "d_count_pred": -5.333333333333332,
+   "tolerance": 11.623646294002235,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "wd T",
+   "low": "T_wd0.003",
+   "high": "T_wd0.01",
+   "low_value": 0.003,
+   "high_value": 0.01,
+   "d_count_pred": -12.333333333333332,
+   "tolerance": 3.886751345948129,
+   "sign": -1,
+   "registered": "sign"
+  },
+  {
+   "factor": "wd T",
+   "low": "T_wd0.01",
+   "high": "T_wd0.03",
+   "low_value": 0.01,
+   "high_value": 0.03,
+   "d_count_pred": -11.0,
+   "tolerance": 3.6457513110645907,
+   "sign": -1,
+   "registered": "sign"
+  },
+  {
+   "factor": "wd T",
+   "low": "T_wd0.03",
+   "high": "T_wd0.1",
+   "low_value": 0.03,
+   "high_value": 0.1,
+   "d_count_pred": -4.666666666666666,
+   "tolerance": 4.173276542716538,
+   "sign": -1,
+   "registered": "sign"
+  },
+  {
+   "factor": "pred_lr_mult T",
+   "low": "T_plr0.1",
+   "high": "T_wd0.01",
+   "low_value": 0.1,
+   "high_value": 1,
+   "d_count_pred": 0.0,
+   "tolerance": 2.0,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "pred_lr_mult T",
+   "low": "T_wd0.01",
+   "high": "T_plr10",
+   "low_value": 1,
+   "high_value": 10,
+   "d_count_pred": 0.0,
+   "tolerance": 2.0,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "pred_init_scale T",
+   "low": "T_pinit0.3",
+   "high": "T_wd0.01",
+   "low_value": 0.3,
+   "high_value": 1,
+   "d_count_pred": -2.0,
+   "tolerance": 2.732050807568877,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "pred_init_scale T",
+   "low": "T_wd0.01",
+   "high": "T_pinit3",
+   "low_value": 1,
+   "high_value": 3,
+   "d_count_pred": 97.33333333333333,
+   "tolerance": 12.590225767142474,
+   "sign": 1,
+   "registered": "sign"
+  },
+  {
+   "factor": "ema T",
+   "low": "T_wd0.01",
+   "high": "T_ema0.99",
+   "low_value": 0,
+   "high_value": 0.99,
+   "d_count_pred": 0.0,
+   "tolerance": 2.0,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "mask P",
+   "low": "P_base",
+   "high": "P_targets1",
+   "low_value": "base",
+   "high_value": "targets1",
+   "d_count_pred": 0.3333333333333286,
+   "tolerance": 3.800451849443842,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "mask P",
+   "low": "P_base",
+   "high": "P_ctx0.4",
+   "low_value": "base",
+   "high_value": "ctx0.4",
+   "d_count_pred": 1.0,
+   "tolerance": 2.3094010767585034,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "mask P",
+   "low": "P_base",
+   "high": "P_tscale_hi",
+   "low_value": "base",
+   "high_value": "tscale_hi",
+   "d_count_pred": -22.0,
+   "tolerance": 39.05368909128569,
+   "sign": 0,
+   "registered": "no predicted difference"
+  },
+  {
+   "factor": "mask P",
+   "low": "P_base",
+   "high": "P_tscale_lo",
+   "low_value": "base",
+   "high_value": "tscale_lo",
+   "d_count_pred": 0.3333333333333286,
+   "tolerance": 3.1547005383792515,
+   "sign": 0,
+   "registered": "no predicted difference"
+  }
+ ],
+ "theory_signs": [
+  {
+   "test": "rank falls with weight decay",
+   "runs": [
+    "T_wd0",
+    "T_wd0.001",
+    "T_wd0.003",
+    "T_wd0.01",
+    "T_wd0.03",
+    "T_wd0.1"
+   ],
+   "sign": -1
+  },
+  {
+   "test": "rank falls with weight decay",
+   "runs": [
+    "P_wd0",
+    "P_wd0.04",
+    "P_wdlarge"
+   ],
+   "sign": -1
+  },
+  {
+   "test": "rank falls with the predictor lr multiplier when lam > 0 (Sec. 4, alpha row)",
+   "runs": [
+    "P_plr0.1",
+    "P_base",
+    "P_plr10"
+   ],
+   "sign": -1
+  },
+  {
+   "test": "rank falls with the predictor lr multiplier when lam > 0 (Sec. 4, alpha row)",
+   "runs": [
+    "T_plr0.1",
+    "T_wd0.01",
+    "T_plr10"
+   ],
+   "sign": -1
+  },
+  {
+   "test": "rank falls with predictor depth (Sec. 4, depth row; E1c)",
+   "runs": [
+    "P_pdepth1",
+    "P_base",
+    "P_pdepth6"
+   ],
+   "sign": -1
+  },
+  {
+   "test": "nosg: complete collapse (Prop. 5)",
+   "runs": [
+    "P_nosg",
+    "T_nosg"
+   ]
+  },
+  {
+   "test": "frozen target at standard init: no collapse of the online encoder",
+   "runs": [
+    "P_frozen",
+    "T_frozen"
+   ]
+  },
+  {
+   "test": "EMA rate: no change beyond seed spread",
+   "runs": [
+    "P_copy",
+    "P_ema0.9",
+    "P_ema0.99",
+    "P_ema0.999",
+    "P_base"
+   ]
+  }
+ ],
+ "command": "code/e3_grid.py predict /hutian/runs/e3init results/e3"
+}

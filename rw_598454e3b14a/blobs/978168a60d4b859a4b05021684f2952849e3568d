@@ -1,0 +1,20 @@
+"""Which depth-L predictor flow do the runs follow?  One GD step (eta = 1e-6) of experiment-repo simulate()
+(code/linjepa.py at b84e38e) on a single mode with L identity factors q (p = q^L), copy target, lam_W = 0, against
+  (A) dp/dt = alpha L [p^(2-2/L) (c - p s) a^2 - lam_P p]      (each factor is its own parameter: dq = q^(L-1) dl/dp)
+  (B) dp/dt = alpha L [L p^(2-2/L) (c - p s) a^2 - lam_P p]    (paper-repo, experiment-repo#8: one shared q, dl/dq = L q^(L-1) dl/dp)
+Usage: python3 checks/depth_factor_fd.py LINJEPA_PY
+"""
+import sys, json, importlib.util
+import numpy as np
+spec = importlib.util.spec_from_file_location("linjepa", sys.argv[1]); lin = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(lin)
+eta, rows = 1e-6, []
+for (c, s, a, lam, L, p) in [(0.8, 1.0, 0.03, 0.05, 3, 0.5), (0.8, 1.0, 0.3, 0.05, 3, 0.5), (1.0, 1.0, 0.2, 0.01, 2, 0.3),
+                             (1.0, 1.0, 0.2, 0.01, 4, 0.3), (1.2, 2.0, 0.1, 0.006, 4, 0.4)]:
+    o = lin.simulate(np.array([[s]]), np.array([[c]]), 1, 0.0, lam, p0=p, w0=a, eta=eta, T=1, alpha=1.0, depth=L,
+                     pred_init="identity", seed=0, w_init="orthogonal", jitter=0.0)
+    a0 = abs(o["W_init"][0, 0]); pdot = (o["P"][0, 0] - p) / eta; G = (c - p * s) * a0 ** 2
+    A = L * (p ** (2 - 2 / L) * G - lam * p); B = L * (L * p ** (2 - 2 / L) * G - lam * p)
+    rows.append(dict(c=c, s=s, a=a0, lam_P=lam, L=L, p=p, simulate_pdot=pdot, A_no_extra_L=A, B_extra_L=B))
+    print(rows[-1])
+json.dump(rows, open("checks/depth_factor_fd.json", "w"), indent=1)

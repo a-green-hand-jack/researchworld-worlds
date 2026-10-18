@@ -1,0 +1,7 @@
+# Build the manuscript: `make` from this directory (TeX Live 2026).
+LATEXMK ?= latexmk
+main.pdf: main.tex macros.tex numbers.tex references.bib $(wildcard sections/*.tex)
+	$(LATEXMK) -pdf -interaction=nonstopmode -halt-on-error main.tex
+clean:
+	$(LATEXMK) -C main.tex
+.PHONY: clean

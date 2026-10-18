@@ -1,0 +1,108 @@
+\section{Proofs}
+\label{app:proofs}
+
+\paragraph{Proof of \cref{prop:decouple}.}
+The gradient flow of \eqref{eq:loss} with $\Wt=\sg(W)$ is
+$\dot W=P^\top(W\Ctc-PW\Ccc)-\lambda W$ and $\dot P=\alpha\big((W\Ctc-PW\Ccc)W^\top-\lambda_PP\big)$.
+Substituting the ansatz, $W\Ctc=\sum_jw_js_jv_ju_j^\top$ and $PW\Ccc=\sum_jp_jw_jc_jv_ju_j^\top$, so
+$P^\top(W\Ctc-PW\Ccc)=\sum_jp_jw_j(s_j-p_jc_j)v_ju_j^\top$ and $(W\Ctc-PW\Ccc)W^\top=\sum_jw_j^2(s_j-p_jc_j)v_jv_j^\top$.
+Both right-hand sides stay in the span of the ansatz, which is therefore invariant, and the coefficients obey \eqref{eq:wdot}--\eqref{eq:pdot}. Uniqueness of solutions of the (locally Lipschitz) flow completes the proof. \qed
+
+\paragraph{Proof of \cref{prop:window}.}
+$r_j(p)=-c_jp^2+s_jp-\lambda$ is a concave quadratic, positive between its roots $p^\pm_j=\big(s_j\pm\sqrt{s_j^2-4\lambda c_j}\big)/(2c_j)$, which are real and distinct iff $s_j^2>4\lambda c_j$.
+At $(0,0)$ the Jacobian of \eqref{eq:wdot}--\eqref{eq:pdot} is $\operatorname{diag}(-\lambda,-\alpha\lambda_P)$.
+A fixed point with $w\ne0$ needs $r_j(p)=0$, i.e.\ $p\in\{p^-_j,p^+_j\}$, and $w^2=\lambda_Pp/(s_j-pc_j)$, positive since $p^\pm_j<\rho_j$.
+The Jacobian there is $\begin{pmatrix}0& w(s_j-2pc_j)\\ 2\alpha w(s_j-pc_j) & -\alpha(w^2c_j+\lambda_P)\end{pmatrix}$, with negative trace and determinant $-2\alpha w^2(s_j-2pc_j)(s_j-pc_j)$, which is positive iff $p>\rho_j/2=(p^+_j+p^-_j)/2$, i.e.\ at $p^+_j$ (stable) and not at $p^-_j$ (saddle). \qed
+
+\paragraph{Proof of \cref{prop:stopgrad}.}
+Without stop-gradient the loss along direction $j$ is $\tfrac12w_j^2(p_j^2c_j-2p_js_j+c^t_j)$, so $\dot w_j=-w_j(p_j^2c_j-2p_js_j+c^t_j+\lambda)=-w_j\big(c_j(p_j-\rho_j)^2+c^t_j-\rho_js_j+\lambda\big)$.
+By Cauchy--Schwarz, $s_j^2=(\E[(u_j^\top x_t)(u_j^\top x_c)])^2\le c^t_jc_j$, so $c^t_j-\rho_js_j\ge0$. \qed
+
+\paragraph{Proof of \cref{prop:masking}.}
+With $b_i\sim\mathrm{Bern}(q)$ i.i.d., $x_c=Bx$, $x_t=(I-B)x$, $B=\operatorname{diag}(b)$:
+$\E[x_cx_c^\top]_{il}=\E[b_ib_l]C_{il}=q^2C_{il}+q(1-q)\delta_{il}C_{ii}$ and $\E[x_tx_c^\top]_{il}=\E[(1-b_i)b_l]C_{il}=q(1-q)C_{il}(1-\delta_{il})$.
+For stationary $x$, $C$ is circulant with $C_{ii}=\sigma^2$, so $\Ccc=q^2C+q(1-q)\sigma^2I$ and $\Ctc=q(1-q)(C-\sigma^2I)$, both diagonal in the Fourier basis of $C$. \qed
+
+\paragraph{EMA target.}
+\label{app:ema}
+With $\dot{\bar w}_j=\kappa(w_j-\bar w_j)$ and $p$ frozen, the linearization at $w=\bar w=0$ has matrix $\begin{pmatrix}-(p^2c_j+\lambda)&ps_j\\ \kappa&-\kappa\end{pmatrix}$, whose trace is negative and whose determinant $\kappa(p^2c_j+\lambda-ps_j)$ is negative iff $r_j(p)>0$; so an unstable (growing) mode exists iff $r_j(p)>0$, with growth rate $g$ solving $g^2+g(\kappa+p^2c_j+\lambda)=\kappa r_j(p)$, hence $0<g<r_j(p)$.
+
+\subsection{Derivation of the survival criterion}
+\label{app:survival}
+
+We derive \cref{prop:survival} for one direction and drop the index $j$.
+Write $N(p)=\lambda_Pp/(s-pc)$ for $0<p<\rho$; the predictor nullcline of \eqref{eq:pdot} is $w^2=N(p)$, with $\dot p<0$ below it and $\dot p>0$ above it.
+
+\paragraph{Phase I (below the nullcline).}
+While $w^2\ll N(p)$, the signal term in \eqref{eq:pdot} is negligible against the decay term, so $p(t)=p_0e^{-\alpha\lambda_Pt}$ to leading order, and \eqref{eq:wdot} integrates to $\log w(t)=\log\varepsilon+\int_0^tr(p(t'))\,dt'$.
+Since $p$ is monotone in this phase we change variables, $dt'=-dp/(\alpha\lambda_Pp)$:
+\begin{align*}
+\log w&=\log\varepsilon+\int_p^{p_0}\frac{sp'-cp'^2-\lambda}{\alpha\lambda_Pp'}\,dp'\\
+&=\log\varepsilon+\frac{s(p_0-p)-\tfrac c2(p_0^2-p^2)-\lambda\log(p_0/p)}{\alpha\lambda_P}
+=\log\varepsilon+G(p).
+\end{align*}
+$G$ increases while $p$ is inside the window and decreases outside it.
+
+\paragraph{Phase II (capture).}
+Phase I ends when the trajectory reaches the nullcline, $2\log w=\log N(p)$, at some $p<\rho$; this happens before time $T$ if and only if $\log\varepsilon+G(p)-\tfrac12\log N(p)$ becomes positive for some $p\in(p_T,\min(p_0,\rho))$, which is $\Phi>0$.
+Above the nullcline $\dot p>0$, so $p$ moves back up towards $\rho$, through the window, where $w$ grows; the trajectory then approaches the stable fixed point $(w^\ast,p^+)$ of \cref{prop:window}, which exists by \eqref{eq:fp}.
+If $\Phi\le0$, $w$ stays below the nullcline, $p$ leaves the window by the time $T$ (or never enters it), and $w$ decays at rate at least $\lambda$ once $p<p^-$.
+
+\paragraph{Regime of validity.}
+The argument makes three approximations.
+(i)~In phase I the signal term is neglected up to the crossing; it is of relative size $w^2/N(p)$, so it is negligible except in a neighbourhood of the crossing whose duration is $O(1/r)$, which is short against the drift time $1/(\alpha\lambda_P)$ when $\alpha\lambda_P\lesssim\lambda\lesssim r$.
+(ii)~Capture after crossing requires that $p$ return into the window faster than $w$ decays: the predictor's return rate is $\alpha w^2(s-pc)$ and $w$ decays at most at rate $\lambda$ while $p<p^-$, which favours capture when $\alpha\lesssim1$ and $\lambda_P\lesssim\lambda$; for fast predictors with strong predictor weight decay the trajectory can cross the nullcline and still fall back to collapse, and the basin must be computed numerically.
+(iii)~Discrete optimization steps are replaced by the flow, which requires learning rates small against $1/(p^2c)$ and $1/(\alpha w^2c)$.
+
+\paragraph{Numerical check.}
+The scripts \texttt{survival\_criterion\_equal\_decay.py}, \texttt{survival\_criterion\_general.py} and \texttt{survival\_criterion\_depth.py} in \texttt{notes/pilot/} of the manuscript source integrate \eqref{eq:wdot}--\eqref{eq:pdot} by forward Euler (step $0.01$) from log-uniformly drawn parameters ($c\in[10^{-1.5},10^{0.5}]$, $s/c\in[0.1,1]$ uniform, $p_0\in[10^{-1},10^{0.5}]$, $\varepsilon\in[10^{-4},10^{-2}]$) and call a direction surviving if $w(T)>10^{-3}$.
+With $\lambda_P=\lambda\in[10^{-3},10^{-1}]$, $\alpha=1$, $T=3000$, the criterion (phase-I integral evaluated numerically) predicts the outcome in 297 of 300 settings and \eqref{eq:fp} alone in 183.
+With $\lambda\in[10^{-3},10^{-1.3}]$, $\lambda_P/\lambda$ and $\alpha$ in $[10^{-1/2},10^{1/2}]$, $T=4000$, the closed form \eqref{eq:survival} together with \eqref{eq:fp} predicts 371 of 400.
+For the depth-$L$ predictor of \cref{cor:depth} ($\lambda_P=\lambda$, $\alpha=1$, $T=4000$) it predicts 149, 150 and 147 of 150 for $L=1,2,3$, against 83, 73 and 82 for \eqref{eq:fp} alone.
+For the predictor learning rate (\texttt{predictor\_lr\_convention.py}; same parameter ranges, $\lambda_P=\lambda$ or $\eta_P=\lambda$, $T=4000$), the fraction of 400 settings that survive is $0.405$, $0.335$, $0.240$ for $\alpha=0.3,1,3$ with a fixed decay coefficient and $0.323$, $0.335$, $0.345$ with a fixed decay rate, the signs predicted in \cref{sec:heuristics}.
+These checks test the asymptotics against the exact mode dynamics only; they say nothing about nonlinear encoders, which \cref{sec:experiments} addresses.
+
+\paragraph{Proof of \cref{cor:depth}.}
+With $P=\prod_{l}A_l$ and balanced initialization $A_l(0)=a_0\sum_jv_jv_j^\top$, all factors stay equal and diagonal in $\{v_j\}$ by the argument of \cref{prop:decouple}; the gradient of the loss with respect to one factor along direction $j$ is $a_j^{L-1}$ times that with respect to $p_j$, giving the stated $\dot a_j$.
+Then $\dot p_j=La_j^{L-1}\dot a_j=L\alpha\big(p_j^{2-2/L}w_j^2(s_j-p_jc_j)-\lambda_Pp_j\big)$: at $w_j=0$ the gain decays at rate $L\alpha\lambda_P$, and the nullcline is $w_j^2=\lambda_Pp_j^{2/L-1}/(s_j-p_jc_j)$.
+Repeating the derivation above with these two substitutions gives the corollary. \qed
+
+\subsection{Matched limits of prior accounts}
+\label{app:prior}
+
+Each statement below is a special case or a limit of \cref{prop:decouple,prop:window,prop:survival}; \cref{tab:prior} summarizes them.
+
+\begin{table}[h]
+\caption{\textbf{Reductions to and departures from the closest prior accounts.} \emph{Reduces to}: the limit of our statements that recovers the cited result; \emph{Departs}: what our theory predicts beyond it; \emph{Evidence}: a proof (derivations in \cref{app:prior}) or the numerical check of the mode dynamics in \cref{app:survival}. None of these rows is a measurement on trained JEPAs.}
+\label{tab:prior}
+\centering
+\small
+\IfFileExists{tables/tab_prior_comparison.tex}{\input{tables/tab_prior_comparison.tex}}{\todo{tables/tab\_prior\_comparison.tex from figtab-repo}}
+\end{table}
+
+\paragraph{Linear BYOL/SimSiam \citep{tian2021understanding}.}
+Take $s_j=1$, $c_j=1+\sigma^2$ for all $j$ (isotropic data, additive augmentation of variance $\sigma^2$), a stop-gradient target, and $\lambda=\alpha\lambda_P=\eta$.
+Writing $\varsigma_j=w_j^2$, \eqref{eq:wdot}--\eqref{eq:pdot} become $\dot\varsigma_j=2\varsigma_j\big(p_j-(1+\sigma^2)p_j^2-\eta\big)$ and $\dot p_j=\alpha\varsigma_j\big(1-(1+\sigma^2)p_j\big)-\eta p_j$, the eigenmode equations of linear SimSiam in \citet{tian2021understanding} with their EMA ratio set to one, and \eqref{eq:fp} becomes their condition $\eta<1/\big(4(1+\sigma^2)\big)$ for a non-collapsed fixed point.
+In this setting all directions obey the same equations and differ only through their initial conditions; with masking they differ through $s_j$ and $c_j$ (\cref{prop:masking}).
+
+\paragraph{Weight decay as a threshold on augmentation variance \citep{wang2021demystify}.}
+Let the two views be $x_c=x+\xi$ and $x_t=x+\xi'$ with independent zero-mean augmentation noise, $\E[xx^\top]=\Sigma$ and $\E[\xi\xi^\top]=\E[\xi'\xi'^\top]=N$ commuting with $\Sigma$, eigenvalues $d_j$ and $n_j$.
+Then $\Ctc=\Sigma$ and $\Ccc=\Sigma+N$, so \cref{ass:codiag} holds with $s_j=d_j$, $c_j=d_j+n_j$, $\rho_j=d_j/(d_j+n_j)$, and \eqref{eq:fp} reads $n_j<d_j\big(d_j/(4\lambda)-1\big)$: weight decay discards the directions whose augmentation variance is large relative to their signal, which is the role \citet{wang2021demystify} prove for weight decay in a linear network with a DirectPred-type predictor.
+Their predictor is set from the representation statistics rather than trained, so the drift of $p_j$ through the window, and hence \cref{prop:survival}, has no counterpart there.
+
+\paragraph{No weight decay \citep{littwin2024jepa}.}
+At $\lambda=\lambda_P=0$ the window of \cref{prop:window} is $(0,\rho_j)$ and does not close: $\dot p_j=\alpha w_j^2c_j(\rho_j-p_j)$ and $\dot w_j=w_jp_jc_j(\rho_j-p_j)$, so from $0<p_0<\rho_j$ every direction with $s_j>0$ grows and $p_j\to\rho_j$.
+Along every learned direction the predictor converges to the regression coefficient $\rho_j$, the quantity by which \citet{littwin2024jepa} characterize the features deep linear JEPAs (trained without weight decay) learn first.
+Their result concerns the order and speed of learning as a function of encoder depth, which our single-layer encoder does not resolve; our depth result (\cref{cor:depth}) concerns the predictor.
+
+\paragraph{Stepwise learning from small initialization \citep{simon2023stepwise}.}
+For $\lambda_P\to0$ the predictor stays at $p_0$ in phase~I and $w_j(t)=\varepsilon_je^{r_j(p_0)t}$, so direction $j$ reaches amplitude $w$ at $t_j=\log(w/\varepsilon_j)/r_j(p_0)$: directions are learned one at a time, at onset times logarithmic in the initialization scale and inverse in their rate, as in the stepwise picture of \citet{simon2023stepwise} (derived there for a Barlow Twins loss without a predictor).
+With $\lambda_P>0$ the rate decreases along the trajectory, and the onset time is finite only if $\Phi_j>0$: a direction whose onset would come after its window closes is never learned.
+
+\paragraph{Loss-landscape collapse thresholds \citep{ziyin2023shapes}.}
+\Cref{prop:window} is the stationary-point statement for our model (with a stop-gradient the flow is not a gradient flow, so it plays the role of the landscape): the collapsed point is locally stable for every $\lambda>0$, and a non-collapsed stationary point exists along direction $j$ if and only if $\rho_js_j>4\lambda$, so the number of directions with a non-collapsed stationary point decreases with weight decay, as in the collapse thresholds that \citet{ziyin2023shapes} derive for linear SSL objectives with weight decay (the constants differ because their models differ from ours).
+This count is an upper bound on the rank reached from small initialization; in the check of \cref{app:survival} it agrees with the integrated outcome in 183 of 300 settings against 297 for \cref{prop:survival}.
+
+\paragraph{Rank differential \citep{zhuo2023rank}.}
+In the linear model the online and target outputs along direction $j$ are $p_jw_j$ and $w_j$, so the two branches differ in rank whenever $p_j$ varies across directions; at the non-collapsed fixed points $p_j=p_j^+$, which increases with $s_j$ at fixed $c_j$.
+We do not derive the sign of the effective-rank difference that \citet{zhuo2023rank} identify as the mechanism; it is a measured quantity in \cref{sec:experiments}.

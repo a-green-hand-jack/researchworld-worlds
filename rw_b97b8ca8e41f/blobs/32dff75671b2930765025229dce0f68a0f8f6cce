@@ -1,0 +1,102 @@
+"""Teaser: drive vs decay near the collapsed solution (illustration of the theory).
+
+Source of the equations: paper-repo notes/theory.md @ 8bb635d (per-direction
+2-D reduction of the linear JEPA gradient flow):
+    dw_j/dt = w_j [ p_j s_j - (p_j^2 c_j + lam) ]   drive D = p s, decay K = p^2 c + lam
+    dp_j/dt = w_j^2 (s_j - p_j c_j) - lam p_j
+Illustrative parameters follow that note's toy pilot (s_j = logspace(0,-2,20),
+c_j = s_j + 0.05). This figure integrates the theory's ODE; it is not a
+measurement. Measured counterparts come from experiment-repo results.
+"""
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
+import style
+
+style.apply()
+
+D = 20
+s = np.logspace(0, -2, D)
+c = s + 0.05
+lam, p0, w0, eta, steps = 0.01, 0.5, 1e-3, 0.01, 60000
+
+
+def integrate(save_every=100):
+    w = np.full(D, w0)
+    p = np.full(D, p0)
+    W, P, T = [w.copy()], [p.copy()], [0.0]
+    for t in range(1, steps + 1):
+        dw = w * (p * s - p * p * c - lam)
+        dp = w * w * (s - p * c) - lam * p
+        w = w + eta * dw
+        p = p + eta * dp
+        if t % save_every == 0:
+            W.append(w.copy()); P.append(p.copy()); T.append(t * eta)
+    return np.array(T), np.array(W), np.array(P)
+
+
+T, W, P = integrate()
+alive = W[-1] > 1e-2
+norm = LogNorm(vmin=s.min(), vmax=s.max())
+cmap = plt.get_cmap(style.SEQ_CMAP)
+
+fig, ax = plt.subplots(1, 3, figsize=(style.TEXTWIDTH, 1.85),
+                       gridspec_kw={"wspace": 0.55})
+
+# (a) drive and decay as functions of the predictor eigenvalue p,
+# for one direction that survives (j=3) and one that collapses (j=9)
+pp = np.linspace(0, 1.0, 400)
+for j in (3, 9):
+    col = cmap(norm(s[j]))
+    drive, decay = pp * s[j], pp ** 2 * c[j] + lam
+    ax[0].plot(pp, drive, color=col, lw=1.2)
+    ax[0].plot(pp, decay, color=col, lw=1.2, ls="--")
+    ax[0].fill_between(pp, decay, drive, where=drive > decay, color=col,
+                       alpha=0.25, lw=0)
+ax[0].text(0.03, 0.15, f"$s_j={s[3]:.2f}$", fontsize=7, color="#333333")
+ax[0].text(0.60, 0.015, f"$s_j={s[9]:.2f}$", fontsize=7, color="#333333")
+ax[0].text(0.97, 0.185, "decay", fontsize=7, color="#333333", ha="right")
+ax[0].text(0.97, 0.075, "drive", fontsize=7, color="#333333", ha="right")
+ax[0].set_xlim(0, 1.0)
+ax[0].set_ylim(0, 0.25)
+ax[0].set_xlabel(r"predictor eigenvalue $p$")
+ax[0].set_ylabel(r"rate (per unit $t$)")
+ax[0].set_title("(a) drive vs. decay", loc="left")
+
+# (b) trajectories in the (p, w) plane, one per direction
+for j in range(D):
+    col = cmap(norm(s[j]))
+    ax[1].plot(P[:, j], W[:, j], color=col, lw=0.9,
+               ls="-" if alive[j] else ":")
+ax[1].plot(P[0, 0], W[0, 0], "o", color="#222222", ms=3.5)
+ax[1].annotate("init", (P[0, 0], W[0, 0]), xytext=(4, -6),
+               textcoords="offset points", fontsize=7, color="#333333")
+ax[1].set_yscale("log")
+ax[1].set_ylim(1e-5, 3)
+ax[1].set_xlim(0, 1.1)
+ax[1].set_xlabel(r"predictor eigenvalue $p_j$")
+ax[1].set_ylabel(r"direction norm $w_j$")
+ax[1].set_title(r"(b) trajectories in $(p_j, w_j)$", loc="left")
+
+# (c) w_j(t): fate decided early
+for j in range(D):
+    ax[2].plot(T[1:], W[1:, j], color=cmap(norm(s[j])), lw=0.9,
+               ls="-" if alive[j] else ":")
+ax[2].set_yscale("log")
+ax[2].set_ylim(1e-5, 3)
+ax[2].set_xscale("log")
+ax[2].set_xlim(T[1], T[-1])
+ax[2].set_xlabel(r"time $t$ (steps $\times\,\eta$)")
+ax[2].set_ylabel(r"$w_j$")
+ax[2].set_title(f"(c) {alive.sum()} of {D} survive", loc="left")
+ax[2].plot([], [], color="#555555", lw=0.9, label="survives")
+ax[2].plot([], [], color="#555555", lw=0.9, ls=":", label="collapses")
+ax[2].legend(loc="lower left", handlelength=1.6)
+
+sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+cb = fig.colorbar(sm, ax=ax[2], pad=0.03, fraction=0.06)
+cb.set_label(r"signal $s_j$", fontsize=7)
+cb.ax.tick_params(labelsize=6.5)
+
+style.save(fig, "fig_mechanism")
+print("survivors:", int(alive.sum()))

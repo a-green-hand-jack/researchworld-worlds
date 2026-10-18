@@ -1,0 +1,9 @@
+holds_strong             primary=holds (strong)                                nf0=holds (strong)                                final=holds (strong) f=[0.848, 0.78, 0.912] sep=True
+holds_dose_lt_diff       primary=holds                                         nf0=holds                                         final=holds f=[0.563, 0.465, 0.654] sep=True
+small_diff_inconclusive  primary=inconclusive at n=5: R(ramp) - R(0.04) not demonstrated nf0=inconclusive at n=5: R(ramp) - R(0.04) not demonstrated final=inconclusive at n=5: R(ramp) - R(0.04) not demonstrated f=[0.098, -0.286, 0.332] sep=False
+fails_near_dose          primary=fails: f_ramp = 0.293 < 0.5                   nf0=fails: f_ramp = 0.293 < 0.5                   final=fails: f_ramp = 0.293 < 0.5 f=[0.293, 0.211, 0.377] sep=False
+uninformative            primary=uninformative: weight decay 0.04 -> 0.4 does not move the epoch-50 rank (C4 reading) nf0=uninformative: weight decay 0.04 -> 0.4 does not move the epoch-50 rank (C4 reading) final=uninformative: weight decay 0.04 -> 0.4 does not move the epoch-50 rank (C4 reading) f=None sep=None
+one_nonfinite_disagree   primary=holds (strong)                                nf0=inconclusive at n=5: R(ramp) - R(0.04) not demonstrated final=undetermined (non-finite scorings disagree) f=[0.799, 0.751, 0.851] sep=True
+f_ge_half_no_difference  primary=inconclusive at n=5: R(ramp) - R(0.04) not demonstrated nf0=inconclusive at n=5: R(ramp) - R(0.04) not demonstrated final=inconclusive at n=5: R(ramp) - R(0.04) not demonstrated f=[0.537, 0.077, 1.0] sep=False
+early_reading ramp {'2': 116.0, '5': 116.1, '10': 117.0, '20': 115.8} final 99.6
+early_reading switched row at e=20: {'20': {'reading': 115.79837836359886, 'err_mean': 16.1988969483282, 'abs_err_mean': 16.1988969483282}} implied f -0.001

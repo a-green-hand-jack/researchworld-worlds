@@ -1,0 +1,22 @@
+\section{Structure of the aligned case}
+\label{app:structure}
+
+\paragraph{Masks and \cref{ass:aligned}(i).}
+Write $\Sigma_c=\Sigma\circ G$ and $\Sigma_{tc}=\Sigma\circ F$, with $\Sigma=\E[xx^\top]$, $G_{ij}=\Pr(i\in c,\,j\in c)$ and $F_{ij}=\Pr(i\in t,\,j\in c)$.
+A stationary signal on a cyclic domain under a translation-invariant mask distribution makes $\Sigma$, $F$ and $G$ circulant, so $\Sigma_c$ and $\Sigma_{tc}$ commute and share the Fourier basis; invariance of the mask distribution under reflection makes $F$, and hence $\Sigma_{tc}$, symmetric.
+I-JEPA-style masks (a random target block, the context a larger random block minus the target) satisfy both, although context and target are not exchangeable.
+Part (i) is broken by domain boundaries, non-stationary inputs and oriented context--target geometry: a context placed always on one side of the target keeps the commuting structure but gives a non-symmetric $\Sigma_{tc}$ with complex Fourier eigenvalues, and blocks confined to a non-cyclic domain break both symmetry and commutation (exact enumeration of all placements, cyclic 1D signal, $n=32$, $\Sigma_{ij}=0.8^{d(i,j)}$, \texttt{code/checks/mask\_symmetry.py}; relative asymmetry of $\Sigma_{tc}$ / relative commutator: I-JEPA-style blocks $\MaskBlockAsym$ / $\MaskBlockComm$, one-sided context $\MaskOneSidedAsym$ / $\MaskOneSidedComm$, non-cyclic domain $\MaskNoncyclicAsym$ / $\MaskNoncyclicComm$).
+The realistic model departs further: it encodes per patch and conditions the predictor on the target position, which the global linear map $\Wc M_cx$ does not represent.
+
+\paragraph{Modes and rank.}
+Under \cref{ass:aligned}, with $w_{jk}=v_j^\top\Wc u_k$ and $\bar w_{jk}=v_j^\top\Wt u_k$, the near-collapse dynamics are
+\begin{equation}
+  \dot w_{jk}=\underbrace{p_j(t)\,c_k\,\bar w_{jk}}_{\text{driving force}}-\underbrace{\big(p_j(t)^2\sigma_k+\lambda_W\big)w_{jk}}_{\text{decay}},\qquad
+  \dot{\bar w}_{jk}=\kappa\,(w_{jk}-\bar w_{jk}),\qquad p_j(t)=e^{-\alpha\lambda_P t}p_j .
+  \label{eq:modes}
+\end{equation}
+A mode $(j,k)$ of \eqref{eq:modes} couples the data eigendirection $u_k$ to the predictor eigendirection $v_j$ and evolves, in the linear regime, as a $2\times2$ linear system in $(w_{jk},\bar w_{jk})$; with $\bar w_{jk}(0)=w_{jk}(0)$ its solution is a scalar gain times $w_{jk}(0)$.
+The rank of $\Wc=\sum_{jk}w_{jk}v_ju_k^\top$ is the rank of the matrix $[w_{jk}]$, not the number of modes that grow.
+For a generic initialisation, the restriction of $[w_{jk}]$ to the set $S$ of modes that reach order one has the rank of a generic matrix with support $S$, which is the size of a maximum matching between the indices $j$ and $k$ occurring in $S$, and at most the smaller of their numbers.
+When the $p_j$ are degenerate, the basis $v_j$ is arbitrary and $\Wc(t)=\sum_k\Gamma_k(t)\,\Wc(0)u_ku_k^\top$, so the rank is the number of surviving data directions $k$ (if it does not exceed $d$).
+For $\lambda_P=0$ every $(0,\Pred,0)$ is stationary and the predictor is frozen near collapse.

@@ -1,0 +1,335 @@
+"""E8 analysis: decision time of collapse in the ViT from the weight-decay switch grid (registration:
+results/e8/prediction.json, written before the production grid).
+
+Rank metric (as in E3): online-token count = covariance eigenvalues >= 1e-3 x the largest on the 10000
+CIFAR-10 test images (`online_tok.count_1e3` of the epoch-end full logs); centred RankMe and target-token count
+alongside. Final rank = epoch 50 (end of the 50-epoch schedule).
+
+Per arm a in {T, P} and direction d in {lo2hi, hi2lo}: the never-switched reference N is the constant run at
+the start level, the e = 0 row is the constant run at the end level, and rows e in {2, 5, 10, 20} switch at
+epoch e. With 5 seeds per row:
+  gap        Delta = mean R(e=0) - mean R(N); the direction is informative iff the Welch 95% CI of Delta excludes
+             0 and |Delta| >= 5 counts;
+  margin     delta = 0.2 |Delta| (sensitivity 0.1 |Delta| and 0.3 |Delta|);
+  equivalent R(e) ~ R(N) iff the Welch 90% CI of mean R(e) - mean R(N) lies inside (-delta, delta) (TOST at 5%);
+  decision time D = the smallest e in {0, 2, 5, 10, 20} such that every row e' >= e (e' in the grid) is
+             equivalent to N; D = '>20' if R(20) is not equivalent to N; e = 0 is never equivalent in an
+             informative direction, so D in {2, 5, 10, 20, '>20'};
+  gap fraction f(e) = (mean R(e) - mean R(N)) / Delta, bootstrap 95% CI over seeds (2000 resamples, rows
+             resampled independently), the decision curve.
+Also reported: D at the epoch-30 and epoch-40 horizons, D on centred RankMe, and convergence: a run is flagged
+not converged if |R(50) - R(45)| > delta / 2 (the statistic stays the epoch-50 rank; D is also given without
+flagged runs). Non-finite runs are counted and excluded; a row with fewer than 4 finite seeds is
+'undetermined', and so is D if its value depends on that row.
+Amendment (registered before the production grid; review experiment-repo#11 c240 points 7-8 and the go/no-go
+conditions of story-repo#15):
+  difference R(e) differs from R(N) iff the Welch 95% CI of mean R(e) - mean R(N) excludes 0; both tests are
+             reported for every row;
+  reading    'early' if D in {2, 5}; 'intermediate' if D in {10, 20}; 'late' iff the difference at e = 20 is
+             demonstrated; 'inconclusive at n=5' if D = '>20' without a demonstrated difference at e = 20;
+             f(e) is not clipped to [0, 1];
+  non-finite sensitivity: D is recomputed with non-finite runs scored as collapsed (rank 0 at every epoch); D is
+             'undetermined' if the two scorings disagree; non-finite runs are counted per row;
+  regrowth   for hi->lo rows, the online-token spectrum at the switch epoch: counts at 1e-3, 1e-5, 1e-7 x the
+             largest eigenvalue, and the median log10 ratio of the directions ranked between the constant-hi and
+             constant-lo final counts (the directions that must regrow);
+  provenance per run: GPU, torch version, sha256 of the pip freeze, code commit, md5 of vit_jepa.py, seed.
+E8-R practice reference (plan v2.7; registered in prediction.json addendum_E8R before its runs): Arm P under the
+recipe's cosine weight-decay ramp 0.04 -> 0.4 (PR_ramp) and constant 0.4 (PR_c04), read against E8's P_lo
+(constant 0.04): gap Delta_R = R(0.4) - R(0.04) with E8's informativeness rule; ramp fraction
+f_ramp = (R(ramp) - R(0.04)) / Delta_R with bootstrap CI; Welch 95% CIs of R(ramp) - R(0.04) and R(ramp) - R(0.4);
+TOST of the ramp against each constant row at 0.2 |Delta_R|; which reference values of f (0 early decision,
+the lr-weighted dose fraction, >= 0.5 B's premise) its CI contains. The rows do not enter D.
+amendment_E8R_1 (review c266): holds iff Delta_R informative, the Welch 95% CI of R(ramp) - R(0.04) excludes 0 and
+f_ramp >= 0.5 (else 'inconclusive at n=5' or 'fails'); 'undetermined' if the non-finite scorings disagree; the
+delivered linear account's f_ramp range [0, 0.4] is a reference, and only a CI above 0.4 separates B from it.
+Early-reading baseline (baselines.early_reading) for E8 and E8-R rows; curves at every epoch.
+Usage: python3 code/e8_analyze.py RUNS_DIR results/e8
+"""
+import sys, os, json, glob, hashlib
+import numpy as np
+from scipy import stats
+
+SWITCH = [2, 5, 10, 20]
+MARGIN, MARGINS = 0.2, [0.1, 0.2, 0.3]
+REG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results", "e8", "prediction.json")
+PRED = {k: v for k, v in json.load(open(REG))["predictions"].items() if isinstance(v, dict)}
+
+
+def load_run(d):
+    L = [json.loads(l) for l in open(os.path.join(d, "log.jsonl"))]
+    full = {int(round(r["epoch"])): r for r in L if r.get("full")}
+    fin = os.path.exists(os.path.join(d, "final.json"))
+    ok = fin and all(np.isfinite(r["online_tok"]["total_var"]) for r in full.values())
+    prov = {}
+    if os.path.exists(os.path.join(d, "provenance.json")):
+        pv = json.load(open(os.path.join(d, "provenance.json")))
+        torch = [x for x in pv.get("pip_freeze", []) if x.startswith("torch==")]
+        prov = dict(gpu=pv.get("gpu"), torch=torch[0] if torch else None, code_commit=pv.get("code_commit"),
+                    vit_jepa_md5=pv.get("vit_jepa_md5"),
+                    pip_sha256=hashlib.sha256("\n".join(pv.get("pip_freeze", [])).encode()).hexdigest())
+    cfg = json.load(open(os.path.join(d, "config.json"))) if os.path.exists(os.path.join(d, "config.json")) else {}
+    prov["seed"] = cfg.get("seed", os.path.basename(d))
+    return dict(ok=ok, dir=d, prov=prov, eig={e: r["online_tok"]["eig"] for e, r in full.items()}, count={e: r["online_tok"]["count_1e3"] for e, r in full.items()},
+                rankme={e: r["online_tok"]["rankme_c"] for e, r in full.items()},
+                tcount={e: r["target_tok"]["count_1e3"] for e, r in full.items() if r.get("target_tok")},
+                probe={e: r["online_probe"]["probe_acc"] for e, r in full.items() if r.get("online_probe")})
+
+
+def welch_ci(x, y, level):
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    vx, vy = x.var(ddof=1) / x.size, y.var(ddof=1) / y.size
+    se = np.sqrt(vx + vy)
+    df = (vx + vy) ** 2 / (vx ** 2 / (x.size - 1) + vy ** 2 / (y.size - 1)) if se > 0 else 1e9
+    t = stats.t.ppf(0.5 + level / 2, df)
+    m = x.mean() - y.mean()
+    return float(m), float(m - t * se), float(m + t * se)
+
+
+def gap_frac(re, rn, r0, B=2000, seed=0):
+    g = np.random.default_rng(seed)
+    f = lambda a, b, c: (a.mean() - b.mean()) / (c.mean() - b.mean())
+    re, rn, r0 = map(lambda v: np.asarray(v, float), (re, rn, r0))
+    bs = [f(g.choice(re, re.size), g.choice(rn, rn.size), g.choice(r0, r0.size)) for _ in range(B)]
+    return [float(f(re, rn, r0)), float(np.nanquantile(bs, 0.025)), float(np.nanquantile(bs, 0.975))]
+
+
+def decision(rows, margin, metric="count", ep=50, drop_flagged=False, delta_conv=None, nonfinite_zero=False):
+    """rows: {e: [run, ...]} with e = 'N', 0, 2, 5, 10, 20."""
+    val = lambda r: (r[metric].get(ep) if r["ok"] else 0.0)
+    def seeds(e):
+        rs = [r for r in rows.get(e, []) if (r["ok"] or nonfinite_zero) and val(r) is not None]
+        if drop_flagged and delta_conv is not None:
+            rs = [r for r in rs if abs(r[metric][50] - r[metric].get(45, r[metric][50])) <= delta_conv / 2]
+        return [val(r) for r in rs]
+    N, Z = seeds("N"), seeds(0)
+    out = dict(n={str(e): len(seeds(e)) for e in ["N", 0] + SWITCH})
+    if len(N) < 4 or len(Z) < 4:
+        return dict(out, D="undetermined")
+    gap, glo, ghi = welch_ci(Z, N, 0.95)
+    out.update(gap=[gap, glo, ghi], informative=bool((glo > 0 or ghi < 0) and abs(gap) >= 5))
+    delta = margin * abs(gap); out["delta"] = delta
+    eq = {}
+    for e in SWITCH:
+        x = seeds(e)
+        if len(x) < 4:
+            eq[e] = None; continue
+        m, lo, hi = welch_ci(x, N, 0.90)
+        m95, lo95, hi95 = welch_ci(x, N, 0.95)
+        eq[e] = dict(diff=[m, lo, hi], equivalent=bool(lo > -delta and hi < delta), diff95=[m95, lo95, hi95],
+                     different=bool(lo95 > 0 or hi95 < 0), f=gap_frac(x, N, Z))
+    out["rows"] = {str(e): v for e, v in eq.items()}
+    D = ">20"
+    for e in reversed(SWITCH):
+        if eq[e] is None:
+            D = "undetermined"; break
+        if not eq[e]["equivalent"]:
+            break
+        D = e
+    out["D"] = D if out["informative"] else "uninformative"
+    r20 = eq.get(20)
+    if out["D"] in (2, 5):
+        out["reading"] = "early"
+    elif out["D"] in (10, 20):
+        out["reading"] = "intermediate"
+    elif out["D"] == ">20":
+        out["reading"] = "late" if r20 and r20["different"] else "inconclusive at n=5"
+    else:
+        out["reading"] = out["D"]
+    return out
+
+
+def score_prediction(r, pred):
+    """amendment_1.prediction_scoring: holds iff reading 'late' and f(20) point >= 0.5; 'strong' iff f(20) CI low >= 0.5.
+    Not scored when D_final is 'undetermined' (missing rows, or the non-finite sensitivity changes D) or the
+    direction is uninformative; both are reported as such, never as a pass or a fail."""
+    prim = r["primary"]; r20 = (prim.get("rows") or {}).get("20")
+    f20 = r20["f"] if r20 else None
+    out = dict(predicted_D=pred.get("D"), predicted_f20_at_least=pred.get("f20_at_least"),
+               D_final=r["D_final"], reading=prim.get("reading"), f20=f20)
+    if r["D_final"] == "undetermined":
+        out["verdict"] = "not scored: D undetermined" + (" (non-finite scorings disagree)" if prim.get("D") != "undetermined" else "")
+    elif r["D_final"] == "uninformative":
+        out["verdict"] = "not scored: uninformative direction (C4 reading)"
+    elif prim.get("reading") == "late" and f20 is not None and f20[0] >= 0.5:
+        out["verdict"] = "holds (strong)" if f20[1] >= 0.5 else "holds"
+    else:
+        why = []
+        if prim.get("reading") != "late":
+            why.append("reading %r, not 'late'" % prim.get("reading"))
+        if f20 is None or not f20[0] >= 0.5:
+            why.append("f(20) = %s < 0.5" % (None if f20 is None else round(f20[0], 3)))
+        out["verdict"] = "fails: " + "; ".join(why)
+    return out
+
+
+def regrowth(rows, e, hi_final, lo_final):
+    """Spectrum at the switch epoch of hi->lo rows: what the collapsed directions must regrow from."""
+    out = []
+    for r in rows:
+        if e not in r["eig"]:
+            continue
+        ev = np.sort(np.abs(np.asarray(r["eig"][e], float)))[::-1]; rel = ev / ev[0]
+        k0, k1 = int(round(hi_final)), int(round(lo_final))
+        seg = rel[k0:k1] if k1 > k0 else rel[k0:k0 + 1]
+        out.append(dict(count_1e3=int((rel >= 1e-3).sum()), count_1e5=int((rel >= 1e-5).sum()),
+                        count_1e7=int((rel >= 1e-7).sum()),
+                        median_log10_regrow=float(np.median(np.log10(np.maximum(seg, 1e-30)))) if seg.size else None))
+    return out
+
+
+EARLY_EPOCHS = [2, 5, 10, 20]
+
+
+def early_reading(rows, switch_epoch=None, ep=50):
+    """baselines.early_reading: the 'rank at x% of training' predictor. For a constant row the count at epochs
+    2, 5, 10, 20 is the prediction of the epoch-50 count; for a row switched at epoch e, the count at e.
+    Per row: mean count at each reading epoch, mean and per-seed error (reading - final), and, given a reference
+    N and gap Delta, the gap fraction the reading implies."""
+    out = {}
+    for name, rs in rows.items():
+        rs = [r for r in rs if r["ok"] and ep in r["count"]]
+        if not rs:
+            continue
+        eps_ = [switch_epoch[name]] if switch_epoch and switch_epoch.get(name) is not None else EARLY_EPOCHS
+        row = dict(final=float(np.mean([r["count"][ep] for r in rs])), n=len(rs), at={})
+        for e in eps_:
+            pr = [(r["count"][e], r["count"][ep]) for r in rs if e in r["count"]]
+            if pr:
+                d = np.array([a - b for a, b in pr], float)
+                row["at"][str(e)] = dict(reading=float(np.mean([a for a, _ in pr])), err_mean=float(d.mean()),
+                                         abs_err_mean=float(np.abs(d).mean()))
+        out[str(name)] = row
+    return out
+
+
+def implied_f(er, key, ref_key, gap):
+    """Gap fraction implied by the early reading of a switched row (count at the switch epoch)."""
+    if key not in er or ref_key not in er or not gap:
+        return None
+    at = list(er[key]["at"].values())
+    return float((at[0]["reading"] - er[ref_key]["final"]) / gap) if at else None
+
+
+F_DOSE = 0.3056  # lr-weighted decay dose of the ramp above 0.04, as a fraction of constant 0.4's (prediction.json addendum_E8R)
+
+
+def practice_ref(runs, ep=50, nonfinite_zero=False):
+    val = lambda r: (r["count"].get(ep) if r["ok"] else 0.0)
+    seeds = lambda k: [val(r) for r in runs.get(k, []) if (r["ok"] or nonfinite_zero) and val(r) is not None]
+    N, H, R = seeds("P_lo"), seeds("PR_c04"), seeds("PR_ramp")
+    out = dict(n=dict(c004=len(N), c04=len(H), ramp=len(R)),
+               nonfinite={k: sum(not r["ok"] for r in runs.get(k, [])) for k in ("P_lo", "PR_c04", "PR_ramp")})
+    if min(len(N), len(H), len(R)) < 4:
+        return dict(out, reading="undetermined")
+    gap = welch_ci(H, N, 0.95)
+    inf = bool((gap[1] > 0 or gap[2] < 0) and abs(gap[0]) >= 5)
+    delta = MARGIN * abs(gap[0])
+    rn90, rh90 = welch_ci(R, N, 0.90), welch_ci(R, H, 0.90)
+    out.update(mean=dict(c004=float(np.mean(N)), c04=float(np.mean(H)), ramp=float(np.mean(R))),
+               gap=list(gap), informative=inf, delta=delta,
+               ramp_minus_c004=dict(ci95=list(welch_ci(R, N, 0.95)), equivalent=bool(rn90[1] > -delta and rn90[2] < delta)),
+               ramp_minus_c04=dict(ci95=list(welch_ci(R, H, 0.95)), equivalent=bool(rh90[1] > -delta and rh90[2] < delta)))
+    if not inf:
+        out["reading"] = "uninformative: weight decay 0.04 -> 0.4 does not move the epoch-%d rank (C4 reading)" % ep
+        return out
+    f = gap_frac(R, N, H); out["f_ramp"] = f
+    out["f_ci_contains"] = {name: bool(f[1] <= v <= f[2]) for name, v in
+                            [("early_decision_0", 0.0), ("dose_%.3f" % F_DOSE, F_DOSE), ("final_wd_1", 1.0)]}
+    # amendment_E8R_1: the delivered linear account gives f_ramp in [0, 0.4] (internal-review-repo checks/e8r_linear_ramp.json)
+    out["f_ci_overlaps_delivered_0_0.4"] = bool(f[1] <= F_DELIVERED[1] and f[2] >= F_DELIVERED[0])
+    diff = bool(out["ramp_minus_c004"]["ci95"][1] > 0 or out["ramp_minus_c004"]["ci95"][2] < 0)
+    out["difference_ramp_vs_c004"] = diff
+    out["prediction_holds"] = bool(diff and f[0] >= 0.5)
+    if not diff:
+        out["reading"] = "inconclusive at n=5: R(ramp) - R(0.04) not demonstrated"
+    elif f[0] >= 0.5:
+        out["reading"] = "holds (strong)" if f[1] >= 0.5 else "holds"
+    else:
+        out["reading"] = "fails: f_ramp = %.3f < 0.5" % f[0]
+    out["separates_B_from_delivered"] = bool(out["prediction_holds"] and f[1] > F_DELIVERED[1])
+    return out
+
+
+F_DELIVERED = (0.0, 0.4)
+
+
+def practice_ref_combined(runs, ep=50):
+    """amendment_E8R_1: the reading is 'undetermined' if the primary and the non-finite-as-collapsed readings
+    disagree (as E8's D_final)."""
+    p, z = practice_ref(runs, ep=ep), practice_ref(runs, ep=ep, nonfinite_zero=True)
+    final = p.get("reading") if p.get("reading") == z.get("reading") else "undetermined (non-finite scorings disagree)"
+    return p, z, final
+
+
+def main(root, outdir):
+    runs = {}
+    for d in sorted(glob.glob(os.path.join(root, "*", "s*"))):
+        if os.path.isdir(d) and os.path.exists(os.path.join(d, "log.jsonl")):
+            runs.setdefault(os.path.basename(os.path.dirname(d)), []).append(load_run(d))
+    res = dict(nonfinite={k: sum(not r["ok"] for r in v) for k, v in runs.items()})
+    for arm in "TP":
+        for dirn, start, end in [("lo2hi", "lo", "hi"), ("hi2lo", "hi", "lo")]:
+            rows = {"N": runs.get(f"{arm}_{start}", []), 0: runs.get(f"{arm}_{end}", [])}
+            for e in SWITCH:
+                rows[e] = runs.get(f"{arm}_{dirn}_e{e}", [])
+            prim = decision(rows, MARGIN)
+            nf0 = decision(rows, MARGIN, nonfinite_zero=True)
+            r = dict(primary=prim, nonfinite_as_collapsed=dict(D=nf0["D"], reading=nf0.get("reading")),
+                     nonfinite_per_row={str(e): sum(not x["ok"] for x in rs) for e, rs in rows.items()})
+            if nf0["D"] != prim["D"]:
+                r["D_final"] = "undetermined"
+            else:
+                r["D_final"] = prim["D"]
+            if dirn == "hi2lo":
+                fin = lambda rs: np.mean([x["count"][50] for x in rs if x["ok"] and 50 in x["count"]]) if rs else np.nan
+                r["regrowth_at_switch"] = {str(e): regrowth(rows[e], e, fin(rows["N"]), fin(rows[0])) for e in SWITCH}
+            r["margins"] = {str(m): decision(rows, m)["D"] for m in MARGINS}
+            r["horizons"] = {str(ep): decision(rows, MARGIN, ep=ep)["D"] for ep in (30, 40)}
+            r["rankme_c"] = decision(rows, MARGIN, metric="rankme")["D"]
+            if "delta" in prim:
+                r["without_unconverged"] = decision(rows, MARGIN, drop_flagged=True, delta_conv=prim["delta"])["D"]
+            r["curves"] = {str(e): {str(ep): float(np.mean([x["count"][ep] for x in rs if x["ok"] and ep in x["count"]]))
+                                    for ep in range(0, 51) if any(ep in x["count"] for x in rs)}
+                           for e, rs in rows.items() if rs}
+            er = early_reading({str(e): rs for e, rs in rows.items() if rs},
+                               switch_epoch={str(e): e for e in SWITCH})
+            g = (prim.get("gap") or [None])[0]
+            r["early_reading"] = dict(rows=er, implied_f={str(e): implied_f(er, str(e), "N", g) for e in SWITCH})
+            r["prediction"] = score_prediction(r, PRED.get(f"{arm}_{dirn}", {}))
+            res[f"{arm}_{dirn}"] = r
+            print(arm, dirn, "D =", r["D_final"], prim.get("reading"), r["margins"], r["horizons"], "->", r["prediction"]["verdict"])
+    res["prediction_verdicts"] = {k: res[k]["prediction"]["verdict"] for k in PRED if k in res}
+    for arm in "TP":  # predictions.B2_warmup: lo->hi rows have f(e) >= 0.5 (point estimate) for every e
+        r = res[f"{arm}_lo2hi"]; rws = r["primary"].get("rows") or {}
+        fs = {e: (rws.get(str(e)) or {}).get("f") for e in SWITCH}
+        if r["D_final"] in ("undetermined", "uninformative") or any(v is None for v in fs.values()):
+            v = "not scored: %s" % (r["D_final"] if r["D_final"] in ("undetermined", "uninformative") else "missing rows")
+        else:
+            low = [e for e, v in fs.items() if v[0] < 0.5]
+            v = "holds" if not low else "fails at e = %s" % low
+        res["prediction_verdicts"][f"B2_warmup_{arm}"] = v
+        r["B2_warmup"] = dict(f={str(e): v_ for e, v_ in fs.items()}, verdict=v)
+    if runs.get("PR_ramp") or runs.get("PR_c04"):
+        p, z, final = practice_ref_combined(runs)
+        er = early_reading({k: runs[k] for k in ("P_lo", "PR_c04", "PR_ramp") if runs.get(k)})
+        g = (p.get("gap") or [None])[0]
+        imp = {}
+        if g and "PR_ramp" in er and "P_lo" in er:
+            imp = {e: (v["reading"] - er["P_lo"]["final"]) / g for e, v in er["PR_ramp"]["at"].items()}
+        res["E8R"] = dict(primary=p, nonfinite_as_collapsed=z, reading_final=final,
+                          early_reading=dict(rows=er, ramp_implied_f=imp),
+                          horizons={str(ep): practice_ref(runs, ep=ep).get("reading") for ep in (30, 40)},
+                          curves={k: {str(ep): float(np.mean([x["count"][ep] for x in runs[k] if x["ok"] and ep in x["count"]]))
+                                      for ep in range(0, 51) if any(ep in x["count"] for x in runs[k])}
+                                  for k in ("P_lo", "PR_c04", "PR_ramp") if runs.get(k)})
+        print("E8R", final, p.get("f_ramp"))
+    res["provenance"] = {k: [x["prov"] for x in v] for k, v in runs.items()}
+    res.update(command=" ".join(["python3", "code/e8_analyze.py"] + sys.argv[1:]),
+               registration="results/e8/prediction.json")
+    os.makedirs(outdir, exist_ok=True)
+    json.dump(res, open(os.path.join(outdir, "summary.json"), "w"), indent=1)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[2])

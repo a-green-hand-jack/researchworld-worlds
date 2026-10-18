@@ -1,0 +1,27 @@
+"""Shared style for all paper figures: NeurIPS text width 5.5in, Times-like fonts, Type 1/42 embedding, colour-blind-safe + B/W-safe."""
+import matplotlib as mpl
+mpl.use("Agg")
+import matplotlib.pyplot as plt
+
+TEXTWIDTH = 5.5  # inches, NeurIPS text block
+# Okabe-Ito palette; each series also gets a distinct marker/linestyle so figures read in B/W
+COL = dict(drive="#0072B2", decay="#D55E00", net="#000000", ok="#009E73", bad="#CC79A7", grey="#7f7f7f", gold="#E69F00")
+MARK = ["o", "s", "^", "D", "v", "P"]
+LS = ["-", "--", "-.", ":"]
+
+def setup():
+    mpl.rcParams.update({
+        "pdf.fonttype": 42, "ps.fonttype": 42,  # embedded TrueType, no Type 3
+        "font.family": "serif", "font.serif": ["STIXGeneral"],
+        "mathtext.fontset": "stix", "font.size": 8, "axes.labelsize": 8, "axes.titlesize": 8,
+        "legend.fontsize": 7, "xtick.labelsize": 7, "ytick.labelsize": 7,
+        "axes.spines.top": False, "axes.spines.right": False, "axes.linewidth": 0.6,
+        "lines.linewidth": 1.2, "lines.markersize": 3.5, "figure.dpi": 150, "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.02,
+    })
+
+def save(fig, name, outdir):
+    import os
+    os.makedirs(outdir, exist_ok=True)
+    fig.savefig(os.path.join(outdir, name + ".pdf"))
+    plt.close(fig)

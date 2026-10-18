@@ -1,0 +1,247 @@
+# Prior work: mathematical tools for a driving-force-vs-decay theory (verified 2026-10-17)
+
+## How this was checked
+
+- **Dates.** Each arXiv v1 date was checked on the arXiv abstract page. Every work listed here was first posted before 2026-09-01.
+- **Equations.** Taken from the paper text (PDF or HTML).
+- **[unverified]** marks items that were not re-read from the source.
+- **Post-cutoff works.** Works the search turned up from after the cutoff were excluded without being read.
+- **Attribution corrections.**
+  - "Understanding MIM via occlusion invariant feature" is by Kong & Zhang.
+  - "Understanding MAE via hierarchical latent variable models" is by L. Kong, Ma, Chen, Xing et al.
+
+## 1. Learning dynamics from small initialisation
+
+### Saxe, McClelland & Ganguli, ICLR 2014 (1312.6120, 2013-12-20)
+
+- Whitened inputs. Each mode u = ab obeys τ u' = 2u(s − u) (Eq. 10), with the closed-form sigmoid u(t) = s e^{2st/τ} / (e^{2st/τ} − 1 + s/u0) (Eq. 12).
+- Learning time is t ≈ (τ/s) ln(s/ε), so 1/s.
+- Near the origin, u' ≈ (2s/τ) u: every mode is linearly unstable, at a rate set by its signal.
+- Deeper networks: τ u' = (N_l − 1) u^{2−2/(N_l−1)} (s − u) (Eq. 15). For depth > 2 the origin is a degenerate saddle and growth is polynomial.
+
+### Saxe et al., PNAS 2019 (1810.10531, 2018-10-23)
+
+- Modes are learned in order of singular value, giving stage-like learning [content consistent; only date re-checked].
+
+### Arora, Cohen & Hazan, ICML 2018 (1802.06509, 2018-02-19)
+
+- Thm 1, end-to-end dynamics: W' = −η Σ_j (WW^T)^{(j−1)/N} ∇L(W) (W^TW)^{(N−j)/N}.
+
+### Arora, Cohen, Hu & Luo, NeurIPS 2019 (1905.13655, 2019-05-31)
+
+- Thm 3: σ_r' = −N (σ_r^2)^{1−1/N} <∇ℓ(W), u_r v_r^T>.
+- The force on a direction is its projected gradient, multiplied by σ_r^{2−2/N}. Depth therefore suppresses small directions.
+
+### Gidel, Bach & Lacoste-Julien, NeurIPS 2019 (1904.13262, 2019-04-30)
+
+- Thm 1, two-layer closed form: w_i(t) = σ_i e^{2σ_i t − 2δ} / (λ_i (e^{2σ_i t − 2δ} − e^{−2δ}) + σ_i).
+- Small-initialisation limit: each component switches on at a step, at time T_i = 1/σ_i (1/(ησ_i) in discrete time).
+
+### Li, Luo & Lyu, ICLR 2021 (2012.09839, 2020-12-17)
+
+- For L(U) = ½ f(UU^T), the dynamics near 0 are U' = QU with Q = −∇f(0): continuous power iteration (Eq. 3).
+- Thm 5.3/5.11: greedy low-rank learning.
+- Template: adding weight decay λ gives U' = (Q − λI)U, so direction i grows iff μ_i > λ. This step is our extension, not their statement.
+
+### Jacot et al., "Saddle-to-saddle dynamics in deep linear networks" (2106.15933, 2021-06-30)
+
+- Thm 2: gradient flow escapes the origin along the top singular direction of ∇C(0).
+- Escape time is ~ −log α for L = 2 and ~ α^{−(L−2)} for L > 2.
+
+### Atanasov, Bordelon & Pehlevan, ICLR 2022 (2111.00034, 2021-10-29)
+
+- Silent alignment: the kernel aligns at t1 ~ 1/s, before the function grows at t2 ~ s^{−1} log(s/σ^2).
+- So the direction is chosen while the representation is still small.
+
+### Simon et al., "On the stepwise nature of SSL", ICML 2023 (2303.15438, 2023-03-27)
+
+- Linear Barlow Twins: s_j' = 4(1 − γ_j s_j^2) γ_j s_j (Eq. 12).
+- Endpoint: s_j(∞) = γ_j^{−1/2} if γ_j > 0, and 0 otherwise. The step time is τ_j = −log(s_j(0)^2 γ_j)/(8γ_j).
+- This is the closest SSL analogue of "a direction survives iff its drive is positive".
+
+## 2. Weight decay and rank thresholds
+
+### Nuclear-norm variational identity (standard fact)
+
+- min_{AB=W} ½(||A||_F^2 + ||B||_F^2) = ||W||_*, which soft-thresholds singular values: σ ↦ (σ − λ)_+ [standard; Srebro et al. 2005, Cai–Candès–Shen 2010; not re-read].
+
+### Kobayashi, Akram & von Oswald, NeurIPS 2024 (2410.23819, 2024-10-31)
+
+- L(AB^T) + λ(||A||^2 + ||B||^2) has the same local minima as L(AB^T) + λ||AB^T||_*.
+- The two coincide exponentially fast during training.
+
+### Ziyin, Li & Meng, "Exact solutions of a deep linear network", NeurIPS 2022 (2202.04777, 2022-02-10)
+
+- Thm 1: zero is the global minimum iff ||E[xy]||^2 ≤ γ_u γ_w (the "overregularized" regime).
+- Prop 2: for depth ≥ 2 hidden layers, the origin is always a local minimum.
+- Thm 3: a sufficient condition for a nontrivial minimum.
+
+### Wang & Jacot (2305.16038, 2023-05-25) [venue unverified]
+
+- Weight decay induces a Schatten-2/L cost.
+- SGD makes one-way jumps from high rank to low rank.
+- Small-singular-value critical points: S_ii = (2λ / |u_i^T ∇C v_i|)^{L/(L−2)}.
+
+### Galanti, Siegel, Gupte & Poggio (2206.05794, 2022-06-12)
+
+- Thm 3.3: with SGD and weight decay, rank ≲ m_l B log(2/ε)/(2μλ).
+
+### Ziyin, Lubana, Ueda & Tanaka, "What shapes the loss landscape of SSL?", ICLR 2023 (2210.00638, 2022-10-02)
+
+- Expands the SSL loss around W = 0: "stability at the origin decides the collapse".
+- Thm 1: stationary points satisfy W^TW = ½ Σ^{-1} B Σ^{-1}, where only directions with positive eigenvalues of B survive.
+- Collapse condition for subspace i, with weight decay γ: ((1−α)/N) c_i + γ ≥ a_i (weighted InfoNCE).
+- Contrastive, not JEPA, but the closest landscape precursor.
+
+### Lucas et al., NeurIPS 2019 (1911.02469, 2019-11-06)
+
+- pPCA: component i survives iff λ_i > σ^2.
+
+### Wang & Ziyin, NeurIPS 2022 (2205.04009, 2022-05-09)
+
+- Mode i is nonzero iff ζ_i > √β η_dec.
+
+### Ichikawa & Hukushima (2310.15440, 2023-10-24) [venue unverified]
+
+- The posterior-collapse threshold in an online-SGD ODE is stable iff β < ρ + η.
+
+## 3. EMA, stop-gradient and target networks as dynamical systems
+
+### Tian, Chen & Ganguli, ICML 2021 (2102.06810, 2021-02-12) — DirectPred
+
+- Linear BYOL/SimSiam with EMA target W_a = τW. Predictor and F = WXW^T are eigen-aligned (Thm 3).
+- Mode equations (Eqs. 11–13):
+  - p_j' = α_p s_j [τ − (1+σ^2) p_j] − η p_j
+  - s_j' = 2 p_j s_j [τ − (1+σ^2) p_j] − 2η s_j
+- Invariant: s_j = α_p^{-1} p_j^2 + e^{−2ηt} c_j.
+- Reduced dynamics: p_j' = p_j^2 [τ − (1+σ^2) p_j] − η p_j (Eq. 16).
+- Fixed points: p*_± = [τ ± √(τ^2 − 4η(1+σ^2))] / (2(1+σ^2)).
+- When η > 0, the origin is stable with basin p_j < p*_−. Collapse is unavoidable if η > τ^2/(4(1+σ^2)).
+- Small τ (EMA lag) enlarges the basin. EMA acts as an automatic curriculum.
+- Already a per-mode drive-vs-decay condition, for BYOL with augmentations: no masking, no JEPA predictor.
+
+### Halvagal, Laborieux & Zenke, NeurIPS 2023 (2212.04858, 2022-12-09)
+
+- With stop-gradient and Euclidean loss: z_m' = η λ_m (1 − λ_m) z_m.
+- Without stop-gradient: z_m' = −η (1 − λ_m)^2 z_m, so every mode collapses.
+
+### Tang et al., "Understanding self-predictive learning for RL", ICML 2023 (2212.03319, 2022-12-06)
+
+- Thm 1: with an optimal (fast) predictor and semi-gradient, Φ^TΦ is conserved.
+- A perfectly fitted predictor cancels the radial drive. Growth needs a lagging predictor or target.
+
+### Other dynamics-related works
+
+- **Wang, Chen, Du & Tian (2110.04947, 2021-10-11):** predictor and weight-decay roles [not re-read].
+- **Bao (2309.16109, 2023-09-28):** cosine-loss extension of Tian et al. [abstract only].
+- **Target networks in TD learning:**
+  - Fellows, Smith & Whiteson, ICML 2023 (2302.12537): target updates recondition the Jacobian.
+  - Lee & He (1904.10945).
+  - Zhang, Yao & Whiteson, ICML 2021 (2101.08862).
+- **Two-timescale stochastic approximation:** Borkar 1997 [not re-checked].
+
+## 4. Masking theory
+
+### Zhang, Wang & Wang, "How mask matters", NeurIPS 2022 (2210.08344, 2022-10-15)
+
+- MAE is analysed as alignment on a mask-induced augmentation graph.
+- The mask-ratio trade-off is qualitative: more connectivity, but more label error.
+
+### Kong & Zhang (2208.04164, 2022-08-08)
+
+- Masked image modelling viewed as learning occlusion-invariant features [abstract-level].
+
+### Kong et al., CVPR 2023 (2306.04898, 2023-06-08)
+
+- Mask ratio and patch size select which latent level is recovered [abstract-level].
+
+### Balestriero & LeCun, "Learning by reconstruction produces uninformative features for perception" (2402.11337, 2024-02-17)
+
+- Linear reconstruction learns the top-variance eigenspace first.
+- Masking/denoising closed form depends only on the first two moments of the corrupted input.
+
+### Bisulco, Ramesh, Balestriero & Chaudhari (2508.15404, 2025-08-21)
+
+- Mask ratio m, patch size p:
+  - E[R⊙X] = (1−m)X
+  - E[(R⊙X)^T(R⊙X)] = (1−m)^2 X^TX + m(1−m) blkdiag_p(X^TX)
+- Linear MAE optimum: top-k eigenvectors of X^TX V^{-1} X^TX.
+- Higher m shifts selection toward long-range correlations.
+
+### Dong, Wang & Kluger, NeurIPS 2025 (2509.21650, 2025-09-25)
+
+- Masked covariance: (1−p)^2 Σ + p(1−p) diag Σ.
+- Risk is non-monotone in p. Stronger features prefer higher masking ratios.
+
+### Gjølbye et al. (2601.21294, 2026-01-29)
+
+- Masked PLS has a BBP threshold θ_c = θ* √(κ/ρ), with ρ = ρ_x ρ_y.
+- This is the only verified result that quantifies how masking moves a cross-covariance detectability threshold.
+
+### Lee, Lei, Saunshi & Zhuo, NeurIPS 2021 (2008.01064, 2020-08-03)
+
+- Predicting one part of the input from another recovers the relevant subspace under conditional independence [not re-read].
+
+## 5. Spectral and random-matrix thresholds
+
+- **Baik, Ben Arous & Péché, Ann. Probab. 2005 (math/0403022, 2004-03-01).** An outlier appears iff ℓ > 1 + √γ [standard formulas; not re-read].
+- **Benaych-Georges & Nadakuditi (0910.2120, 2009-10-12).** Deformed-matrix outliers [standard; not re-read].
+- **Random-matrix theory of masked self-supervised regression (2601.23208, 2026-01-30).** BBP at θ* = 1/√α [author list as reported by agent; verify before citing].
+- **Coeurdoux, Ferré & Bouchaud (2604.18450, 2026-04-20).** Transient BBP under early-stopped gradient flow: a spike may exist only within a time window.
+- **Ben Arous, Gheissari & Jagannath, JMLR 2021 (2003.10409).** Escape from an uninformative initialisation; the information exponent [not re-read].
+- **Ji et al. (2110.02473).** Contrastive feature learning on spiked models.
+
+## JEPA-specific anchor
+
+### Littwin et al., "How JEPA avoids noisy features", NeurIPS 2024 (2407.03475, 2024-07-03)
+
+- Notation: σ_i^2 = Σ^{xx}_ii, λ_i = Σ^{yx}_ii, ρ_i = λ_i/σ_i^2. Encoder depth L, initialisation scale ε.
+- Thm 4.2, per-feature dynamics:
+  - JEPA: w' = λ w^{3−1/L} − λ ρ^{−1} w^3
+  - MAE: w' = λ w^{2−1/L} − λ ρ^{−1} w^3
+- Fixed points: ρ^L (JEPA) and ρ^{L/(L+1)} (MAE).
+- Thm 4.5: the JEPA critical time is greedy in ρ.
+- No weight decay, EMA or masking ratio in their model. Adding these is the gap the paper can fill.
+
+## Suggested theoretical skeleton (our suggestion, not a result from the cited works)
+
+### 1. Model
+
+- Linear JEPA: encoder W (possibly deep), linear predictor P, EMA target W̄.
+- Context x_c = M⊙x, target x_t = (1−M)⊙x.
+- Loss: ½ E||P W x_c − W̄ x_t||^2 + (η/2)(||W||^2 + ||P||^2).
+- Target update: W̄' = β(W − W̄).
+- Assume spectral alignment (Tian et al. Thm 3; Littwin et al. Assum. 4.1).
+
+### 2. Linearise at the collapsed point (W = W̄ = 0, P at initialisation)
+
+- Mode i has context variance a_i and context–target cross-covariance c_i:
+  - w_i' = p_i c_i w̄_i − (p_i^2 a_i + η) w_i
+  - w̄_i' = β (w_i − w̄_i)
+- Jacobian determinant: β(p_i^2 a_i + η − p_i c_i). So the survival condition is **p_i c_i > p_i^2 a_i + η, independent of β** (driving force > decay).
+- Growth rate: β(p c − A)/(A + β), with A = p^2 a + η. EMA sets the timescale, not the linear threshold.
+
+### 3. Predictor
+
+- The drive p·c is first order in p; the predictor-induced decay p^2 a is second order.
+- The best predictor scale is p = c/(2a), giving the condition η < c^2/(4a). This matches Tian's η > τ^2/(4(1+σ^2)) with τ ↔ c and 1+σ^2 ↔ a.
+- An optimal (fully fitted) predictor, p = c/a, gives zero net growth (Tang; Halvagal). So a predictor that fits too fast suppresses growth.
+- Depth: escape becomes polynomial, and weight decay competes with forces weighted by s^{2−2/L} (Saxe Eq. 15; Jacot; Littwin; Arora; Wang & Jacot).
+
+### 4. Masking
+
+- With Bernoulli masking of ratio m and disjoint context and target (moment identities of Bisulco et al. and Dong et al.):
+  - C_ct = m(1−m)(Σ − blkdiag Σ)
+  - A_c = (1−m)^2 Σ + m(1−m) blkdiag Σ
+- The drive scales as m(1−m) and peaks at m = ½. Self-prediction is removed and the context spectrum shifts.
+- This predicts a collapse boundary in the (m, η) plane.
+
+### 5. Rank prediction
+
+- rank = #{i : max_p (p c_i − p^2 a_i) > η}.
+- Plus a finite-training-time cut from step times τ_i ∝ log(1/ε)/(growth rate) (Saxe; Simon).
+
+### 6. Finite-sample version
+
+- Combine the decay threshold with BBP edges (Gjølbye et al.).
+- Transient BBP (Coeurdoux et al.) suggests an early-time window.

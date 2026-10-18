@@ -1,0 +1,33 @@
+\section{What the heuristics change}
+\label{sec:heuristics}
+
+Each design choice of a JEPA enters the race of \cref{sec:race} through a definite term: the data quantities $(c_k,\sigma_k)$, the starting point $(p_0,a_0)$, or the clock $1/(\alpha\lambda_P)$ on which the predictor gain decays.
+\Cref{tab:heuristics} maps each choice to the term it moves and to a prediction with a sign; \cref{sec:experiments} reports the tests.
+We write $F_k^*$ for the value of \eqref{eq:F} at $p=p_-^k$, so that $\partial F_k^*/\partial p_0=g_k(p_0)/(\alpha\lambda_Pp_0)$.
+\begin{table}[t]
+  \centering
+  \caption{What each design choice moves in the race, and its predicted effect on rank (pred.: predictor). ``E1 dev.: $m/n$'': points of \cref{fig:e1-knobs} with seed-mean rank at $T$ within $0.5$ of the prediction. ``E1b'': held-out, pre-registered runs (\cref{sec:heldout}). ``ViT'': E3 (\cref{sec:e3}), T/P its SGD/AdamW arms.}
+  \label{tab:heuristics}
+  \input{tables/tab_heuristics}
+\end{table}
+
+
+\paragraph{Weight decay and the predictor.}
+Weight decay acts twice: $\lambda_W$ narrows the window \eqref{eq:window} and $\lambda_P$ sets the race clock, so each direction should be lost at its race threshold \eqref{eq:lamrace}, well below the static threshold $c_k^2/(4\sigma_k)$; with $\lambda_W>0$, predictor weight decay is also necessary for any survivor (\cref{prop:fixed}(c)).
+The initial gain $p_0$ multiplies the drive and, squared, the self-prediction decay; $F_k^*$ increases with $p_0$ while $p_0<p_+^k$ and decreases beyond it, so the rank should be non-monotone in $p_0$.
+A predictor learning-rate ratio $\alpha$ shortens the clock without changing the window. A deep linear predictor with $L$ identity-initialised factors has a gain that decays at rate $L\alpha\lambda_P$, and it also needs a larger amplitude for capture (App.~\ref{app:more}); the pre-registered criterion used the clock only (\cref{sec:heldout}).
+
+\paragraph{Target update.}
+With an EMA target of rate $\kappa=(1-\tau)/\eta$, the growth rate at fixed gain is the largest root $r$ of $(r+p^2\sigma_k+\lambda_W)(r+\kappa)=pc_k\kappa$.
+It has the sign of $g_k(p)$ and a smaller magnitude (\cref{app:proofs}): the EMA leaves the window and the static threshold unchanged and slows both growth and decay, so a slower target should lower the rank if $p_0$ lies inside the window and can raise it slightly if $p_0>p_+^k$.
+
+\paragraph{Masking.}
+The mask distribution sets $(\sigma_k,c_k)$ through $\Sigma_c=\Sigma\circ G$ and $\Sigma_{tc}=\Sigma\circ F$.
+For independent coordinate masks that keep each coordinate in the context with probability $q=1-r$ and use the complement as the target,
+\begin{equation}
+\sigma_k=q^2\hat\Sigma_k+q(1-q)\,\bar\sigma,\qquad c_k=q(1-q)\big(\hat\Sigma_k-\bar\sigma\big),
+\label{eq:bernoulli}
+\end{equation}
+where $\hat\Sigma_k$ are the eigenvalues of $\Sigma$ and $\bar\sigma=\Sigma_{ii}$ (\cref{app:proofs}).
+Only directions with $\hat\Sigma_k>\bar\sigma$, the smooth ones that neighbouring coordinates predict, receive a positive drive; the drive vanishes as $r\to0$ and the context as $r\to1$, so the rank can be non-monotone in $r$, with a peak that \eqref{eq:race} locates (tested in \cref{sec:e2}).
+For block masks, $F$ and $G$ follow from enumerating the placements; the remaining rows of \cref{tab:heuristics} are derived in \cref{app:more}.

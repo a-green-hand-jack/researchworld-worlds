@@ -1,0 +1,11 @@
+# Independent delivery review
+
+Reviewed assembled delivery at paper-repo commit `002a0eca332a4fc79b9482cc8e09b8b71847037b`, with analysis provenance at experiment-repo commit `8791e8b86c69db1b86cea94494d734d568a82a6c`.
+
+- Recomputed OLS from all 40 rows of frozen `data.csv`: `a=1.6325065853658542`, `b=0.6493586491557223`, `SSE=37.949225639392125`, and residual SD `0.9993316929906617`.
+- The supplied `t(38)` intervals in the report match the analysis package: intercept `[1.0045764052, 2.2604367655]`, slope `[0.5385174733, 0.7601998250]`.
+- `outputs/figure.png` matches the frozen SHA-256 `dd9a0239b64f7b26632c70d7019dd0767ef87320c952553bf736e97e643c7744`; visual inspection shows readable axes, observed points, and fitted line consistent with the report.
+- `outputs/reference.pdf` matches the frozen SHA-256 `d7755732fa69614489e67554a5ff27d122fb4f6c0d53add58da6aae7ff710f7b` and is present as the supplied PDF.
+- `report/report.md` contains both coefficient estimates and intervals, residual SD, and one sentence describing each supplied file; no unsupported numerical claims were found.
+
+Conclusion: the assembled delivery satisfies the research objective and is supported for release.

@@ -1,0 +1,635 @@
+#!/usr/bin/env python3
+"""Generate paper/numbers.tex: one LaTeX macro per number quoted in the text.
+
+Every macro is read from a results file delivered under results/ (experiment-repo);
+the paper never types a measured number by hand. Each entry of NUMBERS gives the
+macro name, the results file (relative to the delivery root), a function that
+extracts the value, and the format. CLAIMS.md maps each macro to the claim it supports.
+
+usage (from the delivery root):  python3 paper/tools/make_numbers.py [--results-root DIR]
+(--results-root: a directory holding results/, if it is not the delivery root)
+"""
+import csv, json, pathlib, sys
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+E1 = "results/e1/summary.json"
+E1META = "results/e1/e1_meta.json"
+E1RUNS = "results/e1/e1_runs.csv"
+MASK = "results/checks/mask_symmetry.json"
+BAL = "results/checks/balance_identity.json"
+E1B = "results/e1b/summary.json"
+E1BMETA = "results/e1b/e1b_meta.json"
+E1BPRED = "results/e1b/prediction.json"
+E1BTRAJ = "results/e1b/traj_rates.json"
+E1TRAJ = "results/e1/trajectories_meta.json"
+E1TRAJCSV = "results/e1/trajectories.csv"
+E1BLONG = "results/checks/e1b_long_horizon.json"
+E1C = "results/e1c/summary.json"
+E2 = "results/e2/summary.json"
+E2META = "results/e2/e2_meta.json"
+E2TIME = "results/checks/e2_rank_over_time.json"
+E2LONG = "results/checks/e2_long_horizon.json"
+E1CMETA = "results/e1c/e1c_meta.json"
+E1BETA = "results/checks/e1b_small_eta.json"
+E3 = "results/e3/summary.json"
+E3F = "results/e3/summary_followup.json"
+E3C = "results/e3/compute.json"
+E2RO = "results/checks/e2_roundoff.json"
+DVD = "results/baselines/dvd_mu.json"
+DVDE1B = "results/baselines/dvd_e1b_runs.csv"
+DVDE2 = "results/baselines/dvd_e2_runs.csv"
+DVD_ALIGNED = ("grid", "ema_alpha", "depth")
+DVD_CYCLIC = ("bern", "block", "multiblock")
+
+
+def pct(x):
+    return f"{100 * x:.1f}\\%"
+
+
+def ci(key, field):
+    """mean [lo, hi] of a bootstrap triple, as percentages."""
+    return lambda d: "{} [{}, {}]".format(*(pct(v) for v in d[key][field]))
+
+
+def trend(name):
+    """measured mean rank per setting, comma-separated."""
+    def get(d):
+        return ", ".join(f"{r['rank_meas_mean']:g}" for r in d["trends"][name])
+    return get
+
+
+def trend_pred(name):
+    def get(d):
+        return ", ".join(f"{r['rank_pred_mean']:g}" for r in d["trends"][name])
+    return get
+
+
+def trend_values(name):
+    def get(d):
+        return ", ".join("SG" if r["value"] is None else f"{r['value']:g}" for r in d["trends"][name])
+    return get
+
+
+def bal(alpha, lam, method="rk4", agg=max):
+    def get(d):
+        return agg(c["max_rel_deviation"] for c in d["cases"]
+                   if c["alpha"] == alpha and c["lam"] == lam and c["method"] == method)
+    return get
+
+
+def sci(x):
+    m, e = f"{x:.1e}".split("e")
+    return f"{m}\\times10^{{{int(e)}}}"
+
+
+def triple(arm, metric, field, fmt):
+    """mean [lo, hi] of a bootstrap triple of results/e1b/summary.json."""
+    return lambda d: "{} [{}, {}]".format(*(fmt(v) for v in d[arm][metric][field]))
+
+
+def bci(arm, field, fmt=pct):
+    return lambda d: "{} [{}, {}]".format(*(fmt(v) for v in d[arm][field]))
+
+
+def f2(x):
+    return f"{x:.2f}"
+
+
+def grid_row(p0, key):
+    """E1b phase grid at fixed p0: mean measured / predicted rank over lam."""
+    def get(d):
+        cells = [(float(dict(t.split("=") for t in k.split("|"))["lam"]), v)
+                 for k, v in d["cells"]["grid"].items()
+                 if float(dict(t.split("=") for t in k.split("|"))["p0"]) == p0]
+        return ", ".join(f"{v[key]:g}" for _, v in sorted(cells, key=lambda c: c[0]))
+    return get
+
+
+def grid_lams(d):
+    lams = sorted({float(dict(t.split("=") for t in k.split("|"))["lam"]) for k in d["cells"]["grid"]})
+    return ", ".join(f"{l:g}" for l in lams)
+
+
+def grid_p0_zero(d):
+    """smallest grid p0 whose measured mean rank is 0 at every lam."""
+    by = {}
+    for k, v in d["cells"]["grid"].items():
+        a = dict(t.split("=") for t in k.split("|"))
+        by.setdefault(float(a["p0"]), []).append(v["rank_meas_mean"])
+    return min(p for p, r in by.items() if max(r) == 0)
+
+
+def boundary_lam(p0):
+    """pre-registered complete-collapse weight decay at the boundary p0 closest to p0."""
+    def get(d):
+        b = d["boundary"]
+        i = min(range(len(b["p0"])), key=lambda j: abs(b["p0"][j] - p0))
+        return b["lam_collapse"][i]
+    return get
+
+
+def boundary_p0_none(d):
+    """smallest boundary p0 predicted to collapse at every lam on the boundary grid (lam_collapse None)."""
+    b = d["boundary"]
+    return min(p for p, l in zip(b["p0"], b["lam_collapse"]) if l is None)
+
+
+def traj_r2(pred):
+    def get(d):
+        return min(x["r2"] for x in d if pred(x["cfg"]))
+    return get
+
+
+RO, RG, RG128 = "race/orthogonal/32", "race/gaussian/32", "race/gaussian/128"
+LAM, P0, P0Z, ALPHA, W0 = ("lam(p0=1,alpha=1,w0=1e-4)", "p0(lam=0.01,alpha=1,w0=1e-4)",
+                           "p0(lam=0,alpha=1,w0=1e-4)", "alpha(lam=0.01,p0=1,w0=1e-4)",
+                           "w0(lam=0.01,p0=1,alpha=1)")
+KAP, DEP = "kappa(lam=0.01,p0=1)", "depth(lam=0.01,p0=1)"
+KAPZ = "kappa(lam=0,p0=0.5)"
+
+
+def traj_rank(p0, field):
+    """rank of the single-seed E1 trajectory run at lam=0.01 and initial gain p0."""
+    return lambda d: next(c[field] for c in d["configs"] if c["p0"] == p0 and c["lam"] == 0.01)
+
+
+def traj_score(p0, k):
+    """race score R_k of direction k in the E1 trajectory run at initial gain p0."""
+    def get(rows):
+        return float(next(r["R_k"] for r in rows if r["config"] == f"lam0.01_p0{p0:g}_w01e-4" and r["k"] == str(k)))
+    return get
+
+
+def grid_collapse_misses(d):
+    """phase-grid cells where complete collapse (mean rank 0) is predicted but not measured, or vice versa."""
+    return [(k, v) for k, v in d["cells"]["grid"].items()
+            if (v["rank_meas_mean"] == 0) != (v["rank_pred_mean"] == 0)]
+
+
+def trend_bound(name):
+    def get(d):
+        return ", ".join(f"{r['rank_bound']:g}" for r in d["trends"][name])
+    return get
+
+
+def unfinished(init, dim):
+    """race-grid runs whose predictor had not left every window by the horizon."""
+    return lambda rows: sum(r["exp"] == "race" and r["init"] == init and r["d"] == dim
+                            and r["race_finished"] == "False" for r in rows)
+
+# (macro, results file, extractor, format)
+
+def e2c(name, key, fmt=None):
+    return lambda d: (fmt or (lambda x: x))(d["criteria"][name][key])
+
+
+def e2a(arm, key, fmt=f2, field="mae"):
+    return lambda d: fmt(d["arms"][arm][key][field][0])
+
+
+def e2_profile_end(prof, which):
+    def get(d):
+        row = d["profiles"][prof][-1]
+        return "{:.0f}".format(sum(row["meas"]) / len(row["meas"]) if which == "meas" else row["pred"])
+    return get
+
+
+def e2_peak_edge(d):
+    """Profiles whose predicted maximisers include the largest r of the run grid (bern, block 0.9; multiblock 4*14/64)."""
+    edge = {"bern": 0.9, "block": 0.9, "multiblock": 4 * 14 / 64}
+    return sum(any(abs(r - edge[p["profile"].split("/")[1]]) < 1e-9 for r in p["pred_peak_r"]) for p in d["peaks"])
+
+
+def e2_miss_flow(d):
+    """Rank of the exact reduced flow at T_long for the failed peak profile (bern, r=0.9, lam=3e-3, p0=0.25); one value over seeds."""
+    v = {x["rank_long"] for x in d["per_run"] if x["fam"] == "bern" and x["r"] == 0.9 and x["lam"] == 0.003 and x["p0"] == 0.25}
+    assert len(v) == 1
+    return v.pop()
+
+
+def e2_crit_pass(d):
+    return sum(c["passed"] for c in d["criteria"].values())
+
+def e3row(name, key="count", fmt="{:.0f}", rows="rows"):
+    """one field of a named E3 row (summary.json or summary_followup.json)."""
+    def get(d):
+        r = next(r for r in d[rows] if r["name"] == name)
+        return fmt.format(r[key])
+    return get
+
+
+def e3rows(names, key="count", fmt="{:.0f}"):
+    def get(d):
+        by = {r["name"]: r for r in d["rows"]}
+        return ", ".join(fmt.format(by[n][key]) for n in names)
+    return get
+
+
+def e3range(names, key="count"):
+    def get(d):
+        by = {r["name"]: r[key] for r in d["rows"]}
+        v = [by[n] for n in names]
+        return f"{min(v):.1f}--{max(v):.0f}"
+    return get
+
+
+def e3rho(arm):
+    def get(d):
+        c = d["criteria"][f"C-rank arm {arm}"]
+        return "{:.2f} [{:.2f}, {:.2f}]".format(c["rho"], *c["ci"]).replace("-", "$-$")
+    return get
+
+
+def e3probe(name):
+    return lambda d: pct(sum(next(r for r in d["rows"] if r["name"] == name)["probe"]) / 3)
+
+
+def e3sci(x):
+    m, e = f"{x:.1e}".split("e")
+    return m + r"\times10^{" + str(int(e)) + "}"
+
+
+E3T_WD = ["T_wd0", "T_wd0.001", "T_wd0.003", "T_wd0.01", "T_wd0.03", "T_wd0.1"]
+E3T_VARIANTS = ["T_plr0.1", "T_plr10", "T_pinit0.3", "T_pinit3", "T_nosg", "T_frozen", "T_ema0.99"]
+
+
+NUMBERS = [
+    ("EoneRuns", E1META, lambda d: d["runs"], "{}"),
+    ("EoneRaceRuns", E1, lambda d: d[RO]["runs"], "{}"),
+    ("EoneN", E1META, lambda d: d["n"], "{}"),
+    ("EoneEta", E1META, lambda d: d["eta"], "{:g}"),
+    ("EoneHorizon", E1META, lambda d: d["t_cap"], "{:g}"),
+    ("EoneSvThr", E1META, lambda d: d["sv_thr"], "{:g}"),
+    ("EoneSeeds", E1, lambda d: d["trends"][LAM][0]["n"], "{}"),
+    ("EoneRaceUnfinishedOrth", E1RUNS, unfinished("orthogonal", "32"), "{}"),
+    ("EoneModeFalsePosOrth", E1, lambda d: d[RO]["mode_false_pos_race"], "{}"),
+    ("EoneModeFalseNegOrth", E1, lambda d: d[RO]["mode_false_neg_race"], "{}"),
+    ("EoneModes", E1, lambda d: d[RO]["modes"], "{}"),
+    ("EoneReducedModeAccOrth", E1, lambda d: pct(d[RO]["mode_acc_reduced"][0]), "{}"),
+    ("EoneModeFalsePosDepth", E1, lambda d: d["depth/orthogonal/32"]["mode_false_pos_race"], "{}"),
+    ("EoneModeFalseNegDepth", E1, lambda d: d["depth/orthogonal/32"]["mode_false_neg_race"], "{}"),
+    ("EoneModeFalsePosEma", E1, lambda d: d["ema/orthogonal/32"]["mode_false_pos_race"], "{}"),
+    ("EoneModeFalseNegEma", E1, lambda d: d["ema/orthogonal/32"]["mode_false_neg_race"], "{}"),
+    ("EoneReducedRankExactGauss", E1, lambda d: pct(d[RG]["rank_reduced"]["exact"][0]), "{}"),
+    ("EoneReducedRankExactGaussWide", E1, lambda d: pct(d[RG128]["rank_reduced"]["exact"][0]), "{}"),
+    ("EoneWindowExactOrth", E1, lambda d: pct(d[RO]["rank_window"]["exact"][0]), "{}"),
+    ("EoneWindowMaeGauss", E1, lambda d: d[RG]["rank_window"]["mae"][0], "{:.1f}"),
+    ("EoneWindowMaeGaussWide", E1, lambda d: d[RG128]["rank_window"]["mae"][0], "{:.1f}"),
+    ("EoneWindowMaeDepth", E1, lambda d: d["depth/orthogonal/32"]["rank_window"]["mae"][0], "{:.1f}"),
+    ("EoneWindowMaeEma", E1, lambda d: d["ema/orthogonal/32"]["rank_window"]["mae"][0], "{:.1f}"),
+    ("EoneModeAccEma", E1, ci("ema/orthogonal/32", "mode_acc_race"), "{}"),
+    ("EoneRankExactEma", E1, lambda d: pct(d["ema/orthogonal/32"]["rank_pred"]["exact"][0]), "{}"),
+    ("EoneRankExactDepth", E1, lambda d: pct(d["depth/orthogonal/32"]["rank_pred"]["exact"][0]), "{}"),
+    ("EoneRankBiasDepth", E1, lambda d: d["depth/orthogonal/32"]["rank_pred"]["bias"], "{:.2f}"),
+    ("EoneLamBound", E1, trend_bound(LAM), "{}"),
+    ("EoneKappaZeroRanks", E1, trend(KAPZ), "{}"),
+    ("EoneModeAccOrth", E1, ci(RO, "mode_acc_race"), "{}"),
+    ("EoneModeAccGauss", E1, ci(RG, "mode_acc_race"), "{}"),
+    ("EoneModeAccGaussWide", E1, ci(RG128, "mode_acc_race"), "{}"),
+    ("EoneRankExactOrth", E1, lambda d: "{} [{}, {}]".format(*(pct(v) for v in d[RO]["rank_pred"]["exact"])), "{}"),
+    ("EoneRankExactGauss", E1, lambda d: "{} [{}, {}]".format(*(pct(v) for v in d[RG]["rank_pred"]["exact"])), "{}"),
+    ("EoneRankExactGaussWide", E1, lambda d: "{} [{}, {}]".format(*(pct(v) for v in d[RG128]["rank_pred"]["exact"])), "{}"),
+    ("EoneRankMaeOrth", E1, lambda d: d[RO]["rank_pred"]["mae"][0], "{:.2f}"),
+    ("EoneRankMaeGauss", E1, lambda d: d[RG]["rank_pred"]["mae"][0], "{:.2f}"),
+    ("EoneRankMaeGaussWide", E1, lambda d: d[RG128]["rank_pred"]["mae"][0], "{:.2f}"),
+    ("EoneWindowMaeOrth", E1, lambda d: d[RO]["rank_window"]["mae"][0], "{:.1f}"),
+    ("EoneBoundMaeOrth", E1, lambda d: d[RO]["rank_bound"]["mae"][0], "{:.1f}"),
+    ("EoneCollapseAccOrth", E1, lambda d: "{} [{}, {}]".format(*(pct(v) for v in d[RO]["collapse_pred_acc"])), "{}"),
+    ("EoneCollapsedRunsOrth", E1, lambda d: d[RO]["collapsed_runs"], "{}"),
+    ("EoneModeAccDepth", E1, ci("depth/orthogonal/32", "mode_acc_race"), "{}"),
+    ("EoneRankMaeDepth", E1, lambda d: d["depth/orthogonal/32"]["rank_pred"]["mae"][0], "{:.2f}"),
+    ("EoneRankMaeEma", E1, lambda d: d["ema/orthogonal/32"]["rank_pred"]["mae"][0], "{:.2f}"),
+    ("EoneLamValues", E1, trend_values(LAM), "{}"),
+    ("EoneLamRanks", E1, trend(LAM), "{}"),
+    ("EoneLamPred", E1, trend_pred(LAM), "{}"),
+    ("EonePzeroValues", E1, trend_values(P0), "{}"),
+    ("EonePzeroRanks", E1, trend(P0), "{}"),
+    ("EonePzeroPred", E1, trend_pred(P0), "{}"),
+    ("EonePzeroZeroRanks", E1, trend(P0Z), "{}"),
+    ("EoneAlphaValues", E1, trend_values(ALPHA), "{}"),
+    ("EoneAlphaRanks", E1, trend(ALPHA), "{}"),
+    ("EoneWzeroRanks", E1, trend(W0), "{}"),
+    ("EoneKappaValues", E1, trend_values(KAP), "{}"),
+    ("EoneKappaRanks", E1, trend(KAP), "{}"),
+    ("EoneKappaPred", E1, trend_pred(KAP), "{}"),
+    ("EoneDepthRanks", E1, trend(DEP), "{}"),
+    ("EoneDepthPred", E1, trend_pred(DEP), "{}"),
+    ("MaskBlockAsym", MASK, lambda d: d["cases"]["cyclic_block"]["rel_asymmetry"], "{:g}"),
+    ("MaskBlockComm", MASK, lambda d: sci(d["cases"]["cyclic_block"]["rel_commutator"]), "{}"),
+    ("MaskOneSidedAsym", MASK, lambda d: d["cases"]["one_sided_context"]["rel_asymmetry"], "{:.2g}"),
+    ("MaskOneSidedComm", MASK, lambda d: sci(d["cases"]["one_sided_context"]["rel_commutator"]), "{}"),
+    ("MaskNoncyclicAsym", MASK, lambda d: d["cases"]["noncyclic_block"]["rel_asymmetry"], "{:.2f}"),
+    ("MaskNoncyclicComm", MASK, lambda d: d["cases"]["noncyclic_block"]["rel_commutator"], "{:.2f}"),
+    ("BalanceDevFlow", BAL, lambda d: sci(bal(1.0, 0.05)(d)), "{}"),
+    ("BalanceDevAlphaHalf", BAL, bal(0.5, 0.05), "{:.2f}"),
+    ("BalanceDevAlphaTwo", BAL, bal(2.0, 0.05), "{:.2f}"),
+    ("BalanceMaxNormW", BAL, lambda d: max(c["max_norm_W"] for c in d["cases"]
+                                         if c["alpha"] == 1.0 and c["lam"] == 0.05 and c["method"] == "rk4"), "{:.1f}"),
+    ("EoneBRuns", E1BMETA, lambda d: d["runs"], "{}"),
+    ("EoneBDiverged", E1B, lambda d: d["diverged"]["count"], "{}"),
+    ("EoneBAlignedRuns", E1B, lambda d: d["N1_aligned_all"]["runs"], "{}"),
+    ("EoneBAlignedModeAcc", E1B, bci("N1_aligned_all", "mode_acc"), "{}"),
+    ("EoneBLongRuns", E1BLONG, lambda d: d["all_lam>0"]["runs"], "{}"),
+    ("EoneBLongReproduced", E1BLONG, lambda d: round(d["all_lam>0"]["reduced_matches_measured"][0] * d["all_lam>0"]["runs"]), "{}"),
+    ("EoneBLongChanged", E1BLONG, lambda d: d["all_lam>0"]["runs_rank_changed_long"], "{}"),
+    ("EoneBLongChangedNoFloor", E1BLONG, lambda d: d["all_lam>0"]["runs_rank_changed_long_nofloor"], "{}"),
+    ("EoneBLongExactNoFloor", E1BLONG, lambda d: pct(d["all_lam>0"]["pred_exact_vs_long_nofloor"][0]), "{}"),
+    ("EoneBLongZeroRuns", E1BLONG, lambda d: d["grid_lam0"]["runs"], "{}"),
+    ("EoneBLongZeroChanged", E1BLONG, lambda d: d["grid_lam0"]["runs_rank_changed_long"], "{}"),
+    ("EoneBLongT", E1BLONG, lambda d: d["T_long"], "{:.0f}"),
+    ("EoneBLongExactEnd", E1BLONG, lambda d: pct(d["all_lam>0"]["pred_exact_vs_tend"][0]), "{}"),
+    ("EoneBLongExactLong", E1BLONG, lambda d: pct(d["all_lam>0"]["pred_exact_vs_long"][0]), "{}"),
+    ("EoneBAlignedMae", E1B, triple("N1_aligned_all", "rank_pred", "mae", f2), "{}"),
+    ("EoneBAlignedExact", E1B, lambda d: pct(d["N1_aligned_all"]["rank_pred"]["exact"][0]), "{}"),
+    ("EoneBAlignedCollapse", E1B, lambda d: pct(d["N1_aligned_all"]["collapse_acc"][0]), "{}"),
+    ("EoneBAlignedConverged", E1B, lambda d: pct(d["N1_aligned_all"]["converged"][0]), "{}"),
+    ("EoneBAlignedWindowMae", E1B, lambda d: d["N1_aligned_all"]["rank_window"]["mae"][0], "{:.1f}"),
+    ("EoneBAlignedBoundMae", E1B, lambda d: d["N1_aligned_all"]["rank_bound"]["mae"][0], "{:.1f}"),
+    ("EoneBGridRuns", E1B, lambda d: d["grid"]["runs"], "{}"),
+    ("EoneBGridExact", E1B, triple("grid", "rank_pred", "exact", pct), "{}"),
+    ("EoneBGridMae", E1B, lambda d: d["grid"]["rank_pred"]["mae"][0], "{:.2f}"),
+    ("EoneBGridCorExact", E1B, lambda d: pct(d["grid"]["rank_cor3a"]["exact"][0]), "{}"),
+    ("EoneBGridCorN", E1B, lambda d: d["grid"]["rank_cor3a"]["n"], "{}"),
+    ("EoneBGridLams", E1B, grid_lams, "{}"),
+    ("EoneBGridRanksHalf", E1B, grid_row(0.5, "rank_meas_mean"), "{}"),
+    ("EoneBGridPredHalf", E1B, grid_row(0.5, "rank_pred_mean"), "{}"),
+    ("EoneBGridPzeroAllZero", E1B, grid_p0_zero, "{:g}"),
+    ("EoneBLamCollapseTenth", E1BPRED, boundary_lam(0.1), "{:.3f}"),
+    ("EoneBLamCollapseHalf", E1BPRED, boundary_lam(0.5), "{:.3f}"),
+    ("EoneBLamCollapseOne", E1BPRED, boundary_lam(1.0), "{:.3f}"),
+    ("EoneBStaticLam", E1BPRED, lambda d: d["boundary"]["static_lam_collapse"], "{:g}"),
+    ("EoneBPzeroNoLam", E1BPRED, boundary_p0_none, "{:.2f}"),
+    ("EoneBDepthMae", E1B, lambda d: d["depth"]["rank_pred"]["mae"][0], "{:.2f}"),
+    ("EoneBDepthBias", E1B, lambda d: d["depth"]["rank_pred"]["bias"], "{:.2f}"),
+    ("EoneBDepthFalsePos", E1B, lambda d: d["depth"]["mode_false_pos"], "{}"),
+    ("EoneBDepthFalseNeg", E1B, lambda d: d["depth"]["mode_false_neg"], "{}"),
+    ("EoneBDepthCorExact", E1B, lambda d: pct(d["depth"]["rank_cor3a"]["exact"][0]), "{}"),
+    ("EoneBEmaMae", E1B, lambda d: d["ema_alpha"]["rank_pred"]["mae"][0], "{:.2f}"),
+    ("EoneBEmaSignAgree", E1B, lambda d: d["criteria"]["ema_alpha signs"]["agree"], "{}"),
+    ("EoneBEmaSignOf", E1B, lambda d: d["criteria"]["ema_alpha signs"]["of"], "{}"),
+    ("EoneBBalancedRuns", E1B, lambda d: d["balanced"]["runs"], "{}"),
+    ("EoneBBalancedExact", E1B, lambda d: pct(d["criteria"]["balanced"]["basin_exact"]), "{}"),
+    ("EoneBBalancedCorExact", E1B, lambda d: pct(d["criteria"]["balanced"]["cor3a_exact"]), "{}"),
+    ("EoneBBalancedBoundMae", E1B, lambda d: d["balanced"]["rank_bound"]["mae"][0], "{:.1f}"),
+    ("EoneBNosgRuns", E1B, lambda d: d["nosg"]["runs"] + d["nopred"]["runs"], "{}"),
+    ("EoneBGeneralRuns", E1B, lambda d: d["randpred"]["runs"] + d["noncomm"]["runs"], "{}"),
+    ("EoneBGeneralMae", E1B, lambda d: d["criteria"]["randpred/noncomm (N1-general)"]["rank_mae"], "{:.2f}"),
+    ("EoneBGeneralExact", E1B, lambda d: pct(d["criteria"]["randpred/noncomm (N1-general)"]["exact"]), "{}"),
+    ("EoneBGeneralBoundMae", E1B, lambda d: d["criteria"]["randpred/noncomm (N1-general)"]["bound_mae"], "{:.1f}"),
+    ("EoneBRandMae", E1B, triple("randpred", "rank_pred", "mae", f2), "{}"),
+    ("EoneBNoncommMae", E1B, triple("noncomm", "rank_pred", "mae", f2), "{}"),
+    ("EoneBAdamRuns", E1B, lambda d: d["adam"]["runs"], "{}"),
+    ("EoneBAdamConverged", E1B, lambda d: pct(d["adam"]["converged"][0]), "{}"),
+    ("EoneBAdamBoundMae", E1B, lambda d: d["criteria"]["adam (Sec. 8, directional)"]["mae_to_static_bound"], "{:.1f}"),
+    ("EoneBAdamRaceMae", E1B, lambda d: d["criteria"]["adam (Sec. 8, directional)"]["mae_to_N1_sgd_clock"], "{:.1f}"),
+    ("EoneBAdamWzeroMaxDiff", E1B, lambda d: d["criteria"]["adam (Sec. 8, directional)"]["max_abs_diff"], "{:g}"),
+    ("EoneBAdamMeanRank", E1B, lambda d: d["adam"]["mean_rank_meas"][0], "{:.1f}"),
+    ("EoneBBatchHalf", E1B, lambda d: ", ".join(f"{x:g}" for x in d["criteria"]["batch (Sec. 8, directional)"]["cells"][0]["rank_by_batch"]), "{}"),
+    ("EoneBBatchHalfPred", E1B, lambda d: d["criteria"]["batch (Sec. 8, directional)"]["cells"][0]["pred_population"], "{:g}"),
+    ("EoneBTrajRsq", E1BTRAJ, traj_r2(lambda c: c["p0"] <= 1 and c["kappa"] is None), "{:.3f}"),
+    ("EoneBTrajRsqEma", E1BTRAJ, traj_r2(lambda c: c["kappa"] is not None), "{:.2f}"),
+    ("EoneBTrajRsqBig", E1BTRAJ, traj_r2(lambda c: c["p0"] >= 2), "{:.2f}"),
+    ("EoneBCritPass", E1B, lambda d: sum(bool(c.get("passed", c.get("passed_i") and c.get("passed_ii")))
+                                         for c in d["criteria"].values()), "{}"),
+    ("EoneBCritAll", E1B, lambda d: len(d["criteria"]), "{}"),
+    ("EoneTrajRankMeasOne", E1TRAJ, traj_rank(1.0, "rank_meas"), "{}"),
+    ("EoneTrajRankPredOne", E1TRAJ, traj_rank(1.0, "rank_pred"), "{}"),
+    ("EoneTrajRankMeasQuarter", E1TRAJ, traj_rank(0.25, "rank_meas"), "{}"),
+    ("EoneTrajRankPredQuarter", E1TRAJ, traj_rank(0.25, "rank_pred"), "{}"),
+    ("EoneTrajMissScore", E1TRAJCSV, traj_score(0.25, 7), "{:.3f}"),
+    ("EoneBGridCells", E1B, lambda d: len(d["cells"]["grid"]), "{}"),
+    ("EoneBGridCollapseMisses", E1B, lambda d: len(grid_collapse_misses(d)), "{}"),
+    ("EoneBGridMissCell", E1B, lambda d: "; ".join(
+        "$p_0={}$, $\\lambda={}$: measured {:g}, predicted {:g}".format(
+            *(x.split("=")[1] for x in k.split("|")), v["rank_meas_mean"], v["rank_pred_mean"])
+        for k, v in grid_collapse_misses(d)), "{}"),
+    ("EoneSeconds", E1META, lambda d: d["seconds"], "{:.0f}"),
+    ("EoneNumpy", E1META, lambda d: d["numpy"], "{}"),
+    ("EoneBSeconds", E1BMETA, lambda d: d["seconds"], "{:.0f}"),
+    ("EoneBNproc", E1BMETA, lambda d: d["nproc"], "{}"),
+    ("EoneCRuns", E1C, lambda d: sum(v["runs"] for v in d["by_depth"].values()), "{}"),
+    ("EoneCDeepRuns", E1C, lambda d: sum(v["runs"] for k, v in d["by_depth"].items() if int(k) >= 2), "{}"),
+    ("EoneCCritPass", E1C, lambda d: sum(bool(v["passed"]) for v in d["criteria"].values()), "{}"),
+    ("EoneCCritAll", E1C, lambda d: len(d["criteria"]), "{}"),
+    ("EoneCModeAcc", E1C, lambda d: pct(d["criteria"]["depthL nullcline, L >= 2"]["mode_acc"]), "{}"),
+    ("EoneCMae", E1C, lambda d: f2(d["criteria"]["depthL nullcline, L >= 2"]["mae"]), "{}"),
+    ("EoneCMaeDepthOne", E1C, lambda d: f2(d["criteria"]["depthL nullcline, L >= 2"]["mae_depth1"]), "{}"),
+    ("EoneCMaeByL", E1C, lambda d: ", ".join(f2(d["by_depth"][k]["depthL"]["mae"][0]) for k in ("2", "3", "4")), "{}"),
+    ("EoneCMaeOneByL", E1C, lambda d: ", ".join(f2(d["by_depth"][k]["depth1"]["mae"][0]) for k in ("2", "3", "4")), "{}"),
+    ("EoneCOverOne", E1C, lambda d: sum(d["by_depth"][k]["depth1"]["over"] for k in ("2", "3", "4")), "{}"),
+    ("EoneCUnder", E1C, lambda d: sum(d["by_depth"][k]["depthL"]["under"] for k in ("2", "3", "4")), "{}"),
+    ("EoneCOver", E1C, lambda d: sum(d["by_depth"][k]["depthL"]["over"] for k in ("2", "3", "4")), "{}"),
+    ("EoneCUnderFour", E1C, lambda d: d["by_depth"]["4"]["depthL"]["under"], "{}"),
+    ("EoneCChanged", E1C, lambda d: sum(v["rank_changed_2t"] for v in d["by_depth"].values()), "{}"),
+    ("EoneCBoundMae", E1C, lambda d: "{}--{}".format(*(f"{x:.1f}" for x in (min(v["bound"]["mae"][0] for v in d["by_depth"].values()), max(v["bound"]["mae"][0] for v in d["by_depth"].values())))), "{}"),
+    ("EoneCSeconds", E1CMETA, lambda d: d["seconds"], "{:.0f}"),
+    ("EoneBSmallEta", E1BETA, lambda d: d["eta"], "{}"),
+    ("EoneBSmallEtaRuns", E1BETA, lambda d: d["rescored"], "{}"),
+    ("EoneBSmallEtaStill", E1BETA, lambda d: d["still_diverged"], "{}"),
+    ("EoneBSmallEtaMae", E1BETA, lambda d: f2(d["randpred_noncomm_with_recomputed"]["mae"]), "{}"),
+    ("EoneBSmallEtaExact", E1BETA, lambda d: pct(d["randpred_noncomm_with_recomputed"]["exact"]), "{}"),
+    ("EoneBPreregMae", E1BETA, lambda d: f2(d["randpred_noncomm_with_preregistered"]["mae"]), "{}"),
+    ("EoneBPreregExact", E1BETA, lambda d: pct(d["randpred_noncomm_with_preregistered"]["exact"]), "{}"),
+    ("EoneBRerunPreregMae", E1BETA, lambda d: f2(d["rerun_only_preregistered"]["mae"]), "{}"),
+    ("EoneBRerunPreregExact", E1BETA, lambda d: pct(d["rerun_only_preregistered"]["exact"]), "{}"),
+    ("EoneBRerunRecompMae", E1BETA, lambda d: f2(d["rerun_only_recomputed"]["mae"]), "{}"),
+    ("EoneBSmallEtaN", E1BETA, lambda d: d["randpred_noncomm_with_preregistered"]["runs"], "{}"),
+    ("EoneBTrajRsqEuler", E1BTRAJ, lambda d: min(x["r2_euler"] for x in d if "r2_euler" in x), "{:.5f}"),
+    ("EtwoRuns", E2META, lambda d: d["runs"], "{}"),
+    ("EtwoSeconds", E2META, lambda d: d["seconds"], "{:.0f}"),
+    ("EtwoCritPass", E2, e2_crit_pass, "{}"),
+    ("EtwoCritAll", E2, lambda d: len(d["criteria"]), "{}"),
+    ("EtwoExcluded", E2, lambda d: d["excluded"]["count"], "{}"),
+    ("EtwoCycRuns", E2, lambda d: d["arms"]["pop/cyclic"]["runs"], "{}"),
+    ("EtwoCycFreqAcc", E2, lambda d: pct(d["arms"]["pop/cyclic"]["freq_acc"]["acc"][0]), "{}"),
+    ("EtwoCycExact", E2, e2a("pop/cyclic", "rank_N1", pct, "exact"), "{}"),
+    ("EtwoCycMae", E2, e2c("pop cyclic (N1)", "mae_N1", f2), "{}"),
+    ("EtwoCycWindowMae", E2, e2c("pop cyclic (N1)", "mae_window", f2), "{}"),
+    ("EtwoCycBoundMae", E2, e2c("pop cyclic (N1)", "mae_bound", f2), "{}"),
+    ("EtwoBernMae", E2, e2a("pop/bern", "rank_N1"), "{}"),
+    ("EtwoBlockMae", E2, e2a("pop/block", "rank_N1"), "{}"),
+    ("EtwoMultiMae", E2, e2a("pop/multiblock", "rank_N1"), "{}"),
+    ("EtwoNcMae", E2, e2c("pop block_nc (N1-general)", "mae", f2), "{}"),
+    ("EtwoNcBoundMae", E2, e2c("pop block_nc (N1-general)", "mae_bound", lambda x: f"{x:.1f}"), "{}"),
+    ("EtwoNcCircMae", E2, e2c("pop block_nc (N1-general)", "mae_N1_circulant_approx", f2), "{}"),
+    ("EtwoSgdMae", E2, e2c("sgd (mask/sample noise)", "mae", f2), "{}"),
+    ("EtwoSgdBernMae", E2, e2a("sgd/bern", "rank_N1"), "{}"),
+    ("EtwoSgdBlockMae", E2, e2a("sgd/block", "rank_N1"), "{}"),
+    ("EtwoPeakProfiles", E2, e2c("pop peak", "profiles"), "{}"),
+    ("EtwoPeakOk", E2, e2c("pop peak", "frac_peak_ok", pct), "{}"),
+    ("EtwoPeakEdge", E2, e2_peak_edge, "{}"),
+    ("EtwoNonmonoPred", E2, e2c("pop peak", "non_monotone_pred"), "{}"),
+    ("EtwoNonmonoConf", E2, e2c("pop peak", "non_monotone_confirmed"), "{}"),
+    ("EtwoMissMeas", E2, e2_profile_end("pop/bern/lam=0.003/p0=0.25", "meas"), "{}"),
+    ("EtwoMissPred", E2, e2_profile_end("pop/bern/lam=0.003/p0=0.25", "pred"), "{}"),
+    ("EtwoTanhMae", E2, e2c("tanh (decided near collapse)", "mae", lambda x: f"{x:.1f}"), "{}"),
+    ("EtwoTanhBoundMae", E2, e2c("tanh (decided near collapse)", "mae_bound", lambda x: f"{x:.1f}"), "{}"),
+    ("EtwoTanhBlockMae", E2, e2a("tanh/block", "rank_N1"), "{}"),
+    ("EtwoTanhBernMae", E2, e2a("tanh/bern", "rank_N1", lambda x: f"{x:.1f}"), "{}"),
+    ("EtwoTanhBernConv", E2, lambda d: pct(d["arms"]["tanh/bern"]["converged"][0]), "{}"),
+    ("EtwoTanhBernRising", E2TIME, lambda d: pct(d["groups"]["tanh/bern"]["still_rising_last_quarter"]), "{}"),
+    ("EtwoTanhBernMaeQuarter", E2TIME, lambda d: d["groups"]["tanh/bern"]["mae_vs_t"][d["groups"]["tanh/bern"]["t_frac"].index(0.25)], "{:.1f}"),
+    ("EtwoMlpMae", E2, e2c("mlp (exploratory)", "mae", f2), "{}"),
+    ("EtwoMlpLinMae", E2, e2c("mlp (exploratory)", "mae_linear", f2), "{}"),
+    ("EtwoMlpBoundMae", E2, e2c("mlp (exploratory)", "mae_bound", f2), "{}"),
+    ("EtwoMlpSpearman", E2, e2c("mlp (exploratory)", "spearman", f2), "{}"),
+    ("EtwoMlpBernMae", E2, e2a("mlp/bern", "rank_pred"), "{}"),
+    ("EtwoMlpBernWindowMae", E2, e2a("mlp/bern", "rank_window"), "{}"),
+    ("EtwoMlpBlockMae", E2, e2a("mlp/block", "rank_pred"), "{}"),
+    ("EtwoLongRuns", E2LONG, lambda d: d["all"]["runs"], "{}"),
+    ("EtwoLongT", E2LONG, lambda d: d["T_long"], "{:.0f}"),
+    ("EtwoLongReproduced", E2LONG, lambda d: round(d["all"]["flow_matches_measured"][0] * d["all"]["runs"]), "{}"),
+    ("EtwoLongChanged", E2LONG, lambda d: d["all"]["runs_rank_changed_long"], "{}"),
+    ("EtwoLongLost", E2LONG, lambda d: d["all"]["runs_rank_lost_long"], "{}"),
+    ("EtwoLongSmallRuns", E2LONG, lambda d: d["lam=0.0003"]["runs"], "{}"),
+    ("EtwoLongSmallChanged", E2LONG, lambda d: d["lam=0.0003"]["runs_rank_changed_long"], "{}"),
+    ("EtwoLongExactLong", E2LONG, lambda d: pct(d["all"]["pred_exact_vs_long"][0]), "{}"),
+    ("EtwoLongMae", E2LONG, lambda d: f2(d["all"]["pred_mae_vs_long"][0]), "{}"),
+    ("EtwoLongSmallMae", E2LONG, lambda d: f2(d["lam=0.0003"]["pred_mae_vs_long"][0]), "{}"),
+    ("EtwoLongSmallExactLong", E2LONG, lambda d: pct(d["lam=0.0003"]["pred_exact_vs_long"][0]), "{}"),
+    ("EtwoLongSmallExactEnd", E2LONG, lambda d: pct(d["lam=0.0003"]["pred_exact_vs_tend"][0]), "{}"),
+    ("EtwoLongUncappedExactLong", E2LONG, lambda d: pct(d["all"]["uncapped_exact_vs_long"][0]), "{}"),
+    ("EtwoMissFlowLong", E2LONG, e2_miss_flow, "{}"),
+    ("EtwoNopredRuns", E2, lambda d: d["arms"]["nopred"]["runs"], "{}"),
+    ("EtwoNopredAcc", E2, e2c("nopred (Prop. 6 under masks)", "freq_acc", pct), "{}"),
+    ("EtwoNopredGrowth", E2, e2c("nopred (Prop. 6 under masks)", "configs_pred_growth"), "{}"),
+    ("EtwoNopredWrong", E2, e2c("nopred (Prop. 6 under masks)", "uncorrected_wrong"), "{}"),
+    ("EthreeConfigs", E3, lambda d: len(d["rows"]), "{}"),
+    ("EthreeSweepRuns", E3, lambda d: sum(r["seeds"] for r in d["rows"]), "{}"),
+    ("EthreeFollowRuns", E3F, lambda d: sum(r["seeds"] for r in d["rows"]), "{}"),
+    ("EthreeFollowConfigs", E3F, lambda d: len(d["rows"]), "{}"),
+    ("EthreeInitCount", E3, e3row("P_base", "count_init", "{:.1f}"), "{}"),
+    ("EthreeProbeInit", E3, lambda d: pct(d["rows"][0]["probe_init"]), "{}"),
+    ("EthreeRankT", E3, e3rho("T"), "{}"),
+    ("EthreeRhoT", E3, lambda d: d["criteria"]["C-rank arm T"]["rho"], "{:.2f}"),
+    ("EthreeRankTn", E3, lambda d: d["criteria"]["C-rank arm T"]["n"], "{}"),
+    ("EthreeRankP", E3, e3rho("P"), "{}"),
+    ("EthreeRankPn", E3, lambda d: d["criteria"]["C-rank arm P"]["n"], "{}"),
+    ("EthreeLocObs", E3, lambda d: d["criteria"]["C-loc wd arm T"]["observed"], "{:.4f}"),
+    ("EthreeLocPred", E3, lambda d: d["criteria"]["C-loc wd arm T"]["predicted"], "{:.3f}"),
+    ("EthreeLocFactor", E3, lambda d: 1 / d["criteria"]["C-loc wd arm T"]["ratio"], "{:.1f}"),
+    ("EthreeSignedHeld", E3, lambda d: d["criteria"]["C-dir"]["signed_held"], "{}"),
+    ("EthreeSigned", E3, lambda d: d["criteria"]["C-dir"]["signed_pairs"], "{}"),
+    ("EthreeNullsHeld", E3, lambda d: d["criteria"]["C-dir"]["nulls_held"], "{}"),
+    ("EthreeNulls", E3, lambda d: d["criteria"]["C-dir"]["nulls"], "{}"),
+    ("EthreeTwdMeas", E3, e3rows(E3T_WD, fmt="{:.0f}"), "{}"),
+    ("EthreeTwdPred", E3, e3rows(E3T_WD, "count_pred", "{:.0f}"), "{}"),
+    ("EthreeTzero", E3, e3row("T_wd0"), "{}"),
+    ("EthreeTbase", E3, e3row("T_wd0.01", fmt="{:.1f}"), "{}"),
+    ("EthreeTvariants", E3, e3range(E3T_VARIANTS), "{}"),
+    ("EthreeTpinitPred", E3, e3row("T_pinit3", "count_pred"), "{}"),
+    ("EthreeTpinitMeas", E3, e3row("T_pinit3", fmt="{:.1f}"), "{}"),
+    ("EthreeTfrozen", E3, e3row("T_frozen"), "{}"),
+    ("EthreePbase", E3, e3row("P_base"), "{}"),
+    ("EthreePbasePred", E3, e3row("P_base", "count_pred"), "{}"),
+    ("EthreePema", E3, e3rows(["P_copy", "P_ema0.9", "P_ema0.99", "P_ema0.999"]), "{}"),
+    ("EthreePplrLow", E3, e3row("P_plr0.1"), "{}"),
+    ("EthreePpinitLow", E3, e3row("P_pinit0.1"), "{}"),
+    ("EthreePpinitLowSeeds", E3, e3row("P_pinit0.1", "count_seeds", "{}"), "{}"),
+    ("EthreePdepth", E3, e3rows(["P_pdepth1", "P_base", "P_pdepth6"]), "{}"),
+    ("EthreePwdlarge", E3, e3row("P_wdlarge"), "{}"),
+    ("EthreePwdzero", E3, e3row("P_wd0", fmt="{:.1f}"), "{}"),
+    ("EthreePwdlow", E3, e3row("P_wd0.04", fmt="{:.1f}"), "{}"),
+    ("EthreePwdlargeVal", E3, lambda d: next(r["value"] for r in d["rows"] if r["name"] == "P_wdlarge"), "{}"),
+    ("EthreePfrozen", E3, e3row("P_frozen"), "{}"),
+    ("EthreePmaskRange", E3, e3range(["P_targets1", "P_ctx0.4", "P_tscale_hi", "P_tscale_lo"]), "{}"),
+    ("EthreePmasks", E3, e3rows(["P_targets1", "P_ctx0.4", "P_tscale_hi", "P_tscale_lo"]), "{}"),
+    ("EthreePnosgTv", E3, lambda d: e3sci(next(r for r in d["rows"] if r["name"] == "P_nosg")["tv_ratio"]), "${}$"),
+    ("EthreeTnosgTv", E3, lambda d: e3sci(next(r for r in d["rows"] if r["name"] == "T_nosg")["tv_ratio"]), "${}$"),
+    ("EthreeDiagT", E3, lambda d: d["criteria"]["C-diag arm T"]["800"]["rho"], "{:.2f}"),
+    ("EthreeDiagP", E3, lambda d: f"{d['criteria']['C-diag arm P']['800']['rho']:.2f}".replace("-", "$-$"), "{}"),
+    ("EthreeRankTwd", E3, lambda d: "{:.1f}".format(d["post_hoc"]["C-rank arm T split"]["wd sweep"]["rho"]), "{}"),
+    ("EthreeRankTwdN", E3, lambda d: d["post_hoc"]["C-rank arm T split"]["wd sweep"]["n"], "{}"),
+    ("EthreeRankTother", E3, lambda d: "{:.2f} [{:.2f}, {:.1f}]".format(d["post_hoc"]["C-rank arm T split"]["other factors"]["rho"], *d["post_hoc"]["C-rank arm T split"]["other factors"]["ci"]).replace("-", "$-$"), "{}"),
+    ("EthreeRunHours", E3C, lambda d: "{:.1f}".format(d["run_hours_total"]), "{}"),
+    ("EthreeVruns", E3C, lambda d: d["by_gpu"]["Tesla V100-SXM2-32GB"]["runs"], "{}"),
+    ("EthreeVhours", E3C, lambda d: "{:.1f}".format(d["by_gpu"]["Tesla V100-SXM2-32GB"]["run_hours"]), "{}"),
+    ("EthreeGtxRuns", E3C, lambda d: d["by_gpu"]["NVIDIA GeForce GTX 1080 Ti"]["runs"], "{}"),
+    ("EthreeGtxHours", E3C, lambda d: "{:.1f}".format(d["by_gpu"]["NVIDIA GeForce GTX 1080 Ti"]["run_hours"]), "{}"),
+    ("EtwoRoundMatch", E2RO, lambda d: min(v["runs_flow_matches_measured"] for k, v in d["by_floor"].items() if k != "floor=0"), "{}"),
+    ("EtwoRoundRuns", E2RO, lambda d: d["runs"], "{}"),
+    ("EtwoRoundMin", E2RO, lambda d: e3sci(next(v for k, v in d["cases"].items() if k.startswith("a:"))["min_rel_amp_before_t_end_exact"]), "{}"),
+    ("EthreeCfourTheoryDir", E3F, lambda d: d["criteria"]["C4 arm T theory"]["direction_held"], "{}"),
+    ("EthreeCfourRuleDir", E3F, lambda d: d["criteria"]["C4 arm T rule"]["direction_held"], "{}"),
+    ("EthreeCfourCross", E3F, lambda d: d["criteria"]["C4 arm T theory"]["crossing_held"] + d["criteria"]["C4 arm T rule"]["crossing_held"], "{}"),
+    ("EthreeCfourCrossOf", E3F, lambda d: d["criteria"]["C4 arm T theory"]["crossing_eligible"] + d["criteria"]["C4 arm T rule"]["crossing_eligible"], "{}"),
+    ("EthreeCfourPDir", E3F, lambda d: d["criteria"]["C4 arm P theory"]["direction_held"], "{}"),
+    ("EthreeRescuePred", E3F, lambda d: ", ".join(f"{next(r for r in d['rows'] if r['name'] == n)['count_pred']:.0f}" for n in ["I_T_wd0.1_pinit3", "I_T_wd0.03_pinit3"]), "{}"),
+    ("EthreeRescueMeas", E3F, lambda d: ", ".join(f"{next(r for r in d['rows'] if r['name'] == n)['count']:.0f}" for n in ["I_T_wd0.1_pinit3", "I_T_wd0.03_pinit3"]), "{}"),
+    ("EthreeBreakMeas", E3F, e3row("I_T_wd0.001_plr10"), "{}"),
+    ("EthreeBreakParent", E3, e3row("T_wd0.001"), "{}"),
+    ("EthreeFullFlags", E3F, lambda d: sum(r["flag_right"] for r in d["criteria"]["C-full count"]), "{}"),
+    ("EthreeFullCounts", E3F, lambda d: ", ".join(f"{r['count']:.0f}" for r in d["criteria"]["C-full count"]), "{}"),
+    ("EthreeFullPred", E3F, lambda d: ", ".join(f"{r['count_pred']:.0f}" for r in d["criteria"]["C-full count"]), "{}"),
+    ("EthreeProbePbase", E3F, e3probe("F_P_base"), "{}"),
+    ("EthreeProbeTlo", E3F, e3probe("F_T_wd0.01"), "{}"),
+    ("EthreeProbeThi", E3F, e3probe("F_T_wd0.03"), "{}"),
+]
+
+
+def dvd(exp, arm, key, field="mae"):
+    """a criterion's score on the delivered runs in the 2610.02344 baseline file."""
+    def get(d):
+        v = d["results"][exp][arm][key][field]
+        return f"{v[0] if isinstance(v, list) else v:.2f}"
+    return get
+
+
+def dvd_exceed(exp, arm, key):
+    """share of runs whose measured rank exceeds a count they state as an upper bound (field 'exceed')."""
+    return lambda d: pct(d["results"][exp][arm][key]["exceed"])
+
+
+def dvd_runs(rows, keep):
+    return sum(1 for r in rows if keep(r) and r["dvd_signed"] != "")
+
+
+ALIGNED = "N1_aligned_all (grid+ema_alpha+depth)"
+CYCLIC = "pop cyclic (bern+block+multiblock)"
+NUMBERS += [
+    ("DvdAlignedRuns", DVDE1B, lambda rs: dvd_runs(rs, lambda r: r["exp"] in DVD_ALIGNED), "{}"),
+    ("DvdAlignedMae", DVD, dvd("e1b", ALIGNED, "dvd_signed"), "{}"),
+    ("DvdAlignedNowdMae", DVD, dvd("e1b", ALIGNED, "dvd_nowd"), "{}"),
+    ("DvdAlignedRaceMae", DVD, dvd("e1b", ALIGNED, "rank_pred"), "{}"),
+    ("DvdAlignedOver", DVD, dvd_exceed("e1b", ALIGNED, "dvd_signed"), "{}"),
+    ("DvdCycRuns", DVDE2, lambda rs: dvd_runs(rs, lambda r: r["exp"] == "pop" and r["fam"] in DVD_CYCLIC), "{}"),
+    ("DvdCycMae", DVD, dvd("e2", CYCLIC, "dvd_signed"), "{}"),
+    ("DvdCycPairedMae", DVD, dvd("e2", CYCLIC, "dvd"), "{}"),
+    ("DvdCycNowdMae", DVD, dvd("e2", CYCLIC, "dvd_nowd"), "{}"),
+    ("DvdCycRaceMae", DVD, dvd("e2", CYCLIC, "rank_pred"), "{}"),
+    ("DvdCycOver", DVD, dvd_exceed("e2", CYCLIC, "dvd_signed"), "{}"),
+    ("DvdMlpMae", DVD, dvd("e2", "mlp", "dvd_signed"), "{}"),
+    ("DvdMlpPairedMae", DVD, dvd("e2", "mlp", "dvd"), "{}"),
+    ("DvdMlpRaceMae", DVD, dvd("e2", "mlp", "rank_pred"), "{}"),
+    ("DvdTanhMae", DVD, dvd("e2", "tanh", "dvd_signed"), "{}"),
+    ("DvdTanhRaceMae", DVD, dvd("e2", "tanh", "rank_pred"), "{}"),
+    ("DvdTanhSortedMae", DVD, dvd("e2", "tanh", "dvd_sorted"), "{}"),
+    ("DvdRandRuns", DVD, lambda d: d["results"]["e1b"]["randpred"]["runs"], "{}"),
+    ("DvdRandRaceMae", DVD, dvd("e1b", "randpred", "rank_pred"), "{}"),
+    ("DvdRandProxyMae", DVD, dvd("e1b", "randpred", "dvd"), "{}"),
+    ("DvdRandPairedMae", DVD, dvd("e1b", "randpred", "dvd_pq"), "{}"),
+    ("DvdRandPairedOver", DVD, dvd_exceed("e1b", "randpred", "dvd_pq"), "{}"),
+    ("DvdRandExactMae", DVD, dvd("e1b", "randpred", "dvd_exact"), "{}"),
+    ("DvdNoncommRuns", DVD, lambda d: d["results"]["e1b"]["noncomm"]["runs"], "{}"),
+    ("DvdNoncommRaceMae", DVD, dvd("e1b", "noncomm", "rank_pred"), "{}"),
+    ("DvdNoncommSortedMae", DVD, dvd("e1b", "noncomm", "dvd_sorted"), "{}"),
+    ("DvdNoncommExactMae", DVD, dvd("e1b", "noncomm", "dvd_exact"), "{}"),
+    ("DvdNoncommSignedMae", DVD, dvd("e1b", "noncomm", "dvd_signed"), "{}"),
+]
+
+
+def main():
+    root = ROOT
+    if "--results-root" in sys.argv:
+        root = pathlib.Path(sys.argv[sys.argv.index("--results-root") + 1]).resolve()
+    lines = ["% Generated by paper/tools/make_numbers.py; do not edit by hand."]
+    for macro, rel, get, fmt in NUMBERS:
+        path = root / rel
+        data = (list(csv.DictReader(path.open())) if rel.endswith(".csv")
+                else json.loads(path.read_text()))
+        lines.append(f"\\newcommand{{\\{macro}}}{{{fmt.format(get(data))}}}  % {rel}")
+    (ROOT / "paper" / "numbers.tex").write_text("\n".join(lines) + "\n")
+
+
+if __name__ == "__main__":
+    main()

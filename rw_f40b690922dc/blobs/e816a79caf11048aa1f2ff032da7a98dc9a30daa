@@ -1,0 +1,329 @@
+# Brief: theory of collapse in JEPAs (idea-repo, context)
+
+Status: v3 (objective, requirements, verified prior-work map, status of the plan's
+predictions vs prior work in 5.6). This file is the
+reference every position settles its part against. Owner: `idea-repo`.
+Detailed, source-checked notes: `refs/lit_theory.md` (collapse-dynamics theory),
+`refs/lit_tools.md` (mathematical tools: small-init dynamics, weight decay/rank,
+EMA, masking, random-matrix thresholds), `refs/lit_practice.md` (JEPA practice,
+heuristic ablations with numbers, metrics, code), `refs/ijepa_recipe.md` (official I-JEPA
+recipe read from the code, small-scale settings, suggested 32x32 scaling); `refs/refs.bib` (44 entries,
+arXiv metadata fetched from the arXiv API, every v1 date <= 2026-09-01).
+
+## 1. The objective, quoted in full (idea-repo#1)
+
+> Joint-embedding predictive architectures (JEPAs) learn representations by predicting the embedding of one part of an input from the embedding of another part, with no negative examples and no reconstruction loss. They are prone to representation collapse, in which the learned embeddings degenerate to a constant or to very low rank. In practice collapse is avoided with a collection of empirical heuristics (how the predictor is designed and scaled, how much of the input is masked, how the target encoder is updated), and no single account explains why they work. The insight to build on: collapse is decided early in training, near the collapsed solution, where two effects compete in every direction of representation space, a driving force that grows the direction and a decay effect that shrinks it. Whether a direction survives, and therefore how much rank the representation can develop, depends on which of the two is stronger there. The research problem is to turn this insight into a theory that explains and predicts when JEPAs collapse and what the common heuristics change, and to test that theory empirically.
+>
+> Deliver a complete paper that could be submitted to NeurIPS 2026, written to the venue's submission requirements: the LaTeX source in the NeurIPS template, the compiled PDF, and the code and experimental results that the paper's claims rest on.
+>
+> Do not use any paper, preprint, code release or other written work first published after 1 September 2026.
+
+Supplied material: none beyond the issue text (no data files, no related-work
+list, no code). Everything else the study uses must be built or obtained from
+public sources dated on or before 2026-09-01.
+
+## 2. Requirements (numbered so positions can cite them)
+
+R1. **Theory.** Turn the stated insight into a theory: near the collapsed
+    solution, in every direction of representation space, a *driving force*
+    (grows the direction) competes with a *decay effect* (shrinks it); a
+    direction survives iff the driving force is stronger there. The theory
+    must be stated precisely (model, assumptions, linearisation around the
+    collapsed solution, the per-direction growth/decay quantities and the
+    survival condition) with proofs or derivations.
+R2. **Explain *when* JEPAs collapse.** The theory must give a criterion that
+    predicts complete collapse (no direction survives) vs. dimensional
+    collapse (few survive) vs. healthy rank, i.e. a prediction of the
+    reachable rank from quantities of the data and the training set-up.
+R3. **Explain what the common heuristics change**, each named in the
+    objective, in terms of driving force vs decay:
+    - R3a predictor design and scaling (e.g. presence, depth, width,
+      learning rate / initialisation of the predictor);
+    - R3b how much of the input is masked (masking ratio / strategy);
+    - R3c how the target encoder is updated (EMA momentum / schedule,
+      stop-gradient).
+    Weight decay is the natural explicit "decay" knob and should be covered
+    too, but it is not named in the objective; the three named heuristics
+    are mandatory.
+R4. **Predict, not only explain.** At least some claims must be forward
+    predictions (e.g. a threshold or phase boundary, a predicted rank)
+    stated before and checked against experiments.
+R5. **Empirical test.** Test the theory's predictions experimentally: in a
+    setting where the theory is exact or near-exact (to validate the
+    derivation) and in real JEPA training with neural encoders (to show the
+    predictions transfer), varying each heuristic of R3. Results must report
+    uncertainty (seeds) and the measured quantities the claims rest on
+    (spectra / effective rank, collapse vs. not, downstream quality).
+R6. **Deliverable: a complete NeurIPS 2026 paper** written to the venue's
+    submission requirements (owned by `venue-repo`; e.g. anonymised
+    submission, page limit, checklist): LaTeX source in the official
+    NeurIPS 2026 template, the compiled PDF, and
+R7. **the code and experimental results** the claims rest on, delivered with
+    the paper (reproducible: scripts, configs, raw result files, the inputs
+    each figure/table is made from).
+R8. **Temporal constraint.** No paper, preprint, code release or other
+    written work first published after **2026-09-01** may be used: not
+    cited, not read for ideas, not used as code. Every citation in the paper
+    needs a verifiable first-publication date on or before 2026-09-01; code
+    libraries must be versions released on or before that date (pin them).
+    Datasets/standard benchmarks are fine if they were public before then.
+
+## 3. What the study must produce (derived from R1-R7)
+
+- A formal model of JEPA training near collapse (the collapsed solution and
+  its linearisation), the per-direction driving force and decay, the
+  survival condition, and the resulting rank prediction.
+- One analysis per heuristic (R3a-c, plus weight decay) saying which side of
+  the competition it changes and how, with a testable consequence (a phase
+  boundary, a scaling, a sign).
+- Experiments: (i) a solvable model (e.g. linear/deep-linear JEPA on
+  synthetic data with controlled spectra) where predicted and measured
+  survivors/rank are compared quantitatively; (ii) neural JEPA training on a
+  standard image benchmark varying predictor, mask ratio, EMA (and weight
+  decay), comparing predicted vs measured collapse/rank, with seeds.
+- Figures/tables a reader can check the claims against: predicted vs
+  measured phase diagrams/boundaries, per-direction growth over early
+  training, singular-value spectra / effective rank over training,
+  downstream (linear-probe) quality where relevant.
+- The paper, code and results per R6-R7.
+
+## 4. Conventions to follow (field practice; details in Section 5.5)
+
+- Collapse measured on embedding singular-value spectra and an effective
+  rank (RankMe-style entropy rank; Roy & Vetterli 2007), plus embedding
+  std; downstream quality by linear probe (and/or k-NN).
+- Comparison against the established theory of non-contrastive SSL
+  dynamics (BYOL/SimSiam/DirectPred eigenmode analyses, deep-linear JEPA
+  analyses) so novelty is positioned correctly.
+- Hyper-parameters of the heuristics reported in the units practice uses
+  (EMA momentum tau, mask ratio, predictor depth/width, weight decay).
+
+## 5. Prior work map (what is established; all dated <= 2026-09-01)
+
+### 5.1 Closest prior theory (the paper must position against these)
+1. **Tian, Chen & Ganguli, ICML 2021 (arXiv 2102.06810), DirectPred.** Linear
+   BYOL/SimSiam, eigen-aligned modes; on the invariant parabola
+   p_j' = p_j (tau p_j - (1+s^2) p_j^2 - eta). The drive (tau p_j) is
+   *quadratic* in the mode near the origin, so with any weight decay eta>0 the
+   collapsed point is *linearly stable*; a mode survives only if it starts
+   outside the basin p_j > p*_- , and all collapse if eta > tau^2/(4(1+s^2)).
+   Covers EMA (tau, beta), predictor lr ratio alpha_p, weight decay; no
+   masking, predictor depth/width, isotropic data, symmetric predictor.
+   **Reviewers will read any drive-vs-decay claim against this paper.**
+2. **Arbel, Terver & Ponce 2026, PEIRA (2605.17671)** and **Ponce et al. 2025
+   (2507.01028).** Stop-grad + optimal ridge predictor + norm penalty lambda:
+   canonical correlation c survives iff c^2 >= 4 lambda; total collapse is
+   stable; EMA stability left open. Equilibrium analysis, no masking/predictor
+   scaling.
+3. **Ziyin, Lubana, Ueda & Tanaka, ICLR 2023 (2210.00638).** "Stability at the
+   origin decides collapse": per-subspace linear criterion (signal vs
+   augmentation + weight decay) — but only for contrastive/decorrelation
+   losses (no predictor, stop-grad, EMA).
+4. **Littwin et al., NeurIPS 2024 (2407.03475).** Deep linear JEPA with
+   stop-grad: per-feature ODE w' = lambda w^{3-1/L} - lambda w^3/rho; greedy in
+   regression coefficient rho; no weight decay, EMA or masking, so nothing
+   collapses.
+5. **Wang, Chen, Du & Tian 2021 (2110.04947).** DirectSet/DirectCopy: a feature
+   is discarded iff its augmentation variance s^2 > 1/(4 eta) - 1.
+Also: Simon et al. ICML 2023 (stepwise SSL: linear growth rate at origin, step
+time ~ log(1/init)/rate, modes with non-positive rate never grow); Halvagal et
+al. NeurIPS 2023 (predictor eigenvalues as per-mode rate multipliers
+lambda(1-lambda); no stop-grad -> all collapse); Tang et al. ICML 2023 and
+TD-JEPA 2025 (optimal/fast predictor conserves Phi^T Phi: no growth, no
+collapse); Bao 2023 (cosine loss changes the drive/decay balance); Zhuo et al.
+ICLR 2023 (rank differential); Wen & Li 2022 (predictor rescues weak
+features); Richemond et al. 2023 (edge of orthogonality); Jing et al. ICLR 2022
+(dimensional collapse in contrastive SSL).
+
+### 5.2 What is not covered (the gap the paper can fill)
+- G1. No *linear-stability* (first-order) per-direction criterion at the
+  collapsed point for JEPA/self-distillation. In Tian/Wang/Bao/PEIRA the drive
+  is quadratic at the origin. A first-order drive arises if the predictor is
+  O(1) at the collapsed point (e.g. predictor not collapsed at init): linearising
+  w_i' = p_i c_i wbar_i - (p_i^2 a_i + eta) w_i, wbar' = beta (w - wbar) gives
+  survival iff p_i c_i > p_i^2 a_i + eta (independent of beta). This is a
+  suggestion recorded in `refs/lit_tools.md`, not a prior result. The paper
+  must say which regime it treats and reconcile with Tian's basin picture;
+  otherwise its novelty over Tian 2021 is unclear.
+- G2. No theory of how predictor **width/depth/scale/initialisation** moves the
+  per-direction threshold (prior work: lr ratio, closed-form or optimal
+  predictors only).
+- G3. No collapse-dynamics theory of the **masking ratio** (prior masking
+  theory is about MAE optima/identifiability; useful moment identities:
+  Bisulco et al. 2025, Dong et al. NeurIPS 2025 — masked covariance
+  (1-m)^2 Sigma + m(1-m) diag/blkdiag Sigma; masked-PLS BBP threshold scaling
+  rho^{-1/2}, Gjolbye et al. 2026).
+- G4. **EMA** enters only qualitatively ("curriculum", Tian) or is left open
+  (PEIRA); scaling rule rho -> rho^kappa under batch scaling (Busbridge et al.
+  NeurIPS 2023).
+- G5. Prior thresholds assume isotropic/commuting data or optimal predictors;
+  none is tested against reachable rank in realistic (I-JEPA-style) training.
+- G6. Empirically, no paper ablates EMA/no-EMA or sweeps predictor
+  depth/width/lr or mask ratio **against rank** for image JEPAs (I-JEPA
+  reports accuracy only; LiDAR reports I-JEPA RankMe rises then falls).
+
+### 5.3 Tools the theory can build on
+Small-init deep-linear dynamics (Saxe et al. 2014: mode growth rate ~ signal,
+time ~ log(1/eps)/s; Li, Luo & Lyu 2021: near 0 the flow is power iteration
+U' = -grad f(0) U, adding weight decay lambda gives growth iff mu_i > lambda;
+Jacot et al. 2021: escape time ~ alpha^{-(L-2)} for depth L>2; Atanasov et al.
+2022 silent alignment). Weight decay as rank threshold (nuclear-norm identity;
+Kobayashi et al. NeurIPS 2024: L2 on a factorised map = nuclear norm on the
+product, so the predictor∘encoder singular values are soft-thresholded; Ziyin,
+Li & Meng NeurIPS 2022: zero is the global minimum iff ||E[xy]||^2 <=
+gamma_u gamma_w; Wang & Jacot 2023). EMA/target networks as two-timescale
+systems (Tian 2021; Fellows et al. ICML 2023 for TD). Equations: `refs/lit_tools.md`.
+
+### 5.4 What practice establishes about each heuristic (numbers in `refs/lit_practice.md`)
+- Stop-grad: required (SimSiam without it 0.1%; BYOL tau=0 -> 0.3%).
+- EMA: BYOL ImageNet top-1 tau=1 (frozen random target) 18.8, 0.999 69.8,
+  0.99 72.5, 0.9 68.4; DINO without momentum collapses; data2vec: tau too low
+  -> collapse. I-JEPA/DINO/BYOL schedule 0.996->1; V-JEPA 2 constant 0.99925.
+- Predictor: removal collapses BYOL/SimSiam; fixed random predictor fails;
+  BYOL without EMA needs predictor lr multiplier >= 2 (1x -> 5.5%, 2x -> 62.8%);
+  I-JEPA depth 6->12 +2.9 (IN-1%), width 384 better than 1024 (bottleneck);
+  SimSiam hidden d/4 more robust.
+- Masking: I-JEPA multi-block 54.2 vs random 17.6; target scale peaks at
+  (0.15,0.2); 1 target block 9.0 vs 4 blocks 54.2; V-JEPA ~90% ratio best
+  ("low coverage -> trivial prediction task").
+- Weight decay: I-JEPA ramp 0.04->0.4; BYOL wd=0 unstable; Tian: large eta
+  forces collapse.
+- Rank: in I-JEPA, RankMe rises early then falls; best accuracy is not at max
+  rank (LiDAR, Thilak et al. ICLR 2024).
+
+### 5.5 Conventions to follow for comparability
+- Rank: RankMe (Garrido et al. ICML 2023; exp-entropy of normalised singular
+  values of the N x K embedding matrix, eps ~ 1e-7, ~25.6k samples, compare
+  within a method only); optionally LiDAR (Thilak et al. 2024) for JEPAs;
+  sorted log singular-value spectra of the centred embedding covariance on
+  held-out data (Jing et al. 2022) at several checkpoints; SimSiam std of
+  l2-normalised outputs vs 1/sqrt(d).
+- RankMe as published is computed on the singular values of the *raw*
+  (uncentred) embedding matrix; a plan that uses centred embeddings must say
+  so (centring removes the constant "collapsed" component, which is what a
+  JEPA collapse theory needs, but it is not RankMe verbatim).
+- Per-direction dynamics are reported in prior theory as: eigenvalues of the
+  embedding covariance (or of W W^T) vs training time on a log scale, showing
+  stepwise growth (Simon et al. 2023, Fig. 1-2); predictor vs encoder
+  eigenvalue alignment and p_j(t) trajectories with the predicted fixed
+  points p*_+- (Tian et al. 2021); per-feature amplitude w_i(t) with
+  predicted critical times (Littwin et al. 2024). Phase diagrams of collapse
+  vs (weight decay, other knob) with the analytic boundary overlaid are the
+  natural figure for thresholds (Tian 2021 shows basins in (p, s) plane).
+- Quality: frozen linear probe (primary), k-NN monitor; mean +- std over >= 3
+  seeds. At small scale, logistic regression on frozen, pooled features is
+  an accepted cheap probe (simple-ijepa: sklearn LogisticRegression, STL-10);
+  solo-learn trains an online/offline linear head with SGD on frozen
+  features. Report which probe and its training budget.
+- Small-scale benchmarks used by theory papers: CIFAR-10/100, STL-10
+  (ResNet-18), ImageNet-100 / ImageNette (ViT-T/S). Expect low absolute I-JEPA
+  numbers at small scale (ViT-T 100 ep IN-1K linear 22.1%, C-JEPA Table 9);
+  reference baselines: solo-learn BYOL/SimSiam numbers.
+- Heuristic grids that mirror practice: EMA tau in {0, 0.9, 0.99, 0.996,
+  0.999, 1}; predictor depth/width/lr multiplier; mask ratio / target scale /
+  number of blocks; weight decay {0, fixed, ramp}; report collapse as phase
+  diagrams of measured rank vs predicted boundary.
+- Reusable MIT-licensed code: lightly (I-JEPA modules), galilai-group/
+  stable-pretraining (RankMe/LiDAR, I-JEPA benchmarks), solo-learn;
+  facebookresearch/ijepa is CC BY-NC (research use OK; state it). Pin
+  versions released <= 2026-09-01.
+
+### 5.6 Which candidate predictions of the plan are already established (answers story-repo request idea-repo#2)
+Plan v0.2 (story-repo `plan.md` section 2) uses the linear model
+w_k' = p c_k wbar_k - (p^2 sigma_k + lambda) w_k with growth rate
+g_k(p) = p c_k - p^2 sigma_k - lambda. Mapping to prior notation: Tian 2021's
+Delta_j = tau p - (1+s^2) p^2 - eta is the same polynomial with c <-> tau
+(target scale x cross-covariance, X = I) and sigma <-> 1+s^2 (context
+variance incl. augmentation noise); Littwin 2024's regression coefficient
+rho_i = lambda_i/sigma_i^2 is c_k/sigma_k; Halvagal 2023's
+lambda_m(1-lambda_m) is g at c = sigma = 1, lambda = 0.
+
+| Plan item | Status in prior work | What is new for the paper |
+|---|---|---|
+| P1 static survival c^2/(4 sigma) > lambda | **Established in form**: Tian 2021 (all modes collapse iff eta > tau^2/(4(1+s^2))), Wang et al. 2021 (feature dropped iff s^2 > 1/(4 eta) - 1), PEIRA 2026 (c^2 >= 4 lambda, canonical correlations). All for augmentation noise, isotropic/aligned data, quadratic-drive regime. | Per-direction anisotropic c_k, sigma_k from masking; the first-order drive regime (predictor O(1) while encoder small). In Tian's invariant WW^T = alpha_p^{-1} W_p^T W_p + e^{-2 eta t} C this regime is the *unbalanced* initialisation (C large), which Tian sets aside by analysing the parabola C -> 0. Say so explicitly. |
+| P2 rank = escaping directions; race with predictor decay; at lambda = 0 ordering by growth rate | Ordering/stepwise learning established: Simon et al. 2023 (step time ~ log(1/init)/rate), Littwin 2024 (JEPA greedy in rho = c/sigma), Saxe 2014, Jacot 2021. Basin picture with weight decay: Tian 2021 (survive iff p_j > p*_-). | The race criterion (integrated growth vs log(1/w_0) along the decaying predictor trajectory), computable from data statistics + init scales + hyperparameters, and its test as a *rank* predictor in neural JEPAs: not in prior work. |
+| P3 no stop-grad -> all decay | **Established**: Tian 2021 (no SG: vec(W)' = -H vec(W), H PSD), Halvagal 2023 (rate -(1-lambda)^2), Ponce et al. 2025 (linear case without SG/EMA always collapses); empirically SimSiam (0.1%), BYOL tau=0 (0.3%). | Only the per-direction Cauchy-Schwarz form is a re-derivation; present as consistency, cite. |
+| P4 no predictor fails when c <= sigma + lambda; growth window 0 < p < c/sigma; LR/init/scale move p through the window | Partly established: window = Halvagal's lambda_m(1-lambda_m) (closed-form predictor; no predictor -> no learning); Tian: larger predictor LR ratio shrinks collapse basin, too large stops growth; empirical BYOL App. I (no-EMA needs predictor LR x2+; collapse if predictor lr <= projector lr), SimSiam (no/fixed predictor fails); Wen & Li 2022 (predictor rescues weak features). | Predictor **init scale, width, depth** as an effective gain moving p through the window, and the predicted transition location: new (gap G2). Empirical anchors: I-JEPA depth 6->12 better, width 384 > 1024. |
+| P5 masking sets c_k/sigma_k; rank falls with mask ratio | **Not established** (gap G3). Tools: masked moment identities (Bisulco et al. 2025; Dong et al. NeurIPS 2025), masked-PLS BBP scaling (Gjolbye et al. 2026). Empirics: I-JEPA target scale optimum (0.15,0.2), 1 vs 4 blocks 9.0 vs 54.2; V-JEPA best ~90%; LiDAR: I-JEPA rank sensitive to mask scale. | New. Caution: with disjoint Bernoulli context/target masks the cross-covariance scales like m(1-m) (non-monotone in m) while context variance falls like (1-m); check that "rank falls monotonically with ratio" survives, and note practice (V-JEPA) finds high ratios best for accuracy, not rank. |
+| P6 EMA changes rate, not linear threshold | Not stated as such. Related: Tian 2021 (slower EMA enlarges collapse basin; "curriculum"), PEIRA (EMA has the same equilibria as SG, stability open), Ponce 2025 (SG/EMA equilibria asymptotically stable). Busbridge et al. 2023 EMA scaling rule (rho -> rho^kappa) is a time-scale statement, consistent with P6. Empirics: BYOL tau sweep (tau=1: 18.8, 0.99: 72.5), DINO/data2vec. | New as a linear-stability statement; must reconcile with Tian's basin-enlargement result (EMA acting through the race). |
+| P7 weight decay raises threshold; stepwise rank in lambda | **Established in form** (Tian, Wang 2021, PEIRA; contrastive: Ziyin et al. 2023; deep linear: Ziyin, Li & Meng 2022; L2 on factorised map = nuclear-norm soft threshold: Kobayashi et al. 2024). | Stepwise rank at lambda = c_k^2/(4 sigma_k) with mask-dependent c_k, sigma_k and its test in neural JEPAs. |
+| LeJEPA (2511.08544, 2025-11-11) | Date qualifies. Explicit isotropic-Gaussian regulariser (SIGReg), no EMA/SG/predictor needed; makes collapse impossible by construction, no dynamics theory. | Compare only as the "explicit regulariser" alternative. |
+
+Novelty statement the evidence supports: a unified per-direction early-time
+drive-vs-decay account for JEPAs that (i) covers predictor scale/init/width/
+depth, masking ratio and EMA in one criterion, (ii) predicts reachable rank
+from data statistics and set-up, and (iii) is tested on neural JEPAs. The
+static threshold, the necessity of stop-grad and the weight-decay threshold
+must be credited to Tian 2021 / Wang et al. 2021 / PEIRA 2026 / Halvagal 2023.
+
+## 6. Not established / open, and the cutoff warning
+
+- **Post-cutoff work exists on exactly this question.** Literature searches
+  surface at least one arXiv preprint posted after 2026-09-01 that appears to
+  address JEPA collapse as drive vs decay (arXiv 2610.02344), plus others
+  (2609.23881, 2609.09630). They were not read and must not be read, cited or
+  used by any position (R8). When searching, check the v1 date before opening
+  anything; ids 2610.* and later are out, 2609.* need the date check. Novelty is judged against
+  the pre-cutoff work in Section 5 only.
+
+- The objective fixes no dataset, architecture or compute budget; these are
+  plan decisions (`story-repo`) subject to feasibility (`idea-review-repo`).
+- The objective does not name which "decay effects" are in scope; weight
+  decay, EMA lag and predictor-induced shrinkage are the candidates.
+- Venue specifics (2026 template, page limit, checklist, anonymity) are
+  established by `venue-repo`, not here.
+
+## Appendix: verified reference list (arXiv metadata from the arXiv API, 2026-10-17)
+
+All v1 dates <= 2026-09-01. BibTeX for these is in idea-repo `refs/refs.bib`;
+positions that cannot read idea-repo can rebuild entries from the arXiv id.
+Non-arXiv: LeCun 2022 "A Path Towards Autonomous Machine Intelligence"
+(OpenReview BZ5a1r-kVsf, 2022-06-27); Roy & Vetterli, "The effective rank",
+EUSIPCO 2007; Agrawal et al., alpha-ReQ, NeurIPS 2022.
+
+| arXiv | v1 date | authors | title |
+|---|---|---|---|
+| 1312.6120 | 2013-12-20 | Andrew M. Saxe et al. | Exact solutions to the nonlinear dynamics of learning in deep linear neural networks |
+| 1904.13262 | 2019-04-30 | Gauthier Gidel et al. | Implicit Regularization of Discrete Gradient Dynamics in Linear Neural Networks |
+| 1905.13655 | 2019-05-31 | Sanjeev Arora et al. | Implicit Regularization in Deep Matrix Factorization |
+| 2006.07733 | 2020-06-13 | Jean-Bastien Grill et al. | Bootstrap your own latent: A new approach to self-supervised Learning |
+| 2010.10241 | 2020-10-20 | Pierre H. Richemond et al. | BYOL works even without batch statistics |
+| 2011.10566 | 2020-11-20 | Xinlei Chen & Kaiming He | Exploring Simple Siamese Representation Learning |
+| 2012.09839 | 2020-12-17 | Zhiyuan Li et al. | Towards Resolving the Implicit Bias of Gradient Descent for Matrix Factorization: Greedy Low-Rank Learning |
+| 2102.06810 | 2021-02-12 | Yuandong Tian et al. | Understanding self-supervised Learning Dynamics without Contrastive Pairs |
+| 2104.14294 | 2021-04-29 | Mathilde Caron et al. | Emerging Properties in Self-Supervised Vision Transformers |
+| 2106.15933 | 2021-06-30 | Arthur Jacot et al. | Saddle-to-Saddle Dynamics in Deep Linear Networks: Small Initialization Training, Symmetry, and Sparsity |
+| 2110.04947 | 2021-10-11 | Xiang Wang et al. | Towards Demystifying Representation Learning with Non-contrastive Self-supervision |
+| 2110.09348 | 2021-10-18 | Li Jing et al. | Understanding Dimensional Collapse in Contrastive Self-supervised Learning |
+| 2111.00034 | 2021-10-29 | Alexander Atanasov et al. | Neural Networks as Kernel Learners: The Silent Alignment Effect |
+| 2202.03555 | 2022-02-07 | Alexei Baevski et al. | data2vec: A General Framework for Self-supervised Learning in Speech, Vision and Language |
+| 2202.04777 | 2022-02-10 | Liu Ziyin et al. | Exact Solutions of a Deep Linear Network |
+| 2203.16262 | 2022-03-30 | Chaoning Zhang et al. | How Does SimSiam Avoid Collapse Without Negative Samples? A Unified Understanding with Self-supervised Contrastive Learning |
+| 2205.06226 | 2022-05-12 | Zixin Wen & Yuanzhi Li | The Mechanism of Prediction Head in Non-contrastive Self-supervised Learning |
+| 2209.15007 | 2022-09-29 | Alexander C. Li et al. | Understanding Collapse in Non-Contrastive Siamese Representation Learning |
+| 2210.00638 | 2022-10-02 | Liu Ziyin et al. | What shapes the loss landscape of self-supervised learning? |
+| 2210.02885 | 2022-10-05 | Quentin Garrido et al. | RankMe: Assessing the downstream performance of pretrained self-supervised representations by their rank |
+| 2212.03319 | 2022-12-06 | Yunhao Tang et al. | Understanding Self-Predictive Learning for Reinforcement Learning |
+| 2212.04858 | 2022-12-09 | Manu Srinath Halvagal et al. | Implicit variance regularization in non-contrastive SSL |
+| 2212.07525 | 2022-12-14 | Alexei Baevski et al. | Efficient Self-supervised Learning with Contextualized Target Representations for Vision, Speech and Language |
+| 2301.08243 | 2023-01-19 | Mahmoud Assran et al. | Self-Supervised Learning from Images with a Joint-Embedding Predictive Architecture |
+| 2302.04817 | 2023-02-09 | Pierre H. Richemond et al. | The Edge of Orthogonality: A Simple View of What Makes BYOL Tick |
+| 2303.02387 | 2023-03-04 | Zhijian Zhuo et al. | Towards a Unified Theoretical Understanding of Non-contrastive Learning via Rank Differential Mechanism |
+| 2303.15438 | 2023-03-27 | James B. Simon et al. | On the Stepwise Nature of Self-Supervised Learning |
+| 2305.16038 | 2023-05-25 | Zihan Wang & Arthur Jacot | Implicit bias of SGD in $L_{2}$-regularized linear DNNs: One-way jumps from high to low rank |
+| 2307.13813 | 2023-07-25 | Dan Busbridge et al. | How to Scale Your EMA |
+| 2309.16109 | 2023-09-28 | Han Bao | Feature Normalization Prevents Collapse of Non-contrastive Learning Dynamics |
+| 2312.04000 | 2023-12-07 | Vimal Thilak et al. | LiDAR: Sensing Linear Probing Performance in Joint Embedding SSL Architectures |
+| 2404.08471 | 2024-02-15 | Adrien Bardes et al. | Revisiting Feature Prediction for Learning Visual Representations from Video |
+| 2402.11337 | 2024-02-17 | Randall Balestriero & Yann LeCun | Learning by Reconstruction Produces Uninformative Features For Perception |
+| 2407.03475 | 2024-07-03 | Etai Littwin et al. | How JEPA Avoids Noisy Features: The Implicit Bias of Deep Linear Self Distillation Networks |
+| 2410.19560 | 2024-10-25 | Shentong Mo & Shengbang Tong | Connecting Joint-Embedding Predictive Architecture with Contrastive Self-supervised Learning |
+| 2410.23819 | 2024-10-31 | Seijin Kobayashi et al. | Weight decay induces low-rank attention layers |
+| 2506.09985 | 2025-06-11 | Mido Assran et al. | V-JEPA 2: Self-Supervised Video Models Enable Understanding, Prediction and Planning |
+| 2507.01028 | 2025-06-18 | Jean Ponce et al. | Dual Perspectives on Non-Contrastive Self-Supervised Learning |
+| 2508.15404 | 2025-08-21 | Anthony Bisulco et al. | From Linearity to Non-Linearity: How Masked Autoencoders Capture Spatial Correlations |
+| 2509.21650 | 2025-09-25 | Mingze Dong et al. | Understanding and Enhancing Mask-Based Pretraining towards Universal Representations |
+| 2511.08544 | 2025-11-11 | Randall Balestriero & Yann LeCun | LeJEPA: Provable and Scalable Self-Supervised Learning Without the Heuristics |
+| 2601.21294 | 2026-01-29 | Anders Gjølbye et al. | Missing-Data-Induced Phase Transitions in Spectral Partial Least Squares |
+| 2604.18450 | 2026-04-20 | Florentin Coeurdoux et al. | Random Matrix Theory of Early-Stopped Gradient Flow: A Transient BBP Scenario |
+| 2605.17671 | 2026-05-17 | Michael Arbel et al. | PEIRA: Learning Predictive Encoders through Inter-View Regressor Alignment |

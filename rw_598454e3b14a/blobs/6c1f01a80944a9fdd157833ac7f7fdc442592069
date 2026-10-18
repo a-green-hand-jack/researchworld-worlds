@@ -1,0 +1,28 @@
+# Synthetic check of e8_analyze.practice_ref_combined (prediction.json amendment_E8R_1: holds iff Delta_R informative,
+# Welch 95% CI of R(ramp) - R(0.04) excludes 0 and f_ramp >= 0.5; 'undetermined' if the non-finite scorings disagree;
+# CI compared with the delivered 0-0.4 range) and of early_reading. Run: python3 code/checks/e8r_scoring_synthetic.py
+import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')); import numpy as np, e8_analyze as A
+g = np.random.default_rng(0)
+def run(final, early=None, sd=1.5, ok=True):
+    c = {e: (early if early is not None else final) + g.normal(0, sd) for e in (2, 5, 10, 20)}; c[50] = final + g.normal(0, sd)
+    return dict(ok=ok, count=c)
+def runs(lo, hi, ramp, sd=1.5, bad=0):
+    R = {"P_lo": [run(lo, sd=sd) for _ in range(5)], "PR_c04": [run(hi, sd=sd) for _ in range(5)],
+         "PR_ramp": [run(ramp, early=lo, sd=sd) for _ in range(5)]}
+    for i in range(bad): R["PR_ramp"][i]["ok"] = False
+    return R
+cases = {"holds_strong": runs(116, 96, 100, sd=1.0), "holds_dose_lt_diff": runs(116, 106, 110.5, sd=1.0),
+         "small_diff_inconclusive": runs(116, 106, 113.5, sd=2.0), "fails_near_dose": runs(116, 96, 110, sd=1.0),
+         "uninformative": runs(116, 115, 115), "one_nonfinite_disagree": runs(116, 96, 100, sd=1.0, bad=1)}
+fx = lambda vals: [dict(ok=True, count={2: 116.0, 5: 116.0, 10: 116.0, 20: 116.0, 50: float(v)}) for v in vals]
+cases["f_ge_half_no_difference"] = {"P_lo": fx([110, 116, 122, 113, 119]), "PR_c04": fx([95, 101, 99, 97, 108]),
+                                    "PR_ramp": fx([99, 114, 103, 119, 102])}
+cases["one_nonfinite_disagree"]["PR_ramp"][0]["count"][50] = float("nan")
+for k, R in cases.items():
+    p, z, final = A.practice_ref_combined(R)
+    print("%-24s primary=%-45s nf0=%-45s final=%s f=%s sep=%s" % (k, p.get("reading"), z.get("reading"), final,
+          None if "f_ramp" not in p else [round(x, 3) for x in p["f_ramp"]], p.get("separates_B_from_delivered")))
+er = A.early_reading({k: v for k, v in cases["holds_strong"].items()})
+print("early_reading ramp", {e: round(v["reading"], 1) for e, v in er["PR_ramp"]["at"].items()}, "final", round(er["PR_ramp"]["final"], 1))
+sw = A.early_reading({"N": cases["holds_strong"]["P_lo"], "20": cases["holds_strong"]["PR_ramp"]}, switch_epoch={"20": 20})
+print("early_reading switched row at e=20:", sw["20"]["at"], "implied f", round(A.implied_f(sw, "20", "N", -20.0), 3))

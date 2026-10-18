@@ -1,0 +1,36 @@
+"""Early check of experiment-repo e16e822 theory/ext_A_adamw.md, matrix observations.
+
+Runs the E1b AdamW configuration exactly as code/checks/e4_matrix_adam_long.py (p0 = 0.5, w0 = 1e-4,
+eta = 0.02, orthogonal init, jitter 0.1, T = 200000, 20 rank checks) for seeds 0-2 and lam in
+{0.005, 0.05}, with linjepa.simulate's flush floor (|entry| < 1e-150 set to 0 every 50 steps) varied
+via a local copy (LJ_FLUSH). If collapsed columns re-escape through Adam's instability, a column flushed
+to exact zero cannot, so the final rank would depend on the floor.
+"""
+import os, sys, json, time, itertools
+from multiprocessing import Pool
+
+def one(args):
+    flush, lam, seed = args
+    os.environ["LJ_FLUSH"] = repr(flush)
+    sys.path.insert(0, "/tmp/mtest")
+    import numpy as np
+    from e1b import stats, configs, SV_THR, d
+    from linjepa import simulate
+    import linjepa; linjepa.FLUSH = flush
+    c = [c for c in configs() if c['exp'] == 'adam' and c['seed'] == 0 and c['w0'] == 1e-4 and c['lam'] == lam and c['p0'] == 0.5][0]
+    S11, S21 = stats(c); t0 = time.time()
+    o = simulate(S11, S21, d, lam, lam, p0=0.5, w0=1e-4, eta=0.02, T=200000, w_init='orthogonal', jitter=0.1,
+                 optimizer='adam', rank_checks=20, sv_thr=SV_THR, seed=seed)
+    mn = o['mode_norms']
+    return dict(flush=flush, lam=lam, seed=seed, ranks=[r for _, r in o['ranks']],
+                dead_columns=int((mn == 0).sum()) if mn is not None else None,
+                diverged=o['diverged'], secs=round(time.time() - t0, 1))
+
+if __name__ == "__main__":
+    os.environ["OMP_NUM_THREADS"] = "1"; os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    grid = list(itertools.product([1e-150, 1e-300, 1e-60], [0.005, 0.05], [0, 1, 2]))
+    with Pool(8) as pool:
+        res = pool.map(one, grid)
+    for r in res: print(json.dumps(r))
+    json.dump(dict(source="experiment-repo e16e822 code/linjepa.py, code/e1b.py (flush floor made a parameter)",
+                   runs=res), open(sys.argv[1], "w"), indent=1)

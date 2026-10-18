@@ -1,0 +1,48 @@
+"""F9 (appendix): E3 every sweep config against the step-0 rule. Rows are configs grouped by factor; filled marker = measured count at epoch 20
+(seed mean, bars min-max of 3), open diamond = the pre-registered rule count, vertical line = the arm's baseline (P_base; T_wd0.01).
+Verdicts per pre-registered sign/null are in Table 6."""
+import os, sys
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+import matplotlib.pyplot as plt
+
+LAB = {"base": "baseline", "pred_depth": "predictor depth", "pred_width": "predictor width", "pred_lr_mult": "predictor lr $\\times$", "pred_init_scale": "predictor init $\\times$",
+       "mask": "mask", "target": "target", "wd": "weight decay"}
+VAL = {"targets1": "1 target block", "ctx0.4": "context 0.4-0.5", "tscale_hi": "target scale 0.3-0.4", "tscale_lo": "target scale 0.05-0.1",
+       "nosg": "no stop-grad", "copy": "copy online", "ema0.9": "EMA 0.9", "ema0.99": "EMA 0.99", "ema0.999": "EMA 0.999", "frozen": "frozen"}
+
+def label(r):
+    if r["factor"] == "base": return "baseline"
+    if r["name"] == "T_wd0.01": return "wd 0.01 (baseline)"
+    if r["factor"] == "wd": return f"wd {r['value']:g}"
+    v = VAL.get(r["value"], r["value"] if isinstance(r["value"], str) else f"{r['value']:g}")
+    return f"{LAB[r['factor']]} {v}" if r["factor"] not in ("mask", "target") else v
+
+def make(outdir):
+    fs.setup()
+    rows, S, F, paths = common.load_e3()
+    base = {"P": rows["P_base"], "T": rows["T_wd0.01"]}
+    fig, axs = plt.subplots(1, 2, figsize=(fs.TEXTWIDTH, 4.6), constrained_layout=True, gridspec_kw=dict(width_ratios=[1, 1]))
+    for ax, arm, title in ((axs[0], "P", "(a) Arm P: I-JEPA recipe (AdamW)"), (axs[1], "T", "(b) Arm T: theory-aligned SGD")):
+        order = ["base", "wd", "pred_lr_mult", "pred_init_scale", "pred_depth", "pred_width", "mask", "target"]
+        z = [r for r in rows.values() if r["arm"] == arm and r["factor"] != "base"]
+        if arm == "T": z = [r for r in z if r["factor"] != "wd" or r["value"] != 0.01]; z.insert(0, base["T"])
+        z.sort(key=lambda r: (order.index(r["factor"]), r["value"] if isinstance(r["value"], float) else 0, str(r["value"])))
+        if arm == "P": z.insert(0, base["P"])
+        y = np.arange(len(z))[::-1]
+        ax.axvline(base[arm]["count"], color=fs.COL["grey"], lw=0.6, ls=":")
+        for yy, r in zip(y, z):
+            s = np.array(r["count_seeds"]); ax.plot([s.min(), s.max()], [yy, yy], color="k", lw=0.8, zorder=2)
+            ax.plot(s.mean(), yy, marker="o", color=fs.COL["drive"] if arm == "T" else fs.COL["decay"], ms=3.2, zorder=3, ls="none")
+            ax.plot(r["count_pred"], yy, marker="D", mfc="white", mec="k", ms=3.2, ls="none", mew=0.7, zorder=3)
+        ax.set_yticks(y); ax.set_yticklabels([label(r) for r in z], fontsize=5.8)
+        ax.set_xlim(0, 125); ax.set_xlabel("count at epoch 20"); ax.set_title(title, fontsize=7.2)
+        ax.axhline(0, visible=False)
+    axs[0].plot([], [], marker="o", color=fs.COL["decay"], ls="none", ms=3.2, label="measured (Arm P)")
+    axs[1].plot([], [], marker="o", color=fs.COL["drive"], ls="none", ms=3.2, label="measured (Arm T)")
+    for a in axs:
+        a.plot([], [], marker="D", mfc="white", mec="k", ls="none", ms=3.2, mew=0.7, label="step-0 rule")
+        a.legend(fontsize=5.8, frameon=False, loc="upper left" if a is axs[0] else "upper right")
+    fs.save(fig, "fig9_e3_factors", outdir)
+    common.record_inputs(outdir, "fig9_e3_factors", paths)

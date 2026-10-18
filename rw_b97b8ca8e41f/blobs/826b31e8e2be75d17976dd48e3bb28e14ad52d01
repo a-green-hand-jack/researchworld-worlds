@@ -1,0 +1,5 @@
+# Build the submission PDF from the assembled delivery root.
+paper.pdf: paper.tex macros.tex references.bib checklist.tex $(wildcard sections/*.tex appendix/*.tex)
+	latexmk -pdf -interaction=nonstopmode -halt-on-error paper.tex
+clean:
+	latexmk -C

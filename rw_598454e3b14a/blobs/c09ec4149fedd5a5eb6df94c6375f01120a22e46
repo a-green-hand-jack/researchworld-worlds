@@ -1,0 +1,527 @@
+"""Extension ViT runs (E7 instrumented toggles, E8 weight-decay switch grid): code/e3_ijepa.py unchanged except
+(1) --wd-switch-epoch E --wd-after V: from epoch E on, weight decay is the constant V (replacing the schedule's
+level; before E the --wd schedule applies), and (2) --instrument 1: at every log step and epoch end, the
+per-direction race quantities on a fixed probe batch with fixed masks (see race_probe).
+E3: I-JEPA-style small ViT on CIFAR-10 (CPU or one GPU), with the heuristics of the plan as options and
+collapse / rank / drive-vs-decay diagnostics logged from the first steps.
+
+Data: CIFAR-10 as uint8 arrays (code/prepare_cifar10.py -> DATA/train.npz, test.npz).
+Usage: python3 code/e3_ijepa.py --out DIR [--epochs 8 --full-epochs 100 ...]; see --help.
+Writes DIR/config.json, DIR/log.jsonl (one JSON per measurement), DIR/final.json.
+"""
+import argparse, json, math, os, time
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+# ----------------------------------------------------------------------------- args
+
+def get_args(argv=None):
+    a = argparse.ArgumentParser()
+    a.add_argument("--out", required=True)
+    a.add_argument("--data", default=os.environ.get("CIFAR_DIR", "/hutian/data/cifar10"))
+    a.add_argument("--seed", type=int, default=0)
+    a.add_argument("--epochs", type=float, default=8, help="epochs actually run (prefix of the full schedule)")
+    a.add_argument("--full-epochs", type=float, default=100, help="length the schedules are defined over")
+    a.add_argument("--batch", type=int, default=256)
+    a.add_argument("--threads", type=int, default=8)
+    a.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    # architecture
+    a.add_argument("--width", type=int, default=128)
+    a.add_argument("--depth", type=int, default=4)
+    a.add_argument("--heads", type=int, default=4)
+    a.add_argument("--patch", type=int, default=4)
+    a.add_argument("--pred-width", type=int, default=64)
+    a.add_argument("--pred-depth", type=int, default=3)
+    a.add_argument("--pred-heads", type=int, default=4)
+    a.add_argument("--pred-init-scale", type=float, default=1.0, help="multiplies predictor weights at init")
+    a.add_argument("--enc-out-scale", type=float, default=1.0,
+                   help="initial gain of the encoder's final LayerNorm (small = start near collapse, the theory's w0)")
+    # masking (I-JEPA multi-block on the 8x8 token grid)
+    a.add_argument("--n-targets", type=int, default=4)
+    a.add_argument("--target-scale", type=float, nargs=2, default=[0.15, 0.2])
+    a.add_argument("--target-aspect", type=float, nargs=2, default=[0.75, 1.5])
+    a.add_argument("--context-scale", type=float, nargs=2, default=[0.85, 1.0])
+    a.add_argument("--min-keep", type=int, default=4)
+    # target update
+    a.add_argument("--target", choices=["ema", "copy", "nosg", "frozen"], default="ema")
+    a.add_argument("--ema", type=float, nargs=2, default=[0.996, 1.0], help="momentum start/end (linear over full schedule)")
+    a.add_argument("--target-ln", type=int, default=1, help="LayerNorm (no affine) on target features")
+    a.add_argument("--pred-norm", type=int, default=1, help="LayerNorms inside the predictor (0: removed, so the predictor is not scale-invariant in its input)")
+    a.add_argument("--decay-norm", type=int, default=0, help="1: weight decay also on biases, norm gains and mask token (theory's decay on all parameters)")
+    # optimisation
+    a.add_argument("--opt", choices=["adamw", "sgd"], default="adamw")
+    a.add_argument("--lr", type=float, default=3e-4)
+    a.add_argument("--warmup-frac", type=float, default=40 / 300)
+    a.add_argument("--sched", choices=["cosine", "const"], default="cosine")
+    a.add_argument("--wd", type=float, nargs=2, default=[0.04, 0.4], help="weight decay start/end (cosine)")
+    a.add_argument("--pred-lr-mult", type=float, default=1.0)
+    a.add_argument("--momentum", type=float, default=0.9)
+    a.add_argument("--loss", choices=["mse", "smoothl1"], default="mse")
+    # diagnostics
+    a.add_argument("--probe-n", type=int, default=2048, help="held-out images for frequent metrics")
+    a.add_argument("--probe-n-full", type=int, default=10000, help="held-out images at epoch ends")
+    a.add_argument("--force-steps", type=int, nargs="*", default=[0, 5, 10, 20, 50, 100, 200, 400])
+    a.add_argument("--log-steps", type=int, nargs="*", default=[0, 5, 10, 20, 30, 50, 75, 100, 150, 200, 300, 400, 600, 800, 1000, 1200, 1500])
+    a.add_argument("--probe-train-n", type=int, default=50000, help="train images for the linear probe (epoch ends)")
+    a.add_argument("--probe-every", type=float, default=0, help="linear probe every this many epochs (0: last epoch only)")
+    a.add_argument("--save-ckpt", type=int, default=0)
+    a.add_argument("--max-steps", type=int, default=0, help="stop after this many steps (timing pilots)")
+    a.add_argument("--wd-switch-epoch", type=float, default=-1, help="from this epoch on, weight decay = --wd-after (-1: never)")
+    a.add_argument("--wd-after", type=float, default=0.0)
+    a.add_argument("--instrument", type=int, default=0, help="1: log per-direction drive/self-prediction/amplitude (race_probe)")
+    a.add_argument("--instrument-n", type=int, default=256, help="probe images for race_probe")
+    return a.parse_args(argv)
+
+# ----------------------------------------------------------------------------- data
+
+class GPUlessAug:
+    """Batched RandomResizedCrop(scale=(0.3,1), ratio=(3/4,4/3)) to 32x32 via affine grid sampling."""
+    def __init__(self, scale=(0.3, 1.0), ratio=(3 / 4, 4 / 3)):
+        self.scale, self.ratio = scale, ratio
+
+    def __call__(self, x, g):
+        B = x.shape[0]
+        area = torch.empty(B).uniform_(*self.scale, generator=g)
+        logr = torch.empty(B).uniform_(math.log(self.ratio[0]), math.log(self.ratio[1]), generator=g)
+        r = torch.exp(logr)
+        w = torch.sqrt(area * r).clamp(max=1.0); h = torch.sqrt(area / r).clamp(max=1.0)
+        cx = (torch.rand(B, generator=g) * (1 - w) + w / 2) * 2 - 1
+        cy = (torch.rand(B, generator=g) * (1 - h) + h / 2) * 2 - 1
+        theta = torch.zeros(B, 2, 3)
+        theta[:, 0, 0] = w; theta[:, 0, 2] = cx; theta[:, 1, 1] = h; theta[:, 1, 2] = cy
+        theta = theta.to(x.device)
+        grid = F.affine_grid(theta, x.shape, align_corners=False)
+        return F.grid_sample(x, grid, mode="bilinear", padding_mode="reflection", align_corners=False)
+
+
+MEAN = torch.tensor([0.4914, 0.4822, 0.4465]).view(1, 3, 1, 1)
+STD = torch.tensor([0.2470, 0.2435, 0.2616]).view(1, 3, 1, 1)
+
+
+def load(data_dir, split):
+    z = np.load(os.path.join(data_dir, f"{split}.npz"))
+    x = torch.from_numpy(z["x"]).permute(0, 3, 1, 2).float().div_(255.0)
+    return (x - MEAN) / STD, torch.from_numpy(z["y"])
+
+# ----------------------------------------------------------------------------- masks
+
+class MultiBlockMask:
+    """I-JEPA multi-block masking on a G x G token grid (per batch: same number of tokens per sample,
+    truncated to the batch minimum as in the official collator)."""
+    def __init__(self, G, n_targets, t_scale, t_aspect, c_scale, min_keep):
+        self.G, self.nt, self.ts, self.ta, self.cs, self.mk = G, n_targets, t_scale, t_aspect, c_scale, min_keep
+
+    def _block(self, g, scale, aspect):
+        G = self.G
+        s = torch.empty(1).uniform_(*scale, generator=g).item()
+        ar = math.exp(torch.empty(1).uniform_(math.log(aspect[0]), math.log(aspect[1]), generator=g).item())
+        h = int(round(math.sqrt(s * G * G * ar))); w = int(round(math.sqrt(s * G * G / ar)))
+        h = max(1, min(h, G - 1)); w = max(1, min(w, G - 1))
+        return h, w
+
+    def __call__(self, B, g):
+        G = self.G
+        # sizes shared across the batch (as in the official collator), positions per sample
+        th, tw = self._block(g, self.ts, self.ta)
+        ch, cw = self._block(g, self.cs, (1.0, 1.0))
+        ch, cw = min(G, max(ch, 1)), min(G, max(cw, 1))
+        if self.cs[0] >= 0.85:
+            ch = cw = int(round(math.sqrt(torch.empty(1).uniform_(*self.cs, generator=g).item()) * G))
+        ctx, tgts = [], []
+        for _ in range(B):
+            tmask = torch.zeros(G, G, dtype=torch.bool); tl = []
+            for _ in range(self.nt):
+                i = torch.randint(0, G - th + 1, (1,), generator=g).item(); j = torch.randint(0, G - tw + 1, (1,), generator=g).item()
+                m = torch.zeros(G, G, dtype=torch.bool); m[i:i + th, j:j + tw] = True
+                tl.append(m.flatten().nonzero().squeeze(1)); tmask |= m
+            for _ in range(20):
+                i = torch.randint(0, G - ch + 1, (1,), generator=g).item(); j = torch.randint(0, G - cw + 1, (1,), generator=g).item()
+                c = torch.zeros(G, G, dtype=torch.bool); c[i:i + ch, j:j + cw] = True
+                c &= ~tmask
+                if c.sum() >= self.mk:
+                    break
+            ctx.append(c.flatten().nonzero().squeeze(1)); tgts.append(tl)
+        nc = min(len(c) for c in ctx)
+        ctx = torch.stack([c[torch.randperm(len(c), generator=g)[:nc].sort().values] for c in ctx])
+        tgt = [torch.stack([t[k] for t in tgts]) for k in range(self.nt)]   # each B x (th*tw)
+        return ctx, tgt
+
+# ----------------------------------------------------------------------------- model
+
+def sincos_2d(dim, G):
+    gy, gx = torch.meshgrid(torch.arange(G, dtype=torch.float32), torch.arange(G, dtype=torch.float32), indexing="ij")
+    def emb1(d, pos):
+        om = 1.0 / 10000 ** (torch.arange(d // 2, dtype=torch.float32) / (d / 2))
+        out = pos.flatten()[:, None] * om[None]
+        return torch.cat([out.sin(), out.cos()], 1)
+    return torch.cat([emb1(dim // 2, gy), emb1(dim // 2, gx)], 1)  # G*G x dim
+
+
+class Block(nn.Module):
+    def __init__(self, dim, heads, mlp=4.0, norm=True):
+        super().__init__()
+        N = nn.LayerNorm if norm else (lambda _: nn.Identity())
+        self.n1 = N(dim); self.attn = nn.MultiheadAttention(dim, heads, batch_first=True)
+        self.n2 = N(dim); self.mlp = nn.Sequential(nn.Linear(dim, int(dim * mlp)), nn.GELU(), nn.Linear(int(dim * mlp), dim))
+
+    def forward(self, x):
+        h = self.n1(x); x = x + self.attn(h, h, h, need_weights=False)[0]
+        return x + self.mlp(self.n2(x))
+
+
+def init_weights(m):
+    if isinstance(m, nn.Linear):
+        nn.init.trunc_normal_(m.weight, std=0.02)
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
+    elif isinstance(m, nn.LayerNorm):
+        nn.init.ones_(m.weight); nn.init.zeros_(m.bias)
+
+
+class ViT(nn.Module):
+    def __init__(self, width, depth, heads, patch, img=32):
+        super().__init__()
+        self.G = img // patch
+        self.patch = nn.Conv2d(3, width, patch, patch)
+        self.register_buffer("pos", sincos_2d(width, self.G)[None])
+        self.blocks = nn.ModuleList([Block(width, heads) for _ in range(depth)])
+        self.norm = nn.LayerNorm(width)
+        self.apply(init_weights)
+
+    def forward(self, x, keep=None):
+        x = self.patch(x).flatten(2).transpose(1, 2) + self.pos
+        if keep is not None:
+            x = torch.gather(x, 1, keep[..., None].expand(-1, -1, x.shape[-1]))
+        for b in self.blocks:
+            x = b(x)
+        return self.norm(x)
+
+
+class Predictor(nn.Module):
+    def __init__(self, width, pwidth, depth, heads, G, init_scale=1.0, norm=True):
+        super().__init__()
+        self.embed = nn.Linear(width, pwidth)
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, pwidth))
+        self.register_buffer("pos", sincos_2d(pwidth, G)[None])
+        self.blocks = nn.ModuleList([Block(pwidth, heads, norm=norm) for _ in range(depth)])
+        self.norm = nn.LayerNorm(pwidth) if norm else nn.Identity()
+        self.proj = nn.Linear(pwidth, width)
+        self.apply(init_weights)
+        nn.init.trunc_normal_(self.mask_token, std=0.02)
+        if init_scale != 1.0:
+            with torch.no_grad():
+                for m in self.modules():
+                    if isinstance(m, nn.Linear):
+                        m.weight.mul_(init_scale)
+
+    def forward(self, z, ctx, tgt):
+        B, Nc, _ = z.shape
+        x = self.embed(z) + torch.gather(self.pos.expand(B, -1, -1), 1, ctx[..., None].expand(-1, -1, self.pos.shape[-1]))
+        Nt = tgt.shape[1]
+        m = self.mask_token.expand(B, Nt, -1) + torch.gather(self.pos.expand(B, -1, -1), 1, tgt[..., None].expand(-1, -1, self.pos.shape[-1]))
+        x = torch.cat([x, m], 1)
+        for b in self.blocks:
+            x = b(x)
+        return self.proj(self.norm(x[:, Nc:]))
+
+# ----------------------------------------------------------------------------- metrics
+
+@torch.no_grad()
+def spectrum_metrics(Z, eps=1e-7):
+    """Z: N x K embeddings. Centred covariance eigenvalues, centred & raw RankMe, thresholded count, std."""
+    Z = Z.double()
+    Zc = Z - Z.mean(0, keepdim=True)
+    ev = torch.linalg.eigvalsh(Zc.T @ Zc / Z.shape[0]).flip(0).clamp(min=0)
+    s = torch.linalg.svdvals(Zc); p = s / s.sum() + eps; rk_c = torch.exp(-(p * p.log()).sum()).item()
+    s2 = torch.linalg.svdvals(Z); p2 = s2 / s2.sum() + eps; rk_raw = torch.exp(-(p2 * p2.log()).sum()).item()
+    return dict(eig=ev.tolist(), rankme_c=rk_c, rankme_raw=rk_raw,
+                count_1e3=int((ev >= 1e-3 * ev[0]).sum()) if ev[0] > 0 else 0,
+                total_var=float(ev.sum()), std=float(Zc.std(0).mean()))
+
+
+@torch.no_grad()
+def embed_all(model, X, bs=1000):
+    toks, pooled = [], []
+    for i in range(0, X.shape[0], bs):
+        z = model(X[i:i + bs]); toks.append(z.reshape(-1, z.shape[-1])[:: 8]); pooled.append(z.mean(1))
+    return torch.cat(toks), torch.cat(pooled)
+
+@torch.no_grad()
+def linear_probe(model, Xtr, Ytr, Xte, Yte, seed=0):
+    """Ridge-regression linear probe on mean-pooled final-layer features (one-hot targets, closed form).
+    Features standardised with train statistics; ridge strength chosen on a 10% split of the probe-train set
+    from a fixed grid, then refit on the whole probe-train set. Returns test accuracy, the chosen ridge, the grid."""
+    _, ftr = embed_all(model, Xtr); _, fte = embed_all(model, Xte)
+    ftr, fte = ftr.double(), fte.double()
+    mu, sd = ftr.mean(0), ftr.std(0) + 1e-8
+    ftr, fte = (ftr - mu) / sd, (fte - mu) / sd
+    ftr = torch.cat([ftr, torch.ones(len(ftr), 1, dtype=ftr.dtype, device=ftr.device)], 1)
+    fte = torch.cat([fte, torch.ones(len(fte), 1, dtype=fte.dtype, device=fte.device)], 1)
+    Ytr, Yte = Ytr.to(ftr.device), Yte.to(ftr.device)
+    Y = F.one_hot(Ytr, 10).double()
+    gperm = torch.Generator().manual_seed(seed)
+    perm = torch.randperm(len(ftr), generator=gperm).to(ftr.device); nv = len(ftr) // 10
+    va, tr = perm[:nv], perm[nv:]
+    grid = [1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0, 1e3, 1e4]
+    def fit(Xf, Yf, lam):
+        A = Xf.T @ Xf + lam * torch.eye(Xf.shape[1], dtype=Xf.dtype, device=Xf.device)
+        return torch.linalg.solve(A, Xf.T @ Yf)
+    vacc = []
+    for lam in grid:
+        Wp = fit(ftr[tr], Y[tr], lam)
+        vacc.append(float(((ftr[va] @ Wp).argmax(1) == Ytr[va]).double().mean()))
+    lam = grid[int(np.argmax(vacc))]
+    Wp = fit(ftr, Y, lam)
+    acc = float(((fte @ Wp).argmax(1) == Yte).double().mean())
+    return dict(probe_acc=acc, probe_ridge=lam, probe_val_acc=vacc, probe_train_n=len(ftr), probe_test_n=len(fte))
+
+# ----------------------------------------------------------------------------- training
+
+def cosine(start, end, frac):
+    return end + (start - end) * 0.5 * (1 + math.cos(math.pi * min(frac, 1.0)))
+
+
+def main(argv=None):
+    args = get_args(argv)
+    os.makedirs(args.out, exist_ok=True)
+    torch.set_num_threads(args.threads)
+    torch.manual_seed(args.seed); np.random.seed(args.seed)
+    g = torch.Generator().manual_seed(args.seed)
+    dev = torch.device(args.device)
+    Xtr, Ytr = load(args.data, "train"); Xte, Yte = load(args.data, "test")
+    Xtr, Xte = Xtr.to(dev), Xte.to(dev)
+    probe = Xte[: args.probe_n]
+    enc = ViT(args.width, args.depth, args.heads, args.patch).to(dev)
+    pred = Predictor(args.width, args.pred_width, args.pred_depth, args.pred_heads, enc.G, args.pred_init_scale,
+                     norm=bool(args.pred_norm)).to(dev)
+    if args.enc_out_scale != 1.0:
+        with torch.no_grad():
+            enc.norm.weight.fill_(args.enc_out_scale)
+    tgt_enc = ViT(args.width, args.depth, args.heads, args.patch).to(dev)
+    tgt_enc.load_state_dict(enc.state_dict())
+    for p in tgt_enc.parameters():
+        p.requires_grad_(False)
+    masker = MultiBlockMask(enc.G, args.n_targets, args.target_scale, args.target_aspect, args.context_scale, args.min_keep)
+    aug = GPUlessAug()
+
+    def groups(mod, mult):
+        dec, nodec = [], []
+        for n, p in mod.named_parameters():
+            (nodec if (p.ndim == 1 or n.endswith("mask_token")) and not args.decay_norm else dec).append(p)
+        return [dict(params=dec, lr_mult=mult, wd_on=True), dict(params=nodec, lr_mult=mult, wd_on=False)]
+    pg = groups(enc, 1.0) + groups(pred, args.pred_lr_mult)
+    if args.opt == "adamw":
+        opt = torch.optim.AdamW(pg, lr=args.lr, betas=(0.9, 0.999), weight_decay=0.0)
+    else:
+        opt = torch.optim.SGD(pg, lr=args.lr, momentum=args.momentum, weight_decay=0.0)
+    steps_per_epoch = Xtr.shape[0] // args.batch
+    total_full = int(args.full_epochs * steps_per_epoch)
+    total = int(args.epochs * steps_per_epoch)
+    if args.max_steps:
+        total = min(total, args.max_steps)
+    warm = int(args.warmup_frac * total_full)
+    json.dump(dict(vars(args), steps_per_epoch=steps_per_epoch, total_steps=total, total_full=total_full,
+                   torch=torch.__version__, cuda=torch.version.cuda if dev.type == "cuda" else None,
+                   gpu=torch.cuda.get_device_name(dev) if dev.type == "cuda" else None, n_params_enc=sum(p.numel() for p in enc.parameters()),
+                   n_params_pred=sum(p.numel() for p in pred.parameters())), open(os.path.join(args.out, "config.json"), "w"), indent=1)
+    logf = open(os.path.join(args.out, "log.jsonl"), "w")
+
+    def hyper(step):
+        f = step / total_full
+        if args.sched == "const":
+            lr = args.lr
+        else:
+            lr = args.lr * step / max(warm, 1) if step < warm else cosine(args.lr, 0.0, (step - warm) / max(total_full - warm, 1))
+        wd = cosine(args.wd[0], args.wd[1], f) if args.wd[0] != args.wd[1] else args.wd[0]
+        # cosine *increase* from wd0 to wd1, as in I-JEPA: wd0 + (wd1-wd0)*0.5*(1-cos(pi f))
+        wd = args.wd[1] + (args.wd[0] - args.wd[1]) * 0.5 * (1 + math.cos(math.pi * min(f, 1.0)))
+        m = args.ema[0] + (args.ema[1] - args.ema[0]) * min(f, 1.0)
+        if args.wd_switch_epoch >= 0 and step >= int(round(args.wd_switch_epoch * steps_per_epoch)):
+            wd = args.wd_after
+        return lr, wd, m
+
+    def targets_of(x, tg):
+        if args.target == "nosg":
+            h = enc(x)
+        else:
+            with torch.no_grad():
+                h = (enc if args.target == "copy" else tgt_enc)(x)
+        if args.target_ln:
+            h = F.layer_norm(h, (h.shape[-1],))
+        return [torch.gather(h, 1, t[..., None].expand(-1, -1, h.shape[-1])) for t in tg]
+
+    def losses(x, ctx, tg):
+        """Returns (total, drive_part, selfpred_part): total = 1/2||Pz||^2 - <Pz, zbar> + 1/2||zbar||^2
+        (MSE up to the constant). The split is exact for the squared loss."""
+        hs = targets_of(x, tg)
+        z = enc(x, ctx)
+        tot = drive = selfp = 0.0
+        for t, h in zip(tg, hs):
+            pz = pred(z, ctx, t)
+            if args.loss == "mse":
+                tot = tot + F.mse_loss(pz, h)
+            else:
+                tot = tot + F.smooth_l1_loss(pz, h)
+            n = pz.numel()
+            drive = drive - (pz * h.detach()).sum() / n
+            selfp = selfp + 0.5 * (pz ** 2).sum() / n
+        k = len(tg)
+        return tot / k, drive / k, selfp / k
+
+    def set_hyper(step):
+        lr, wd, m = hyper(step)
+        for gr in opt.param_groups:
+            gr["lr"] = lr * gr["lr_mult"]
+        return lr, wd, m
+
+    def apply_wd(lr, wd):
+        with torch.no_grad():
+            for gr in opt.param_groups:
+                if gr["wd_on"] and wd > 0:
+                    for p in gr["params"]:
+                        p.mul_(1 - gr["lr"] * wd)
+
+    params = [p for gr in opt.param_groups for p in gr["params"]]
+    gi = torch.Generator().manual_seed(12345)
+    ins_x = probe[: args.instrument_n]
+    ins_ctx, ins_tg = masker(ins_x.shape[0], gi)
+    ins_ctx, ins_tg = ins_ctx.to(dev), [t.to(dev) for t in ins_tg]
+
+    @torch.no_grad()
+    def race_probe():
+        """Per-direction race quantities on a fixed probe batch with fixed masks (no augmentation).
+        H: target tokens at the masked positions (after target LN if used), Q: the predictor's outputs there.
+        In the eigenbasis v_k of the centred covariance of H (descending): A_k = var(H v_k) (squared amplitude),
+        D_k = cov(Q v_k, H v_k) (drive), S_k = var(Q v_k) (self-prediction). In the linear model with predictor
+        gain p and per-mode statistics c, s: D = p a^2 c, S = p^2 a^2 s, A = a^2 sbar, so D/A and S/D read the
+        drive per unit amplitude and the predictor gain (S/D = p s/c); their difference is the gradient part of the
+        per-direction growth rate before the optimiser's preconditioning."""
+        enc.eval(); pred.eval(); tgt_enc.eval()
+        hs = targets_of(ins_x, ins_tg)
+        z = enc(ins_x, ins_ctx)
+        H = torch.cat([h.reshape(-1, h.shape[-1]) for h in hs]).double()
+        Q = torch.cat([pred(z, ins_ctx, t).reshape(-1, args.width) for t in ins_tg]).double()
+        H = H - H.mean(0); Q = Q - Q.mean(0)
+        ev, V = torch.linalg.eigh(H.T @ H / H.shape[0]); V = V.flip(1)
+        hp, qp = H @ V, Q @ V
+        enc.train(); pred.train(); tgt_enc.train()
+        return dict(A=(hp * hp).mean(0).tolist(), D=(qp * hp).mean(0).tolist(), S=(qp * qp).mean(0).tolist(),
+                    total_A=float((H * H).sum(1).mean()), total_S=float((Q * Q).sum(1).mean()),
+                    total_D=float((Q * H).sum(1).mean()))
+
+    @torch.no_grad()
+    def log_metrics(step, full=False, extra=None, probe_lin=False):
+        enc.eval(); tgt_enc.eval()
+        X = Xte[: args.probe_n_full] if full else probe
+        rec = dict(step=step, epoch=step / steps_per_epoch, full=full)
+        for name, mod in [("online", enc), ("target", tgt_enc if args.target in ("ema", "frozen") else enc)]:
+            tok, pool = embed_all(mod, X)
+            rec[name + "_tok"] = spectrum_metrics(tok); rec[name + "_pool"] = spectrum_metrics(pool)
+            if probe_lin:
+                rec[name + "_probe"] = linear_probe(mod, Xtr[: args.probe_train_n], Ytr[: args.probe_train_n],
+                                                    Xte[: args.probe_n_full], Yte[: args.probe_n_full], args.seed)
+        if extra:
+            rec.update(extra)
+        if args.instrument:
+            rec["race"] = race_probe()
+        logf.write(json.dumps(rec) + "\n"); logf.flush()
+        enc.train(); tgt_enc.train()
+        return rec
+
+    def force_decomposition(step, x, ctx, tg, lr, wd):
+        """First-order change of the eigenvalues of the centred online token-embedding covariance
+        (probe batch) under the parameter update produced by each part of the loss separately:
+        drive (-<Pz, zbar>), self-prediction decay (1/2||Pz||^2) and weight decay, using the
+        optimiser's current preconditioner for AdamW (diag 1/(sqrt(v_hat)+eps)) or plain SGD."""
+        enc.eval()
+        xp = probe[:512]
+        with torch.no_grad():
+            Z0 = enc(xp).reshape(-1, args.width).double()
+        mu = Z0.mean(0); C0 = (Z0 - mu).T @ (Z0 - mu) / Z0.shape[0]
+        ev, V = torch.linalg.eigh(C0); ev, V = ev.flip(0), V.flip(1)
+        enc.train()
+        _, drive, selfp = losses(x, ctx, tg)
+        gd = torch.autograd.grad(drive, params, retain_graph=True, allow_unused=True)
+        gs = torch.autograd.grad(selfp, params, allow_unused=True)
+        out = {}
+        for name, grads in [("drive", gd), ("selfpred", gs), ("wd", None)]:
+            ups = []
+            for gi, (p, gr_) in enumerate(zip(params, grads if grads is not None else [None] * len(params))):
+                group = next(G for G in opt.param_groups if any(q is p for q in G["params"]))
+                plr = group["lr"] if lr > 0 else group["lr_mult"] * args.lr
+                if name == "wd":
+                    u = -plr * wd * p.detach() if group["wd_on"] else torch.zeros_like(p)
+                else:
+                    gg = torch.zeros_like(p) if gr_ is None else gr_
+                    st = opt.state.get(p, {})
+                    if args.opt == "adamw" and "exp_avg_sq" in st:
+                        t_ = st["step"].item() if torch.is_tensor(st["step"]) else st["step"]
+                        vhat = st["exp_avg_sq"] / (1 - 0.999 ** t_)
+                        u = -plr * gg / (vhat.sqrt() + 1e-8)
+                    elif args.opt == "adamw":
+                        u = -plr * torch.sign(gg)   # first Adam step: g/|g|
+                    else:
+                        u = -plr * gg
+                ups.append(u)
+            eps = 1.0
+            with torch.no_grad():
+                for p, u in zip(params, ups):
+                    p.add_(eps * u)
+                enc.eval(); Z1 = enc(xp).reshape(-1, args.width).double(); enc.train()
+                for p, u in zip(params, ups):
+                    p.sub_(eps * u)
+            mu1 = Z1.mean(0); C1 = (Z1 - mu1).T @ (Z1 - mu1) / Z1.shape[0]
+            dC = C1 - C0
+            out[name] = (torch.einsum("ik,ij,jk->k", V, dC, V)).tolist()
+        return dict(step=step, force=True, eig=ev.tolist(), **{"d_eig_" + k: v for k, v in out.items()})
+
+    log_metrics(0, full=True, probe_lin=True)
+    t0 = time.time(); step = 0; done = False; ep = 0; last_full = 0
+    while not done:
+        perm = torch.randperm(Xtr.shape[0], generator=g)
+        for bi in range(steps_per_epoch):
+            if step >= total:
+                done = True; break
+            idx = perm[bi * args.batch:(bi + 1) * args.batch].to(dev)
+            x = aug(Xtr[idx], g)
+            ctx, tg = masker(args.batch, g)
+            ctx, tg = ctx.to(dev), [t.to(dev) for t in tg]
+            lr, wd, m = set_hyper(step)
+            if step in args.force_steps:
+                fd = force_decomposition(step, x, ctx, tg, lr, wd)
+                logf.write(json.dumps(fd) + "\n"); logf.flush()
+            loss, drive, selfp = losses(x, ctx, tg)
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            apply_wd(lr, wd)
+            opt.step()
+            if args.target == "ema":
+                with torch.no_grad():
+                    for pt, po in zip(tgt_enc.parameters(), enc.parameters()):
+                        pt.mul_(m).add_(po.detach(), alpha=1 - m)
+            step += 1
+            if not math.isfinite(loss.item()):
+                logf.write(json.dumps(dict(step=step, nonfinite=True)) + "\n"); done = True; break
+            if step in args.log_steps:
+                log_metrics(step, extra=dict(loss=loss.item(), drive=drive.item(), selfpred=selfp.item(), lr=lr, wd=wd, ema=m,
+                                             sec=time.time() - t0))
+                print(f"step {step} loss {loss.item():.4f} {time.time()-t0:.0f}s", flush=True)
+        ep += 1
+        if step > last_full:
+            last_full = step
+            last = done or step >= total
+            pe = args.probe_every > 0 and (ep % max(1, int(round(args.probe_every))) == 0)
+            r = log_metrics(step, full=True, extra=dict(loss=loss.item(), sec=time.time() - t0), probe_lin=last or pe)
+            print(f"HUTIAN_EPOCH {ep} step {step} loss {loss.item():.4f} rankme_c(target tok) {r['target_tok']['rankme_c']:.2f} "
+                  f"std {r['target_tok']['std']:.4f} {time.time()-t0:.0f}s", flush=True)
+    final = dict(steps=step, seconds=time.time() - t0, sec_per_step=(time.time() - t0) / max(step, 1))
+    json.dump(final, open(os.path.join(args.out, "final.json"), "w"), indent=1)
+    if args.save_ckpt:
+        torch.save(dict(enc=enc.state_dict(), tgt=tgt_enc.state_dict(), pred=pred.state_dict()), os.path.join(args.out, "ckpt.pt"))
+    print("done", final, flush=True)
+
+
+if __name__ == "__main__":
+    main()

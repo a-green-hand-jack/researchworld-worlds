@@ -1,0 +1,461 @@
+#!/usr/bin/env python3
+"""Derive early-rate, decay-calibration, held-out, and prior-account files."""
+from __future__ import annotations
+
+import csv
+import gzip
+import json
+import math
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+
+ROOT = Path("results")
+EARLY_STEPS = {10, 50, 100, 200, 500}
+
+
+def read_csv(path: Path) -> list[dict[str, str]]:
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt", newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def write_csv(path: Path, rows: list[dict[str, Any]], fields: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def float_value(row: dict[str, str], key: str) -> float:
+    return float(row[key])
+
+
+def fit_slope(rows: list[dict[str, str]], value_key: str) -> float:
+    ordered = sorted(rows, key=lambda row: float_value(row, "time"))
+    times = np.asarray([float_value(row, "time") for row in ordered], dtype=float)
+    values = np.asarray([max(float_value(row, value_key), 1.0e-300) for row in ordered], dtype=float)
+    if len(times) < 2:
+        return 0.0
+    return float(np.polyfit(times, np.log(values), 1)[0])
+
+
+def aggregate(values: list[float]) -> tuple[float, float, float]:
+    array = np.asarray(values, dtype=float)
+    return float(np.mean(array)), float(np.std(array, ddof=1)) if len(array) > 1 else 0.0, float(len(array))
+
+
+def main() -> None:
+    trajectories = read_csv(ROOT / "raw" / "trajectories.csv.gz")
+    summaries = read_csv(ROOT / "raw" / "run_summary.csv")
+    grouped: dict[tuple[str, str, str], list[dict[str, str]]] = defaultdict(list)
+    for row in trajectories:
+        if row["architecture"] == "full_matrix":
+            continue
+        if int(float(row["step"])) in EARLY_STEPS:
+            grouped[(row["run_id"], row["config_id"], row["direction_index"])].append(row)
+    early_rows: list[dict[str, Any]] = []
+    calibration_rows: list[dict[str, Any]] = []
+    for (run_id, config_id, direction_index), rows in sorted(grouped.items()):
+        first = rows[0]
+        amplitude_slope = fit_slope(rows, "mode_amplitude")
+        eigenvalue_slope = fit_slope(rows, "representation_eigenvalue")
+        initial_predictor = float_value(first, "predictor_amplitude")
+        context_variance = float_value(first, "context_variance")
+        cross_covariance = float_value(first, "cross_covariance")
+        weight_decay = float_value(first, "weight_decay")
+        initial_drive = initial_predictor * cross_covariance
+        initial_decay = initial_predictor**2 * context_variance + weight_decay
+        predicted_rate = initial_drive - initial_decay
+        theory_rate = float_value(first, "theory_initial_rate")
+        early_rows.append(
+            {
+                "experiment": first["experiment"],
+                "run_id": run_id,
+                "config_id": config_id,
+                "seed": first["seed"],
+                "direction_index": direction_index,
+                "mask_fraction": first["mask_fraction"],
+                "predictor_scale": first["predictor_scale"],
+                "predictor_lr_ratio": first["predictor_lr_ratio"],
+                "predictor_weight_decay": first["predictor_weight_decay"],
+                "predictor_depth": first["predictor_depth"],
+                "ema_tau": first["ema_tau"],
+                "weight_decay": first["weight_decay"],
+                "signal_scale": first["signal_scale"],
+                "covariance_model": first["covariance_model"],
+                "early_window_first_step": min(EARLY_STEPS),
+                "early_window_last_step": max(EARLY_STEPS),
+                "log_amplitude_slope": amplitude_slope,
+                "log_eigenvalue_slope": eigenvalue_slope,
+                "theory_initial_rate": theory_rate,
+                "theory_covariance_growth_rate": 2.0 * theory_rate,
+                "measured_rate_from_initial_terms": predicted_rate,
+                "initial_drive": initial_drive,
+                "initial_decay": initial_decay,
+                "rate_residual": amplitude_slope - theory_rate,
+                "covariance_rate_residual": eigenvalue_slope - 2.0 * theory_rate,
+                "status": "final",
+            }
+        )
+        if first["experiment"] == "decay_calibration":
+            predicted_decay_values = [
+                -(
+                    float_value(row, "predictor_amplitude") ** 2 * context_variance
+                    + weight_decay
+                )
+                for row in rows
+            ]
+            calibration_rows.append(
+                {
+                    "run_id": run_id,
+                    "config_id": config_id,
+                    "seed": first["seed"],
+                    "direction_index": direction_index,
+                    "weight_decay": weight_decay,
+                    "context_variance": context_variance,
+                    "predictor_scale": first["predictor_scale"],
+                    "observed_log_amplitude_slope": amplitude_slope,
+                    "predicted_mean_decay_rate": float(np.mean(predicted_decay_values)),
+                    "slope_minus_prediction": amplitude_slope - float(np.mean(predicted_decay_values)),
+                    "signal_scale": first["signal_scale"],
+                    "covariance_model": first["covariance_model"],
+                    "status": "final",
+                }
+            )
+    write_csv(
+        ROOT / "raw" / "early_rate_scatter.csv",
+        early_rows,
+        [
+            "experiment", "run_id", "config_id", "seed", "direction_index", "mask_fraction",
+            "predictor_scale", "predictor_lr_ratio", "predictor_weight_decay", "predictor_depth",
+            "ema_tau", "weight_decay", "signal_scale", "covariance_model", "early_window_first_step", "early_window_last_step",
+            "log_amplitude_slope", "log_eigenvalue_slope", "theory_initial_rate",
+            "theory_covariance_growth_rate", "measured_rate_from_initial_terms", "initial_drive", "initial_decay",
+            "rate_residual", "covariance_rate_residual", "status",
+        ],
+    )
+    write_csv(
+        ROOT / "raw" / "decay_calibration.csv",
+        calibration_rows,
+        [
+            "run_id", "config_id", "seed", "direction_index", "weight_decay", "context_variance",
+            "predictor_scale", "observed_log_amplitude_slope", "predicted_mean_decay_rate",
+            "slope_minus_prediction", "signal_scale", "covariance_model", "status",
+        ],
+    )
+    calibration_configs = {
+        "scale_p0p500", "mask_m0p650", "ema_tau0p000", "decay_l0p005", "design_diagonal",
+        "alpha_a1p000", "alpha_fixed_lp_a0p250", "alpha_fixed_lp_a1p000",
+        "alpha_fixed_lp_a4p000", "lambda_p_lp0p005", "depth_l1",
+    }
+    prediction_rows: list[dict[str, Any]] = []
+    for row in summaries:
+        if row["architecture"] == "full_matrix" or row["experiment"] == "ode_vs_full":
+            continue
+        observed_relative = float_value(row, "final_threshold_rank")
+        observed_collapse_aware = float_value(row, "collapse_aware_rank")
+        phi_prediction = float_value(row, "theory_early_gain_rank")
+        fixed_point_prediction = float_value(row, "theory_fixed_point_rank")
+        phi_in_regime = row["config_id"] != "lambda_p_lp0p000"
+        prediction_rows.append(
+            {
+                "experiment": row["experiment"],
+                "run_id": row["run_id"],
+                "config_id": row["config_id"],
+                "seed": row["seed"],
+                "split": "calibration" if row["config_id"] in calibration_configs else "held_out",
+                "predicted_early_rank": phi_prediction,
+                "predicted_phi_rank": phi_prediction,
+                "predicted_fixed_point_rank": fixed_point_prediction,
+                "observed_late_numerical_rank": observed_relative,
+                "observed_late_relative_rank": observed_relative,
+                "observed_late_collapse_aware_rank": observed_collapse_aware,
+                "rank_error": observed_relative - phi_prediction,
+                "absolute_rank_error": abs(observed_relative - phi_prediction),
+                "phi_relative_rank_error": observed_relative - phi_prediction,
+                "phi_relative_absolute_rank_error": abs(observed_relative - phi_prediction),
+                "phi_collapse_aware_rank_error": observed_collapse_aware - phi_prediction,
+                "phi_collapse_aware_absolute_rank_error": abs(observed_collapse_aware - phi_prediction),
+                "fixed_point_relative_rank_error": observed_relative - fixed_point_prediction,
+                "fixed_point_relative_absolute_rank_error": abs(observed_relative - fixed_point_prediction),
+                "fixed_point_collapse_aware_rank_error": observed_collapse_aware - fixed_point_prediction,
+                "fixed_point_collapse_aware_absolute_rank_error": abs(observed_collapse_aware - fixed_point_prediction),
+                "observed_effective_rank": row["final_effective_rank"],
+                "fixed_point_upper_rank": fixed_point_prediction,
+                "phi_prediction_regime": "in_regime" if phi_in_regime else "out_of_regime",
+                "fixed_point_prediction_regime": "in_regime",
+                "prediction_regime": "in_regime" if phi_in_regime else "out_of_regime_phi",
+                "covariance_model": row["covariance_model"],
+                "status": "final",
+            }
+        )
+    write_csv(
+        ROOT / "raw" / "rank_prediction.csv",
+        prediction_rows,
+        [
+            "experiment", "run_id", "config_id", "seed", "split", "predicted_early_rank", "predicted_phi_rank",
+            "predicted_fixed_point_rank", "observed_late_numerical_rank", "observed_late_relative_rank",
+            "observed_late_collapse_aware_rank", "rank_error", "absolute_rank_error", "phi_relative_rank_error",
+            "phi_relative_absolute_rank_error", "phi_collapse_aware_rank_error", "phi_collapse_aware_absolute_rank_error",
+            "fixed_point_relative_rank_error", "fixed_point_relative_absolute_rank_error",
+            "fixed_point_collapse_aware_rank_error", "fixed_point_collapse_aware_absolute_rank_error",
+            "observed_effective_rank", "fixed_point_upper_rank", "phi_prediction_regime",
+            "fixed_point_prediction_regime", "prediction_regime", "covariance_model", "status",
+        ],
+    )
+    metric_rows: list[dict[str, Any]] = []
+    metric_specs = (
+        ("Phi", "relative", "phi_relative_rank_error", "phi_relative_absolute_rank_error", True),
+        ("Phi", "collapse_aware", "phi_collapse_aware_rank_error", "phi_collapse_aware_absolute_rank_error", True),
+        ("fixed_point", "relative", "fixed_point_relative_rank_error", "fixed_point_relative_absolute_rank_error", False),
+        ("fixed_point", "collapse_aware", "fixed_point_collapse_aware_rank_error", "fixed_point_collapse_aware_absolute_rank_error", False),
+    )
+    by_split: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in prediction_rows:
+        by_split[row["split"]].append(row)
+    for split, rows in sorted(by_split.items()):
+        for prediction_name, observed_definition, signed_key, absolute_key, exclude_phi_out_of_regime in metric_specs:
+            included = [row for row in rows if row["phi_prediction_regime"] == "in_regime"] if exclude_phi_out_of_regime else rows
+            errors = [float(row[absolute_key]) for row in included]
+            signed_errors = [float(row[signed_key]) for row in included]
+            mean, standard_deviation, count = aggregate(errors)
+            metric_rows.append(
+                {
+                    "claim_id": "C2_rank_prediction",
+                    "split": split,
+                    "prediction": prediction_name,
+                    "observed_rank_definition": observed_definition,
+                    "regime_filter": "exclude_phi_out_of_regime" if exclude_phi_out_of_regime else "all_rows",
+                    "n_runs": int(count),
+                    "n_excluded_out_of_regime": len(rows) - len(included),
+                    "mean_absolute_rank_error": mean,
+                    "std_absolute_rank_error": standard_deviation,
+                    "mean_signed_rank_error": float(np.mean(signed_errors)) if signed_errors else float("nan"),
+                    "status": "final",
+                }
+            )
+    write_csv(
+        ROOT / "derived" / "rank_prediction_metrics.csv",
+        metric_rows,
+        [
+            "claim_id", "split", "prediction", "observed_rank_definition", "regime_filter", "n_runs",
+            "n_excluded_out_of_regime", "mean_absolute_rank_error", "std_absolute_rank_error",
+            "mean_signed_rank_error", "status",
+        ],
+    )
+    trajectory_by_config: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in trajectories:
+        if row["architecture"] != "full_matrix":
+            trajectory_by_config[row["config_id"]].append(row)
+    by_config: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in trajectories:
+        if int(float(row["step"])) == 30_000 and row["architecture"] != "full_matrix":
+            by_config[row["config_id"]].append(row)
+    summary_by_config: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in summaries:
+        if row["architecture"] != "full_matrix":
+            summary_by_config[row["config_id"]].append(row)
+    prior_rows: list[dict[str, Any]] = []
+    threshold_rows = read_csv(ROOT / "raw" / "theory_predictions.csv")
+    threshold_rows = [row for row in threshold_rows if row["config_id"] == "decay_l0p005" and row["direction_index"] == "0"]
+    prior_rows.append(
+        {
+            "prior_key": "tian2021understanding",
+            "source_key": "tian2021understanding",
+            "check_type": "matched_per_mode_threshold",
+            "matched_limit": "diagonal stop-gradient mode with fixed predictor and encoder weight decay",
+            "prior_prediction": "growth iff s^2/c > 4 lambda",
+            "ours_prediction": "growth window discriminant s^2 - 4 c lambda > 0",
+            "measured_value": "identical algebraic indicator",
+            "agreement": "agree",
+            "status": "matched_limit",
+            "note": "The comparison is an algebraic matched-limit check, not a claim that the full objectives are identical.",
+        }
+    )
+    prior_rows.append(
+        {
+            "prior_key": "wang2021demystifying",
+            "source_key": "wang2021demystify",
+            "check_type": "matched_per_mode_threshold",
+            "matched_limit": "shared-view/non-contrastive spectral mode with predictor gain held fixed",
+            "prior_prediction": "a mode survives only when its signal exceeds the decay threshold",
+            "ours_prediction": "s^2/c > 4 lambda plus early basin criterion",
+            "measured_value": "fixed-point indicator recorded in raw/theory_predictions.csv",
+            "agreement": "agree_on_threshold; ours_adds_basin",
+            "status": "matched_limit",
+            "note": "The added JEPA term is the context-target cross-covariance and its masking dependence.",
+        }
+    )
+    depth_values = []
+    for depth in (1, 2, 3):
+        config_id = f"depth_l{depth}"
+        values = [float(row["final_threshold_rank"]) for row in summary_by_config.get(config_id, [])]
+        if values:
+            depth_values.append((depth, float(np.mean(values))))
+    prior_rows.append(
+        {
+            "prior_key": "littwin2024jepa",
+            "source_key": "littwin2024jepa",
+            "check_type": "deep_linear_depth_slice",
+            "matched_limit": "balanced diagonal deep linear predictor at fixed end-to-end gain",
+            "prior_prediction": "depth changes spectral/implicit-bias dynamics",
+            "ours_prediction": "predictor drift rate scales with depth and rank can decrease",
+            "measured_value": json.dumps(depth_values),
+            "agreement": "reported_numeric_slice",
+            "status": "matched_limit",
+            "note": "The file reports the exact depth slice; it does not import an external closed-form claim.",
+        }
+    )
+    mask_rows = [row for row in summary_by_config.get("mask_m0p650", [])]
+    mask_mode_rows = trajectory_by_config.get("mask_m0p650", [])
+    final_mask_rows = [row for row in mask_mode_rows if int(float(row["step"])) == 30_000]
+    high_signal_order = sorted(
+        final_mask_rows,
+        key=lambda row: float(row["cross_covariance"]),
+        reverse=True,
+    )
+    learned_order = sorted(
+        final_mask_rows,
+        key=lambda row: float(row["mode_amplitude"]),
+        reverse=True,
+    )
+    order_agreement = sum(
+        1 for index in range(min(len(high_signal_order), len(learned_order)))
+        if high_signal_order[index]["direction_index"] == learned_order[index]["direction_index"]
+    ) / max(len(high_signal_order), 1)
+    prior_rows.append(
+        {
+            "prior_key": "ziyin2023shapes",
+            "source_key": "ziyin2023shapes",
+            "check_type": "spectral_ordering",
+            "matched_limit": "low-dimensional diagonal spectrum with shared optimizer",
+            "prior_prediction": "data/teacher spectral structure orders learned directions",
+            "ours_prediction": "larger positive cross-view signal grows first",
+            "measured_value": order_agreement,
+            "agreement": "numeric_ordering_fraction",
+            "status": "matched_limit",
+            "note": "This is a scope check on spectral ordering, not a reproduction of a missing external implementation.",
+        }
+    )
+    final_checkpoint = max(int(float(row["step"])) for row in mask_mode_rows)
+    mode_indices = sorted({row["direction_index"] for row in mask_mode_rows}, key=int)
+    for direction_index in mode_indices:
+        mode_rows = sorted(
+            [row for row in mask_mode_rows if row["direction_index"] == direction_index],
+            key=lambda row: int(float(row["step"])),
+        )
+        crossing = [
+            int(float(row["step"]))
+            for row in mode_rows
+            if float(row["mode_amplitude"]) >= 0.01
+        ]
+        if not crossing:
+            crossing_status = "no_crossing_before_end"
+            first_crossing_step = None
+        else:
+            first_crossing_step = min(crossing)
+            crossing_status = (
+                "crossing_at_final_checkpoint"
+                if first_crossing_step == final_checkpoint
+                else "real_crossing_before_end"
+            )
+        prior_rows.append(
+            {
+                "prior_key": "simon2023stepwise",
+                "source_key": "simon2023stepwise",
+                "check_type": "spectral_crossing_order",
+                "matched_limit": "discrete gradient steps in a diagonal linear system",
+                "prior_prediction": "directions emerge in a stepwise spectral order",
+                "ours_prediction": "positive-rate directions cross the numerical-rank threshold at different steps",
+                "measured_value": json.dumps(
+                    {
+                        "direction_index": int(direction_index),
+                        "first_crossing_step": first_crossing_step,
+                        "final_checkpoint": final_checkpoint,
+                        "crossing_status": crossing_status,
+                    },
+                    sort_keys=True,
+                ),
+                "agreement": crossing_status,
+                "status": "matched_limit",
+                "note": "Crossing status uses the 0.01 mode-amplitude threshold; per-step evidence is in raw/trajectories.csv.gz.",
+            }
+        )
+    signal_rank = [float(row["collapse_aware_rank"]) for row in summary_by_config.get("mask_m0p650", [])]
+    null_rank = [float(row["collapse_aware_rank"]) for row in summary_by_config.get("decay_null_l0p005", [])]
+    prior_rows.append(
+        {
+            "prior_key": "zhuo2023rank",
+            "source_key": "zhuo2023rank",
+            "check_type": "rank_differential_control",
+            "matched_limit": "same spectrum and optimizer with cross-view signal removed",
+            "prior_prediction": "rank dynamics depend on differential signal terms",
+            "ours_prediction": "cross-view signal changes the surviving rank relative to the null control",
+            "measured_value": {
+                "signal_collapse_aware_rank_mean": float(np.mean(signal_rank)) if signal_rank else float("nan"),
+                "null_collapse_aware_rank_mean": float(np.mean(null_rank)) if null_rank else float("nan"),
+            },
+            "agreement": "numeric_control",
+            "status": "matched_limit",
+            "note": "The null control isolates the cross-view term; it does not claim equivalence to the prior loss.",
+        }
+    )
+    for prior_row in prior_rows:
+        prior_row.setdefault("covariance_model", "stationary_masking_fourier")
+    write_csv(
+        ROOT / "raw" / "prior_comparison.csv",
+        prior_rows,
+        [
+            "prior_key", "source_key", "check_type", "matched_limit", "prior_prediction", "ours_prediction",
+            "measured_value", "agreement", "status", "note", "covariance_model",
+        ],
+    )
+    with (ROOT / "derived" / "provenance.json").open("w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "dependency_lock": "code/requirements-cutoff.txt",
+                "analysis_code": [
+                    "code/run_experiments.py",
+                    "code/derive_auxiliary.py",
+                    "code/run_vit_experiments.py",
+                    "code/merge_vit_results.py",
+                ],
+                "data": {
+                    "tier_a": "Synthetic diagonal Gaussian view covariance generated in code; no external data.",
+                    "tier_b": "Synthetic controlled Fourier-pattern images generated in code; no external data.",
+                    "tier_c": "CIFAR-10 from the pinned uoft-cs/cifar10 Hugging Face parquet revision; file hashes are recorded by run_vit_experiments.py.",
+                },
+                "prior_accounts": [
+                    "tian2021understanding",
+                    "wang2021demystify",
+                    "littwin2024jepa",
+                    "ziyin2023shapes",
+                    "simon2023stepwise",
+                    "zhuo2023rank",
+                ],
+                "cutoff": "No cited paper, code release, or dataset description first published on or after 2026-09-01 is used.",
+                "limitations": [
+                    "Prior comparison rows are matched-limit controls and scope checks where an executable external formula was not supplied; they are not claims of full reproduction.",
+                    "The masking model is the stationary random-masking covariance formula used by the theory, not an image-patch implementation.",
+                ],
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+    print(json.dumps({
+        "early_rate_rows": len(early_rows),
+        "decay_calibration_rows": len(calibration_rows),
+        "rank_prediction_rows": len(prediction_rows),
+        "prior_rows": len(prior_rows),
+        "status": "PASS",
+    }, indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

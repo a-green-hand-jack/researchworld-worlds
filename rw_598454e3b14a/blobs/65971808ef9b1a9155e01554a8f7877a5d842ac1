@@ -1,0 +1,63 @@
+\section{Experiments}
+\label{sec:experiments}
+
+We test the race on linear JEPAs where its assumptions hold (E1, the development set), on held-out settings that break them (E1b), on masking (E2) and on a ViT (E3); E1b--E3 were pre-registered.
+
+\subsection{E1: linear JEPA with aligned statistics (development set)}
+\label{sec:e1}
+
+\paragraph{Set-up.}
+We take $n=d=\EoneN$, $\sigma_k=1$ and $c_k=0.9^k$, and train the population loss \eqref{eq:loss} by full-batch gradient descent (step $\EoneEta$) with $\Pred_0=p_0I$ and $\lambda_W=\lambda_P=\lambda$, from an orthogonal encoder of scale $a_0$ (where \cref{prop:reduction} is exact) or a Gaussian one, over grids in $\lambda$, $p_0$, $\alpha$, $a_0$, $\kappa$ and $L$ (\EoneRuns{} runs; \cref{app:details}).
+The rank counts singular values of $\Wc$ above \EoneSvThr{} at a horizon $T$ (at convergence in E1b); baselines are the initial window $\#\{k:g_k(p_0)>0\}$ and the static bound $\#\{k:c_k^2\ge4\lambda\sigma_k\}$; brackets: bootstrap 95\% intervals.
+
+\paragraph{Results.}
+With orthogonal initialisation the criterion classifies the fate of \EoneModeAccOrth{} of the \EoneModes{} directions and gives the exact rank in \EoneRankExactOrth{} of runs, against \EoneWindowExactOrth{} for the initial window; the window misses by \EoneWindowMaeOrth{} directions on average and the static bound overestimates by \EoneBoundMaeOrth{} in every run (\cref{tab:accuracy}, \cref{fig:e1-rank,fig:e1-traj}).
+The knobs move the rank as predicted (\cref{fig:e1-knobs}, \cref{app:details}): without weight decay nothing survives at $p_0=1$, because $p_0\ge c_k/\sigma_k$ for every direction, although the static bound counts all \EoneN; the rank is non-monotone in $\lambda$ and $p_0$ and falls with $\alpha$ (Gaussian initialisation, EMA rate, depth: \cref{app:details}).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.86\linewidth]{fig5_e1b_phase}
+  \caption{Held-out E1b runs (pre-registered; rank at convergence). (a)~Measured mean rank (5 seeds per cell); black: the pre-registered collapse boundary of the race criterion; dashed: predicted-rank contours; hatched: $p_0\gtrsim2$, rank $0$ predicted and measured at every $\lambda$; the static bound collapses only for $\lambda>\EoneBStaticLam$; one cell (\EoneBGridMissCell) is on the wrong side. (b,\,c)~Every run against its pre-registered prediction and the static bound (grey: unconverged AdamW; runs without stop-gradient or predictor at the origin; diverged and finite-batch runs omitted).}
+  \label{fig:e1b}
+\end{figure}
+
+\subsection{E1b: held-out linear tests (pre-registered)}
+\label{sec:heldout}
+
+\paragraph{Set-up and pre-registration.}
+E1b changes everything that E1 could have tuned: $n=d=24$, $\sigma_k$ evenly spaced from $1.5$ to $0.5$ and $c_k=0.92^k\sigma_k$, encoder scale $a_0=10^{-3}$, gradient descent with step $0.1$.
+Before any run we committed the rank predicted for each of the \EoneBRuns{} runs by the race criterion, its general form (\cref{app:more}), \cref{cor:alpha1}, Tian et al.'s basin criterion and the two baselines, with \EoneBCritAll{} pass/fail criteria (\texttt{results/e1b/prediction.json}); nothing was fitted afterwards.
+The rank is read at convergence (unchanged over the last fifth of training; \EoneBAlignedConverged{} of gradient-descent runs converged); for $\lambda>0$ it is final in all but \EoneBLongChanged{} of \EoneBLongRuns{} checked runs (at $\lambda=0$ a horizon rank); \EoneBCritPass{} of the \EoneBCritAll{} criteria pass (\cref{tab:e1b}, \cref{app:details}).
+
+\paragraph{The race predicts the rank on held-out statistics.}
+On the \EoneBAlignedRuns{} runs with aligned statistics (a $p_0\times\lambda$ phase grid, EMA rate $\times$ predictor learning rate, and depth), the race classifies \EoneBAlignedModeAcc{} of directions, gives the exact rank in \EoneBAlignedExact{} of runs with mean absolute error \EoneBAlignedMae{}, and predicts complete collapse correctly in \EoneBAlignedCollapse{}; the initial window misses by \EoneBAlignedWindowMae{} directions and the static bound by \EoneBAlignedBoundMae{}.
+On the phase grid (\cref{fig:e1b}) the exact-rank rate is \EoneBGridExact{} (error \EoneBGridMae{}; \cref{cor:alpha1}: \EoneBGridCorExact{} of \EoneBGridCorN{} runs), and the grid shows both effects of weight decay that the static threshold misses: at $p_0=0.5$ and $\lambda=\EoneBGridLams$ the measured rank is $\EoneBGridRanksHalf$ against the predicted $\EoneBGridPredHalf$, so weight decay first rescues directions and then removes them; and complete collapse sets in at a pre-registered $\lambda_c=\EoneBLamCollapseTenth$, $\EoneBLamCollapseHalf$ and $\EoneBLamCollapseOne$ for $p_0=0.1$, $0.5$ and $1$, against the static $\EoneBStaticLam$; the boundary misses \EoneBGridCollapseMisses{} of \EoneBGridCells{} cells.
+Tian et al.'s basin criterion and \cref{cor:alpha1} are exact in \EoneBBalancedExact{} of \EoneBBalancedRuns{} balanced runs, all \EoneBNosgRuns{} runs without the stop-gradient or a predictor collapse, as predicted, and the general criterion has error \EoneBGeneralMae{} (exact in \EoneBGeneralExact{} of \EoneBGeneralRuns{} runs; static bound \EoneBGeneralBoundMae{}) for random Gaussian predictors and non-commuting statistics.
+
+\paragraph{Where it fails.}
+Entering depth only through the clock, the race over-predicts the rank of deep predictors by $\approx1$ (error \EoneBDepthMae{}, \EoneBDepthFalseNeg{} missed survivors); a post-hoc correction of the capture amplitude (App.~\ref{app:more}) passed a second pre-registered test on new statistics (E1c, \EoneCDeepRuns{} runs, $L=2$--$4$): error \EoneCMae{} against \EoneCMaeDepthOne{}, never over-predicting but conservative at $L=4$ (\cref{app:details}).
+The EMA sign test fails narrowly: \EoneBEmaSignAgree{} of \EoneBEmaSignOf{} predicted changes have the measured sign.
+Under AdamW (\cref{app:more}) the rank is nearer the static bound (error \EoneBAdamBoundMae{}) than the race (\EoneBAdamRaceMae{}), but insensitivity to $a_0$ fails by \EoneBAdamWzeroMaxDiff{} and only \EoneBAdamConverged{} of \EoneBAdamRuns{} runs converge: at most partly supported.
+
+\subsection{E2: masking (pre-registered)}
+\label{sec:e2e3}
+\label{sec:e2}
+
+\paragraph{Set-up.}
+The data are a Gaussian field on a cycle of $n=d=64$ sites (correlation $0.7^{\mathrm{distance}}$), with context and target complementary under a mask, which fixes $\Sigma_c=\Sigma\circ G$ and $\Sigma_{tc}=\Sigma\circ F$ (\cref{sec:heuristics}).
+Cyclic masks (Bernoulli, one block, four blocks) make both circulant, so the race applies per frequency; a non-wrapping block needs the general form. Over $r\in\{0.1,\dots,0.9\}$, four $\lambda$ from $3\cdot10^{-4}$ to $10^{-2}$, $p_0\in\{0.25,0.5\}$ and 3 seeds we train by population gradient descent, by SGD with sampled masks, with a tanh encoder, with an exploratory two-layer encoder and without a predictor (\cref{app:details}).
+Predictions for all \EtwoRuns{} runs and \EtwoCritAll{} criteria were committed first; \EtwoCritPass{} pass (\cref{tab:e2}).
+
+\paragraph{Results.}
+With the statistics the masks leave, the race classifies \EtwoCycFreqAcc{} of frequencies and has rank error \EtwoCycMae{} at $t_{\mathrm{end}}$ on the \EtwoCycRuns{} cyclic-mask runs (\EtwoLongMae{} against the rank at $t=\EtwoLongT$, \EtwoLongSmallMae{} at $\lambda=3\cdot10^{-4}$), against \EtwoCycWindowMae{} for the initial window and \EtwoCycBoundMae{} for the static bound (\cref{fig:e2}); its general form has \EtwoNcMae{} for non-wrapping blocks (bound \EtwoNcBoundMae{}), and SGD stays within \EtwoSgdMae{} of the population prediction.
+The measured maximum matches the predicted one within a grid step in all \EtwoPeakProfiles{} profiles (in \EtwoPeakEdge{} at the grid edge); of the \EtwoNonmonoPred{} Bernoulli profiles predicted to fall again \EtwoNonmonoConf{} do, so that criterion fails.
+Without a predictor, heavy Bernoulli masking makes directions grow in all \EtwoNopredGrowth{} configurations where App.~\ref{app:more} predicts it.
+With a tanh encoder the race holds for block masks (error \EtwoTanhBlockMae{}, post hoc) but not for Bernoulli ones (\EtwoTanhBernMae{}), whose rank keeps rising after the race; the two-layer encoder misses by \EtwoMlpMae{} (Spearman \EtwoMlpSpearman{}).
+
+\subsection{E3: a vision JEPA}
+\label{sec:e3}
+E3 is a transfer test on an I-JEPA-style ViT on CIFAR-10, which is not linear and does not start near collapse, in two arms: P follows the I-JEPA recipe (AdamW, EMA target), T is theory-aligned (SGD, stop-gradient copy target, decay on every parameter).
+For \EthreeConfigs{} one-factor configurations (3 seeds) we registered the epoch-20 count of online-token covariance directions predicted from each run's step-0 drive, self-prediction and decay rates over the schedule (App.~\ref{app:details}): the analogue of the initial window, not of the race.
+In Arm T the count falls with weight decay (\cref{fig:e3}) and the rule orders the configurations (Spearman \EthreeRankT{}, carried by the weight-decay sweep), but it places the transition $\EthreeLocFactor\times$ too high (registered: $2\times$), and under AdamW it fails (\EthreeRankP{}).
+Weight decay, not the predictor or the target, sets Arm T's collapse: at $\lambda=0.01$ every predictor and target variant ends at \EthreeTvariants{} directions, and no registered intervention crosses the collapse line (\EthreeCfourCross{} of \EthreeCfourCrossOf{}, rescues or breaks).
+In Arm P all four mask settings lower the count (to \EthreePmaskRange{}, from \EthreePbase{}) where the rule registered no change, the predictor learning-rate and depth signs fail, the count rises with the EMA rate against the registered null, and no run without stop-gradient collapses completely by epoch 20, though the 50-epoch collapse flags are right (\EthreeFullFlags{} of 3; \cref{tab:e3}).

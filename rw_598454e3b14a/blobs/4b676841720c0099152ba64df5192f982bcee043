@@ -1,0 +1,45 @@
+# Change account: released NeurIPS 2026 paper (paper-repo 6e496ca) → ICLR 2027 extension
+
+This file is outside the anonymous PDF. It records, for each part of the paper and each claim, whether it is
+**retained** from the released paper, **revised** by the extension's results, or **new**, and names the evidence.
+The claim ids are those of `paper/CLAIMS.md`; N1–N6 are the plan's new claims (story-repo `plan.md` v2.2, Sec. 5).
+A status marked *(planned)* is the plan's expectation and becomes *(settled)* when its results are in; the outcome
+of a revision is not presumed.
+
+## Format and venue (settled, paper-repo 8d107c2)
+
+| Item | Status | Change |
+|---|---|---|
+| Template | revised | `neurips_2026.sty` → official `iclr2027_conference.sty/.bst` (venue-repo ff2c250, unmodified, submission mode, natbib author-year) |
+| NeurIPS checklist | removed | ICLR has none; its reproducibility/compute content moves to the ethics, reproducibility and AI use statements (`sections/statements.tex`) and to App. E |
+| Sec. 7 Limitations/conclusion | revised (wording only) | shortened by 4 lines to fit 9 pages in the ICLR layout; no claim changed |
+| Prior work | revised (text positioned; same-run comparison *(planned)*) | cutoff moves to 18 Oct 2026; arXiv 2610.02344 (Drive vs. Decay, NeurIPS 2026) is cited as prior work (posted 1 Oct 2026, inside the cutoff) in Sec. 1, Sec. 2 and a new extended-related-work paragraph ("The stability count of De Melo Costa et al."), with arXiv 2609.35288 (λ-JEPA). The paper credits it with the drive-vs-decay framing, the rank as a count of unstable modes and the reading of predictor scale, masking, EMA and encoder weight decay as shifts of μ, and identifies its escape condition with encoder weight decay (their Prop. J.1) with the released paper's *initial window* g_k(p0)>0 (derivation in `CLAIMS.md`; to be confirmed by idea-repo's equation-level reading, story-repo plan P1). Novelty is restated as what it lacks: predictor weight decay and the decaying gain, collapse as an attractor, the race and λ^race, the held-out pre-registered tests. Head-to-head (P2–P3) and ResidualPred (P4) wait for E10 / rung 5 (paper-repo#13, story-repo#11) |
+| Title | revised | "…A Driving-Force versus Decay Account of Early Training" → "…Survival as a Race Against Predictor Decay" (review paper-repo#13 c193: collides with 2610.02344 "Drive vs. Decay"); names what is distinct: the race and the predictor's decay. May change again when the extension's main result is in |
+| Same-run comparison with 2610.02344 (P2, E1b/E2) | new (settled, retrospective) | Sec. 2 sentence and the appendix paragraph give their criterion on the delivered held-out runs (experiment-repo 112f91e, reproduced by internal-review-repo 936d303): E1b aligned 3.74 vs race 0.25, measured rank above their bound in 57.2%; E2 cyclic 1.04 (paired 9.86) vs 0.03, above in 26.4%; **their signed form wins on the two-layer encoder (1.90 vs 2.69)**, stated also in Sec. 7; tanh both fail. Random-predictor and non-commuting arms wait for experiment-repo#11's Eq. 51 variant revision; the full variant table is requested from figtab-repo |
+| Novelty wording against 2610.02344's doses | revised | review c215: contribution 2 no longer claims "rank non-monotone in predictor scale" (their floored count is already two-sided in p0) or "the term through which each heuristic acts" as new; it claims rescue-then-removal in λ, survival from above the window, λ^race, the need for predictor decay, and the effects of predictor lr, depth and target speed beyond the doses. Sec. 5 has one sentence saying the initialisation-time effects are their doses; Sec. 2 says "the predictions of Sec. 5 that follow from the predictor's decay are new" and "in our aligned model". Abstract and contribution 3 report their count as a bound exceeded in 57.2% of runs |
+| Main-text length | revised (wording only) | to keep the main text at 9 pages after the positioning: abstract (deep-predictor clause shortened), Sec. 1 prior-work paragraph merged, Sec. 2 condensed, Sec. 6.2–6.4 parentheticals dropped (the numbers stay in Fig. 8, Tab. 4 and App. E), Sec. 7 limitations and conclusion merged into one paragraph; Fig. 1 and Fig. 2 (E1b phase) drawn at 0.74 and 0.86 of the line width. No claim or number changed |
+
+## Claims
+
+| Claim | Status | Evidence (released) | What decides the extension's status |
+|---|---|---|---|
+| C1 exact structure near collapse (Prop. 1–2, Cor. 3) | retained; framing credited to 2610.02344 (Sec. 1–2) | Sec. 4, App. A; `results/e1/summary.json` | — |
+| C2 race predicts collapse and rank | retained for linear JEPAs (E1b held out), novelty restated against the μ count of 2610.02344 (Sec. 1–2); ViT part revised *(planned)* | Fig. 2, Tab. 3; `results/e1b/summary.json` | C5: instrumented race vs step-0 rule in the ViT (E7) |
+| C3a predictor acts through drive/decay | retained (linear); depth row and ViT part revised *(planned)* | Tab. 1, Fig. 4; `results/e1/summary.json`, `results/e1c/summary.json` | ladder rung 1 (random-init deep predictors, E6), E7 |
+| C3b masking | retained for linear encoders; tanh/MLP failure explained or located *(planned)* | Fig. 6–7, Tab. 4–5; `results/e2/summary.json` | ladder rung 2 (E6), ViT masks in E7 |
+| C3c target update | retained; ViT EMA and target normalisation revised/new *(planned)* | Tab. 1, Tab. 3; `results/e1b/summary.json`, `results/e3/summary.json` | A4 (E4), ladder rungs 4–5 |
+| C3d weight decay | retained; extended to schedules *(planned)* | Fig. 2, Fig. 4; `results/e1b/summary.json` | B1–B2 (E5) |
+| C4 criterion sets heuristics | revised *(planned)*; released status: not supported (0/6 crossings) | Fig. 10, Tab. 6; `results/e3/summary_followup.json` | B2 design rules (E5), ViT warm-up rows of the switch grid (E8) |
+| C5 where the theory fails | revised *(planned)* | Sec. 6–7 | A (E4), C (E6–E7) |
+| N1 near-collapse dynamics under Adam/AdamW | new *(planned)* | — | A1–A3 (E4) |
+| N2 normalised (layer-norm) target | new *(planned)* | — | A4 (E4) |
+| N3 stage-wise dynamics beyond the near-collapse window (capture, schedules, noise) | new *(planned)* | — | B1–B3 (E5) |
+| N4 located transfer from the linear model to the ViT (ladder) | new *(planned)* | — | C rungs 1–5 (E6–E7) |
+| N5 decision time of collapse in a ViT | new *(planned)* | — | C6 switch grid (E8) |
+| N6 race vs the μ criterion of 2610.02344 (incl. ResidualPred) | new; retrospective part settled on E1b/E2, every variant reported (App. D, Table `tab:dvd-baseline`, figtab-repo 41126fd): race lower error on every linear and masking arm (random predictor 0.69 vs Eq. 51 paired 3.02; non-commuting 0.11 vs sorted 0.94), loses on the two-layer encoder 2.69 vs 1.90 and on tanh 10.58 vs sorted 9.31; measured rank above their bound in 57.2% / 26.4%; prospective part *(planned)* | `results/baselines/dvd_mu.json`, `dvd_e1b_runs.csv`, `dvd_e2_runs.csv` (experiment-repo 409a766) | P2 baseline column in E4–E8, P3 head-to-head on their Tabular-JEPA setting (E10), P4 ResidualPred row of rung 5 |
+
+## Abstract, contributions, conclusion
+
+To be mapped sentence by sentence (retained / revised / new → claim → evidence) when the extension's
+abstract and contribution list are written; until then they are the released text (`CLAIMS.md`,
+"Abstract, contributions and conclusion").

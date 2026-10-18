@@ -1,0 +1,209 @@
+# Collapse is decided near the collapsed solution: a driving-force / decay race in JEPAs
+
+Owner: `experiment-repo` (analysis). This is the derivation note that `paper-repo` writes up (Sections 3 and 4, Appendix A).
+Status: revision 2 (2026-10-17). Notation follows `paper-repo` `paper/sections/setup.tex` (d49f9bb).
+Labels:
+- **Theorem / Proposition**: proved here and checked numerically.
+- **Approximation**: a derivation with a stated approximation. Its accuracy is measured, not proved.
+- **Known**: prior work; we claim no novelty for it.
+
+Each statement names the simulation that checks it.
+Code: `code/linjepa.py`. Experiments: E1 = `code/e1_linear.py` with results in `results/e1/`; E1b, E2 and E3 are listed in Section 10.
+
+## 0. Notation map
+- Statistics: $\Sigma_c=\mathbb E[x_cx_c^\top]$ (code: `S11`) and $\Sigma_{tc}=\mathbb E[x_tx_c^\top]$ (code: `S21`).
+- Aligned eigenvalues: $\sigma_k$ (code: `s`, `S`) and $c_k$ (code: `c`, `C`).
+- Weight decay: $\lambda$, shared by $W$ and $P$ (code: `lam_W = lam_P = lam`). Where the two are separated we write $\lambda_W,\lambda_P$.
+- Predictor learning-rate ratio: $\alpha$.
+- EMA: momentum $\tau$, rate $\kappa=(1-\tau)/\eta$.
+- Mode amplitudes: $w_{jk}=v_j^\top Wu_k$ (code: `a`). Predictor eigenvalue: $p_j$ (code: `p`). Initial scale: $w_0$.
+
+Every rate is per unit of $t=\eta\cdot$step.
+
+## 1. Model
+The loss is
+$$\mathcal L=\tfrac12\mathbb E\|PWx_c-\mathrm{sg}(\bar W x_t)\|^2+\tfrac\lambda2(\|W\|_F^2+\|P\|_F^2).$$
+With $G=\bar W\Sigma_{tc}-PW\Sigma_c$, the flow is
+$$\dot W=P^\top G-\lambda W,\qquad \dot P=\alpha(GW^\top-\lambda P),\qquad \dot{\bar W}=\kappa(W-\bar W),$$
+with $\bar W(0)=W(0)$. For $\tau=0$ the target is the plain copy, $\bar W=W$.
+
+The drive is $P^\top\bar W\Sigma_{tc}$, the part of the gradient that comes through the target. The decay is $P^\top PW\Sigma_c+\lambda W$, made of the self-prediction term and weight decay.
+
+## 2. Exact structure
+
+**Prop. 1 (collapsed point; Known in substance, Tian et al. 2021).** For $\lambda>0$, $(W,P,\bar W)=(0,0,0)$ is stationary and locally exponentially stable. The linearisation is $\dot W=-\lambda W$, $\dot P=-\alpha\lambda P$, $\dot{\bar W}=\kappa(W-\bar W)$. The drive is bilinear in $(P,\bar W)$, so it does not enter at first order. For $\lambda=0$, every $(0,P,0)$ is stationary.
+
+**Prop. 2 (imbalance identity; Known: Tian et al. 2021, Theorem 1, eq. 5, which already includes weight decay).**
+- Attribution. In Tian et al.'s convention the predictor's weight decay is not scaled by its learning-rate ratio ($\dot W_p=\alpha_p(\cdot)-\eta W_p$), and $WW^\top=\alpha_p^{-1}W_p^\top W_p+e^{-2\eta t}C$ holds for every $\alpha_p$. Here the predictor's decay is $\alpha\lambda P$, which is what SGD or AdamW with a per-group learning-rate multiplier do. The restriction to $\alpha=1$ below, and approximation A1 for $\alpha\ne1$, come only from this choice. In Tian's convention Cor. 3a would be exact for every α. (Pointed out by internal review, experiment-repo#2 comment 53, from arXiv 2102.06810v4.)
+- For $\alpha=1$, $P^\top P-WW^\top=e^{-2\lambda t}(P_0^\top P_0-W_0W_0^\top)$ exactly, for any $\bar W,\Sigma_c,\Sigma_{tc}$.
+- For $\lambda=0$, $P^\top P/\alpha-WW^\top$ is conserved for any $\alpha$.
+- *Proof.* With $A=P^\top GW^\top$: $\tfrac{d}{dt}P^\top P=\alpha(A+A^\top)-2\alpha\lambda P^\top P$ and $\tfrac{d}{dt}WW^\top=A+A^\top-2\lambda WW^\top$. $\square$
+- *Check.* `code/checks/balance_identity.py` gives `results/checks/balance_identity.json`:
+  - α=1: deviation ≤ 1.6e-13 with ‖W‖ up to 7.4;
+  - α=0.5 and α=2: the identity fails (0.26 and 0.30);
+  - λ=0: the invariant holds to 3e-14;
+  - discrete steps: error O(η).
+
+**Prop. 3 (exact mode reduction; Known: Tian et al. 2021, eqs. 11–12, here with per-mode anisotropic $c_k,\sigma_k$).** Tian et al.'s per-mode system maps onto ours with $s_j=w^2$, $\tau\leftrightarrow c_k$ ($\tau=1$ for the copy target) and $1+\sigma^2\leftrightarrow\sigma_k$. Assume:
+- (i) Assumption 1(i) of the setup: $\Sigma_c u_k=\sigma_ku_k$ and $\Sigma_{tc}u_k=c_ku_k$;
+- (ii) $P_0=p_0I$;
+- (iii) $W_0=\sum_k w_k(0)\,e_ku_k^\top$ with orthonormal $e_k\in\mathbb R^d$ ($d\ge n$).
+
+Then the ansatz $W=\sum_kw_ke_ku_k^\top$, $\bar W=\sum_k\bar w_ke_ku_k^\top$, $P=\sum_kp_ke_ke_k^\top+p_\perp(I-\sum e_ke_k^\top)$ is invariant, and each mode evolves independently:
+$$\dot w_k=p_kc_k\bar w_k-(p_k^2\sigma_k+\lambda)w_k,\qquad \dot p_k=\alpha[(c_k\bar w_k-p_k\sigma_kw_k)w_k-\lambda p_k],\qquad \dot{\bar w}_k=\kappa(w_k-\bar w_k).$$
+- *Proof.* Substituting the ansatz gives $G=\sum(c_k\bar w_k-p_k\sigma_kw_k)e_ku_k^\top$. Then $P^\top G$ and $GW^\top$ stay in the span of the ansatz, and uniqueness of ODE solutions gives the claim. $\square$
+- *Check.* E1: the full $d\times n$ gradient descent matches `reduced_flow` to $10^{-15}$, and the mode survival it predicts is 100% correct for orthogonal init.
+
+**Corollary 3a (α=1, copy target: exact scalar race; Known: the integral is Tian et al. 2021, eq. 14, valid for unbalanced starts too).** Under Prop. 3 with $\alpha=1$ and $\bar w=w$, Prop. 2 restricted to the mode gives $p_k^2-w_k^2=e^{-2\lambda t}(p_0^2-w_k(0)^2)$. Therefore
+$$\dot w=(pc-p^2\sigma-\lambda)\,w,\qquad p=\sqrt{w^2+e^{-2\lambda t}(p_0^2-w_0^2)} .$$
+This is exact and not limited to small $w$. It is implemented as `scalar_race_alpha1` in `code/linjepa.py`.
+
+**What is new relative to Tian et al.** Their weight-decay analysis is on the invariant parabola, i.e. the balanced case. At $\eta=0$ they give only the sufficient condition $s_j(0)>p_j(0)^2/\alpha_p$. They do not say which *unbalanced* starts survive under weight decay. That boundary is the separatrix through the saddle at $p_-$ (Prop. 4). Criterion N1 (Sec. 3) locates it, as a function of $(w_0,p_0,\alpha,\lambda,c_k,\sigma_k)$, and that is the contribution of this note.
+
+**Prop. 4 (fixed points; Known: the existence threshold is in Tian 2021, Wang et al. 2021 and PEIRA 2026).**
+- The window of mode $k$ is $g_k(p)=pc_k-p^2\sigma_k-\lambda>0$, i.e. $p\in(p_-^k,p_+^k)$ with $p_\pm=(c\pm\sqrt{c^2-4\lambda\sigma})/(2\sigma)$.
+- A non-collapsed fixed point exists iff $c_k^2\ge4\lambda\sigma_k$ and $c_k>0$.
+- For $c_k^2>4\lambda\sigma_k$ (strict), the fixed point at $p_-$ is a saddle. The one at $p_+$ is stable, with amplitude $w^{*2}=\lambda p_+/(c-p_+\sigma)$.
+- At equality $c_k^2=4\lambda\sigma_k$ there is one degenerate fixed point ($p_-=p_+=c/2\sigma$, a saddle-node), which is not robustly attracting. The static bound counts it.
+- Hence the final rank is at most $\#\{k: c_k^2\ge4\lambda\sigma_k\}$ (the "static bound").
+- *Proof.* $\dot p=0$ gives $w^2=\lambda p/(c-p\sigma)$, and $\dot w=0$ gives $g(p)=0$. The Jacobian determinant is $-2\alpha w^2(c-p\sigma)g'(p)$, with $g'(p_-)>0>g'(p_+)$. $\square$
+- *Balanced limit (recovers Tian et al.'s basin).* If $p_0=w_0$ with $\alpha=1$, Cor. 3a gives $p=|w|$ for all $t$. The ODE becomes the autonomous $\dot w=(|w|c-w^2\sigma-\lambda)w$. The mode survives iff $|w_0|>p_-$, and collapse has a basin of attraction of radius $p_-\approx\lambda/c$.
+
+**Corollary 4a (no predictor weight decay).** If $\lambda_W>0$ but $\lambda_P=0$, then $p_k\to c_k/\sigma_k$ whenever $w_k\ne0$, and $g_k(c_k/\sigma_k)=-\lambda_W<0$, so every mode collapses. At the least-squares predictor, drive and self-prediction cancel exactly.
+
+## 3. The unbalanced (standard-initialisation) regime: the race
+
+At a standard initialisation $p_0=O(1)\gg w_0$, so the drive is first order in $\bar W$.
+
+**Approximation A1 (near collapse).**
+- While $w_k^2(c_k-p\sigma_k)\ll\lambda p$, the data term in $\dot p$ is negligible, so $p(t)=p_0e^{-\alpha\lambda t}$.
+- For $\alpha=1$ this is the small-$w$ limit of Cor. 3a. For $\alpha\ne1$ no identity holds, and A1 is used as stated.
+- Under A1 the copy-target mode obeys $\log w_k(t)=\log w_k(0)+F_k(t)$, with
+$$F_k(t)=\int_0^t g_k(p)\,dt'=\frac1{\alpha\lambda}\int_{p(t)}^{p_0}\frac{g_k(q)}{q}\,dq=\frac{1}{\alpha\lambda}\Big[c_k(p_0-p)-\frac{\sigma_k}2(p_0^2-p^2)-\lambda\log\frac{p_0}{p}\Big].$$
+- $F_k$ is maximal when the decaying predictor leaves the window at $p=p_-^k$, if $p_0>p_-^k$. This gives the **race exponent**
+$$F_k^*=\frac{1}{\alpha\lambda}\int_{p_-^k}^{p_0}\frac{g_k(q)}{q}\,dq .$$
+- If $p_0>p_+$, the mode first decays while $p>p_+$ and then grows inside the window. $F^*$ accounts for both phases.
+
+**Capture.** A growing mode takes over the predictor once its data drive on $p$ balances weight decay. This happens on the $\dot p=0$ nullcline, $w^2=\lambda p/(c-p\sigma)$, and is useful only while $g>0$, i.e. $p\ge p_-$. After capture, $p$ rises toward $p_+$ and the mode converges to $w^*$ (Prop. 4).
+
+**Criterion N1 (race; approximation, our contribution).** Mode $k$ survives iff
+$$\max_{t:\,p(t)\ge p_-^k}\Big[\log w_k(0)+F_k(t)-\tfrac12\log\frac{\lambda p(t)}{c_k-p(t)\sigma_k}\Big]\ge0 .$$
+The predicted rank is the number of surviving data directions. With $P_0=p_0I$ this equals the maximum-matching rank of the setup.
+- Implementation: `escape_score` in `code/linjepa.py`. It uses numerical quadrature, and the same function handles EMA through Sec. 5.
+- Check (E1, development set, 1080 race runs per init type):
+  - per-mode survival correct in 99.7%;
+  - exact rank in 92% of runs, rank MAE 0.08;
+  - these are agreements with labels at each run's own horizon $t_{\rm end}$, which are finite-time ranks. Against final ranks (t = 40000; internal review `e1_long_horizon.json`, comment 53) E1's horizon-cut prediction is exact in 81% of runs with MAE 0.27. N1 without the horizon cut is exact in 92% (MAE 0.12) even in the runs whose race had not finished by $t_{\rm end}$. E1b uses horizons of 3 t_race + 300, and `code/checks/e1b_long_horizon.py` tests whether its ranks are final: the exact reduced flow reproduces all 600 eligible runs at $t_{\rm end}$ (λ = 0 included), and continued to t = 40000 16 runs gain one mode (11 at λ = 0.001, 5 at λ = 0; none loses one), leaving N1's exact-rank rate at 0.86 (0.87 against $t_{\rm end}$). The paper's E1b ranks are therefore *ranks at $t_{\rm end}$*, with the long-horizon rank from the reduced flow reported beside them (`results/checks/e1b_long_horizon.json`);
+  - static window $\#\{g_k(p_0)>0\}$: MAE ≈ 3;
+  - static bound: MAE ≈ 13.
+
+**Criterion N1′ (closed form).** Evaluate the capture term at $p_-$. Mode $k$ survives iff
+$$\frac{1}{\alpha\lambda}\Big[c_k(p_0-p_-)-\frac{\sigma_k}2(p_0^2-p_-^2)-\lambda\log\frac{p_0}{p_-}\Big]\ \ge\ \log\frac{1}{w_k(0)}+\frac12\log\frac{\lambda p_-}{c_k-p_-\sigma_k}.$$
+- Implementation: `race_closed_form`.
+- On the same E1 runs (orthogonal init): rank MAE 0.34, exact in 78% (analysis in `/tmp`, to be added to `e1_analyze.py`).
+- Dropping the capture term gives MAE 1.3.
+
+**Leading order for small λ.** Use $p_-\approx\lambda/c_k$. The mode survives iff
+$$h_k(p_0)\equiv c_kp_0-\tfrac12\sigma_kp_0^2\ \gtrsim\ \alpha\lambda\,\Big[\log\frac{1}{w_k(0)}+\log\frac{\lambda}{c_k}+\frac1\alpha\log\frac{c_kp_0}{\lambda}\Big].$$
+For α = 1 the logarithms combine to $\log(p_0/w_0)$, and a mode's critical weight decay is $\lambda_k^{\rm race}\approx h_k(p_0)/\log(p_0/w_k(0))$. This is far below the static threshold $c_k^2/(4\sigma_k)$, and it depends on the initial scale and the predictor gain, neither of which enters the static threshold.
+- **For α ≠ 1 this leading order is not usable.** The terms $(1-1/\alpha)\log(\lambda/c)+(1/\alpha)\log p_0$ are comparable to $\log(1/w_0)$. The internal review's check (`internal-review-repo` `checks/e1b_alpha_lam.json`, c = σ = p0 = 1, w0 = 1e-2) gives the following thresholds: α = 0.25: 0.139 from N1 vs 0.434 at leading order (above the static bound 0.25, so impossible); α = 1: 0.088 vs 0.109; α = 4: 0.048 vs 0.027. Over a 16× range of α the N1 threshold moves only 2.9×. Use N1 itself for α ≠ 1.
+
+**Regimes.**
+- Balanced ($p_0\sim w_0$): Tian's basin (Prop. 4).
+- Unbalanced ($p_0\gg w_0$): the race N1.
+- In between: Cor. 3a (α=1) or Prop. 3 (any α), solved numerically. Both are exact under the alignment assumptions.
+- The review's comparison (internal-review-repo afa95b0) shows that a near-collapse race which ignores capture undercounts survivors by about one mode in half of the pilot settings. N1 includes capture. E1b will report N1, N1′ and Cor. 3a side by side.
+
+## 4. What the heuristics change (each row is a prediction from N1; signs follow from $\partial F^*$)
+
+| knob | which term it moves | prediction |
+|---|---|---|
+| weight decay λ | shortens the race clock ($1/\alpha\lambda$) and narrows the window | rank falls; mode thresholds at $\lambda_k^{\rm race}\ll c_k^2/4\sigma_k$. The static threshold is Known; the race thresholds are N1 |
+| predictor init scale $p_0$ | $\partial F^*/\partial p_0=g(p_0)/(\alpha\lambda p_0)$: drive ∝ $p_0$, self-prediction decay ∝ $p_0^2$ | rank is non-monotone in $p_0$. $F_k^*$ is maximal at $p_0=p_+^k\approx c_k/\sigma_k$. No growth for $p_0\le p_-$. At λ→0 the mode is lost for $p_0\ge2c_k/\sigma_k$, and for $p_0\ge p_+$ when λ=0 exactly |
+| predictor lr ratio α | race clock $1/(\alpha\lambda)$ of the predictor decay; the encoder decay λ is not scaled by α | rank falls with α when λ>0, but much less than in proportion: there is **no** curve collapse in αλ. At equal αλ the run with larger λ has lower rank, because λ also narrows the window $g=pc-p^2\sigma-\lambda$. E1 shows this in 19 of 24 grid pairs, and in none the other way (internal review, comment 53). With λ=0, α has no effect near collapse |
+| predictor depth L (identity-init factors $qI$, product gain $p=q^L$, decay on every factor) | product decays at $L\alpha\lambda$ (the clock) **and** the capture nullcline moves: $\dot p=\alpha L[p^{2-2/L}(c-p\sigma)a^2-\lambda p]$, so capture needs $a^2\ge\lambda p^{2/L-1}/(c-p\sigma)$ | deeper means fewer modes, more than the clock alone says: for $p<1$ a deeper predictor needs a larger amplitude to capture its gain, so rank$(L,\alpha)<$ rank$(1,L\alpha)$ in general. The pre-registered N1 put depth only in the clock (i.e. rank$(1,L\alpha)$) and failed on E1b (MAE 1.03 at L = 2, 1.40 at L = 3, all false survivals). The depth-L nullcline (derivation by the internal review, experiment-repo#2 comment 89; `escape_score(..., depth_nullcline=True)`) is post hoc: on E1b's depth arm it gives MAE 0.13 / 0.33. Its held-out test E1c (new statistics, pre-registered at `b84e38e`, 108 runs at L = 2–4) passes: per-mode accuracy 0.988, rank MAE 0.19 vs 0.72 for the depth-1 rule (L = 4: 0.39 vs 0.86). Its residual errors are all under-predictions (20 runs), the depth-1 rule's all over-predictions |
+| predictor width / random init | non-normal $P_0$: per data direction, growth matrix $A_k(t)=c_kP(t)^\top-\sigma_kP(t)^\top P(t)-\lambda$ (Sec. 6) | growth needs an eigendirection of the symmetric part with $c\,v^\top P_0v>\sigma\|P_0v\|^2+\lambda$. For Gaussian $P_0$ with entries of variance $s^2/d$, the typical $v^\top P_0 v\sim s/\sqrt d$ while $\|P_0v\|^2\sim s^2$. Prediction: the fraction of predictor directions that can grow is set by $s$, not by $d$; rank is the matching size (setup), predicted numerically |
+| EMA τ (rate κ) | target lag: at fixed $p$ the growth rate is the largest root of $(g+p^2\sigma+\lambda)(g+\kappa)=pc\kappa$, a smaller magnitude than $g$ (copy) in both directions; the window itself is unchanged | sign depends on the regime. If $p_0$ is inside the window, a slower EMA slows growth and lowers rank. If $p_0>p_+$, it slows the initial decay and can raise rank slightly. Very slow EMA ($\kappa\ll g$) lowers rank in both. E3 does not test this sign: its registered EMA prediction is the null 'no change beyond seed spread' (`results/e3/prediction.json` `theory_signs`), and an E3 null supports only 'no change at these time scales' (τ = 0.9–0.999 under a 0.996→1 schedule), not the regime-dependent sign. E1 (development): λ=0.02, $p_0$=0.5 gives rank 6.6 (copy) and 2.0 (κ=0.03); $p_0$=1, λ=0.01 gives 6 (copy), 7 (κ=0.1–0.3), 7 (κ=0.03) |
+| EMA schedule τ: τ₀→1 | only κ during the race matters | the rank equals that of constant τ₀ (the endpoint does not matter; decided early). **Not tested** (E3 has no constant-τ₀ = 0.996 config) |
+| frozen target (τ=1, κ=0) | $\bar w=w_0$: no feedback, no exponential growth | the fixed points satisfy $p^2\sigma=c|w_0|-\lambda$ and $w=p\,\mathrm{sign}(w_0)$. A non-zero state exists iff $c|w_0|>\lambda$, with amplitude $\sqrt{(c|w_0|-\lambda)/\sigma}$. Otherwise $p\to0$ and $w\to0$, decaying algebraically at equality. So at small initial scale with weight decay, a frozen target **collapses**. (Corrected after internal review, comment 53; numerically checked there, `e1b_rules.json` part 2.) |
+| stop-grad removed | adds $(PW\Sigma_{ct}-W\Sigma_t)$ to $\dot W$ | Prop. 5: every mode collapses (Known in substance: Tian 2021, Halvagal 2023) |
+| predictor removed ($P\equiv I$) | $g_k=c_k-\sigma_k-\lambda$ | Prop. 6: no mode grows whenever $c_k\le\sigma_k+\lambda$. This holds when the target's marginal does not exceed the context's, $\sigma^t_k\le\sigma_k$, in particular for equal marginals (Known: Tian 2021). With masks it can fail (Prop. 6) |
+| mask ratio $r$ | changes $(\sigma_k,c_k)$ (Sec. 7) | rank is non-monotone in $r$; prediction profiles in Sec. 7 |
+| init scale $w_0$ | $\log(1/w_0)$ is the distance to cover | larger $w_0$ means more modes, with a logarithmic sensitivity |
+| optimiser (AdamW) | per-parameter preconditioning; decoupled decay keeps $p(t)=p_0(1-\eta\lambda)^{\rm step}$ | the race clock is unchanged. The growth side is changed by the preconditioner (Sec. 8), tested in E1b |
+
+**Prop. 5 (no stop-gradient).** Without sg and under Assumption 1(i), with symmetric $\Sigma_{tc}$ and $\Sigma_t u_k=\sigma^t_ku_k$:
+- The near-collapse mode rate is $g_k=2pc_k-p^2\sigma_k-\sigma^t_k-\lambda\le c_k^2/\sigma_k-\sigma^t_k-\lambda$.
+- Positive semidefiniteness of the joint covariance gives $c_k^2\le\sigma_k\sigma^t_k$, so $g_k\le-\lambda\le0$: no mode grows.
+- The loss is minimised at $W=0$ (Known).
+
+**Prop. 6 (no predictor).** With $P\equiv I$ and sg, $g_k=c_k-\sigma_k-\lambda$.
+- Positive semidefiniteness gives $c_k^2\le\sigma_k\sigma^t_k$, where $\Sigma_t=\Sigma\circ H$ and $H_{ij}=\Pr(i,j\in t)$. Where $\sigma^t_k\le\sigma_k$, in particular for equal marginals, $|c_k|\le\sigma_k$ and no mode grows (Known in substance: Tian 2021).
+- A trainable predictor can shrink $p$ into the window $(p_-,p_+)\subset(0,c/\sigma)$, which a fixed $P=I$ cannot.
+- **With masks the condition can fail.** The target is the masked part, so its marginal can exceed the context's. For Bernoulli masks with target fraction $r$ and $q=1-r$, $c_k-\sigma_k=q[(r-q)\hat\Sigma_k-2r]$, which is positive for $r>1/2$ and $\hat\Sigma_k>2r/(2r-1)$. In the E2 field ($n=64$, ρ = 0.7, `code/e2.py` statistics), $\max_k(c_k-\sigma_k)$ is 0.26, 0.36 and 0.27 at r = 0.7, 0.8 and 0.9, with 5, 7 and 9 directions positive. For cyclic block and multiblock masks it is negative at every r tested (block up to 0.9, multiblock up to L = 14).
+- In the linear model such a direction grows without bound: with $P$ fixed there is no fixed point. So "no predictor ⇒ collapse" holds for block-type masks but not for heavy Bernoulli masking.
+
+## 5. EMA in the race
+Replace $g_k(p)$ in $F_k$ by the EMA rate $g_k^\kappa(p)$, the largest root above. This is adiabatic, so it requires κ ≫ αλ. It is implemented in `growth_rate` and `escape_score`.
+
+Check (E1 EMA sweep, development): per-mode accuracy 99.4%, rank MAE 0.18.
+
+Discrete EMA with momentum τ at step η has $\kappa=(1-\tau)/\eta$. With $\eta$=0.1 in E1, τ=0.99 corresponds to κ=0.1, and τ=0.996 corresponds to κ=0.04.
+
+## 6. General statistics and random predictors: the linear-response predictor
+Without Assumption 1, the near-collapse dynamics are still linear in $(W,\bar W)$:
+$$\dot W=P(t)^\top\bar W\Sigma_{tc}-P(t)^\top P(t)W\Sigma_c-\lambda W,\qquad P(t)=e^{-\alpha\lambda t}P_0 .$$
+
+**Criterion N1-general (approximation).**
+- Integrate this linear system from $W_0$; the cost is $d\cdot n$ dimensions. This gives $W_{\rm lin}(t)$.
+- A direction survives if its singular value reaches its capture amplitude while it still grows.
+- Operationally, the predicted rank is the number of singular values of $W_{\rm lin}(t)$ that exceed the capture scale $\sqrt{\lambda\|P(t)\|/c}$ at some $t$.
+- For aligned statistics with $P_0=p_0I$ this reduces to N1.
+
+This is the procedure for non-commuting statistics (oriented masks, boundaries) and for random or deep predictors. It is tested in E1b (pre-registered).
+
+## 7. Masking (M2: stationary field, patch masks)
+- From the setup: $\Sigma_c=\Sigma\circ G$ and $\Sigma_{tc}=\Sigma\circ F$, with $G_{ij}=\Pr(i,j\in c)$ and $F_{ij}=\Pr(i\in t,j\in c)$.
+- On a cyclic domain with a translation-invariant mask distribution, all three are circulant. Then
+$$\sigma_k=\frac1n\sum_l\hat\Sigma_l\,\hat G_{k-l},\qquad c_k=\frac1n\sum_l\hat\Sigma_l\,\hat F_{k-l},$$
+the circular convolution of the signal spectrum with the mask co-occurrence spectra (Fourier basis $u_k$).
+- Check: `results/checks/mask_symmetry.json`.
+- **Bernoulli masks** (keep probability $q=1-r$, target = complement):
+  - $\sigma_k=q^2\hat\Sigma_k+q(1-q)\bar\sigma$ and $c_k=q(1-q)(\hat\Sigma_k-\bar\sigma)$, with $\bar\sigma=\Sigma_{ii}$.
+  - The static score is $c_k^2/\sigma_k=q(1-q)^2(\hat\Sigma_k-\bar\sigma)^2/(q\hat\Sigma_k+(1-q)\bar\sigma)$.
+  - Only modes with $\hat\Sigma_k>\bar\sigma$ (smooth, low-frequency) have $c_k>0$.
+  - Rank is non-monotone in $r$: as $r\to0$ there is no target ($c\to0$), and as $r\to1$ there is no context.
+- **Block masks:** $F$ and $G$ are computed exactly by enumerating placements (`code/checks/mask_symmetry.py` generalised in E2). N1 then gives the predicted rank as a function of $r$, $\lambda$ and $p_0$.
+- Pre-registered prediction for E2 (to be committed in `results/e2/prediction.json` before the runs): the rank-vs-$r$ profile and its peak location, computed from $(\sigma_k(r),c_k(r))$.
+
+## 8. Optimiser and noise (approximations, tested in E1b)
+- **AdamW.**
+  - The decoupled weight decay gives exactly $P_{s+1}=(1-\eta\lambda)P_s-\eta\,\mathrm{Adam}(\nabla)$. Near collapse, $\nabla_P=O(w^2)$, but Adam normalises it: the update is $O(\eta)$ whenever $|\nabla_P|\gg\epsilon$.
+  - The race clock therefore holds only when the predictor's normalised data update is small compared with $\lambda p$. Otherwise Adam lets the predictor drift by $O(\eta)$ per step in the gradient-sign direction, toward $c/\sigma$, even at tiny $w$.
+  - Prediction: under Adam the predictor reaches the least-squares gain early. Rank then depends less on $p_0$ and more on λ, through Cor. 4a and Prop. 4 (with λ>0 on both, the mode at $p_+$).
+  - This is an explicit, falsifiable departure from SGD. E1b reports it either way.
+- **Finite batch.** Near collapse, both gradient terms are linear in $W$, so the noise is multiplicative. The log-growth rate receives a negative Itô correction $-\tfrac{\eta}{2B}\mathrm{Var}(g_k)$, which lowers rank at small batch. The size is to be measured.
+
+## 9. Neural JEPAs (E3): the operational predictor
+In a ViT the embedding passes through LayerNorm, so "collapse" means that the centred covariance of the target embedding loses rank.
+- **Drive/decay decomposition (any encoder).** By the expansion of the squared loss, the update splits exactly into a drive part (from $-\langle Pz,\mathrm{sg}(\bar z)\rangle$), a self-prediction part (from $\tfrac12\|Pz\|^2$) and weight decay. `code/e3_ijepa.py` measures the first-order change of each eigenvalue $\ell_i$ of the centred embedding covariance under each part (with AdamW's current preconditioner) at fixed early steps. The output is per-direction rates $D_i$, $S_i$, $\Lambda_i$.
+- **Prediction rule (frozen after the pilot, before the grid: `code/e3_grid.py` `horizon_rule`, pre-registered in `results/e3/prediction.json`).** The step-0 rates are held fixed and integrated over the run's own schedule (an initial-window rule with a horizon, see *Limits*): $\log\ell_i(T)=\log\ell_i(0)+\sum_t[(D_i+S_i)\,M\,\eta_t/\eta_0+\Lambda_i\,\eta_t\lambda_t/(\eta_0\lambda_0)]/\ell_i(0)$. Here $M=1/(1-\beta)$ for SGD with momentum β, and $M=1$ for AdamW. Growth is capped at the initial top eigenvalue. The predicted count is $\#\{\ell_i(T)\ge10^{-3}\max_j\ell_j(T)\}$, the measured count's rule. The rule was written after the 13 GPU pilot runs and checked on them, so the pilots are development data only.
+  - *Limits.* The rule keeps the step-0 rates fixed over the whole horizon. So it has no predictor dynamics: the predictor lr multiplier never enters the encoder's step-0 force, and the race of Sec. 3 between $w_k$ and the decaying $p_k$ is absent. The rule is the neural analogue of the growth window $g_k(p_0)$, not of N1, and the predictor-lr and depth directions are therefore registered from the theory signs of Sec. 4 instead. Under AdamW the first update is $\eta\,\mathrm{sign}(g)$ per parameter, which is independent of gradient scale. The rule then predicts a rank increase (count ~98 from ~33) that is nearly insensitive to the predictor knobs, and no weight-decay transition for $\lambda\le10^2$; its crossing would lie at ~$10^4$, where $\eta\lambda>1$. Arm P is therefore a test of transfer, and Arm T (SGD) the direct test.
+  - *Stop-gradient.* Without stop-gradient the measured split detaches the target path, so `nosg` is outside the rule. It is scored by Prop. 5 alone (complete collapse).
+- **Normalisation and scale-flat directions (pilot finding, `results/e3_pilot/`).** If the encoder ends in a LayerNorm whose gain is not decayed, and the predictor has its own LayerNorms, the loss is invariant to the overall output scale. Weight decay then has no restoring partner along that direction. The pilot's no-stop-grad run collapsed in **scale** (total variance × 6.8e-4) while the scale-free centred RankMe stayed at 53.7. So in a normalised network, collapse has to be scored on total variance as well as on rank. It also means the theory's decay term $\lambda$ acts on the normalised architecture only through the parameters that are decayed. Arm T therefore removes the predictor LayerNorms and decays every parameter, norm gains included. With those changes the pilot's rank fell monotonically with weight decay, as Sec. 4 predicts. Arm P keeps the I-JEPA recipe, and C5 reads the gap between the arms.
+- Heuristic signs: the table in Sec. 4, with $p_0$ read as the predictor init scale, α as the predictor lr multiplier, λ as weight decay, τ as EMA and $r$ as the mask ratio.
+- E4 compares this predictor against the baselines in plan v1: the static threshold, the data spectrum, growth-rate ordering and initial loss.
+
+## 10. Status of tests
+- E1 (`results/e1/`) is a **development set**: N1's capture rule was fixed after quick runs.
+- E1b (held out; pre-registered in `results/e1b/prediction.json` before its runs; results in `results/e1b/`, summary in `results/README.md`): 5 of 7 pre-registered criteria pass.
+  - Pass: N1 on aligned statistics (per-mode accuracy 0.989, rank MAE 0.25, incl. the 2-D phase grid and its collapse boundary far below the static threshold); Tian's basin and Cor. 3a in the balanced regime (60/60 exact); Props 5 and 6 (rank 0 in all runs); N1-general for random predictors and non-commuting statistics (MAE 0.42); finite batch (rank non-decreasing in B, B=128 at the population prediction).
+  - Fail: the EMA sign test (13/14 adjacent pairs; one predicted decrease of 1 measured as no change) and the Adam w0-insensitivity (one of 12 cells differs by 2). Under constant-lr AdamW the threshold rank does not converge and exceeds the static bound, so Sec. 8's Adam prediction is only partly supported (closer to the bound than to N1, as predicted).
+  - Depth: N1 over-predicts deep identity predictors by about one mode (MAE 0.81 over L = 1–3; 1.03 at L = 2, 1.40 at L = 3, every error a false survival). The cause is the capture nullcline, not a post-capture stage (Sec. 4, depth row); the corrected nullcline was found post hoc and then passed its pre-registered held-out test E1c (rank MAE 0.19 vs 0.72 for the uncorrected rule over L = 2–4; residual errors all under-predictions, largest at L = 4, MAE 0.39).
+  - What "rank" means here: the number of singular values above 0.05 at the run's horizon $t_{\rm end}$, with values below 1e-150 flushed to 0 (counted as collapsed). The "converged" flag (rank unchanged over the last 4 of 20 checks) is a plateau check, not a certificate of the asymptotic rank; the long-horizon rank is computed separately with the exact reduced flow (`code/checks/e1b_long_horizon.py`).
+  - Early per-mode growth exponents follow A1; at large p0 the continuous-time rate must be replaced by the Euler map's log(1 + eta g)/eta (post-hoc; R^2 >= 0.99999).
+- E2 (masking, Sec. 7; pre-registered in `results/e2/prediction.json`, db2a53b): 4 of 7 criteria pass. Pass: N1 on the masked Fourier statistics (per-frequency accuracy 0.9994, rank MAE 0.03), N1-general on non-cyclic blocks, SGD with sampled masks, and Prop. 6 with its condition (growth without a predictor exactly where c_k > sigma_k + lam). Fail: one of three predicted non-monotone rank-vs-r profiles stays flat (peak locations 17/17 right); the tanh encoder with Bernoulli masks keeps recruiting directions after the race (rank not decided near collapse there; it holds with block masks); the exploratory MLP. E3 (Sec. 9; pre-registered at 8668858 and bd947e1 before the respective runs; results `results/e3/summary.json`, `summary_followup.json`; a transfer test outside the linear regime): the step-0 horizon rule ranks Arm T's configs (Spearman 0.83, CI [0.45, 0.99]) but not Arm P's (0.12), and places Arm T's weight-decay transition a factor 2.6 too late (fail). Of the Sec. 4 signs, weight decay holds in both arms; predictor lr, predictor depth and the EMA null fail; nosg is a scale collapse not yet complete at epoch 20; a frozen target keeps the rank in Arm P but not in Arm T. Interventions on the predictor (lr 0.1, init x3) do not rescue Arm T's weight-decay collapse (0 of 4 crossings), so in the deep network that collapse is not set by the predictor's race clock; collapse flags at 50 epochs are right in 3 of 3 and collapsing runs lose probe accuracy (16.7% vs 32.6%; random init 43.7%). E4: across E1-E3.
+
+## References (all published before 2026-09-01)
+Tian, Chen and Ganguli, *Understanding self-supervised learning dynamics without contrastive pairs*, ICML 2021 (arXiv 2102.06810; Theorem 1 and eqs. 11–14 are the Known parts of Props 2–3 and Cor. 3a). Wang et al. 2021 (DirectSet / predictor analysis). Halvagal, Laborieux and Zenke, *Implicit variance regularization in non-contrastive SSL*, NeurIPS 2023. PEIRA 2026 and Ponce et al., as cited in `paper-repo`. Assran et al., *I-JEPA*, CVPR 2023. Garrido et al., *RankMe*, ICML 2023.
+`paper-repo` holds the verified bibliography; these are pointers, not new citations.

@@ -1,0 +1,51 @@
+"""Referee check (standard A6): is the E1b headline (N1 vs measured rank, aligned arms) robust to the 0.05
+singular-value threshold?  The delivered runs keep only the top 8 singular values, so the per-mode amplitudes at
+t_end are recomputed with the reduced flow of checks/e1b_results.py (flushed, as simulate(); it reproduces the
+measured labels at 0.05 in every mode), then the measured rank is recounted at other thresholds and scored
+against the pre-registered N1 rank.
+Usage: python3 checks/e1b_threshold.py PREDICTION_JSON RUNS_JSONL OUT_JSON
+"""
+import sys, json, collections
+import numpy as np
+
+pred_path, runs_path, out_path = sys.argv[1:4]
+D = json.load(open(pred_path)); M = {r["id"]: r for r in map(json.loads, open(runs_path))}
+n = d = 24; SIG = np.linspace(1.5, 0.5, n); C = SIG * 0.92 ** np.arange(n); ETA = 0.1
+R = [r for r in D["runs"] if r["exp"] in ("grid", "ema_alpha", "depth")]
+
+def init_norms(r):
+    rng = np.random.default_rng(r["seed"]); rng.standard_normal((d, n))
+    return r["w0"] * np.exp(r["jitter"] * rng.standard_normal(n))
+
+A0 = np.array([init_norms(r) for r in R]); N = len(R)
+col = lambda k, f=float: np.array([f(r[k]) for r in R])[:, None]
+lam, alpha, L = col("lam"), col("alpha"), col("depth")
+kap = np.array([0.0 if r["kappa"] is None else r["kappa"] for r in R])[:, None]
+ema = np.array([r["kappa"] is not None for r in R])[:, None]
+T_end = np.array([int(round(M[r["id"]]["t_end"] / ETA)) for r in R])
+q = np.broadcast_to(np.array([r["p0"] ** (1.0 / r["depth"]) for r in R])[:, None], A0.shape).copy()
+a = A0.copy(); ab = A0.copy(); endF = np.zeros_like(a)
+by_end = collections.defaultdict(list)
+for j, T in enumerate(T_end):
+    by_end[T].append(j)
+for i in range(1, int(T_end.max()) + 1):
+    p = q ** L; tb = np.where(ema, ab, a)
+    da = -p * p * SIG * a + p * C * tb - lam * a
+    dq = alpha * (q ** (L - 1) * (C * tb - p * SIG * a) * a - lam * q)
+    a = a + ETA * da; q = q + ETA * dq; ab = np.where(ema, ab + ETA * kap * (a - ab), a)
+    if i % 50 == 0:
+        a[np.abs(a) < 1e-150] = 0.0; ab[np.abs(ab) < 1e-150] = 0.0; q[np.abs(q) < 1e-150] = 0.0
+    for j in by_end.get(i, []):
+        endF[j] = a[j]
+meas = np.array([M[r["id"]]["surv"] for r in R], bool); pred = np.array([r["pred"] for r in R], bool)
+amp = np.abs(endF)
+out = dict(source="results/e1b/{prediction.json,e1b_runs.jsonl}", runs=N,
+           validation_at_0p05=dict(modes=int(meas.size), agree=int(((amp > 0.05) == meas).sum())),
+           surviving_amplitude_quantiles=[float(x) for x in np.quantile(amp[amp > 0.05], [0, 0.01, 0.1, 0.5])],
+           decayed_amplitude_max=float(amp[amp <= 0.05].max()),
+           modes_between_0p001_and_0p3=int(((amp > 1e-3) & (amp < 0.3)).sum()), thresholds={})
+for thr in (1e-3, 0.01, 0.05, 0.1, 0.2):
+    S = amp > thr; e = pred.sum(1) - S.sum(1)
+    out["thresholds"][str(thr)] = dict(rank_mae=round(float(np.abs(e).mean()), 3), rank_exact=round(float((e == 0).mean()), 3),
+                                       runs_rank_differs_from_0p05=int((S.sum(1) != (amp > 0.05).sum(1)).sum()))
+json.dump(out, open(out_path, "w"), indent=1); print(json.dumps(out, indent=1))

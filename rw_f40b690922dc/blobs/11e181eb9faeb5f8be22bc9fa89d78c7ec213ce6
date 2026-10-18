@@ -1,0 +1,25 @@
+{
+ "n": 32,
+ "rho": 0.8,
+ "definition": "rel_asymmetry = max|S_tc - S_tc^T| / max|S_tc|; rel_commutator = max|[S_c, S_tc]| / (max|S_c| max|S_tc| n)",
+ "cases": {
+  "cyclic_block": {
+   "description": "target block of 6, context block of 20 minus target, cyclic domain, random placement",
+   "placements": 1024,
+   "rel_asymmetry": 0.0,
+   "rel_commutator": 1.0675221390626485e-16
+  },
+  "one_sided_context": {
+   "description": "context block (14) always to the right of the target (6), cyclic (no reflection symmetry)",
+   "placements": 32,
+   "rel_asymmetry": 1.0,
+   "rel_commutator": 5.808225924029488e-17
+  },
+  "noncyclic_block": {
+   "description": "as cyclic_block but blocks must fit inside [0, n) (boundaries)",
+   "placements": 351,
+   "rel_asymmetry": 0.44307692307692115,
+   "rel_commutator": 0.05184524614121764
+  }
+ }
+}

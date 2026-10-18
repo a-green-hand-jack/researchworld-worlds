@@ -1,0 +1,58 @@
+"""Scores the phase model of code/e4_theory.py against stored exact scalar-map runs with the metrics of
+results/e4/a1_tolerance.json (A1b burst times, A1c alive state at checkpoints).
+Usage: python3 code/e4_score.py RUNS.jsonl[.gz] [OUT.json]"""
+import sys, os, json, gzip
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import e4_theory as th
+import e4_dev as dev
+
+BURST, THR = 1e-3, 0.05
+
+
+MODEL = th.phase_model_hybrid
+
+
+def predict(r, model=None):
+    c, s = dev.stats(r["stats"])
+    st = {k: np.array(v) for k, v in r["state_K"].items()}
+    return (model or MODEL)(c, s, st, dev.K, r["lam"], r["eta"], dev.T, b1=r["b1"], b2=r["b2"], checks=r["checkpoints"])
+
+
+def score(runs, model=None, nproc=8):
+    rows = []; err = []; miss = 0; nb = 0; agree = []; rank_ok = []
+    if model is None and nproc > 1:
+        from multiprocessing import Pool
+        with Pool(nproc) as pool:
+            outs = pool.map(predict, runs, chunksize=4)
+    else:
+        outs = [predict(r, model) for r in runs]
+    for r, out in zip(runs, outs):
+        tb = out["burst"]; mb = np.array([np.inf if x is None else x for x in r["burst"]], float)
+        outside = out["outside"]
+        for k in np.where(outside)[0]:
+            if np.isfinite(tb[k]) or np.isfinite(mb[k]):
+                nb += 1
+                if np.isfinite(tb[k]) and np.isfinite(mb[k]):
+                    err.append(abs(np.log(tb[k] / mb[k])))
+                else:
+                    miss += 1
+        A = np.array(r["absa"]) > THR
+        Pm = np.array([out["alive"][t] for t in r["checkpoints"]])
+        agree.append((A == Pm).mean())
+        re = np.abs(A.sum(1) - Pm.sum(1))
+        rank_ok.append((re <= 1).mean())
+        rows.append(dict(id=r["id"], agree=float((A == Pm).mean()), rank_err=re.tolist()))
+    err = np.array(err)
+    return dict(A1b=dict(scored=nb, median=float(np.median(err)) if err.size else None,
+                         p90=float(np.quantile(err, 0.9)) if err.size else None, misses=miss,
+                         miss_share=miss / max(nb, 1)),
+                A1c=dict(agreement=float(np.mean(agree)), rank_within_1=float(np.mean(rank_ok))), rows=rows)
+
+
+if __name__ == "__main__":
+    runs = [json.loads(l) for l in (gzip.open if sys.argv[1].endswith(".gz") else open)(sys.argv[1], "rt")]
+    res = score(runs)
+    print(json.dumps({k: v for k, v in res.items() if k != "rows"}, indent=1))
+    if len(sys.argv) > 2:
+        json.dump(res, open(sys.argv[2], "w"))

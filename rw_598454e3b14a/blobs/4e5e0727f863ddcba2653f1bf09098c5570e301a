@@ -1,0 +1,34 @@
+# Code for the experiments (analysis, `experiment-repo`)
+
+Everything the paper's empirical claims rest on is produced by the scripts here; outputs go to `results/`
+(see `results/README.md` for the file layout and column definitions). `code/figures/` is reserved for the
+figure scripts of the presentation position.
+
+## Environment
+Python 3.11.2, CPU only. `pip install -r code/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu`.
+All pinned versions were released on or before 2026-09-01. Set `OMP_NUM_THREADS=1` for the linear experiments
+(they parallelise over runs with a process pool).
+
+## Files
+| file | purpose |
+|---|---|
+| `linjepa.py` | Linear JEPA library: full gradient-descent or AdamW simulation (population or minibatch; EMA target, no stop-gradient, frozen predictor, predictor depth/width, identity or Gaussian predictor init, predictor lr multiplier; stops and flags a run whose iteration blows up), the exact reduced per-mode flow, growth rates with EMA, the static window, the race criterion N1 (`escape_score`) and its closed form, the exact alpha=1 scalar race (Cor. 3a), N1-general (`n1_general`), rank measures (`sv_rank`, `rankme`). |
+| `e1_linear.py` | E1 sweep (3600 runs): weight decay x predictor gain x predictor lr x init scale x init type; EMA sweep; predictor-depth sweep; 5 seeds. `python3 code/e1_linear.py results/e1` |
+| `e1_analyze.py` | E1 analysis: per-mode accuracy of the race criterion, rank errors of the race criterion / reduced flow / static window / fixed-point bound, bootstrap 95% CIs, knob trends. `python3 code/e1_analyze.py results/e1` |
+| `e1_traj.py` | Per-direction trajectories a_k(t), p_k(t) with the race prediction and capture nullcline for two E1 settings (figure F2(a)); its update loop is checked to match `simulate()` exactly. `python3 code/e1_traj.py results/e1` |
+| `e1b.py` | E1b, held-out pre-registered linear test (1017 runs, 10 arms; see its docstring). `predict` writes `results/e1b/prediction.json` from the initialisation only; `run` simulates; `analyze` scores. |
+| `e1b_analyze.py` | E1b scoring against the pre-registration: per-arm metrics with bootstrap CIs, cell tables, each criterion with pass/fail, diverged runs listed, trajectory growth exponents. |
+| `checks/mask_symmetry.py` | Checks that translation-invariant cyclic block masks give symmetric, commuting statistics S11, S21 and that boundaries break it. `python3 code/checks/mask_symmetry.py` -> `results/checks/mask_symmetry.json` |
+| `checks/e1b_long_horizon.py` | Long-horizon certification of E1b ranks: the exact reduced per-mode flow from each eligible run's initial norms, validated against the measured labels at t_end, continued to 2 t_end and t = 40000. `python3 code/checks/e1b_long_horizon.py` -> `results/checks/e1b_long_horizon.json` (885 s, 8 CPUs) |
+| `checks/balance_identity.py` | Imbalance identity P^T P - W W^T = e^{-2 lam t}(P0^T P0 - W0 W0^T) for alpha=1 (RK4, non-symmetric non-commuting statistics, EMA, weight decay, W of order one), its failure for alpha != 1, the lam=0 invariant, and the O(eta) error of discrete steps. -> `results/checks/balance_identity.json` (40 s) |
+| `prepare_cifar10.py` | CIFAR-10 from Hugging Face `uoft-cs/cifar10` parquet (sha256-checked) to uint8 npz. |
+| `e3_ijepa.py` | E3: I-JEPA-style ViT on CIFAR-10 (encoder width 128, patch 4, 64 tokens; transformer predictor; multi-block masking; EMA / copy / no-stop-grad / frozen target; AdamW with warmup+cosine and cosine weight decay, or SGD) with spectrum diagnostics (centred and raw RankMe, thresholded eigenvalue count, per-eigendirection drive / self-prediction / weight-decay force decomposition). `python3 code/e3_ijepa.py --out DIR --help` |
+
+## Reproduction cost
+- E1: 395 s on 8 CPUs (3600 runs). A single run takes 1-2 s.
+- E1b: predictions 158 s, runs 132 s, on 8 CPUs (1017 runs).
+- Mask check: seconds.
+- E3: about 0.78 s per step at batch 256 on 8 CPUs (195 steps per epoch); per-run times are in each run's `final.json`.
+
+Status and pre-registrations: see `results/README.md`. Experiments with a `results/<exp>/prediction.json` had it
+committed before their results.

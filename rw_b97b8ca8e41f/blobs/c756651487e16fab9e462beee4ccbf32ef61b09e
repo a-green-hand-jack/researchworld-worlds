@@ -1,0 +1,15 @@
+\section{Limitations and conclusion}
+\label{sec:discussion}
+
+\paragraph{Scope of the theory.}
+The derivation is exact only for linear encoders and predictors whose covariances share an eigenbasis (\cref{ass:codiag}) and whose initialization is aligned with it; for general initializations the decoupling holds while the embeddings are small, the regime the theory is about.
+\Cref{prop:survival} is a leading-order asymptotic statement, checked against the exact mode dynamics but not proved, and its regime ($\alpha\lesssim1$, $\lambda_P\lesssim\lambda$) excludes fast predictors with strong predictor weight decay.
+For nonlinear JEPAs it can apply only while early training is linear around initialization.
+The masking result assumes i.i.d.\ coordinate masking of a stationary signal; the ViT's independent patch masks are compared with it only qualitatively, and block masks, which change $s_k$ and $c_k$, are not tested.
+The analysis uses gradient flow; Adam and large learning rates are tested only empirically.
+The decay threshold $\rho_js_j=4\lambda$ is for direct L2 decay and is calibrated only in the linear tier; the ViT's AdamW decay is too small to test it, so whether it has a nonlinear counterpart is open (\cref{app:details}). The theory predicts which directions survive the early window, not downstream quality or late-time rank growth by other mechanisms.
+
+\paragraph{Conclusion.}
+Near collapse a JEPA's rank is decided direction by direction, by a race between a drive set by context--target predictability and a decay set by the predictor and weight decay, while the predictor drifts through each direction's growth window.
+In linear JEPAs the predicted early rates hold with no fitted constant, the criterion predicts the late rank with a quarter of the fixed-point count's error, and the predicted heuristic effects are observed.
+In a small vision JEPA (interim) the early statistic does not transfer, as rank is set by growth after the window; a slower target still lowers rank, and no CIFAR-10 run collapses.

@@ -1,0 +1,244 @@
+# Draft captions
+
+One entry per delivered figure or table, for paper-repo to adopt or edit.
+Width: as noted; files are exported at final size (do not rescale).
+
+## figures/fig_mechanism.pdf — full width (`\linewidth`), teaser
+
+**Supports:** collapse is decided early, near the collapsed solution, by a
+per-direction competition between a driving force and a decay effect (theory,
+Sec. 3).
+
+> **Drive versus decay near the collapsed solution (illustration of the theory).**
+> Per-direction reduction of the linear JEPA gradient flow:
+> $\dot w_j = w_j\,[\,p_j s_j - (p_j^2 c_j + \lambda)\,]$,
+> $\dot p_j = w_j^2 (s_j - p_j c_j) - \lambda p_j$, where $w_j$ is the encoder's
+> norm along eigendirection $j$, $p_j$ the predictor eigenvalue, $s_j$ the
+> context–target covariance, $c_j$ the context variance and $\lambda$ the weight decay.
+> **(a)** Drive $p\,s_j$ (solid) and decay $p^2 c_j+\lambda$ (dashed) for two
+> directions; a direction can grow only where drive exceeds decay (shaded growth
+> window). **(b)** Trajectories of all 20 directions in the $(p_j, w_j)$ plane from
+> the same near-collapsed initialisation ($w_j=10^{-3}$, $p_j=0.5$); color is the
+> signal $s_j$. Near collapse the predictor receives no signal and drifts
+> down at rate $\lambda$; directions that grow before $p_j$ leaves their window reach the
+> non-collapsed fixed point (solid), the rest decay to zero (dotted).
+> **(c)** The same directions over time: survival is settled in the first
+> $\sim\!10^2$ time units, and the direction with $s_j=0.11$ in (a) collapses even
+> though it has a growth window, because $p_j$ drifts out of it first.
+> Parameters: $s_j$ log-spaced in $[10^{-2},1]$, $c_j=s_j+0.05$, $\lambda=0.01$,
+> Euler step $\eta=0.01$, $6\times10^4$ steps; 7 of 20 directions survive.
+> Computed from the theory's equations; not a measurement.
+
+## tables/tab_heuristics.tex — text width; uses booktabs only
+
+**Supports:** C3–C5 — each common anti-collapse heuristic acts through the
+drive/decay balance. Rows follow paper-repo `sections/theory.tex` @ 80bb79c
+(Props. window, survival, stopgrad, masking; Cor. depth; §Predictor scale and
+learning rate for the weight-decay-convention dependence of the $\alpha$ row); the
+substance is unchanged at 4a37f65. Theory-only at paper-repo's request (9-page body);
+the measured counterparts are in Sec. 5, App. C and `fig_phase`. The weight-decay row is the
+direct L2 coefficient $\lambda$ of the linear theory, whose boundary is calibrated in Tier A; the
+Tier B AdamW doses are not mapped onto it (plan rev. 7).
+
+> **What the common heuristics change, according to the theory.** For each
+> heuristic: the term of the per-direction rate $r_j = p_j s_j - (p_j^2 c_j+\lambda)$
+> that it changes, and the predicted effect on the rank of the learned
+> representation. $\rho_j = s_j/c_j$ is the predictability of direction $j$,
+> $c^t_j$ the target variance, $\Phi_j$ the survival margin of
+> Prop. (survival), $\alpha$ and $\lambda_P$ the predictor's relative learning rate
+> and weight decay, $S_k$ and $\sigma^2$ the input power spectrum and variance.
+> The stop-gradient and weight-decay rows restate results of Tian et al. (2021) in
+> our notation. $\lambda$ is direct (coupled) L2 encoder decay as in the linear model; decoupled
+> AdamW decay in the nonlinear runs is not mapped onto it. The measured counterparts are in Sec. 5.
+
+## tables/tab_prior_comparison.tex — text width; booktabs; cells use `\citet`/`\cref` (compiles inside the paper only)
+
+**Supports:** plan item 6. It shows which predictions reduce to prior results (Tian et al. 2021,
+Wang et al. 2021, Littwin et al. 2024 at $\lambda=0$, Simon et al. 2023 at $\lambda_P\to0$,
+and Ziyin et al. 2023's fixed-point count) and what is new (survival $\Phi_j$ under predictor drift,
+masking-induced $s_j,c_j$, predictor depth). The cells are paper-repo's statements
+(`notes/prior_comparison.md` @ 45cf7f9), transcribed verbatim. The derivations are in
+`appendix/proofs.tex` (`app:prior`). The table is placed in the appendix with paper-repo's caption.
+I checked it by compiling paper-repo @ 45cf7f9 with this fragment: about 0.8 page, no overfull boxes.
+
+> **Reductions to and departures from the closest prior accounts.** *Reduces to*: the limit of
+> our statements that recovers the cited result; *Departs*: what our theory predicts beyond it;
+> *Evidence*: a proof (derivations in App. A.2) or the numerical check of the mode dynamics in
+> App. A.1. None of these rows is a measurement on trained JEPAs.
+
+(The caption is paper-repo's own, in `appendix/proofs.tex`. If experiment-repo commits measured
+matched-limit checks or online-vs-target rank (experiment-repo#3), the Evidence column and
+this caption change once paper-repo names the result path.)
+
+
+## figures/fig_rates.pdf — half width (`width=0.5\linewidth`)
+
+**Supports:** P1 (C1). In the early window the measured slope of each direction's log-eigenvalue
+follows the predicted net rate $2r_j(p_0)$, sign included. Input: experiment-repo
+`results/raw/early_rate_scatter.csv` @ e8caa89 (slope fit corrected, experiment-repo#6), excluding
+`stop_gradient_ablation` and `ode_vs_full` (5,376 directions × seeds). Printed values are computed by
+the generator: $r=0.9997$, median $|$resid$|$ 0.0040, sign agreement 97.6% overall and 100% (asserted)
+over the 5,248 directions outside mask ratio 1. The 128 directions of `mask_m1p000` (mask ratio 1) are
+drawn as open diamonds: the context is empty, $\mu_j=c_jw_j^2\equiv0$, and its measured slope
+(9.9e-14) is numerical noise, so they are not sign errors. They agree with paper-repo
+`notes/tierA_numbers.txt` @ 43fa824.
+
+> **Predicted versus measured early growth rates (P1).** Tier A linear JEPAs, 8 seeds per
+> configuration, one point per direction and seed (5,376). $y$: least-squares slope of $\log\mu_j$ at
+> steps 10, 50, 100, 200, 500. $x$: the prediction $2r_j(p_0)$ from the configuration's $s_j$, $c_j$,
+> $p_0$, $\lambda$, with no fitted constant. Dashed: identity. Both axes are linear for
+> $|{\rm rate}|<0.1$ and logarithmic beyond; grey quadrants: sign disagreement. Diamonds (128): mask
+> ratio 1, where the context is empty and $\mu_j\equiv0$ (Sec. 5, P1).
+
+## figures/fig_trajectories.pdf — full width
+
+**Supports:** P1 (C1), the mechanism in data, as the measured counterpart of Fig. 1(b–c). Input:
+experiment-repo `results/raw/trajectories.csv.gz` @ e8caa89, config `scale_p0p500` (the reference),
+seed 0. The survivor set (directions 0–2, collapse-aware rule) is the same in all 8 seeds; the
+generator checks this.
+
+> **Per-direction dynamics of a linear JEPA (reference configuration, one seed).**
+> **(a)** Eigenvalue $\mu_j$ of the representation covariance along each of the 16 directions
+> against time. Solid: the 3 directions that survive (final $\mu_j\ge10^{-2}\max_k\mu_k$ and above
+> their initial value). Dotted: those that collapse. Color: context–target covariance $s_j$ (white:
+> $s_j=0$, no drive). Shaded: the window over which the rates of Fig. (rates) are fitted. **(b)** The
+> same directions in the $(p_j, w_j)$ plane, from the common initialization $p_j=0.5$, as in
+> Fig. 1(b). The direction with $s_j=0.125$ satisfies the fixed-point condition $\rho_js_j>4\lambda$
+> yet collapses. Markers are the logged checkpoints (steps 10 to 30,000); lines join them.
+> $p_0=0.5$, $\lambda=\lambda_P=0.005$, $\alpha=1$, $m=0.65$. The survivor set is identical in all 8 seeds.
+
+## figures/fig_phase.pdf — full width (about 2.6 in tall)
+
+**Supports:** P3 (predictor init. scale, depth, lr ratio in both decay conventions, decay), P4
+(masking), P5 (EMA) and P7 (encoder weight decay: the calibrated direct-L2 survival/collapse
+boundary, Tier A only) in the linear tier, and per level the P2
+comparison of $\hat R$ with the fixed-point count. Input: experiment-repo
+`results/raw/run_summary.csv` @ e8caa89; split from `results/raw/rank_prediction.csv`. Per-level
+means equal paper-repo's App. C / Sec. 5 values ($p_0$: 1.1, 3, 3, 2, 1, 0; masking 0, 0, 1, 2, 3,
+3, 1, 0; $\alpha$ coefficient 3, 3, 2, rate 3, 3, 3; ...). The Tier B decay pairs are not drawn
+here: they use uncalibrated AdamW doses, not $\lambda$, and are shown as sensitivity only in fig_nonlinear.
+
+> **Rank under each heuristic, linear tier (P2–P5, P7).** Each column varies one factor from the
+> reference ($p_0=0.5$, $L=1$, $\alpha=1$, $\lambda_P=\lambda=0.005$, $m=0.65$, $\tau=0$). Shaded:
+> calibration configurations; all others are held out. The $\alpha$ column shows two slices:
+> fixed decay coefficient $\lambda_P$ (circles, left) and fixed decay rate $\alpha\lambda_P$
+> (squares, right; all calibration). *Top:* collapse-aware rank (directions above $10^{-2}$ of
+> the largest eigenvalue that grew above their initial value) per seed (markers) and mean of 8
+> seeds (bar); crosses: collapsed runs (largest eigenvalue $<10^{-12}$), rank 0. Green: the
+> early-gain count $\hat R$ (Prop. survival; drawn slightly raised where it coincides with the
+> bar); dashed: the fixed-point count $\#\{j:\rho_js_j>4\lambda\}$. At $\lambda_P=0$, outside
+> Prop. survival, $\hat R=16$ (arrow). *Bottom:* largest eigenvalue per seed; dotted: the collapse
+> floor; triangles: below $10^{-18}$. At $p_0=1.5$ and $m=0$ the representation is near-vanishing,
+> which a relative rank would hide. Masking uses the stationary covariance model of Prop. (masking) (a covariance model, not image
+> patches; it is compared with the Bernoulli patch masks of Tier B only qualitatively).
+> 16-dimensional linear JEPAs, 30,000 steps.
+
+## figures/fig_rank.pdf — half width (`width=0.5\linewidth`)
+
+**Supports:** P2 (C2). $\hat R$ predicts the collapse-aware late rank of held-out runs; the
+fixed-point count over-predicts it. Input: experiment-repo `results/raw/rank_prediction.csv` @
+e8caa89. The generator asserts the MAEs equal `results/derived/rank_prediction_metrics.csv` and
+prints exact 68.1% vs 19.4% (same 248 in-regime held-out runs) and closer/tied/worse 200/48/0,
+as in the paper's P2 paragraph.
+
+> **Predicted versus observed rank (P2).** One count per run, Tier A linear JEPAs (43 configurations
+> × 8 seeds). $x$: collapse-aware late rank; $y$: the early-gain count $\hat R$ (left) or the
+> fixed-point count $\#\{j:\rho_js_j>4\lambda\}$ (right). Disc area and label: number of held-out
+> runs in the cell; open ring: the 88 calibration runs (11 configurations). Dashed: identity; no
+> point lies below it. Orange cross: the 8 runs without stop-gradient, outside Prop. survival.
+> Arrow: $\lambda_P=0$, outside Prop. survival ($\hat R=16$; excluded from the $\hat R$ error).
+> Held-out mean absolute error 0.42 for $\hat R$ (248 runs) and 1.62 for the fixed-point count
+> (256 runs); exact in 68% and 19% of the 248 runs where both apply.
+
+## figures/fig_nonlinear.pdf — full width (about 3.3 in tall) — PARTIAL, rebuilt as Tier B runs land
+
+**Supports:** transfer of P3 (predictor scale, depth), P4 (masking) and P5 (target update) to the
+controlled ViT (Tier B), plus, for predictor scale and masking, an **uncalibrated small-dose
+sensitivity** check to the encoder's AdamW weight decay (plan rev. 7, story-repo 4c6ee7b). The
+Tier B decay is decoupled AdamW with coefficients 0, $10^{-4}$ (reference) and $5\cdot10^{-4}$, not
+the direct L2 coefficient $\lambda$ of the linear theory. It is not calibrated against the Tier A
+threshold, so the figure draws no $\lambda$ boundary, does not use the symbol $\lambda$, and supports no
+nonlinear threshold claim. It also does **not** show that the rank is insensitive to decay: the
+"strong" dose is strong only relative to the tested doses, and its isolated direct-decay multiplier
+over 6,000 steps is $(1-3\cdot10^{-4}\cdot5\cdot10^{-4})^{6000}=0.9991$ (experiment-repo
+`results/README.md` @ ae59eab). The calibrated decay boundary (P7) is in `fig_phase`, Tier A only.
+No linear-theory prediction is drawn: the nonlinear summaries carry no $\Phi_j$ or fixed-point
+count (`rank_prediction_scope = not_applicable_to_nonlinear_vit`); the text compares the measured
+direction of each change with P3–P5. Input: experiment-repo
+`results/raw/vit_runs/b_*/{summary,trajectory}_seed<N>.csv` @ ae59eab, read per seed. **Current
+state: 47 of the 52 runs (51 primary + the extra reference seed 3), every cell with at least two
+seeds.** Missing: predictor scale 2 at 0 and at $5\cdot10^{-4}$ (seed 1 each), mask .25 at 0
+(seed 1) and mask .75 at 0 and at $5\cdot10^{-4}$ (seed 2 each). $n$ is printed where it is below 3.
+The generator rebuilds unchanged when the rest of the grid is committed.
+
+Matched-seed late-rank differences, $5\cdot10^{-4}$ minus 0, printed by the generator: predictor
+scale 0.5: $-1,-10,-1$ (seeds 0–2); scale 2: $-4, 0$ (seeds 0, 2); mask .25: $-3,-3$ (seeds 0, 2);
+mask .75: $-1,-1$ (seeds 0, 1). These differences are small and mixed relative to the seed-to-seed
+spread at any one dose (e.g. 82–112 at scale 0.5, reference dose).
+
+> **Rank of a controlled nonlinear JEPA under each heuristic (Tier B).** ViT encoder (width 192,
+> 6 blocks, 64 patches) with a transformer predictor (width 64, 2 blocks) on generated images,
+> batch 256, 6,000 steps. Each column varies one factor from the reference (predictor scale 1,
+> 2 predictor blocks, expected mask fraction 0.5, EMA $\tau=0.99$, encoder AdamW weight decay
+> $10^{-4}$ at learning rate $3\cdot10^{-4}$). Masks are drawn independently per patch: each of the 64 patches is hidden with
+> probability equal to the mask fraction, so the fraction is the *expected* hidden share of an image,
+> not a fixed count, and the masks are not contiguous blocks; these runs do not test contiguous
+> (multi-block) masking. Rank: number of eigenvalues of the
+> online encoder's embedding covariance (192 dimensions, 512 images, one fixed context mask per seed
+> reused at every checkpoint) at least $10^{-3}$ of the largest. *Top:* rank over training, one thin
+> line per seed and the seed mean (thick), at the reference decay; shaded: the early window
+> (steps 25–250). In every committed run the rank falls to a few directions (3–14) and rises again
+> only after the early window: in 41 of 47 runs the minimum is at a checkpoint between steps 250 and
+> 1,000; with the slow target update ($\tau=0.999$) it is at step 50 or 100 and the late rank stays
+> low (33–39); in the three seed-2 runs with predictor scale 2 (every decay dose) it is at step 2,000
+> and the late rank is 28. *Bottom:* rank at step 6,000 per seed (markers) and mean
+> (bar). For predictor scale and masking, the low and high levels are also run with encoder AdamW
+> weight decay 0 (open down-triangles) and $5\cdot10^{-4}$ (squares); thin grey lines join the same
+> seed across doses. These doses are small and uncalibrated: they test sensitivity, not the decay
+> threshold of the linear theory (Fig. phase), and $5\cdot10^{-4}$ shrinks the weights directly by
+> under 0.1% over training. $n$ = 3 seeds per cell (4 for the reference)
+> [PARTIAL: 47 of 52 runs; numbers printed above markers give $n$ where fewer than 3].
+
+## figures/fig_realdata.pdf — full width (about 2.1 in tall) — PARTIAL, rebuilt as Tier C runs land
+
+**Supports:** P6 (C6), the transfer of the early-window statistic to real images, with the
+frozen-backbone probe as a sanity check. Tier C uses the reference AdamW decay only and tests no
+decay boundary. Input: experiment-repo
+`results/raw/vit_runs/c_*/{summary,trajectory}_seed<N>.csv`, `data_provenance.json` and
+`results/derived/vit_transfer_diagnostics.csv` and `results/derived/vit_init_probe.csv` (via
+`probe_accuracy_init` in each summary) @ ae59eab. **Current state: 7 of the 18 Tier C runs**
+(`c_reference` seeds 0–2, `c_scale_low` and `c_mask_low` seeds 0–1); panel (b) also has all 47 Tier B
+runs of fig_nonlinear. The generator asserts the data provenance (HF revision `0b27149…`,
+50,000/10,000 rows) for every run.
+
+What it shows so far, so that the text does not claim more: the early positive-slope count does
+**not** track the late rank in either tier. Counting all aligned directions gives 144–191 in 38 of
+the 54 runs (all 7 Tier C runs: 166–188). The other 16 give 1–108: all six predictor-scale-2 runs,
+3–27; the three EMA $\tau=0.9$ runs, 1–2; depth 3 seed 1, 25; depth 1 seeds 1–2, 108; and mask .25
+seed 2 at all three decay doses, 52–62. Late ranks over all 54 are 28–156; the three $\tau=0.9$ runs,
+with count 1–2, reach late ranks 89–113. Counting only directions resolved at step 25 (eigenvalue
+$\ge10^{-3}$ of the largest) gives 0–45. In Tier B the rank is lowest at a checkpoint between steps
+250 and 1,000 in 41 of 47 runs and grows afterwards (fig_nonlinear). On CIFAR-10 it drops by step 25
+in all 7 runs (minimum 7–11) and grows mostly after the window (panel a). The late rank is therefore
+set after the window the statistic uses. This is the regime P6 says to report. Neither count is a
+linear-theory prediction (experiment-repo `results/README.md`, "Nonlinear early-rate sensitivity").
+Panel (c): in all 7 runs the trained probe is above the same-seed initialization probe
+(initialization 41.1–42.0%, trained 44.0–46.2%). Paired gain, mean with 95% $t$-interval, printed by
+the generator: reference +3.1 pp [0.7, 5.5] ($n=3$); predictor scale 0.5 +3.6 pp [$-11.9$, 19.0] and
+mask .25 +2.3 pp [$-1.9$, 6.5] (both $n=2$, so the intervals include 0).
+
+> **Transfer to real images (P6).** The Tier C model, trained on CIFAR-10 (Hugging Face
+> `uoft-cs/cifar10` parquet, revision `0b27149`; 50,000 train / 10,000 test images) for 50 epochs
+> (9,800 steps). Masks are drawn independently per patch with the stated expected fraction, not as
+> contiguous blocks, so no contiguous-block masking is tested. Rank as in Fig. (nonlinear). **(a)** Rank over training, per seed (thin) and seed
+> mean (thick); shaded: early window, steps 25–250. **(b)** Early statistic against late rank, one
+> point per run (Tier B grey, Tier C colored as in (a)): the number of aligned eigen-directions with a
+> positive log-eigenvalue slope over steps 25–250, over all 192 directions (open) or over the
+> directions resolved at step 25, eigenvalue $\ge10^{-3}$ of the largest (filled). Dashed: identity.
+> Both are measured statistics, not theory predictions. **(c)** Test accuracy of a ridge classifier
+> ($\alpha=1$) on the frozen, mean-pooled online encoder, full images, all train/test rows; filled:
+> trained, per seed and mean (solid); open: the same probe on the same-seed encoder at initialization,
+> per seed and mean (dashed), each joined to its trained run; dotted: chance. Label above a
+> configuration: paired gain, trained minus initialization, mean over seeds in percentage points
+> with its 95% $t$-interval ($n$ given where below 3). $n$ = 3 seeds per configuration [PARTIAL: 7
+> of 18 runs; "–": not yet run].

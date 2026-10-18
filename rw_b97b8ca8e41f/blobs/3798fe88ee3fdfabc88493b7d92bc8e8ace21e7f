@@ -1,0 +1,145 @@
+"""P2-P5, P7 (C2-C5): measured rank against each swept factor of the linear tier,
+with both theoretical counts overlaid.
+
+Input: experiment-repo results/raw/run_summary.csv (commit in data.py), 8 seeds per
+configuration, 30,000 steps, final checkpoint.
+Top row: collapse_aware_rank (eigenvalues >= 1e-2 of the largest that also grew above
+their initial value; 0 for a vanishing representation, results/README.md), per seed
+(dots, jittered) and mean (bar). Runs with collapsed == True (largest eigenvalue
+< 1e-12) are crosses at 0.
+Overlays: theory_fixed_point_rank #{j: rho_j s_j > 4 lambda} (dashed) and
+theory_early_gain_rank R-hat (solid green), the comparison P2 is about. R-hat is out
+of regime at lambda_P = 0 (16 directions; drawn as an arrow at the top).
+The alpha column shows two slices side by side: fixed decay coefficient lambda_P
+(alpha_a*, left) and fixed decay rate alpha*lambda_P (alpha_fixed_lp_*, right).
+Masking uses the stationary_masking_fourier covariance model (mask_m*).
+Bottom row: final_max_representation_eigenvalue, per seed, with the collapse floor.
+Shaded: calibration configurations (results/raw/rank_prediction.csv split); all
+others are held out.
+"""
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
+import style, data
+
+style.apply()
+R = data.results()
+r = pd.read_csv(R / "raw" / "run_summary.csv")
+split = pd.read_csv(R / "raw" / "rank_prediction.csv").groupby("config_id").split.first()
+
+# (config prefixes [one per slice], factor column, axis label, tick labels)
+PANELS = [
+    (["scale_"], "predictor_scale", "pred. init.\n$p_0$", None),
+    (["depth_l"], "predictor_depth", "pred.\ndepth $L$", None),
+    (["alpha_a", "alpha_fixed_lp_"], "predictor_lr_ratio", "pred. lr\nratio $\\alpha$", None),
+    (["lambda_p_"], "predictor_weight_decay", "pred.\ndecay $\\lambda_P$", None),
+    (["mask_m"], "mask_fraction", "mask\nfraction $m$", None),
+    (["ema_tau"], "ema_tau", "target\nEMA $\\tau$", ["0", ".99", ".9999"]),
+    (["decay_l"], "weight_decay", "encoder\ndecay $\\lambda$", None),
+]
+SLICE_COL = [style.COLORS[0], style.COLORS[4]]
+SLICE_MK = ["o", "s"]
+RHAT = style.COLORS[2]
+FLOOR = 1e-12
+CLIP = 1e-18  # bottom-row display limit; smaller values drawn as down-triangles on it
+YTOP = 5.9
+rng = np.random.default_rng(0)  # jitter only
+
+
+def tick(v):
+    s = f"{v:g}"
+    return s[1:] if s.startswith("0.") else s
+
+
+widths = []
+for pref, fac, *_ in PANELS:
+    widths.append(r[r.config_id.str.startswith(pref[0])][fac].nunique() + 0.8)
+fig, axes = plt.subplots(2, len(PANELS), figsize=(style.TEXTWIDTH, 2.6), sharey="row",
+                         gridspec_kw=dict(height_ratios=[1.25, 1], hspace=0.12, wspace=0.1,
+                                          width_ratios=widths))
+printed = {}
+for col, (prefs, fac, label, ticklabels) in enumerate(PANELS):
+    top, bot = axes[0, col], axes[1, col]
+    levels = None
+    for k, pref in enumerate(prefs):
+        d = r[r.config_id.str.startswith(pref)]
+        if pref == "alpha_a":
+            d = d[~d.config_id.str.startswith("alpha_fixed")]
+        if pref == "decay_l":
+            d = d[d.experiment == "weight_decay"]
+        lv = sorted(d[fac].unique())
+        levels = levels or lv
+        assert lv == levels, (pref, lv, levels)
+        off, hw = ((0.0, 0.3) if len(prefs) == 1 else ((-0.2, 0.17), (0.2, 0.17))[k])
+        c, mk = SLICE_COL[k], SLICE_MK[k]
+        for i, v in enumerate(levels):
+            g = d[d[fac] == v]
+            cfg = g.config_id.iloc[0]
+            assert g.config_id.nunique() == 1 and len(g) == 8, cfg
+            x = i + off
+            coll = g.collapsed.astype(bool).to_numpy()
+            rank = g.collapse_aware_rank.to_numpy().astype(float)
+            assert (rank[coll] == 0).all()
+            printed[cfg] = rank.mean()
+            jit = rng.uniform(-0.6, 0.6, len(g)) * hw * 0.5
+            if split[cfg] == "calibration":
+                for ax in (top, bot):
+                    ax.axvspan(x - hw - 0.07, x + hw + 0.07, color="#ececec", lw=0, zorder=0)
+            top.hlines(rank.mean(), x - hw, x + hw, color=c, lw=1.6, zorder=3)
+            top.scatter(x + jit[~coll], rank[~coll], s=5, marker=mk, color=c, alpha=0.6, lw=0, zorder=4)
+            top.scatter(x + jit[coll], rank[coll], s=11, marker="x", color=style.COLORS[1], lw=0.7, zorder=4)
+            top.hlines(g.theory_fixed_point_rank.iloc[0], x - hw, x + hw, color=style.THEORY,
+                       ls=(0, (2.5, 1.5)), lw=0.9, zorder=2)
+            rh = g.theory_early_gain_rank.iloc[0]
+            if rh <= YTOP:
+                top.hlines(rh + 0.12, x - hw, x + hw, color=RHAT, lw=1.0, zorder=2.5)
+            else:  # out of regime (lambda_P = 0): R-hat = number of directions
+                top.annotate(f"{rh:g}", (x, YTOP - 0.05), xytext=(x, YTOP - 1.0), ha="center",
+                             va="top", fontsize=6.5, color=RHAT,
+                             arrowprops=dict(arrowstyle="->", color=RHAT, lw=0.7))
+            mu = g.final_max_representation_eigenvalue.to_numpy()
+            lo = mu < CLIP
+            bot.scatter(x + jit[~lo], mu[~lo], s=5, marker=mk, lw=0, alpha=0.7, zorder=4,
+                        color=[style.COLORS[1] if z else c for z in coll[~lo]])
+            bot.scatter(x + jit[lo], np.full(lo.sum(), CLIP), s=11, marker="v", lw=0, zorder=4,
+                        color=[style.COLORS[1] if z else c for z in coll[lo]])
+    for ax in (top, bot):
+        ax.set_xlim(-0.6, len(levels) - 0.4)
+        ax.set_xticks(range(len(levels)))
+        ax.grid(axis="x", visible=False)
+    top.set_xticklabels([])
+    labels = ticklabels or [tick(v) for v in levels]
+    bot.set_xticklabels(labels, fontsize=6.5, rotation=90)
+    bot.set_xlabel(label, fontsize=6.5, linespacing=1.0)
+    bot.set_yscale("log")
+    bot.axhline(FLOOR, color=style.COLORS[1], ls=":", lw=0.8, zorder=1)
+    top.set_ylim(-0.5, YTOP)
+axes[0, 2].text(0.27, 0.97, "coef.", transform=axes[0, 2].transAxes, fontsize=6.5,
+                color=SLICE_COL[0], ha="center", va="top")
+axes[0, 2].text(0.73, 0.97, "rate", transform=axes[0, 2].transAxes, fontsize=6.5,
+                color=SLICE_COL[1], ha="center", va="top")
+axes[0, 0].set_yticks(range(6))
+axes[0, 0].set_ylabel("collapse-aware rank")
+axes[1, 0].set_ylabel(r"largest $\mu_j$")
+axes[1, 0].set_ylim(CLIP / 4, 30)
+axes[1, 0].set_yticks([1e-18, 1e-12, 1e-6, 1e0])
+handles = [Line2D([], [], color=style.COLORS[0], marker="o", ls="", ms=2.5),
+           Line2D([], [], color=style.COLORS[0], lw=1.6),
+           Line2D([], [], color=style.COLORS[1], marker="x", ls="", ms=3.5),
+           Line2D([], [], color=RHAT, lw=1.0),
+           Line2D([], [], color=style.THEORY, ls=(0, (2.5, 1.5)), lw=0.9),
+           Line2D([], [], color=style.COLORS[4], marker="s", ls="", ms=2.5),
+           Line2D([], [], color=style.COLORS[1], ls=":", lw=0.8),
+           Patch(color="#ececec")]
+fig.legend(handles, ["seed", "mean of 8 seeds", "collapsed (drawn at 0)",
+                     r"early-gain count $\hat R$",
+                     r"fixed-point count $\#\{\rho_js_j>4\lambda\}$",
+                     r"$\alpha$ at fixed rate $\alpha\lambda_P$",
+                     r"collapse floor $10^{-12}$", "calibration config"],
+           loc="lower center", bbox_to_anchor=(0.5, 0.885), ncol=4, fontsize=6.5,
+           handlelength=1.5, columnspacing=0.9, handletextpad=0.35)
+fig.align_xlabels(axes[1])
+style.save(fig, "fig_phase")
+print({k: round(v, 3) for k, v in printed.items()})
