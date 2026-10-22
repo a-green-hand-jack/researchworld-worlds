@@ -1,0 +1,48 @@
+{
+ "source": "experiment-repo 0ce2e2b results/e1b/{prediction.json,e1b_runs.jsonl}, results/checks/e1b_small_eta.json",
+ "without": {
+  "runs": 195,
+  "mae": 0.4205128205128205,
+  "exact": 0.6512820512820513,
+  "mae_bound": 12.953846153846154,
+  "over": 39,
+  "under": 29,
+  "passed": true
+ },
+ "with_recomputed": {
+  "runs": 225,
+  "mae": 0.52,
+  "exact": 0.6044444444444445,
+  "mae_bound": 13.004444444444445,
+  "over": 57,
+  "under": 32,
+  "passed": true
+ },
+ "with_preregistered": {
+  "runs": 225,
+  "mae": 0.6488888888888888,
+  "exact": 0.5733333333333334,
+  "mae_bound": 13.004444444444445,
+  "over": 66,
+  "under": 30,
+  "passed": true
+ },
+ "rerun_recomputed": {
+  "runs": 30,
+  "mae": 1.1666666666666667,
+  "exact": 0.3,
+  "mae_bound": 13.333333333333334,
+  "over": 18,
+  "under": 3,
+  "passed": false
+ },
+ "rerun_preregistered": {
+  "runs": 30,
+  "mae": 2.1333333333333333,
+  "exact": 0.06666666666666667,
+  "mae_bound": 13.333333333333334,
+  "over": 27,
+  "under": 1,
+  "passed": false
+ }
+}

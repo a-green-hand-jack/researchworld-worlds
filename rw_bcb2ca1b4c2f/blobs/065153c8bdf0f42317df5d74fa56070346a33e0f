@@ -1,0 +1,46 @@
+"""Re-run all 160 B3 held-out configurations with the frozen code (experiment aab772d tree; code/e5_b3.py md5
+65fe6cac, = amendment 1) and compare final and per-check counts, the early count, the singular-value trajectories
+(max relative difference), the re-escape / dead-level / dead-slope readings and every prediction with the delivered
+records (results/e5/b3_heldout/b3_heldout_runs.jsonl.gz).
+Usage: python3 checks/e5_b3_heldout_rerun.py EXP_TREE OUT.json"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+EXP, OUT = sys.argv[1], sys.argv[2]
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e5_b3 as E
+
+
+def rerun(cfg):
+    return cfg["id"], E.run_one(cfg)
+
+
+if __name__ == "__main__":
+    t0 = time.time()
+    rows = [json.loads(l) for l in gzip.open(os.path.join(EXP, "results/e5/b3_heldout/b3_heldout_runs.jsonl.gz"), "rt")]
+    byid = {r["cfg"]["id"]: r for r in rows}
+    assert [r["cfg"] for r in sorted(rows, key=lambda r: r["cfg"]["id"])] == E.configs("heldout")
+    cf = sorted(E.configs("heldout"), key=lambda c: -c["T"] / c["eta"])
+    with Pool(8) as P:
+        out = dict(P.map(rerun, cf, chunksize=1))
+    diff, svmax = [], 0.0
+    for i, new in out.items():
+        old = byid[i]
+        for key in ("counts", "early", "reescape", "rank_increases_after_first_drop", "diverged"):
+            if new["truth"].get(key) != old["truth"].get(key):
+                diff.append((i, key, old["truth"].get(key), new["truth"].get(key)))
+        for key in ("dead_rel_max", "dead_slope_median"):
+            a, b = old["truth"].get(key), new["truth"].get(key)
+            if (a is None) != (b is None) or (a is not None and abs(a - b) > 1e-9 * max(abs(a), 1e-300)):
+                diff.append((i, key, a, b))
+        if old["truth"].get("sv") is not None and new["truth"].get("sv") is not None:
+            a, b = np.array(old["truth"]["sv"]), np.array(new["truth"]["sv"])
+            svmax = max(svmax, float(np.max(np.abs(a - b) / np.maximum(np.abs(a), 1e-300))))
+        if new["pred"] != old["pred"]:
+            diff.append((i, "pred", old["pred"], new["pred"]))
+    res = dict(what=__doc__, runs=len(out), numpy=np.__version__, seconds=time.time() - t0, differences=len(diff),
+               diff=diff[:50], sv_max_rel_diff=svmax)
+    json.dump(res, open(OUT, "w"), indent=1)
+    print({k: v for k, v in res.items() if k not in ("what", "diff")}, flush=True)
+    print("HUTIAN_WAKE: B3 held-out rerun done:", len(out), "runs,", len(diff), "differences, sv max rel diff", svmax, flush=True)

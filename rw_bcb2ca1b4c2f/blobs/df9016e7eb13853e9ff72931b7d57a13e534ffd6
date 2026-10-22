@@ -1,0 +1,52 @@
+{\footnotesize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Criterion & per-dir. acc. & exact rank & rank MAE & \shortstack{window\\MAE} & \shortstack{static\\MAE} \\
+\midrule
+\multicolumn{6}{@{}l}{\textbf{E1, development set} (rank at $t=T$)} \\
+\multicolumn{6}{@{}l}{\emph{race, orthogonal init, $d{=}32$, 1080 runs}} \\
+Race criterion & 0.997 [0.997, 0.998] & 0.92 [0.91, 0.94] & 0.08 [0.07, 0.10] & & \\
+Exact reduced flow & 1.000 [1.000, 1.000] & \textbf{1.00 [1.00, 1.00]} & \textbf{0.00 [0.00, 0.00]} & & \\
+Initial window & -- & 0.33 [0.30, 0.35] & 2.99 [2.80, 3.19] & & \\
+Static bound & -- & 0.00 [0.00, 0.00] & 12.99 [12.52, 13.48] & & \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{race, Gaussian init, $d{=}32$, 1080 runs}} \\
+Race criterion & 0.997 [0.997, 0.998] & 0.92 [0.91, 0.94] & 0.09 [0.07, 0.10] & & \\
+Exact reduced flow & 0.998 [0.997, 0.998] & \textbf{0.94 [0.92, 0.95]} & \textbf{0.07 [0.05, 0.09]} & & \\
+Initial window & -- & 0.32 [0.29, 0.35] & 3.01 [2.82, 3.21] & & \\
+Static bound & -- & 0.00 [0.00, 0.00] & 13.06 [12.59, 13.52] & & \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{race, Gaussian init, $d{=}128$, 1080 runs}} \\
+Race criterion & 0.997 [0.996, 0.997] & 0.90 [0.88, 0.92] & 0.11 [0.09, 0.13] & & \\
+Exact reduced flow & 0.999 [0.999, 1.000] & \textbf{0.98 [0.97, 0.99]} & \textbf{0.02 [0.01, 0.03]} & & \\
+Initial window & -- & 0.32 [0.29, 0.34] & 2.88 [2.70, 3.06] & & \\
+Static bound & -- & 0.00 [0.00, 0.00] & 12.71 [12.24, 13.20] & & \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{EMA, orthogonal init, $d{=}32$, 180 runs}} \\
+Race criterion & 0.994 [0.993, 0.996] & 0.82 [0.77, 0.88] & 0.18 [0.12, 0.23] & & \\
+Exact reduced flow & 1.000 [1.000, 1.000] & \textbf{1.00 [1.00, 1.00]} & \textbf{0.00 [0.00, 0.00]} & & \\
+Initial window & -- & 0.41 [0.33, 0.48] & 2.29 [1.96, 2.66] & & \\
+Static bound & -- & 0.00 [0.00, 0.00] & 14.73 [13.23, 16.18] & & \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{depth, orthogonal init, $d{=}32$, 180 runs}} \\
+Race criterion & 0.984 [0.981, 0.987] & 0.62 [0.54, 0.68] & 0.51 [0.39, 0.61] & & \\
+Exact reduced flow ($L{=}1$) & 1.000 [1.000, 1.000] & \textbf{1.00 [1.00, 1.00]} & \textbf{0.00 [0.00, 0.00]} & & \\
+Initial window & -- & 0.32 [0.25, 0.38] & 2.23 [1.93, 2.54] & & \\
+Static bound & -- & 0.00 [0.00, 0.00] & 15.88 [14.61, 17.16] & & \\
+\midrule
+\multicolumn{6}{@{}l}{\textbf{E1b, held-out and pre-registered} (rank at convergence)} \\
+aligned arms pooled, 600 & 0.989 [0.988, 0.991] & 0.78 [0.75, 0.81] & \textbf{0.25 [0.21, 0.30]} & 3.7 & 11.2 \\
+$p_0\times\lambda$ grid, 360 & 0.995 [0.994, 0.997] & 0.89 [0.86, 0.92] & \textbf{0.11 [0.08, 0.14]} & 3.5 & 11.7 \\
+EMA$\times\alpha$, 150 & 0.989 [0.986, 0.992] & 0.76 [0.69, 0.83] & \textbf{0.26 [0.19, 0.34]} & 3.9 & 10.5 \\
+depth, 90 & 0.966 [0.959, 0.973] & 0.40 [0.30, 0.50] & \textbf{0.81 [0.66, 0.97]} & 4.4 & 10.4 \\
+balanced (basin), 60 & 1.000 [1.000, 1.000] & 1.00 [1.00, 1.00] & \textbf{0.00 [0.00, 0.00]} & -- & 4.6 \\
+no stop-grad./predictor, 30 & 1.000 (both) & 1.00 (30/30) & \textbf{0.00} & -- & 21.0 \\
+random predictor (general), 105 & -- & 0.45 [0.35, 0.54] & \textbf{0.69 [0.55, 0.83]} & -- & 13.3 \\
+non-commuting (general), 90 & -- & 0.89 [0.82, 0.96] & \textbf{0.11 [0.04, 0.18]} & 1.1 & 12.5 \\
+finite batch (population), 30 & 0.556 [0.479, 0.643] & 0.53 [0.37, 0.70] & \textbf{0.63 [0.37, 0.90]} & 4.9 & 9.1 \\
+AdamW, 72$^{\dagger}$ & 0.418 [0.359, 0.476] & 0.00 [0.00, 0.00] & 13.65 [12.29, 15.07] & 16.3 & \textbf{5.1} \\
+\multicolumn{6}{@{}l}{\footnotesize $^{\dagger}$ only 2.8\% of the AdamW runs reach a stable rank. Window and static MAE are point estimates.} \\
+\bottomrule
+\end{tabular}
+}

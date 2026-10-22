@@ -1,0 +1,37 @@
+# Referee's reference sketch (working notes, not a delivery)
+
+Purpose: a minimal independent derivation to check the delivered theory against.
+It is not a claim of the study and is not cited by it.
+
+Linear JEPA: context view x_c, target view x_t (masks/augmentations of x), online
+encoder W (k x d), predictor P (k x k), target encoder Wbar (EMA of W, stop-grad).
+L = 1/2 E||P W x_c - Wbar x_t||^2 + (lam/2)||W||^2 + (lam_P/2)||P||^2.
+S_cc = E[x_c x_c^T], S_tc = E[x_t x_c^T].
+
+Gradient flow:
+  dW/dt = P^T Wbar S_tc - P^T P W S_cc - lam W
+  dP/dt = (Wbar S_tc - P W S_cc) W^T - lam_P P            (O(W^2) near W = 0)
+  dWbar/dt = beta (W - Wbar)                               (EMA, beta ~ (1-tau)/step)
+
+Near collapse (W small): the W equation is linear in W, P moves only through its
+own decay -lam_P P (the data term is O(||W||^2)). With P ~ p I and commuting
+S_cc, S_tc sharing eigenvectors u_i (eigenvalues c_i, t_i), a mode growing at rate
+r has Wbar = beta/(beta+r) W, so
+  r_i = p t_i * beta/(beta + r_i)  -  p^2 c_i  -  lam     (driving vs decay)
+Survival iff p t_i > p^2 c_i + lam at the relevant time (EMA lag only lowers the
+driving of fast modes); rank ~ #{i : p t_i - p^2 c_i > lam}.
+Things a correct theory of this kind should get right / that I will check:
+- the predictor scale enters both sides (driving ~ p, self-prediction decay ~ p^2),
+  so there is an optimal predictor scale and too large or too small kills modes;
+- predictor weight decay / LR make p time-dependent, a race against W growth;
+- masking changes t_i (cross-view covariance) relative to c_i (context
+  auto-covariance): with disjoint random masks the diagonal (local/noise) part of
+  the covariance drops out of S_tc but not of S_cc;
+- EMA momentum enters as the lag factor beta/(beta+r), not as a sign change;
+- non-commuting S_cc, S_tc and non-scalar P need the general linear operator, not
+  per-eigenvalue scalars; claims stated per "direction" must say which basis.
+Prior analyses of the same kind to check novelty against: Tian, Chen & Ganguli
+2021 (eigenmode ODEs with predictor, EMA and weight decay); Ziyin et al. 2023
+(stability of the collapsed point as a phase transition); Simon et al. 2023
+(stepwise eigenmode learning from small init); Littwin et al. 2024 (deep linear
+JEPA implicit bias towards high-regression-coefficient features).

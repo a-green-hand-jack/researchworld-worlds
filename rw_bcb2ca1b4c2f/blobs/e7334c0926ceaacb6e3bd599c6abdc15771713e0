@@ -1,0 +1,34 @@
+"""Development only (A3): tests the working hypothesis of theory/ext_A_adamw.md 'A3 first observations' as a level
+predictor. If the shared preconditioner made AdamW a GD race with effective decay lam * sigma (sigma = the shared
+sqrt(vhat) scale of W, time-averaged over [T/2, T], measured from the truth itself), the SV rank would be the static
+count #{c_k^2 >= 4 s_k lam sigma}. Prints cell means of rank_tavg, sigma (median and rms of sqrt(vhat) of W, median
+of P) and that count, plus the late singular values against c/s for one seed.
+Usage: python3 code/checks/e4_a3_sigma_static.py > results/e4/a3dev2/sigma_static_test.txt"""
+import sys, os, json, gzip, collections
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import e4_a3 as a3
+
+runs = [json.loads(l) for l in gzip.open("results/e4/a3dev2/a3dev_runs.jsonl.gz", "rt")]
+T = [r for r in runs if r["variant"] == "truth"]
+g = collections.defaultdict(list)
+for r in T:
+    c, s = a3.problem(r)[:2]
+    h = np.array(r["t"]) >= r["T"] / 2
+    bar = {k: float(np.mean(np.array(r[k])[h])) for k in ("sigW", "rmsW", "sigP")}
+    cnt = lambda sig: float((c ** 2 >= 4 * s * r["lam"] * sig).sum())
+    g[(r["stats"], r["side"], r["theta"], r["lam"])].append(
+        [r["rank_tavg"], bar["sigW"], bar["rmsW"], bar["sigP"], cnt(bar["sigW"]), cnt(bar["rmsW"]), r["static_bound"]])
+print("stats side theta lam | SV rank_tavg | sigma_W median, rms; sigma_P median | count at lam*sigma_W (median, rms) | static bound")
+for k in sorted(g, key=str):
+    a = np.mean(g[k], 0)
+    print(*k, "| %.1f | %.3g %.3g; %.3g | %.1f %.1f | %d" % tuple(a))
+print("\nlate state, e1b, side both, a0 1e-4, p0 0.5, seed 1 (every 2nd direction)")
+for lam in (0.005, 0.05):
+    for th in (0.0, 1.0):
+        r = [x for x in T if (x["stats"], x["side"], x["theta"], x["lam"], x["a0"], x["p0"], x["seed"]) == ("e1b", "both", th, lam, 1e-4, 0.5, 1)][0]
+        c, s = a3.problem(r)[:2]
+        print(f"lam {lam} theta {th} rank_tavg {r['rank_tavg']:.1f}")
+        print("  c/s            ", np.round((c / s)[::2], 3))
+        print("  SV of W at T   ", np.round((10 ** np.array(r["log10_sv"][-1]))[::2], 3))
+        print("  diag V'PV at T ", np.round(np.array(r["pdiag_every4"][-1])[::2], 3))

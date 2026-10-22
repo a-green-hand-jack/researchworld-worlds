@@ -1,0 +1,14 @@
+#!/bin/bash
+# Re-render every delivered figure/table from the delivered results/ with the delivered code/figures,
+# then compare against the delivered paper/figures and paper/tables.
+# Usage: regen.sh DELIVERY_DIR OUT_DIR
+set -u
+D=$1; O=$2
+rm -rf "$O"; mkdir -p "$O"
+cp -a "$D" "$O/work"
+cd "$O/work"
+python3 -u -c "import matplotlib,numpy,sys;print('python',sys.version.split()[0],'matplotlib',matplotlib.__version__,'numpy',numpy.__version__)"
+python3 -u code/figures/render_all.py > "$O/render.log" 2>&1; echo "render_all exit $?"
+tail -3 "$O/render.log"
+python3 -u /hutian/repo/checks/figregen/compare.py "$D" "$O/work" "$O/compare.json"
+echo "HUTIAN_WAKE: figure regeneration check finished"

@@ -1,0 +1,27 @@
+"""Joint seed bootstrap (within rows, same draw for both quantities) of the measured horizon ratio
+lam_c(50)/lam_c(20) against the headroom race's own ratio, and per-row seed means. Input: indep.py's run rows
+rebuilt from the raw logs (re-uses indep.py's functions by exec)."""
+import sys, json, math, numpy as np
+sys.argv = ["indep.py", "runs7", "score_rows.json", "score_delivered.json", "/tmp/indep_tmp.json"]
+src = open("/hutian/repo/checks/e7_prod/indep.py").read().split("res = {\"half\"")[0]
+exec(src)
+def ratio(s, key):
+    a, b = lamc(s, "e50", key), lamc(s, "e20", key)
+    return a / b if a and b else None
+rng = np.random.default_rng(5)
+d, rm, rr = [], [], []
+for _ in range(4000):
+    sel = {w: [by[w][i] for i in rng.integers(0, len(by[w]), len(by[w]))] for w in wds}
+    a, b = ratio(sel, "measured"), ratio(sel, "headroom_200")
+    if a and b: d.append(b - a); rm.append(a); rr.append(b)
+out = dict(measured=ratio(by, "measured"), race=ratio(by, "headroom_200"), diff_race_minus_measured=ratio(by, "headroom_200") - ratio(by, "measured"),
+           diff_ci=[float(np.percentile(d, 2.5)), float(np.percentile(d, 97.5))], n_ok=len(d),
+           race_ci=[float(np.percentile(rr, 2.5)), float(np.percentile(rr, 97.5))],
+           rows={str(w): {h: dict(measured=float(np.mean([r[h]["measured"] for r in by[w]])), race=float(np.mean([r[h]["headroom_200"] for r in by[w]])),
+                                  early=float(np.mean([r[h]["early_200"] for r in by[w]])), step0=float(np.mean([r[h]["step0"] for r in by[w]])),
+                                  mu_tight_run=float(np.mean([r[h]["mu_tight_run"] for r in by[w]])))
+                          for h in ("e20", "e50")} for w in wds})
+json.dump(out, open("/hutian/repo/checks/e7_prod/ratio_gap.json", "w"), indent=1)
+print({k: v for k, v in out.items() if k != "rows"})
+for w, v in out["rows"].items():
+    print(w, {h: {k: round(x, 1) for k, x in vv.items()} for h, vv in v.items()})

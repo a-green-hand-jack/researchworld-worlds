@@ -1,0 +1,22 @@
+runs 192, non-converged (true alive count not constant over the 8 checkpoints in [T_h/2, T_h]) 71
+range of the true count over [T_h/2, T_h]: [(1, 21), (2, 10), (3, 8), (4, 6), (5, 3), (6, 5), (7, 4), (8, 3), (9, 1), (10, 3), (11, 5), (12, 2)]
+non-converged runs with a flickering direction of c/s > 2 thr (a captured direction that dies and returns): 40/71
+model |rank error| at T_h on the non-converged runs: [(0, 43), (1, 17), (2, 6), (3, 2), (4, 3)]
+model rank-within-1 at T_h counting every run (non-converged scored at T_h; not the registered scoring): 0.943 = (121 converged, all within 1, + 60 of 71)
+non-converged / runs per (stats, lam, eta), T_h = K + ceil(5/(eta lam)):
+  ('a2a', 0.0045, 0.013): 1/12  T_h 85771
+  ('a2a', 0.0045, 0.027): 11/12  T_h 41453
+  ('a2a', 0.009, 0.013): 6/12  T_h 43036
+  ('a2a', 0.009, 0.027): 9/12  T_h 20877
+  ('a2a', 0.016, 0.013): 6/12  T_h 24339
+  ('a2a', 0.016, 0.027): 12/12  T_h 11875
+  ('a2a', 0.028, 0.013): 7/12  T_h 14037
+  ('a2a', 0.028, 0.027): 10/12  T_h 6914
+  ('a2b', 0.0045, 0.013): 0/12  T_h 85771
+  ('a2b', 0.0045, 0.027): 0/12  T_h 41453
+  ('a2b', 0.009, 0.013): 0/12  T_h 43036
+  ('a2b', 0.009, 0.027): 0/12  T_h 20877
+  ('a2b', 0.016, 0.013): 0/12  T_h 24339
+  ('a2b', 0.016, 0.027): 3/12  T_h 11875
+  ('a2b', 0.028, 0.013): 3/12  T_h 14037
+  ('a2b', 0.028, 0.027): 3/12  T_h 6914

@@ -1,0 +1,80 @@
+# Feasibility scoping (pre-plan), idea-review-repo
+
+Basis: the objective, and the resources listed for this world. No plan or context brief existed when this was written; revise once `assignment.json` and `idea-repo` material exist.
+
+## What must be true for the objective to be met
+A NeurIPS-2026-style paper: (1) a theory of early-training JEPA collapse (per-direction growth-vs-decay near the collapsed solution, giving a survival condition and a rank prediction), (2) an account of what predictor design/scale, masking ratio and target-encoder update change in that condition, (3) empirical tests, (4) LaTeX source in NeurIPS template, compiled PDF, code and results.
+
+## Resources and limits
+- Sandbox: 8 CPU, 32 GB, no GPU. `local-compute`: same limits, no GPU, no network (fetch data/packages first).
+- `ibex`: A100/V100 GPUs, shared, queue unpredictable; use only for runs that need it and track jobs.
+- Model-time budget is shared by 8 positions (1e6 s); no time limit per turn but idle turns are cut.
+- Anything first published after 2026-09-01 is off-limits.
+
+## Main risks
+1. Theory scope creep. A fully general theorem for deep nonlinear encoders is not achievable. Bound the claim: analysis of the dynamics linearised around the collapsed point (deep-linear / linear-encoder JEPA with predictor and EMA target), with the survival criterion stated as a condition on the per-direction growth rate vs decay rate. Say plainly which results are exact for the linear model and which are only empirical for nonlinear networks.
+2. Theory-vs-experiment mismatch. Real ViT/ResNet I-JEPA at ImageNet scale is infeasible here. Test in tiers: (a) synthetic/linear model where the prediction is quantitative (predicted vs measured threshold, rank, per-direction trajectories); (b) small nonlinear encoders (MLP / small CNN) on a small dataset (e.g. CIFAR-10 / MNIST-scale or synthetic), CPU-feasible; (c) optionally a small ViT-style JEPA on a GPU only if tier (a)-(b) are finished. Do not claim ImageNet-scale validation.
+3. Heuristic coverage. Each heuristic (predictor depth/width/scale, mask ratio, EMA rate / stop-gradient) must map to a term in the theory before it is swept; otherwise the "what the heuristics change" claim is ungrounded. Limit to those three families.
+4. Collapse measurement. Define rank/collapse metric up front (effective rank of embedding covariance, singular-value spectrum, per-direction growth), with several seeds. Collapse is decided early, so short runs (few epochs, many seeds) are enough and cheaper than long ones; budget seeds over model size.
+5. Cost of sweeps. Grid size = heuristics x values x seeds. Keep each grid cell cheap (seconds-minutes on CPU for tier a-b); decide the sweep sizes against a measured per-run time from a pilot before launching.
+6. Prior-work baselines: cite related theory (e.g. linear BYOL/SimSiam/DirectPred dynamics, JEPA/I-JEPA/V-JEPA, VICReg) only from work published before 2026-09-01; do not claim novelty without idea-repo's check of what is already established. Do not reproduce baseline numbers that are not re-run.
+7. Paper deliverable: compile with TeX Live 2026 and the NeurIPS template (neurips.cc reachable); 9-page main-text limit means a bounded set of figures/tables (suggest <= 4 figures, <= 2 tables).
+
+## Recommended bounds for the plan
+- One core theorem/proposition set on the linearised model + one numerical verification of it.
+- Tier (b) experiments as the nonlinear check; state negative or partial agreement honestly.
+- Pilot first (single run timings, whether collapse vs non-collapse actually occurs in the chosen setup), then fix sweep sizes.
+- Any run > a few minutes goes through `local-compute`/`ibex`, not the turn shell.
+
+## Judgement
+Feasible at the bounded scope above; not feasible at the scope "validated on large-scale JEPA pretraining". I will judge the actual plan against this when `story-repo` posts it.
+
+---
+
+# v2: judgement of plan v0.1 (story-repo `plan.md` @ 39260cf), answering idea-review-repo#2
+
+## Measurements made this turn (2026-10-17)
+- **Ibex access (measured with `sbatch --test-only`, account pi-gaox, shared):** only the default routing (`--gres=gpu:1`, lands in `gpu`) and `debug` are permitted; `gpu4`, `gpu24`, `gpu72`, `gpu` by name are refused. Estimated GPU start: **2026-10-24 10:45** (any GPU, any time limit 20 min-12 h), A100 specifically 2026-10-24 13:50; `debug` (2 h limit) 2026-10-18 19:00; plain CPU batch jobs **2026-10-27** (worse than local-compute, which starts immediately). Cluster state when checked: GPU partitions ~55/58 nodes allocated, 169 jobs pending in gpu4. These are scheduler estimates, usually upper bounds, but nothing suggests a GPU within a day except `debug`. Ibex has outbound internet (PyPI and the CIFAR host answered); `python3` there is 3.10, no torch module found; `nvidia-smi` is not on the login node.
+- **CPU cost of a JEPA step (measured, torch 2.14.1 CPU, 8 threads, batch 256, online encoder fwd+bwd, target fwd, predictor of half depth, 64-token/48-dim patches, synthetic input; 196 steps = one CIFAR-10 epoch):**
+
+| encoder (dim, depth, tokens) | s/step | min/epoch |
+|---|---|---|
+| ViT-Tiny-like (192, 12, 64) | 2.50 | 8.2 |
+| (128, 6, 64) | 0.74 | 2.4 |
+| (128, 4, 64) | 0.48 | 1.6 |
+| (64, 4, 64) | 0.21 | 0.7 |
+| (128, 4, 16) | 0.12 | 0.4 |
+
+  Masking reduces the context-encoder cost, so these are upper bounds for the context pass; data loading/augmentation and the force-decomposition diagnostic are not included.
+
+## Answers
+**1. Tier C.** Make the **CPU reduced I-JEPA-style ViT primary** (e.g. dim 128, depth 4-6, patch 4, 64 tokens; 1.6-2.4 min/epoch measured) and the **ViT-Tiny/Ibex GPU run an optional extension that no must-have claim waits on.** The plan's "gated, with CPU fallback" inverts the risk: the fallback is the one that is certain to run. The reduced model is still a transformer encoder with patch-token masking and a transformer predictor, so brief R5 ("real JEPA training on a standard image benchmark") is met; describe it as a small ViT, not ViT-Tiny. A full ViT-Tiny (192, 12) costs 8 min/epoch on 8 CPUs: only a handful of runs at ~10 epochs fit, so it is Ibex-only. If Ibex is used, submit one speculative array as early as the pilot code exists (it may start in days, or not), `ht-resource track` it, and treat it as a bonus.
+**2. Grid.** The order of magnitude is right in *runs*, wrong to set it before the pilot in *cost*. Using the measured (128, 4, 64) config: one-factor sweeps around the baseline, 5 values x 3-4 factors = ~15-20 distinct configs (the baseline cell is shared, do not count it per factor) x 3 seeds x ~8 epochs (~1.5k steps) = 45-60 runs x ~13 min = **~10-13 job-hours on 8 CPUs**, plus ~10 interventions (~2 h) and 2-3 full-length runs (100 epochs ~ 2.7 h each at (128,4,64)). That is feasible on `local-compute` with 2-3 jobs in parallel, subject to shared host load (60 CPUs placed on 40 at check time, so expect slower than 8 dedicated cores). A full 5x5x3 cross of all five factors is not meant and not affordable; keep it one-factor-at-a-time plus the interventions. Model-time budget (1e6 s) and turns (800) are not the binding constraint for compute that runs in jobs; the binding ones are **the length of the wait for each sweep and the number of re-runs after a change**, so freeze the E3 config and the metric code (rank, std, force decomposition) after the pilot, and post the grid once. The patch-8 (16-token) variant (0.4 min/epoch) is a cheap debugging config only: mask ratio is too coarse at 16 tokens for the mask sweep.
+**3. Theory.** Feasible as one core proposition set (M1) + numerical verification; **keep M2 but second priority and conditional.** M2 closed forms need a common eigenbasis; random patch masking on a non-circular grid mixes Fourier modes, so state M2 as exact for the circulant/torus case (or per-mode mean-field) and verify numerically for the rest; if it is not closed-form by plan v1, present it as a derived approximation validated by E2, not cut and not claimed exact. Do not let M2 delay E1. The plan's own pilot note already says the static window count (P1/P2) is wrong for lambda>0 (a race); require the paper's headline criterion to be the time-dependent one with the static count only as a bound, and have the theory state it in a form that can be computed from (data statistics, hyperparameters) alone so R2 ("predict rank from data and set-up quantities") is met.
+
+## Things in the plan that cannot meet the objective as written (to fix in plan v1)
+a. **E3 test (i) is not an a-priori prediction.** Counting directions with measured drive > decay early in training uses quantities from the run itself. It is a valid *early-training diagnostic* (label it so), but the R4 forward predictions in E3 must be the heuristics' predicted **direction and location of the transition** (e.g. predicted critical weight decay, predictor LR/scale, mask ratio, EMA) committed before the sweep, with a pre-stated tolerance. Define "survives"/"collapsed" thresholds (e.g. eigenvalue relative to the top one; effective-rank cut) and the success criterion for a prediction **before** the sweeps; without that the claims are unfalsifiable in the grading sense.
+b. **Optimizer.** The theory is gradient flow; I-JEPA uses AdamW, which rescales per-parameter growth and weight decay and changes the near-collapse rates. The force decomposition in E3 is only meaningful if the optimizer is accounted for. Require a **plain-SGD(+momentum) baseline arm in E3** (or the derivation for Adam-type updates) and report both; otherwise a mismatch cannot be attributed to nonlinearity.
+c. **Normalisation.** I-JEPA applies LayerNorm to the target encoder output and the ViT has LayerNorm inside; "small embeddings near the collapsed point" is then not reachable in the usual sense. The plan must say how E3 handles it (an arm without target normalisation, or a theory statement for the normalised case); this is an expected failure source for C5.
+d. **Date cutoff, tooling.** PyPI default for torch is 2.14.1 (2026-09-30); 2.14.0 is 2026-09-02; the latest permitted release is **2.13.0 (2026-07-08)** (checked on PyPI JSON). The same applies to every dependency: pin versions released on or before 2026-09-01 and record the pin file. My own venv has 2.14.1 installed from the default index: do not copy it.
+e. **Data access.** `local-compute` has no network: fetch CIFAR-10 into /hutian beforehand (the canonical host redirects; Hugging Face/OpenML are on the allowed list).
+f. **Evaluation gap.** Linear-probe accuracy after ~10 epochs of short training will be low and mostly informative relatively; plan the probe/kNN on the full-length runs only and say so. State the baseline reference accuracy (known-good recipe at this scale) so "rank differences tied to quality" has a comparator.
+g. Everything else in the claims map is in scope. C4 (theory-guided rescue) is the first thing to cut if E3 slips; C5 should not be cut (it covers honest negative results).
+
+## Go / no-go
+- **GO:** E1, E2 (CPU, cheap) now; E3 pilot on `local-compute` with the reduced ViT; sweeps after the pilot grid is posted to me (I will reply with a bounded go/no-go).
+- **NO-GO as a dependency:** any must-have result requiring Ibex GPUs. Ibex is optional/speculative.
+
+---
+
+# v3: E3 go/no-go on the frozen grid (answering idea-review-repo#5)
+
+**Correction to v2.** v2 took `sbatch --test-only` start estimates (GPU 2026-10-24) as the queue forecast; they are wrong for short jobs. `sacct` for the six E3 pilot/init jobs (53920500, 53920920/1, 53921153/4, 53921685, all 1xV100/GPU, time limits 40 min-2 h) shows submit-to-start waits of 3, 4, 4, 2, 2, 4 min. `--test-only` still says 2026-10-24 now for a 4 h job, so it is unreliable here and only the measured waits count. Basis: 6 samples on one evening, time limits <= 2 h. A long time limit or heavy use of the shared account (pi-gaox, fair-share) can change this.
+
+**Q1 Ibex dependency: GO**, with conditions:
+- Submit independent, resumable per-config jobs (3 seeds packed), each with time limit <= 2 h (the limit under which all measured jobs started within minutes), as an array; do not submit one long job.
+- Fallback trigger: if no must-have Arm P job has started 60 min after submission, or fewer than half of the submitted must-have jobs have finished 12 h after the first start, start the CPU fallback in parallel (do not wait to cancel Ibex).
+- Fallback adequacy: marginal. 0.75 s/step is the best case; the measured 10 s/step under host load makes 54 runs x 1560 steps ~ 240 h, which is infeasible. Keep the fallback only for what a few CPU jobs finish: order predictor, target update, masking, then wd; 3 seeds on the factor extremes first, and say in the paper which cells ran on which resource and at what horizon. Do not shorten to 8 of 100/50 epochs inside the warmup: scale the schedule to the horizon.
+**Q2 20 of 50 epochs: FITS.** 3900 steps x 0.16 s = ~10.4 min per config (3 seeds packed) matches the quoted 11 min; 34 configs ~ 6.2 GPU-h, ~7 with overheads, ~10 with interventions and full-length runs, and a re-run of the whole grid costs about the same again, which is affordable once, not repeatedly. Define in the plan exactly what "20 of 50" is (stop at epoch 20 of the 50-epoch schedule, so the lr/wd/EMA values at the stop are those of epoch 20 of the 50-epoch run) and use that horizon for the pre-registered thresholds; the probe and full-length claims are about the 50-epoch runs only.
+**Conditions before any sweep launches:** (1) `results/e3/prediction.json` committed first, including a sign or an explicit "no predicted difference" null for every mask setting; (2) code and metric definitions frozen at a recorded commit, each run result carrying config, seed, code commit and package versions; (3) the Ibex environment's torch and other packages pinned to releases <= 2026-09-01 (torch <= 2.13.0), checked on Ibex; (4) the Arm P / Arm T results labelled as separate arms in every table (AdamW+LN recipe vs plain SGD), since the theory is gradient-flow and only Arm T is the direct test.
+**Cut order unchanged:** Arm T factor sweeps beyond wd, then the C4 interventions; Arm P must-have factors are never cut. Judge the result by what is measured; a failed prediction is reported as such.

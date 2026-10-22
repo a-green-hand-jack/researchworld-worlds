@@ -1,0 +1,60 @@
+"""Referee check that the delivered E3 result files come from the raw runs of release e3-runs, and per-run provenance.
+Inputs: the unpacked release asset e3_runs.tgz (dir e3runs/), experiment-repo's delivered code/e3_grid.py and results/e3
+at the commit under review. Runs the delivered `analyze` / `analyze-followup` into a scratch dir and compares every output
+file with the delivered one (summary*.json compared as parsed JSON, ignoring the recorded `command` string).
+compute.json (delivered from 1bdfa89 on) is regenerated with the delivered `compute` command and compared the same way.
+Also: each run's provenance (code commit, e3_ijepa.py md5, GPU, wall seconds), and Arm T's C-rank split into the
+weight-decay sweep and the other configs (post hoc diagnostic, my own Spearman, scipy).
+Usage: python3 checks/e3_reanalyze.py RUNS_DIR CODE_DIR RESULTS_E3_DIR TGZ [OUT_JSON]
+"""
+import sys, os, json, glob, hashlib, subprocess, tempfile, shutil, collections
+from scipy.stats import spearmanr
+
+runs, code, res, tgz = sys.argv[1:5]
+outp = sys.argv[5] if len(sys.argv) > 5 else os.path.join(os.path.dirname(__file__), "e3_reanalyze.json")
+out = dict(tgz_sha256=hashlib.sha256(open(tgz, "rb").read()).hexdigest(),
+           e3_ijepa_md5_delivered=hashlib.md5(open(os.path.join(code, "e3_ijepa.py"), "rb").read()).hexdigest())
+tmp = tempfile.mkdtemp()
+for f in ("prediction.json", "prediction_followup.json"):
+    shutil.copy(os.path.join(res, f), tmp)
+for cmd in ("analyze", "analyze-followup", "compute"):
+    subprocess.run([sys.executable, os.path.join(code, "e3_grid.py"), cmd, runs, tmp], check=True, capture_output=True)
+
+
+def diff(a, b, p=""):
+    if isinstance(a, dict) and isinstance(b, dict):
+        return [x for k in set(a) | set(b) if k != "command" for x in
+                ([(p + "/" + k, "missing")] if k not in a or k not in b else diff(a[k], b[k], p + "/" + k))]
+    if isinstance(a, list) and isinstance(b, list):
+        return [(p, "len")] if len(a) != len(b) else [x for i, (u, v) in enumerate(zip(a, b)) for x in diff(u, v, f"{p}[{i}]")]
+    return [] if a == b or (a != a and b != b) else [(p, a, b)]
+
+
+cmp = {}
+for f in ("runs.csv", "trajectories.jsonl", "trajectories_followup.jsonl", "forces.jsonl", "forces_followup.jsonl"):
+    cmp[f] = open(os.path.join(tmp, f), "rb").read() == open(os.path.join(res, f), "rb").read()
+for f in ("summary.json", "summary_followup.json", "compute.json"):
+    if not os.path.exists(os.path.join(res, f)):
+        cmp[f] = "not delivered"; continue
+    d = diff(json.load(open(os.path.join(tmp, f))), json.load(open(os.path.join(res, f))))
+    cmp[f] = "identical except command" if not d else d[:20]
+out["regenerated_vs_delivered"] = cmp
+
+prov = collections.Counter(); gpu = collections.defaultdict(lambda: dict(runs=0, seconds=0.0, configs=set()))
+for p in sorted(glob.glob(os.path.join(runs, "*", "s*", "provenance.json"))):
+    v = json.load(open(p)); fin = json.load(open(p.replace("provenance.json", "final.json")))
+    prov[(v["code_commit"], v["e3_ijepa_md5"])] += 1
+    g = gpu[v["gpu"]]; g["runs"] += 1; g["seconds"] += fin["seconds"]; g["configs"].add(p.split(os.sep)[-3])
+out["provenance"] = [dict(commit=c, md5=m, runs=n) for (c, m), n in prov.items()]
+out["gpu"] = {k: dict(runs=v["runs"], wall_hours=round(v["seconds"] / 3600, 2), configs=sorted(v["configs"])) for k, v in gpu.items()}
+
+S = json.load(open(os.path.join(res, "summary.json"))); P = json.load(open(os.path.join(res, "prediction.json")))["configs"]
+T = [r for r in S["rows"] if r["arm"] == "T" and r["value"] != "nosg"]
+split = {}
+for lab, rr in (("all", T), ("wd sweep", [r for r in T if r["factor"] == "wd"]), ("other", [r for r in T if r["factor"] != "wd"])):
+    s = spearmanr([P[r["name"]]["count_pred"] for r in rr], [r["count"] for r in rr])
+    split[lab] = dict(n=len(rr), rho=float(s.statistic), configs={r["name"]: [round(P[r["name"]]["count_pred"], 1), round(r["count"], 1)] for r in rr})
+out["arm_T_crank_split_post_hoc"] = split
+out["arm_T_wd0.01_variants_count"] = {r["name"]: round(r["count"], 1) for r in S["rows"] if r["arm"] == "T" and r["factor"] != "wd"} | {"T_wd0.01": next(round(r["count"], 1) for r in S["rows"] if r["name"] == "T_wd0.01")}
+json.dump(out, open(outp, "w"), indent=1)
+print(json.dumps(out, indent=1)[:4000])

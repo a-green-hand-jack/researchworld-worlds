@@ -1,0 +1,11 @@
+{
+ "experiment_commit": "2b0c0afa3644bf14b9ba3f24cdd27aab451158eb",
+ "code_md5": {"code/e6_r4_heldout.py": "dd977e41b8e6978242d40746fa9f31bc", "code/e6_r4.py": "2b99b11a8a90c433b51e2e27a2ab30c2"},
+ "init_msq_over_eps": {"what": "mean over pairs of |Pi z_t|^2/d at t = 0, divided by eps = 1e-5, over the 120 held-out base configurations",
+                       "min": 0.01368241765660569, "median": 0.027214106269786653, "max": 0.04933974748262234},
+ "equiv": [
+  {"cfg": {"data": "field", "act": "tanh", "s1": 1.0, "lam": 0.03, "T": 667, "seed": 649}, "identical": true, "rank": 7, "s": 44.5},
+  {"cfg": {"data": "field", "act": "tanh", "s1": 0.8, "lam": 0.006, "T": 600, "seed": 40000}, "identical": true, "rank": 12, "s": 41.2}
+ ],
+ "equiv_note": "train_full (base runs) against e6_r4.train (floor runs and dev): every output of e6_r4.train equal as JSON (ranks, deltas, early, sv_top, rank_rel, w2_rank, p_max, p_diag_mean); smoke config and held-out config 0 cut to T = 600"
+}

@@ -1,0 +1,42 @@
+"""Development only (A3): summary of the 576-run A3 development grid (results/e4/a3dev/a3dev_runs.jsonl.gz, config
+committed in 7a04f53 before it ran). Time-averaged rank over [T/2, T] by rotation, lam, a0, p0 (mean over seeds),
+against the static bound and the A-iv' settled count #{c/s > thr} (aligned basis), and the paired theta effect.
+Usage: python3 code/checks/e4_a3_dev_summary.py > results/e4/a3dev/summary.txt"""
+import sys, os, json, gzip, itertools
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import e4_a3 as a3
+
+runs = [json.loads(l) for l in gzip.open("results/e4/a3dev/a3dev_runs.jsonl.gz", "rt")]
+print("runs", len(runs), "finite", sum(r["finite"] for r in runs))
+rot = sorted({(r["side"], r["theta"]) for r in runs}, key=str)
+print("rotations", rot)
+for st in sorted({r["stats"] for r in runs}):
+    sub = [r for r in runs if r["stats"] == st]
+    try:
+        c, s = a3.problem(dict(sub[0]))[:2] if False else (None, None)
+    except Exception:
+        pass
+    print(f"\n== stats {st}: rank_tavg mean over seeds (static bound in brackets)")
+    for lam, a0, p0 in itertools.product(sorted({r['lam'] for r in sub}), sorted({r['a0'] for r in sub}), sorted({r['p0'] for r in sub})):
+        cell = [r for r in sub if (r["lam"], r["a0"], r["p0"]) == (lam, a0, p0)]
+        line = []
+        for sd, th in rot:
+            x = [r["rank_tavg"] for r in cell if (r["side"], r["theta"]) == (sd, th) and r["finite"]]
+            line.append(f"{sd[:4]}{th:g}:{np.mean(x):5.1f}" if x else f"{sd[:4]}{th:g}:  -  ")
+        print(f"lam {lam:<5} a0 {a0:<6} p0 {p0:<3} sb {cell[0]['static_bound']:>2} | " + " ".join(line))
+print("\n== paired theta effect (rotated - aligned, same stats/lam/a0/p0/seed)")
+key = lambda r: (r["stats"], r["lam"], r["a0"], r["p0"], r["seed"])
+base = {key(r): r["rank_tavg"] for r in runs if r["theta"] == 0}
+for sd, th in rot:
+    if th == 0:
+        continue
+    d = np.array([r["rank_tavg"] - base[key(r)] for r in runs if (r["side"], r["theta"]) == (sd, th) and key(r) in base])
+    print(f"{sd} theta {th}: n {d.size} mean {d.mean():+.2f} median {np.median(d):+.2f} share>0 {np.mean(d > 0.5):.2f} share<0 {np.mean(d < -0.5):.2f}")
+print("\n== lam effect (paired over lam, same stats/rotation/a0/p0/seed)")
+k2 = lambda r: (r["stats"], r["side"], r["theta"], r["a0"], r["p0"], r["seed"])
+lams = sorted({r["lam"] for r in runs})
+for l0, l1 in zip(lams, lams[1:]):
+    A = {k2(r): r["rank_tavg"] for r in runs if r["lam"] == l0}
+    d = np.array([r["rank_tavg"] - A[k2(r)] for r in runs if r["lam"] == l1 and k2(r) in A])
+    print(f"lam {l0} -> {l1}: mean {d.mean():+.2f} share>0 {np.mean(d > 0.5):.2f} share<0 {np.mean(d < -0.5):.2f}")

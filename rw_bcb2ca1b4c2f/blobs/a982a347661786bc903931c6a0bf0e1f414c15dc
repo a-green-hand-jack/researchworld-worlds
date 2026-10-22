@@ -1,0 +1,90 @@
+"""E6 rungs 2-3 held-out runner under the bounded go (execution only; committed before launch). Runs amendment 2's
+configurations (code/e6_r23_a2.py configs: seed SEED0 + k) with the registered per-run function e6_r23.run_one, values
+unchanged, and adds the go's accounting:
+  - one result file per run (OUTDIR/runs/<id>.json), written on completion; a run with a file is not run again, so a
+    restart after a kill finishes the grid without re-running anything;
+  - per run: process CPU seconds (time.process_time in the worker, single-threaded BLAS), wall seconds, T, steps and
+    the host 1-min load average at start; one printed line per finished run;
+  - a bound in process CPU-hours: when the sum over finished runs reaches it, no further run is started, the pool is
+    stopped, and the completed runs are assembled with n stated;
+  - slow host (go condition 6): from 2 h of wall time into a launch, at every finished run the CPU-h at completion is
+    projected (CPU-h so far + remaining steps x CPU-s per step so far); a projection past the bound stops the launch
+    there, as at the bound;
+  - order: r2_heldout as the registered runner (longest T first); r3_heldout by unit (a base run with its floor
+    re-run), units ordered by rep half, then data x act cell, so half 0 is complete before half 1 starts;
+  - at the end the per-run files are assembled into r23_GRID_runs.jsonl.gz and r23_GRID_meta.json, the files
+    e6_r23_a2.py score reads, and a HUTIAN-style wake line (JOB_DONE_PREFIX) is printed.
+Usage: python3 code/e6_r23_run.py GRID OUTDIR NPROC BOUND_CPU_H"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import e6_r23_a2 as A
+Q = A.Q
+
+
+def timed(cfg):
+    load = os.getloadavg()[0]; c0 = time.process_time(); w0 = time.time()
+    r = Q.run_one(cfg)
+    r["accounting"] = dict(cpu_s=time.process_time() - c0, wall_s=time.time() - w0, T=cfg.get("T"),
+                           steps=cfg.get("T"), load_at_start=load, pid=os.getpid())
+    return r
+
+
+def order(grid, cf):
+    if grid == "r3_heldout":
+        unit = lambda c: c.get("floor_of", c["id"]) if "floor" in c else c["id"]
+        base = {c["id"]: c for c in cf if "floor" not in c}
+        key = lambda c: (base[unit(c)]["rep"], base[unit(c)]["data"], base[unit(c)]["act"], unit(c), "floor" in c)
+        return sorted(cf, key=key)
+    return sorted(cf, key=lambda r: -r["T"])
+
+
+def main(grid, outdir, nproc, bound_h):
+    rd = os.path.join(outdir, "runs"); os.makedirs(rd, exist_ok=True)
+    cf = Q.configs(grid); here = os.path.dirname(os.path.abspath(__file__))
+    have = {int(f[:-5]) for f in os.listdir(rd) if f.endswith(".json")}
+    cpu = sum(json.load(open(os.path.join(rd, f"{i}.json")))["accounting"]["cpu_s"] for i in have)
+    todo = [c for c in order(grid, cf) if c["id"] not in have]
+    json.dump([c["id"] for c in order(grid, cf)], open(os.path.join(outdir, "run_order.json"), "w"))
+    print(f"{grid}: {len(cf)} runs, {len(have)} already done ({cpu / 3600:.2f} CPU-h), {len(todo)} to run, "
+          f"{nproc} processes, bound {bound_h} CPU-h", flush=True)
+    t0 = time.time(); stopped = False; cpu0 = cpu; done_steps = 0; steps_all = sum(c["T"] for c in todo)
+    pool = Pool(int(nproc))
+    try:
+        for r in pool.imap_unordered(timed, todo, chunksize=1):
+            a = r["accounting"]; cpu += a["cpu_s"]
+            json.dump(r, open(os.path.join(rd, f"{r['cfg']['id']}.tmp"), "w"))
+            os.replace(os.path.join(rd, f"{r['cfg']['id']}.tmp"), os.path.join(rd, f"{r['cfg']['id']}.json"))
+            have.add(r["cfg"]["id"])
+            print(f"run {r['cfg']['id']} T={a['T']} cpu={a['cpu_s']:.0f}s wall={a['wall_s']:.0f}s load={a['load_at_start']:.1f}"
+                  f" | {len(have)}/{len(cf)} cum {cpu / 3600:.2f} CPU-h, {time.time() - t0:.0f}s", flush=True)
+            if cpu >= bound_h * 3600:
+                stopped = True; print(f"bound {bound_h} CPU-h reached: stopping", flush=True); break
+            done_steps += a["T"]; left = steps_all - done_steps
+            if time.time() - t0 >= 7200 and done_steps:
+                proj = cpu + left * (cpu - cpu0) / max(done_steps, 1)
+                if proj > bound_h * 3600:
+                    stopped = True
+                    print(f"slow host: projected {proj / 3600:.1f} CPU-h > bound {bound_h}: stopping", flush=True); break
+    finally:
+        pool.terminate(); pool.join()
+    rows = [json.load(open(os.path.join(rd, f"{i}.json"))) for i in sorted(have)]
+    with gzip.open(os.path.join(outdir, f"r23_{grid}_runs.jsonl.gz"), "wt") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    meta = dict(grid=grid, runs=len(cf), completed=len(rows), stopped_at_bound=stopped, bound_cpu_h=bound_h,
+                cpu_h=sum(r["accounting"]["cpu_s"] for r in rows) / 3600,
+                wall_s_this_launch=time.time() - t0, numpy=np.__version__,
+                md5={p: Q.md5(os.path.join(here, p)) for p in ["e6_r23.py", "e6_r2.py", "linjepa.py", "baselines/dvd_mu.py",
+                                                               "e4_theory.py", "e6_r23_a2.py", "e6_r23_run.py"]},
+                config=Q.GRIDS[grid], command=f"code/e6_r23_run.py {grid}",
+                seeding=f"amendment 2: base run k has seed {A.SEED0.get(grid)} + k")
+    json.dump(meta, open(os.path.join(outdir, f"r23_{grid}_meta.json"), "w"), indent=1)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), f"E6 {grid}: {len(rows)}/{len(cf)} runs, "
+          f"{meta['cpu_h']:.2f} CPU-h{' (stopped at bound)' if stopped else ''}", flush=True)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[2], int(sys.argv[3]), float(sys.argv[4]))

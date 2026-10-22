@@ -1,0 +1,95 @@
+"""Independent check of experiment-repo 6d4cb2e results/e4/a1/mechanism.json, plus the level test its reading
+("A1d's 0.808 is carried by the hover ... a level question (A-iv'), not a missing collapse loop") rests on.
+Reuses experiment-repo's 80-bit trajectory (code/checks/e4_a1_mechanism.py traj, the registered map) and its
+definitions; adds, per wrong (S) pair: |a| at the checkpoint relative to 0.05, and c_k/s_k of the direction
+(A-iv' settled level). A wrong pair on a direction with c/s <= 0.05 is one the settled law flips to dead;
+a wrong pair with c/s > 0.05 is not fixed by the level and needs the dynamics (transient, collapse loop).
+Usage: python3 checks/e4_a1_mechanism_level.py EXPERIMENT_REPO_DIR [NPROC] > checks/e4_a1_mechanism_level.json"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+ER = sys.argv[1]
+os.chdir(ER)
+sys.path.insert(0, os.path.join(ER, "code", "checks")); sys.path.insert(0, os.path.join(ER, "code"))
+import e4_a1 as A
+import e4_a1_mechanism as M
+
+THR, K = A.THR, A.K
+
+
+def job(args):
+    r, cfg = args
+    amp, mn, mt, _ = M.traj(cfg)
+    return r["id"], amp, mn
+
+
+def q(x):
+    x = np.asarray(x, float)
+    return {p: round(float(np.quantile(x, p / 100)), 4) for p in (1, 10, 25, 50, 75, 90, 99)} if x.size else None
+
+
+def main():
+    nproc = int(sys.argv[2]) if len(sys.argv) > 2 else 8
+    t0 = time.time()
+    runs = [json.loads(l) for l in gzip.open(M.RUNS, "rt")]
+    cfgs = {c["id"]: c for c in A.configs()}
+    secs = {}
+    for r in runs:
+        Al = np.array(r["alive"], bool)
+        tm = np.array([np.inf if x is None else x for x in r["alive_from"]])
+        tm[np.abs(np.array(r["state_K"]["a"])) > THR] = K
+        secs[r["id"]] = (np.array(M.CK)[:, None] >= tm[None, :]) & ~Al
+    todo = [(r, cfgs[r["id"]]) for r in runs if secs[r["id"]].any()]
+    with Pool(nproc) as pool:
+        res = {i: (amp, mn) for i, amp, mn in pool.map(job, todo)}
+    cls = lambda x: np.where(x >= M.HOVER, 0, np.where(x < M.COLL, 1, 2))
+    names = ["hover", "collapse", "intermediate"]
+    tot = dict(wrong=0, rankbad=0, mismatch=0)
+    pc = {n: 0 for n in names}; dcl_pairs = {n: 0 for n in names}
+    ratio_hover, cs_pair = [], {n: [] for n in names}
+    cs_pair_dir = {n: [] for n in names}
+    rb_fixed_by_level = 0; rb_with_S = 0; rb_all_S_low_cs = 0
+    lastck_hover = []
+    for r in runs:
+        Al = np.array(r["alive"], bool); P = np.array(r["pred_alive"], bool); sec = secs[r["id"]]
+        W = P != Al; bad = np.abs(P.sum(1) - Al.sum(1)) > 1
+        tot["wrong"] += int(W.sum()); tot["rankbad"] += int(bad.sum())
+        if r["id"] not in res:
+            continue
+        amp, mn = res[r["id"]]
+        tot["mismatch"] += int(((amp > THR) != Al).sum())
+        c, s = A.stats(cfgs[r["id"]]["stats"]); cs = np.asarray(c / s, float)
+        WS = W & sec; pcl = cls(amp); dcl = cls(mn)
+        for j, n in enumerate(names):
+            m = WS & (pcl == j); pc[n] += int(m.sum())
+            cs_pair[n] += np.broadcast_to(cs[None, :], m.shape)[m].tolist()
+            md = WS & (dcl == j)[None, :]; dcl_pairs[n] += int(md.sum())
+            cs_pair_dir[n] += np.broadcast_to(cs[None, :], md.shape)[md].tolist()
+        mh = WS & (pcl == 0)
+        ratio_hover += (amp[mh] / THR).tolist()
+        # rank-error>1 checkpoints with a wrong (S) pair: are all their wrong (S) pairs on c/s <= thr directions?
+        for i in np.where(bad & WS.any(1))[0]:
+            rb_with_S += 1
+            rb_all_S_low_cs += int(np.all(cs[WS[i]] <= THR))
+    allcs = np.concatenate([np.asarray(v) for v in cs_pair.values()])
+    out = dict(
+        reproduces=dict(wrong_pairs_total=tot["wrong"], rankbad_total=tot["rankbad"], wrong_S_pairs=pc,
+                        wrong_S_pairs_by_direction_class=dcl_pairs, alive_check_mismatch=tot["mismatch"],
+                        runs_recomputed=len(res)),
+        hover_pairs_absa_over_thr=q(ratio_hover),
+        hover_pairs_within_10pct=float(np.mean(np.asarray(ratio_hover) >= 0.9)) if ratio_hover else None,
+        hover_pairs_within_5pct=float(np.mean(np.asarray(ratio_hover) >= 0.95)) if ratio_hover else None,
+        wrong_S_pairs_cs_over_thr=dict(all=q(allcs / THR), **{n: q(np.asarray(v) / THR) for n, v in cs_pair.items()}),
+        wrong_S_pairs_share_cs_le_thr=dict(all=float(np.mean(allcs <= THR)),
+                                           **{n: (float(np.mean(np.asarray(v) <= THR)) if v else None) for n, v in cs_pair.items()}),
+        wrong_S_pairs_share_cs_le_thr_by_direction_class={n: (float(np.mean(np.asarray(v) <= THR)) if v else None)
+                                                         for n, v in cs_pair_dir.items()},
+        rankbad_with_S=rb_with_S, rankbad_all_S_pairs_on_cs_le_thr=rb_all_S_low_cs,
+        seconds=time.time() - t0, input="experiment-repo 6d4cb2e results/e4/a1/a1_runs.jsonl.gz",
+        code="experiment-repo 6d4cb2e code/checks/e4_a1_mechanism.py traj (80-bit), code/e4_a1.py stats/configs")
+    print(json.dumps(out, indent=1))
+
+
+if __name__ == "__main__":
+    main()

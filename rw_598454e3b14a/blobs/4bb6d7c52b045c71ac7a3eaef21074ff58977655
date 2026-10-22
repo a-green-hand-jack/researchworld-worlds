@@ -1,0 +1,100 @@
+"""F5: held-out E1b (pre-registered, results/e1b/prediction.json committed before the runs).
+(a) p0 x lambda grid: cell colour = measured mean rank (5 seeds); black line = pre-registered complete-collapse boundary lambda_c(p0) of the race criterion;
+    dashed white = pre-registered predicted-rank contours; the static bound predicts collapse only for lambda > 0.375, off scale.
+(b) measured vs predicted rank per run, race/general/basin criterion; (c) same runs against the static bound. Diverged runs excluded; batch runs omitted (population prediction).
+Inputs: results/e1b/summary.json (cells.grid, N1_aligned_all, criteria), prediction.json (boundary), e1b_runs.csv."""
+import os, sys, csv
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
+FIGW = fs.TEXTWIDTH  # full text width: included at width=\linewidth
+ARMS = [("grid", r"$p_0\times\lambda$ grid", "#0072B2", "o"), ("ema_alpha", r"EMA$\times\alpha$", "#E69F00", "s"), ("depth", "depth", "#CC79A7", "^"),
+        ("balanced", "balanced", "#009E73", "D"), ("randpred", "random pred.", "#D55E00", "v"), ("noncomm", "non-comm.", "#56B4E9", "P")]
+
+def edges_log(v):
+    lv = np.log10(v); mid = (lv[1:] + lv[:-1]) / 2
+    return np.concatenate([[lv[0] - (mid[0] - lv[0])], mid, [lv[-1] + (lv[-1] - mid[-1])]])
+
+def make(outdir, debug_png=None):
+    fs.setup()
+    s, spath = common.load_e1b_summary()
+    rdir = os.path.join(common.results_dir(), "e1b")
+    ppath = os.path.join(rdir, "prediction.json"); cpath = os.path.join(rdir, "e1b_runs.csv")
+    import json
+    bd = json.load(open(ppath))["boundary"]
+    c = s["cells"]["grid"]
+    P = np.array(sorted({float(k.split("|")[0][3:]) for k in c})); L = np.array(sorted({float(k.split("|")[1][4:]) for k in c}))
+    M = np.array([[c[f"p0={p}|lam={l}"]["rank_meas_mean"] for l in L] for p in P])
+    # x coordinate: log10(lambda) for lambda>0; the lambda=0 column sits left of a gap
+    step = np.log10(L[2] / L[1]); xl = np.log10(L[1:]); x0 = xl[0] - 2 * step
+    xc = np.concatenate([[x0], xl]); xe = np.concatenate([[x0 - step / 2, x0 + step / 2], xl[0] - step / 2 + np.arange(0, len(xl) + 1) * step])
+    ye = edges_log(P); ye[-1] += 0.10
+    fig = plt.figure(figsize=(FIGW, 1.75), constrained_layout=True)  # drawn at the printed width (full text block): every font is its printed size
+    gs = fig.add_gridspec(1, 3, width_ratios=[1.75, 1.0, 1.0])
+    ax = fig.add_subplot(gs[0])
+    # cells: lambda=0 column and lambda>0 block drawn separately so the gap stays empty
+    kw = dict(cmap="viridis", vmin=0, vmax=24, shading="flat", rasterized=False, linewidth=0.3, edgecolor="face")
+    ax.pcolormesh(xe[:2], ye, M[:, :1], **kw)
+    im = ax.pcolormesh(xe[2:], ye, M[:, 1:], **kw)
+    for i, p in enumerate(P):
+        for j, x in enumerate(xc):
+            v = M[i, j]
+            if p >= 2 and v == 0: continue
+            pass  # in-cell numbers dropped at 7 pt: the shading is the claim, per-cell values are in the table
+    # pre-registered predicted-rank contours and collapse boundary (continuous grid of prediction.json)
+    bp = np.array(bd["p0"]); bl = np.array(bd["lam"]); R = np.array(bd["rank_pred"], float)
+    cs = ax.contour(np.log10(bl), np.log10(bp), R, levels=[4, 12, 20], colors="w", linewidths=0.6, linestyles="--")
+    lc = np.array([np.nan if v is None else v for v in bd["lam_collapse"]], float); ok = ~np.isnan(lc)
+    ax.plot(np.log10(lc[ok]), np.log10(bp[ok]), color="k", lw=1.5, zorder=4)
+    p_all0 = bp[~ok][0]  # smallest p0 with predicted rank 0 at every lambda
+    for x1, x2 in ((xe[0], xe[1]), (xe[2], xe[-1])):
+        ax.fill_between([x1, x2], np.log10(p_all0), ye[-1], facecolor="none", edgecolor="k", hatch="////", lw=0, alpha=0.3, zorder=3)
+    ax.plot([xe[2], xe[-1]], [np.log10(p_all0)] * 2, color="k", lw=0.8, ls=":", zorder=4)
+    ax.set_xlim(xe[0], xe[-1]); ax.set_ylim(ye[0], ye[-1])
+    ax.set_xticks(xc); ax.set_xticklabels(["0"] + [f"{l:g}" if k % 2 == 0 else "" for k, l in enumerate(L[1:])], fontsize=7)
+    ax.set_yticks(np.log10(P)); ax.set_yticklabels([f"{p:g}" if i % 2 == 0 else "" for i, p in enumerate(P)], fontsize=7)
+    ax.set_xlabel(r"weight decay $\lambda$ (log scale)", labelpad=1, fontsize=7.5); ax.set_ylabel(r"predictor gain $p_0$ (log)", labelpad=1, fontsize=7.5)
+    ax.axvline(x0 + 0.62 * step, color="w", lw=2.0, zorder=2)
+    ax.text((xe[2] + xe[-1]) / 2, (np.log10(p_all0) + ye[-1]) / 2,
+            rf"$p_0\gtrsim2$: rank $0$",
+            ha="center", va="center", fontsize=7, zorder=6, color="w")
+    ax.set_title("(a) mean rank, 5 seeds per cell", fontsize=7.5, pad=2)
+    cb = fig.colorbar(im, ax=ax, pad=0.01, fraction=0.04, aspect=18); cb.set_label("rank", fontsize=7.5, labelpad=0); cb.ax.tick_params(labelsize=7)
+    ax.spines[["top", "right"]].set_visible(True)
+    # (b),(c): every non-diverged run of the GD arms, dodged by arm, marker area ~ number of runs at that point
+    rows = list(csv.DictReader(open(cpath)))
+    rows = [r for r in rows if not r["diverged"]]
+    A = s["N1_aligned_all"]; G = s["criteria"]["randpred/noncomm (N1-general)"]
+    axb = fig.add_subplot(gs[1]); axc = fig.add_subplot(gs[2], sharey=axb, sharex=axb)
+    n_dodge = len(ARMS)
+    for a, (key, lab, col, mk) in enumerate(ARMS):
+        R_ = [r for r in rows if r["exp"] == key]
+        off = (a - (n_dodge - 1) / 2) * 0.26
+        for ax_, pk in ((axb, "rank_pred"), (axc, "rank_bound")):
+            cnt = {}
+            for r in R_:
+                k = (float(r[pk]), float(r["rank_meas"])); cnt[k] = cnt.get(k, 0) + 1
+            xs = np.array([k[0] for k in cnt]) + off; ys = np.array([k[1] for k in cnt]); n = np.array(list(cnt.values()))
+            ax_.scatter(xs, ys, s=2.0 + 5.0 * np.sqrt(n), marker=mk, color=col, alpha=0.8, linewidths=0, zorder=3)
+    adam = [r for r in rows if r["exp"] == "adam"]
+    for ax_, pk in ((axb, "rank_pred"), (axc, "rank_bound")):
+        ax_.scatter([float(r[pk]) + 0.0 for r in adam], [float(r["rank_meas"]) for r in adam], s=5, marker="x", color=fs.COL["grey"], linewidths=0.5, zorder=2)
+        ax_.plot([0, 24], [0, 24], color="k", lw=0.6, zorder=1); ax_.fill_between([0, 24], [-1, 23], [1, 25], color="0.88", zorder=0, lw=0)
+        ax_.set_xlim(-1, 25); ax_.set_ylim(-1, 25); ax_.set_xticks([0, 8, 16, 24]); ax_.set_yticks([0, 8, 16, 24])
+    axb.set_xlabel("predicted rank", labelpad=1, fontsize=7.5); axc.set_xlabel("static-bound rank", labelpad=1, fontsize=7.5)
+    axb.set_ylabel("measured rank", labelpad=1, fontsize=7.5); plt.setp(axc.get_yticklabels(), visible=False)
+    axb.set_title("(b) race", fontsize=7.5, pad=2)
+    axb.text(0.97, 0.04, f"MAE\naligned {A['rank_pred']['mae'][0]:.2f}\ngeneral {G['rank_mae']:.2f}", transform=axb.transAxes, ha="right", va="bottom", fontsize=7)
+    axc.set_title("(c) static bound", fontsize=7.5, pad=2)
+    axc.text(0.03, 0.97, f"MAE\naligned {A['rank_bound']['mae'][0]:.1f}\ngeneral {G['bound_mae']:.1f}", transform=axc.transAxes, ha="left", va="top", fontsize=7, zorder=6, bbox=dict(fc="w", ec="none", alpha=0.85, pad=0.5))
+    hh = [Line2D([], [], marker=mk, color=col, ls="none", ms=4, label=lab) for _, lab, col, mk in ARMS] + [Line2D([], [], marker="x", color=fs.COL["grey"], ls="none", ms=3.2, label="AdamW (unconverged)")]
+    fig.legend(handles=hh, loc="outside lower center", ncol=4, frameon=False, fontsize=7, handletextpad=0.2, columnspacing=0.8)
+    fs.save(fig, "fig5_e1b_phase", outdir) if debug_png is None else fig.savefig(debug_png, dpi=220)
+    if debug_png is None:
+        common.record_inputs(outdir, "fig5_e1b_phase", [spath, ppath, cpath])
+
+if __name__ == "__main__":
+    make(sys.argv[1] if len(sys.argv) > 1 else "../../paper/figures")

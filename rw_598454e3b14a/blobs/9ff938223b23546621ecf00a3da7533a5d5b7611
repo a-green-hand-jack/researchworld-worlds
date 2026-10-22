@@ -1,0 +1,50 @@
+"""T4/T5: E2 (masking) against the pre-registered criteria (tab_e2) and per-arm accuracy of the pre-registered predictor and the two static
+baselines (tab_e2_arms). Every number is read from results/e2/summary.json (experiment-repo's analysis); nothing is typed in except labels."""
+import os, sys, json
+sys.path.insert(0, os.path.dirname(__file__))
+import common
+
+def make(outdir, tabdir):
+    rows, S, paths = common.load_e2()
+    cr = S["criteria"]; A = S["arms"]
+    P = lambda ok: r"\textbf{pass}" if ok else r"\textbf{fail}"
+    c = cr["pop cyclic (N1)"]; pk = cr["pop peak"]; bn = cr["pop block_nc (N1-general)"]; sg = cr["sgd (mask/sample noise)"]
+    th = cr["tanh (decided near collapse)"]; ml = cr["mlp (exploratory)"]; npd = cr["nopred (Prop. 6 under masks)"]
+    n = lambda k: A[k]["runs"]
+    lh_path = os.path.join(common.results_dir(), "checks", "e2_long_horizon.json")
+    LH = json.load(open(lh_path)); lh = LH["all"]["pred_exact_vs_long"][0]; lh3 = LH["lam=0.0003"]["pred_exact_vs_long"][0]
+    R = [
+        (rf"population GD, cyclic masks ({n('pop/cyclic')})", r"per-frequency acc.\ $\ge0.95$; MAE $\le1$, below window and static bound",
+         rf"acc.\ {c['freq_acc']:.3f}; MAE {c['mae_N1']:.2f}; window {c['mae_window']:.2f}, bound {c['mae_bound']:.2f}; exact rank vs $t{{=}}4\!\cdot\!10^4$: {lh:.2f} ({lh3:.2f} at $\lambda{{=}}3{{\cdot}}10^{{-4}}$)", P(c["passed"])),
+        (rf"rank peak in $r$ ({pk['profiles']} profiles)", r"peak within one step in $\ge80\%$; every predicted rise-and-fall confirmed (Bernoulli only)",
+         rf"peak {100*pk['frac_peak_ok']:.0f}\%; rise-and-fall {pk['non_monotone_confirmed']}/{pk['non_monotone_pred']}", P(pk["passed"])),
+        (rf"non-cyclic block ({n('pop/block_nc')}), general criterion", r"MAE $\le1.5$, below static bound",
+         rf"MAE {bn['mae']:.2f}; bound {bn['mae_bound']:.1f}; circulant approx.\ {bn['mae_N1_circulant_approx']:.2f}", P(bn["passed"])),
+        (rf"SGD with mask and sample noise ({n('sgd')})", r"MAE to population prediction $\le1.5$", rf"MAE {sg['mae']:.2f}", P(sg["passed"])),
+        (rf"tanh encoder ({n('tanh')})", r"MAE $\le1.5$, below static bound", rf"MAE {th['mae']:.1f}; bound {th['mae_bound']:.1f}", P(th["passed"])),
+        (rf"two-layer tanh encoder, exploratory ({n('mlp')})", r"MAE $\le2$ and below static bound",
+         rf"MAE {ml['mae']:.2f} (linear {ml['mae_linear']:.2f}); bound {ml['mae_bound']:.2f}; Spearman {ml['spearman']:.2f}", P(ml["passed"])),
+        (rf"no predictor, masked ({n('nopred')})", r"growth sign at $\ge99\%$ of frequencies; ``all collapse'' wrong wherever growth is predicted",
+         rf"acc.\ {npd['freq_acc']:.2f}; ``all collapse'' wrong in {npd['uncorrected_wrong']}/{npd['configs_pred_growth']} configs", P(npd["passed"])),
+    ]
+    L = [r"{\footnotesize", r"\newcolumntype{R}[1]{>{\raggedright\arraybackslash}p{#1}}", r"\begin{tabular}{@{}R{0.26\linewidth}R{0.28\linewidth}R{0.29\linewidth}c@{}}", r"\toprule",
+         r"Arm (runs) & Pre-registered criterion & Observed & Verdict \\", r"\midrule"]
+    L += [" & ".join(r) + r" \\ \addlinespace[1.5pt]" for r in R] + [r"\bottomrule", r"\end{tabular}", r"}"]
+    os.makedirs(tabdir, exist_ok=True)
+    open(os.path.join(tabdir, "tab_e2.tex"), "w").write("\n".join(L) + "\n")
+    common.record_inputs(tabdir, "tab_e2", [paths[2], lh_path])
+
+    cell = lambda v, d: f"{v[0]:.{d}f} [{v[1]:.{d}f}, {v[2]:.{d}f}]"
+    ARMS = [("pop/bern", "population, Bernoulli", "rank_pred"), ("pop/block", "population, block", "rank_pred"), ("pop/multiblock", "population, multiblock", "rank_pred"),
+            ("pop/block_nc", "population, non-cyclic block (general)", "rank_pred"), ("sgd/bern", "SGD, Bernoulli", "rank_pred"), ("sgd/block", "SGD, block", "rank_pred"),
+            ("tanh/bern", "tanh, Bernoulli", "rank_pred"), ("tanh/block", "tanh, block", "rank_pred"), ("mlp/bern", "two-layer tanh, Bernoulli (general)", "rank_pred"),
+            ("mlp/block", "two-layer tanh, block (general)", "rank_pred")]
+    T = [r"{\footnotesize", r"\setlength{\tabcolsep}{2pt}", r"\begin{tabular}{@{}lcccccc@{}}", r"\toprule",
+         r"Arm & runs & converged & exact rank & rank MAE & \shortstack{window\\MAE} & \shortstack{static\\MAE} \\", r"\midrule"]
+    for k, lab, key in ARMS:
+        a = A[k]; m = a[key]["mae"][0]; w = a["rank_window"]["mae"][0]; b = a["rank_bound"]["mae"][0]; best = min(m, w, b)
+        bf = lambda s_, v: (r"\textbf{" + s_ + "}") if v == best else s_
+        T.append(f"{lab} & {a['runs']} & {100*a['converged'][0]:.0f}\\% & {cell(a[key]['exact'], 2)} & {bf(cell(a[key]['mae'], 2), m)} & {bf(f'{w:.2f}', w)} & {bf(f'{b:.2f}', b)} \\\\")
+    T += [r"\bottomrule", r"\end{tabular}", r"}"]
+    open(os.path.join(tabdir, "tab_e2_arms.tex"), "w").write("\n".join(T) + "\n")
+    common.record_inputs(tabdir, "tab_e2_arms", [paths[2]])

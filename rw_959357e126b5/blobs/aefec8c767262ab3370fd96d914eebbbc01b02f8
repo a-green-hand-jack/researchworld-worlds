@@ -1,0 +1,122 @@
+"""E8 post hoc (study plan v2.10 point 4; labelled post hoc, changes no verdict): the regrowth time B implies
+for the hi->lo rows, from the spectrum at the switch and growth rates measured at low weight decay.
+
+Segment = the online-token covariance ranks between the constant-hi and constant-lo final counts (k0 = round(mean
+R(hi, 50)), k1 = round(mean R(lo, 50))), as in e8_analyze.regrowth; level m(t) = median over the segment of
+log10(eig_k / eig_1) at epoch t (per run; then the median over seeds). The count threshold is 1e-3, so the median
+segment rank reaching log10 = -3 is half the gap regrown, i.e. f = 0.5, B's registered f(20) bound.
+
+Time is lr-weighted: tau(e) = sum over steps < e * spe of lr(step) / lr_max (vit_jepa.hyper: linear warm-up over
+40/300 of 50 epochs, then cosine to 0 in Arm P; constant after warm-up in Arm T), in lr_max-epochs. Rates g are
+d m / d tau in decades per lr_max-epoch.
+
+Rates at low decay:
+  g_post_k   the hi->lo row's own segment slope over the first k epochs after the switch (k = 5, 10) and over the
+             rest of the run (k = rest): the realised growth rate at low decay from the collapsed state;
+  g_lo_max   the constant-lo row's fastest 5-epoch segment slope (any window) and g_lo_mean its slope over epochs
+             0-50: the growth of the same ranks under the low level from initialisation (the race at lambda_lo),
+             an upper reference for B's regrowth rate g in int dw / (w g) (theory/ext_B_stagewise.md B-iii);
+  decay_ref  -2 lr_max wd_lo spe / ln 10: the relative-eigenvalue slope of a direction carried by one decayed
+             weight matrix under the low level alone (decoupled decay p <- p (1 - lr wd), no drive), i.e. B-iii's
+             g ~ -lambda_W below the separatrix. A reference, not fitted.
+Implied time to f = 0.5: tau_need = max(0, -3 - m(e)) / g for g > 0 (inf otherwise); available tau_avail = tau(50) -
+tau(e); ratio = tau_need / tau_avail. Reading per row and rate: 'no regrowth (g <= 0)'; (ii) 'within' if ratio <= 1
+(at that rate the regrowth would have shown inside the horizon, so its absence is B's regrowth failing in the ViT);
+(i) 'beyond' if ratio > 1 (the timing puts it beyond the horizon); 'measured' when the median segment rank did cross. The realised rate g_post_rest is the primary one;
+g_lo_max / g_lo_mean are references. E8-X (plan v2.10 point 5, Arm T rows e = 10, 20) is indicated iff the realised
+rate is > 0 and its ratio is in (1, 2]: regrowth that is under way and would finish within twice the horizon.
+Usage: python3 code/checks/e8_regrowth_timing.py RUNS8_DIR results/e8/grid/posthoc/regrowth_timing.json
+"""
+import sys, os, json, glob, math, time
+import numpy as np
+
+SPE, EP = 195, 50
+SWITCH = [2, 5, 10, 20]
+
+
+def lr_frac(step, sched, warm, tf):
+    if step < warm:
+        return step / max(warm, 1)
+    return 1.0 if sched == "const" else 0.5 * (1 + math.cos(math.pi * min((step - warm) / max(tf - warm, 1), 1.0)))
+
+
+def tau_curve(cfg):
+    tf = int(cfg["full_epochs"] * SPE); warm = int(cfg["warmup_frac"] * tf)
+    c = np.cumsum([lr_frac(s, cfg["sched"], warm, tf) for s in range(EP * SPE)]) / SPE
+    return np.concatenate([[0.0], c[SPE - 1::SPE]])          # tau at epoch 0..50
+
+
+def load(d):
+    L = [json.loads(l) for l in open(os.path.join(d, "log.jsonl"))]
+    eig = {int(round(r["epoch"])): np.sort(np.abs(np.asarray(r["online_tok"]["eig"], float)))[::-1] for r in L if r.get("full")}
+    return eig, json.load(open(os.path.join(d, "config.json")))
+
+
+def seg_level(eig, k0, k1):
+    return np.array([np.median(np.log10(np.maximum(eig[e][k0:k1] / eig[e][0], 1e-30))) for e in range(EP + 1)])
+
+
+def slope(tau, m, a, b):
+    x, y = tau[a:b + 1], m[a:b + 1]
+    return float(np.polyfit(x, y, 1)[0]) if b > a else float("nan")
+
+
+def main(runs, out):
+    t0 = time.time(); res = dict(status="post hoc (study plan v2.10 point 4); no verdict changes",
+                                 runs=runs, threshold_log10=-3.0, arms={})
+    for A in "TP":
+        rows = {}
+        for name in [f"{A}_hi", f"{A}_lo"] + [f"{A}_hi2lo_e{e}" for e in SWITCH]:
+            rows[name] = [load(d) for d in sorted(glob.glob(os.path.join(runs, name, "s*"))) if os.path.isdir(d)]
+        cnt = lambda rs: float(np.mean([((E[EP] / E[EP][0]) >= 1e-3).sum() for E, _ in rs]))
+        hi, lo = cnt(rows[f"{A}_hi"]), cnt(rows[f"{A}_lo"]); k0, k1 = int(round(hi)), int(round(lo))
+        cfg_lo = rows[f"{A}_lo"][0][1]; tau = tau_curve(cfg_lo)
+        wd_lo = cfg_lo["wd"][0]
+        # constant-lo row: the same ranks under the low level from initialisation
+        ml = np.median([seg_level(E, k0, k1) for E, _ in rows[f"{A}_lo"]], 0)
+        win = [slope(tau, ml, a, a + 5) for a in range(0, EP - 4)]
+        g_lo_max, a_max = float(np.nanmax(win)), int(np.nanargmax(win))
+        g_lo_mean = slope(tau, ml, 0, EP)
+        decay_ref = -2 * cfg_lo["lr"] * wd_lo * SPE / math.log(10)
+        arm = dict(k0=k0, k1=k1, R_hi_50=hi, R_lo_50=lo, sched=cfg_lo["sched"], lr_max=cfg_lo["lr"], wd_lo=wd_lo,
+                   tau_50=float(tau[EP]), lo_row=dict(level=[round(float(v), 3) for v in ml], g_lo_max=g_lo_max,
+                   g_lo_max_window=[a_max, a_max + 5], g_lo_mean=g_lo_mean),
+                   decay_ref_per_lrmax_epoch=decay_ref, rows={})
+        for e in SWITCH:
+            rs = rows[f"{A}_hi2lo_e{e}"]
+            assert all(c["wd_switch_epoch"] == e and c["wd_after"] == wd_lo for _, c in rs)
+            lev = np.array([seg_level(E, k0, k1) for E, _ in rs]); m = np.median(lev, 0)
+            avail = float(tau[EP] - tau[e])
+            g = dict(g_post_5=slope(tau, m, e, min(e + 5, EP)), g_post_10=slope(tau, m, e, min(e + 10, EP)),
+                     g_post_rest=slope(tau, m, e, EP), g_lo_max=g_lo_max, g_lo_mean=g_lo_mean)
+            gap = max(0.0, -3.0 - float(m[e]))
+            need = {k: (gap / v if v > 0 else (0.0 if gap == 0 else float("inf"))) for k, v in g.items()}
+            ratio = {k: (v / avail if math.isfinite(v) else float("inf")) for k, v in need.items()}
+            reading = {k: ("median segment rank above 1e-3 at the switch" if gap == 0 else
+                           "no regrowth (g <= 0)" if g[k] <= 0 else "within (ii)" if ratio[k] <= 1 else "beyond (i)")
+                       for k in g}
+            if gap > 0 and m[e:].max() >= -3.0:
+                reading["measured"] = "median segment rank regrew past 1e-3 at epoch %d" % int(e + np.argmax(m[e:] >= -3.0))
+            row = dict(m_switch=float(m[e]), m_switch_per_seed=[float(v) for v in lev[:, e]], m_50=float(m[EP]),
+                       m_peak_after=float(m[e:].max()), m_peak_epoch=int(e + np.argmax(m[e:])),
+                       crossed_minus3=bool(m[e:].max() >= -3.0), tau_avail=avail, rates=g, tau_need=need,
+                       ratio_need_over_avail=ratio, reading=reading,
+                       level=[round(float(v), 3) for v in m])
+            if A == "T" and e in (10, 20):
+                row["e8x_indicated"] = bool(g["g_post_rest"] > 0 and 1 < ratio["g_post_rest"] <= 2)
+            arm["rows"][str(e)] = row
+        res["arms"][A] = arm
+    res["seconds"] = time.time() - t0; res["numpy"] = np.__version__
+    res["command"] = "code/checks/e8_regrowth_timing.py " + " ".join(sys.argv[1:])
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    json.dump(res, open(out, "w"), indent=1)
+    for A, a in res["arms"].items():
+        print(A, "k0..k1", a["k0"], a["k1"], "g_lo_max %.4f (ep %s) g_lo_mean %.4f decay_ref %.4f tau50 %.1f" % (
+            a["lo_row"]["g_lo_max"], a["lo_row"]["g_lo_max_window"], a["lo_row"]["g_lo_mean"], a["decay_ref_per_lrmax_epoch"], a["tau_50"]))
+        for e, r in a["rows"].items():
+            print("  e=%s m=%.2f m50=%.2f peak=%.2f@%d avail=%.1f" % (e, r["m_switch"], r["m_50"], r["m_peak_after"], r["m_peak_epoch"], r["tau_avail"]),
+                  " ".join("%s:g=%.4f r=%.2f" % (k, r["rates"][k], r["ratio_need_over_avail"][k]) for k in r["rates"]), r["reading"]["g_post_rest"], "| g_lo_max:", r["reading"]["g_lo_max"], r.get("e8x_indicated", ""))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[2])

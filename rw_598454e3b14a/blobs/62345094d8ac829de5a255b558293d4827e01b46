@@ -1,0 +1,89 @@
+"""E4 / A1 held-out grid 2 (H2): the phase model v4 (code/e4_theory.py phase_model_v4, frozen at the commit named in
+results/e4/prediction.json A1_v4) scored once with the A1 metrics of results/e4/a1_tolerance_v2.json (A1b, A1c, A1d).
+Disjoint from everything the model was developed or diagnosed on (development grids 1-3 and A1 held-out grid 1):
+new statistics sets (n = 32, c/s ratios 0.88 and 0.95), and new p0, lam, a0, eta, b1, b2 values and seeds.
+Ground truth as code/e4_a1.py: exact scalar AdamW maps in np.longdouble (80-bit), per-step first crossings, 30
+log-spaced checkpoints, T = 60000, K = 300. Reported alongside without tolerance: the truth's own floor (every 8th
+run re-run with each a0_k multiplied by 1 +- 1e-15) as A1d metrics of the perturbed truth against the truth.
+Usage: python3 code/e4_a1h2.py run results/e4/a1h2 [NPROC]      (runs, scores; writes a1h2_runs.jsonl.gz, a1h2_score.json)
+       python3 code/e4_a1h2.py list"""
+import sys, os, json, time, itertools, gzip, hashlib
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+import e4_a1 as A
+import e4_theory as th
+
+A.STATS = {"h2a": (np.linspace(2.2, 0.45, 32), 0.88), "h2b": (np.linspace(1.4, 0.6, 32), 0.95)}
+SEED = 31
+
+
+def configs():
+    out = []
+    for st, p0, lam, a0, eta, b1, b2 in itertools.product(A.STATS, [0.6, 1.25, 2.25], [0.004, 0.012, 0.025, 0.04],
+                                                           [5e-4, 5e-3], [0.025, 0.04], [0.87, 0.93], [0.997, 0.9993]):
+        out.append(dict(id=len(out), stats=st, p0=p0, lam=lam, a0=a0, eta=eta, b1=b1, b2=b2, seed=SEED))
+    return out
+
+
+_INIT_A = A.init_a
+
+
+def perturbed_init(cfg, rel=1e-15):
+    a = _INIT_A(cfg)
+    return a * (1 + rel * np.random.default_rng(77777 + cfg["id"]).choice([-1.0, 1.0], a.size))
+
+
+def run_one(cfg):
+    c, s = A.stats(cfg["stats"])
+    r = dict(cfg, checkpoints=A.CHECKS, **A.truth(cfg))
+    stK = {k: np.array(v) for k, v in r["state_K"].items()}
+    o = th.phase_model_v4(c, s, stK, A.K, cfg["lam"], cfg["eta"], A.T, b1=cfg["b1"], b2=cfg["b2"], checks=A.CHECKS)
+    fl = lambda x: [None if not np.isfinite(v) else float(v) for v in x]
+    r.update(pred_burst=fl(o["burst"]), pred_alive_from=fl(o["alive_from"]), pred_alive=[o["alive"][t].tolist() for t in A.CHECKS])
+    if cfg["id"] % 8 == 0:
+        try:
+            A.init_a = perturbed_init
+            r["floor_alive"] = A.truth(cfg)["alive"]
+        finally:
+            A.init_a = _INIT_A
+    return r
+
+
+def floor(runs):
+    """A1d metrics of the 1e-15-perturbed truth against the truth (the truth's own sensitivity)."""
+    st, rk = [], []
+    for r in runs:
+        if "floor_alive" in r:
+            T0, T1 = np.array(r["alive"], bool), np.array(r["floor_alive"], bool)
+            st.append((T0 != T1).mean()); rk.append((np.abs(T0.sum(1) - T1.sum(1)) > 1).mean())
+    return dict(runs=len(st), state_error=float(np.mean(st)), rank_within_1_failure=float(np.mean(rk)))
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    cfgs = configs()
+    if cmd == "list":
+        print(len(cfgs), "runs;", sum(c["id"] % 8 == 0 for c in cfgs), "with the 1e-15 floor run"); sys.exit()
+    outdir = sys.argv[2]; nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    os.makedirs(outdir, exist_ok=True)
+    t0 = time.time(); runs = []
+    with Pool(nproc) as pool:
+        for i, r in enumerate(pool.imap(run_one, cfgs)):
+            runs.append(r)
+            if (i + 1) % 96 == 0:
+                print(f"{i+1}/{len(cfgs)} {time.time()-t0:.0f}s", flush=True)
+    with gzip.open(os.path.join(outdir, "a1h2_runs.jsonl.gz"), "wt") as f:
+        for r in runs:
+            f.write(json.dumps(r) + "\n")
+    res = A.score(runs)
+    res["splits_reported_only"] = {f"{k}={v}": {key: A.score(runs, lambda r, k=k, v=v: r[k] == v)[key] for key in ("A1b", "A1c", "A1d")}
+                                   for k, vals in (("b1", (0.87, 0.93)), ("b2", (0.997, 0.9993)), ("stats", tuple(A.STATS)))
+                                   for v in vals}
+    res["truth_floor_1e-15"] = floor(runs)
+    res.update(runs=len(runs), seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv),
+               e4_theory_md5=hashlib.md5(open(os.path.join(os.path.dirname(__file__), "e4_theory.py"), "rb").read()).hexdigest())
+    json.dump(res, open(os.path.join(outdir, "a1h2_score.json"), "w"), indent=1)
+    print(json.dumps({k: v for k, v in res.items() if k != "splits_reported_only"}, indent=1)[:3000])
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E4 A1 held-out grid 2 scored", flush=True)

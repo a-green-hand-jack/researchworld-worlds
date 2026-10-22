@@ -1,0 +1,17 @@
+import numpy as np, sys
+sys.path.insert(0,"code")
+from linjepa import growth_rate
+R=np.load('pilot/race_rows.npy'); sv=R[:,7]>0
+c_all = 0.9**R[:,4]; s=1.0
+def score2(lam,p0,c,logw0,alpha=1.0):
+    logp=np.linspace(np.log(p0),np.log(p0*1e-6),4000); dt=(logp[0]-logp[1])/(alpha*lam); p=np.exp(logp)
+    g=growth_rate(p,c,s,lam); F=np.concatenate([[0],np.cumsum(0.5*(g[1:]+g[:-1])*dt)])
+    t=np.arange(len(p))*dt; ok=(t<=1000)
+    gap=c-p*s
+    thr=np.where(gap>0,0.5*np.log(lam*p/np.maximum(gap,1e-12)),np.inf)
+    return np.max((F+logw0-thr)[ok])
+sc=np.array([score2(r[0],r[1],c_all[i],r[6]) for i,r in enumerate(R)])
+for th in [-2,-1,-0.5,0,0.5,1,2]:
+    print(th, ((sc>=th)==sv).mean())
+sc1=R[:,5]+R[:,6]
+print('global-const criterion', ((sc1>=-3.2)==sv).mean())

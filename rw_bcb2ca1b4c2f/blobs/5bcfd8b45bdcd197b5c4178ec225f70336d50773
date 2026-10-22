@@ -1,0 +1,158 @@
+"""Check of the E5 held-out score (experiment 76abca2, results/e5/b1heldout/; c396).
+Inputs: raw runs release asset e5__b1heldout__b1_heldout_runs.jsonl.gz (ext-runs-3, sha256 8c844511...), the frozen
+code at 76abca2 (e5_b1.py d9a5409a, e5_theory.py 0518e2fc).
+  (A) the registered scorer (cmd_score_v2) re-run on the raw runs, compared field by field with b1_heldout_score.json;
+  (B) code/checks/e5_mu_baseline.py re-run, compared with mu_baseline.json;
+  (C) independent B1a' on the truth-or-model pairs per (kind|variant) cell and overall, for the frozen model and for
+      the mu criterion computed here from inputs (p0 c_k - p0^2 s_k > lam_W(t) at each checkpoint); final-count MAE
+      and the share of runs whose true count exceeds mu's;
+  (D) the raw file's config set against configs('heldout') of the frozen code (ids, no missing/duplicate);
+  (E) a stratified sample of runs (every short_pulse cell with its alpha0.5/base/ema0.2 variants, plus random)
+      re-run from their configs with run_one: truth and frozen-model checkpoint states compared with the stored ones.
+usage: e5_heldout_check.py EXP_TREE RUNS.jsonl.gz OUTDIR [NPROC] [NSAMPLE]"""
+import sys, os, json, gzip, time, random, shutil
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+EXP, RUNS, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
+NPROC = int(sys.argv[4]) if len(sys.argv) > 4 else 8
+NS = int(sys.argv[5]) if len(sys.argv) > 5 else 40
+sys.path.insert(0, os.path.join(EXP, "code")); sys.path.insert(0, os.path.join(EXP, "code", "checks"))
+import e5_b1 as B, e5_theory as th
+SCORED0 = list(B.SCORED)          # e5_mu_baseline.main appends mu_dvd to B.SCORED
+PARTS = os.environ.get("PARTS", "ABCDE")
+os.makedirs(OUT, exist_ok=True)
+T0 = time.time()
+log = lambda *a: print(f"[{time.time() - T0:.0f}s]", *a, flush=True)
+
+
+def cmp(a, b, path="", tol=1e-9, out=None):
+    out = [] if out is None else out
+    if isinstance(a, dict) and isinstance(b, dict):
+        for k in set(a) | set(b):
+            if k not in a or k not in b:
+                out.append((path + "/" + str(k), "missing"))
+            else:
+                cmp(a[k], b[k], path + "/" + str(k), tol, out)
+    elif isinstance(a, list) and isinstance(b, list):
+        if len(a) != len(b):
+            out.append((path, f"len {len(a)} vs {len(b)}"))
+        else:
+            for i, (x, y) in enumerate(zip(a, b)):
+                cmp(x, y, f"{path}[{i}]", tol, out)
+    elif isinstance(a, float) or isinstance(b, float):
+        if a is None or b is None or not (abs(a - b) <= tol * max(1, abs(a), abs(b)) or (a != a and b != b)):
+            out.append((path, f"{a} vs {b}"))
+    elif a != b:
+        out.append((path, f"{a} vs {b}"))
+    return out
+
+
+def indep(line):
+    rec = json.loads(line); cfg, tr, pr = rec["cfg"], rec["truth"], rec["pred"]
+    G = B.GRIDS[cfg["grid"]]; c, s = B.stats(G); n = c.size
+    t = np.array(tr["t"], float); am = np.array(tr["a"], float) > th.THR
+    mod = B.unbits(pr["model"]["chk"], n)
+    mu = (cfg["p0"] * c - cfg["p0"] ** 2 * s)[None, :] > th.lam_of(cfg["kW"], t)[:, None]
+    r = dict(id=cfg["id"], kind=cfg["kind"], variant=cfg["variant"], fin_t=int(am[-1].sum()), fin_m=int(mod[-1].sum()),
+             fin_mu=int(mu[-1].sum()))
+    if cfg["ts"] is not None:
+        t1 = cfg["ts"]; bef = np.nonzero(t <= t1)[0]; aft = (t > t1)[:, None]
+        ref = am[bef[-1]] if bef.size else np.zeros(n, bool); mref = mod[bef[-1]] if bef.size else np.zeros(n, bool)
+        U = aft & ((am != ref[None, :]) | (mod != mref[None, :]))
+        r["tm"] = [int(U.sum()), int(((mod == am) & U).sum()), int(((mu == am) & U).sum())]
+    return r
+
+
+def rerun(line):
+    rec = json.loads(line); cfg = rec["cfg"]; n = B.stats(B.GRIDS[cfg["grid"]])[0].size
+    t0 = time.time(); new = B.run_one(cfg)
+    o = dict(id=cfg["id"], kind=cfg["kind"], variant=cfg["variant"], seconds=time.time() - t0)
+    o["truth_t_equal"] = bool(np.allclose(new["truth"]["t"], rec["truth"]["t"]))
+    a_old = np.array(rec["truth"]["a"], float); a_new = np.array(new["truth"]["a"], float)
+    o["truth_a_max_rel"] = float(np.max(np.abs(a_old - a_new) / np.maximum(np.abs(a_old), 1e-12)))
+    o["truth_state_equal"] = bool(((a_old > th.THR) == (a_new > th.THR)).all())
+    for k in SCORED0:
+        o[f"{k}_chk_equal"] = new["pred"][k]["chk"] == rec["pred"][k]["chk"]
+    o["model_P_max_rel"] = float(np.max(np.abs(np.array(new["pred"]["model"]["P"], float) - np.array(rec["pred"]["model"]["P"], float))
+                                        / np.maximum(np.abs(np.array(rec["pred"]["model"]["P"], float)), 1e-12)))
+    o["floor_chk_equal"] = all(new["floor"][k]["chk"] == rec["floor"][k]["chk"] for k in ("w0", "lam"))
+    return o
+
+
+if __name__ == "__main__":
+    res = dict(source=dict(exp=EXP, runs=RUNS, numpy=np.__version__,
+                           md5={f: B.md5(os.path.join(EXP, "code", f)) for f in ("e5_b1.py", "e5_theory.py", "linjepa.py")}))
+    lines = list(gzip.open(RUNS, "rt")); log("read", len(lines), "runs")
+    prev = os.path.join(OUT, "e5_heldout_check.json")
+    if PARTS == "E" and os.path.exists(prev):
+        res = json.load(open(prev))
+    if PARTS != "E":
+        # (D) config set
+      cfgs = B.configs("heldout"); ids = [json.loads(l)["cfg"]["id"] for l in lines]
+      want = {c["id"]: c for c in cfgs}
+      got = {}
+      for l in lines:
+          c = json.loads(l)["cfg"]; got[c["id"]] = c
+      res["D_configs"] = dict(n_configs=len(cfgs), n_runs=len(ids), duplicates=len(ids) - len(set(ids)),
+                              missing=len(set(want) - set(got)), extra=len(set(got) - set(want)),
+                              cfg_mismatch=sum(json.dumps(want[i], sort_keys=True) != json.dumps(got[i], sort_keys=True) for i in set(want) & set(got)))
+      log("D", res["D_configs"])
+      # (A) registered scorer
+      d = os.path.join(OUT, "rescore"); os.makedirs(d, exist_ok=True)
+      dst = os.path.join(d, "b1_heldout_runs.jsonl.gz")
+      if not os.path.exists(dst):
+          os.symlink(os.path.abspath(RUNS), dst)
+      B.cmd_score_v2("heldout", d)
+      mine = json.load(open(os.path.join(d, "b1_heldout_score.json")))
+      theirs = json.load(open(os.path.join(EXP, "results/e5/b1heldout/b1_heldout_score.json")))
+      diff = cmp(mine, theirs)
+      res["A_rescore"] = dict(n_diffs=len(diff), first_diffs=diff[:30],
+                              verdicts={k: v for k, v in mine["verdicts"].items() if k != "cells"})
+      log("A diffs", len(diff))
+      # (B) mu baseline re-run
+      import e5_mu_baseline as MU
+      MU.main("heldout", RUNS, os.path.join(OUT, "mu_baseline.json"))
+      m2 = json.load(open(os.path.join(OUT, "mu_baseline.json"))); m1 = json.load(open(os.path.join(EXP, "results/e5/b1heldout/mu_baseline.json")))
+      m2.pop("definition", None); m1.pop("definition", None)
+      dm = cmp(m2, m1); res["B_mu_rerun"] = dict(n_diffs=len(dm), first_diffs=dm[:30]); log("B diffs", len(dm))
+      # (C) independent B1a' TM per cell, mu from inputs
+      with Pool(NPROC) as pool:
+          R = pool.map(indep, lines, chunksize=20)
+      S = [r for r in R if "tm" in r]
+      def agg(X):
+          a = np.array([r["tm"] for r in X]); P = int(a[:, 0].sum())
+          return dict(runs=len(X), pairs=P, model=float(a[:, 1].sum() / max(P, 1)), mu=float(a[:, 2].sum() / max(P, 1)))
+      cells = {}
+      for r in S:
+          cells.setdefault(f"{r['kind']}|{r['variant']}", []).append(r)
+      res["C_indep"] = dict(overall=agg(S), cells={k: agg(v) for k, v in sorted(cells.items())})
+      res["C_indep"]["cells_below_0p80"] = {k: v for k, v in res["C_indep"]["cells"].items() if v["pairs"] >= 100 and v["model"] < 0.80}
+      ft = np.array([r["fin_t"] for r in R]); fm = np.array([r["fin_m"] for r in R]); fu = np.array([r["fin_mu"] for r in R])
+      res["C_indep"]["final"] = dict(model_mae=float(np.abs(ft - fm).mean()), mu_mae=float(np.abs(ft - fu).mean()),
+                                     mu_within1=float((np.abs(ft - fu) <= 1).mean()), truth_above_mu=float((ft > fu).mean()))
+      log("C", json.dumps(res["C_indep"]["overall"]), json.dumps(res["C_indep"]["cells_below_0p80"]))
+      json.dump(res, open(os.path.join(OUT, "e5_heldout_check.json"), "w"), indent=1)
+    # (E) stratified re-run sample
+    rng = random.Random(7); byc = {}
+    for i, l in enumerate(lines):
+        c = json.loads(l)["cfg"]; byc.setdefault((c["kind"], c["variant"]), []).append(i)
+    pick = []
+    for key in [("short_pulse", "base"), ("short_pulse", "alpha0.5"), ("short_pulse", "ema0.2"), ("short_pulse", "alpha2")]:
+        if key in byc:
+            pick += rng.sample(byc[key], min(4, len(byc[key])))
+    rest = [i for i in range(len(lines)) if i not in set(pick)]
+    pick += rng.sample(rest, max(0, NS - len(pick)))
+    log("E rerunning", len(pick), "runs")
+    with Pool(NPROC) as pool:
+        E = pool.map(rerun, [lines[i] for i in pick], chunksize=1)
+    res["E_rerun"] = dict(n=len(E), all_truth_states_equal=all(e["truth_state_equal"] for e in E),
+                          all_model_chk_equal=all(e["model_chk_equal"] for e in E),
+                          all_scored_chk_equal=all(all(e[f"{k}_chk_equal"] for k in SCORED0) for e in E),
+                          all_floor_equal=all(e["floor_chk_equal"] for e in E),
+                          max_truth_a_rel=max(e["truth_a_max_rel"] for e in E), max_model_P_rel=max(e["model_P_max_rel"] for e in E),
+                          runs=E)
+    res["seconds"] = time.time() - T0
+    json.dump(res, open(os.path.join(OUT, "e5_heldout_check.json"), "w"), indent=1)
+    log("E", {k: v for k, v in res["E_rerun"].items() if k != "runs"})
+    print("HUTIAN_WAKE: e5 held-out check done", flush=True)

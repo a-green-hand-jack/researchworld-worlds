@@ -1,0 +1,30 @@
+{
+ "experiment": "E4 / A1 (plan v2.5 Sec. 3 A, Sec. 4 pre-registration requirements): the derived per-direction AdamW near-collapse dynamics against exact simulation",
+ "status": "tolerances committed before any development grid for A1 is run or looked at. The exploratory single runs of results/e4/explore/ (delivered E1b AdamW configurations and a handful of scalar cases used to derive the mechanism) precede this file and are not A1 data.",
+ "scope": {
+  "aligned": "S11, S21 diagonal and the initial W diagonal in the data basis, P0 = p0 I (theory/ext_A_adamw.md Sec. A-0, A-ii', A-iii'): the statements A1a-A1c below",
+  "rotated": "a generic (random orthogonal) initial W relative to the data basis, the E1b initialisation: Adam is not rotation-invariant, the per-mode reduction does not hold, and its dynamics are A3's subject; a tolerance for any rotated-basis model is committed separately, before its development grid"
+ },
+ "statements": {
+  "A1a": {
+   "claim": "exact reduction: the matrix AdamW flow from an aligned initialisation equals n independent scalar AdamW maps on (a_k, p_k)",
+   "metric": "share of (direction, checkpoint) pairs whose alive/dead state (|column norm| > 0.05, the delivered SV_THR) agrees between the matrix flow and the scalar maps, and share of checkpoints with equal rank (20 equally spaced checkpoints per run)",
+   "tolerance": "both shares >= 0.99 (not bitwise: the chattering near p = c/s amplifies round-off)"
+  },
+  "A1b": {
+   "claim": "the first re-escape of a direction that is outside the window (h(p) < 0) after the transient is the loss of stability of heavy-ball Adam on its decaying second moment, q_t = eta (1 - b1) |h(p_t)| / sigma_t reaching 2 (1 + b1), with |a| decaying by sqrt(b1) per step before it (phase model of code/e4_theory.py, from the exact state at step K = 300)",
+   "metric": "per direction, tau_pred and tau_meas = first step after K with |a| > 1e-3 (the burst; measured on a 10-step grid); error |ln(tau_pred / tau_meas)| over directions with a burst in either; a direction with a burst in only one of the two before the horizon is a miss",
+   "tolerance": "median error <= 0.05, 90th percentile <= 0.15, misses <= 5% of the scored directions"
+  },
+  "A1c": {
+   "claim": "the alive/dead state of every direction over time, from the full phase model (transit, collapse, burst, capture, post-capture hover growth)",
+   "metric": "share of (direction, checkpoint) pairs with the same alive/dead state (|a| > 0.05) as the exact scalar maps, 20 equally spaced checkpoints; rank error |rank_pred - rank_meas| per checkpoint",
+   "tolerance": "agreement >= 0.90 and |rank error| <= 1 at >= 90% of checkpoints"
+  }
+ },
+ "scoring": {
+  "development": "a development grid (to be committed with its config list before it runs) is used to build and correct the phase model; nothing is scored against these tolerances on it",
+  "held_out": "A1 is scored once, on a held-out grid disjoint from the development grid (new data statistics, new hyperparameter values, new seeds), listed in results/e4/prediction.json together with the frozen code commit before it runs; failures are reported, nothing is refitted afterwards",
+  "non_finite": "a run with a non-finite state counts as a miss for every direction"
+ }
+}

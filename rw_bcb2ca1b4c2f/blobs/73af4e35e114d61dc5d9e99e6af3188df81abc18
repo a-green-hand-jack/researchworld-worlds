@@ -1,0 +1,13 @@
+{
+ "experiment": "E6 / rung 1a of direction C (plan v2.9 Sec. 3 C, Sec. 4): the race for a deep linear encoder (depth L, weight decay on every factor), identity predictor, copy target, gradient descent",
+ "status": "tolerance committed before any grid of code/e6_r1.py is run or looked at. Before this file: nine single exploratory runs of the per-direction scalar system (c, s, a0, p0, lam, L) = (1.2, 1.4, ...) used to check the Bernoulli threshold, disclosed here (they showed the A1 closed form near the exact threshold for L = 2, 0.08-0.095 against 0.10, and above it for L = 3, below 0.42 against 0.48, where a0^(2/L) is not small next to p0). Two pilots (ids 480 and 864) were timed (5.2 s, 8.8 s) without printing or keeping outputs.",
+ "prediction": "race_deep_A1 in code/e6_r1.py (closed form: escape iff a0^(-m) <= (2L-2) max_t int_0^t h(p0 e^{-lam tau}) e^{-(2L-2) lam tau} dtau, m = 2 - 2/L, and lam <= lam*_L = max_p p^(2L-1)(c - p s)); L = 1 is the delivered race",
+ "secondary": "race_deep_1d (the alpha = 1 exact reduction p^2 - w_i^2 = e^{-2 lam t}(p0^2 - w_i(0)^2), integrated): exact on the aligned arm, an approximation on the generic arm",
+ "arms": {"aligned": "aligned balanced factors, exact per-direction maps in 80-bit; scored against the tolerance", "generic": "Gaussian factors (entries N(0, a0^(2/L)/n)), full matrix flow in float64, a0_k = |W_L...W_1 u_k| at initialisation fed to every predictor; scored against the same tolerance and reported separately: a failure there is the located failure of rung 1 for generic initialisation"},
+ "metric": "|predicted - measured| count of end-to-end directions with |a| (aligned) or singular value (generic) > 0.05 at the horizon T = min(3 t_race + 300, 3000), eta = 0.05",
+ "baselines": {"race_depth1": "the delivered depth-1 race applied with the end-to-end amplitude (encoder depth ignored)", "static1": "#{c^2 >= 4 lam s}", "staticL": "#{lam <= lam*_L} (the depth-L static bound)", "window": "#{g(p0) > 0} (initial window = signed mu-wd of 2610.02344)", "early": "the measured count at 10% of the horizon"},
+ "tolerance": "per arm: within-1 share >= 0.90 and the primary's MAE lower than every baseline's with the paired bootstrap 95% CI of (baseline error - primary error) above 0",
+ "development_then_held_out": "the development grid may change the rung-1 model; the held-out grid (statistics, values and seeds disjoint) is registered in results/e6/prediction.json with the frozen model before it runs and is scored once",
+ "exit": "the rung at which the error first exceeds the tolerance is reported as the located failure of the ladder (plan Sec. 3 C)",
+ "not_in_this_file": "rung 1b (deep predictors with random factors, L6) is registered separately"
+}

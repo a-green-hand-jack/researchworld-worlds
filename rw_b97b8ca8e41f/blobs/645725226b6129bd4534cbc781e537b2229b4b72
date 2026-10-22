@@ -1,0 +1,56 @@
+{
+  "C1_reduced_vs_full": {
+    "claim": "The mode-wise reduced dynamics reproduce the full expected-gradient linear JEPA dynamics.",
+    "files": [
+      "raw/trajectories.csv.gz",
+      "raw/ode_vs_full.csv",
+      "derived/claim_metrics.csv"
+    ],
+    "limitation": "Validation uses diagonal covariances and expected gradients; it is not a nonlinear-network test."
+  },
+  "C2_predictor_design": {
+    "claim": "Shared or bottleneck predictors alter realized rank relative to independent mode predictors.",
+    "files": [
+      "raw/trajectories.csv.gz",
+      "raw/run_summary.csv",
+      "derived/claim_metrics.csv"
+    ],
+    "limitation": "The shared predictor is a scalar P=pI and the bottleneck selects the leading synthetic modes."
+  },
+  "C3_predictor_scale": {
+    "claim": "Predictor initialization has a non-monotone effect: too small lacks drive and too large loses modes before growth.",
+    "files": [
+      "raw/trajectories.csv.gz",
+      "raw/theory_predictions.csv",
+      "derived/claim_metrics.csv"
+    ],
+    "limitation": "The early-gain prediction freezes predictor decay at its near-collapse approximation."
+  },
+  "C4_masking": {
+    "claim": "Increasing the synthetic masking fraction lowers cross-view predictability and realized rank.",
+    "files": [
+      "raw/theory_predictions.csv",
+      "raw/run_summary.csv",
+      "derived/claim_metrics.csv"
+    ],
+    "limitation": "Masking is represented by a documented covariance model, not image patches."
+  },
+  "C5_target_ema": {
+    "claim": "A sufficiently slow target EMA reduces realized rank while leaving the fixed-point eligibility bound unchanged.",
+    "files": [
+      "raw/trajectories.csv.gz",
+      "raw/run_summary.csv",
+      "derived/claim_metrics.csv"
+    ],
+    "limitation": "Only the linear target-EMA dynamics are tested."
+  },
+  "C6_stop_gradient": {
+    "claim": "Removing stop-gradient from the target branch collapses every tested mode under positive weight decay.",
+    "files": [
+      "raw/trajectories.csv.gz",
+      "raw/run_summary.csv",
+      "derived/claim_metrics.csv"
+    ],
+    "limitation": "The ablation uses the same linear covariance model and target equal to online weights."
+  }
+}

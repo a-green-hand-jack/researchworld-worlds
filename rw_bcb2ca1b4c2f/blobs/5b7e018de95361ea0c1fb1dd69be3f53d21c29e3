@@ -1,0 +1,79 @@
+"""Why 3 of E2's 648 cyclic pop runs differ from the exact reduced flow (checks/e2_prereg.py forecast).
+E2's simulate() works with 64 x 64 matrices in float64; a direction whose exact amplitude dips far below the round-off
+level of the leading directions (~1e-16 relative) is re-seeded at that level by rounding, so it can regrow before t_end.
+Here: the exact per-frequency reduced flow (same Euler map as simulate(), eta = 0.05, W0 = 1e-3 Q, P0 = p0 I) is run to
+each config's t_end (a) as is and (b) with each amplitude floored at FLOOR x the largest amplitude, and both are compared
+with E2's measured per-frequency multiplicities (results/e2/e2_runs.jsonl `surv_freq`).
+Usage: python3 checks/e2_roundoff.py E2_DIR [FLOOR ...]
+"""
+import sys, os, json
+import numpy as np
+
+d = sys.argv[1]; floors = [float(x) for x in sys.argv[2:]] or [1e-16, 1e-17, 1e-18]
+P = json.load(open(os.path.join(d, "prediction.json")))
+M = {r["id"]: r for r in map(json.loads, open(os.path.join(d, "e2_runs.jsonl")))}
+n = 64; ETA = 0.05; W0 = 1e-3; THR = 0.05
+FREQ = np.array([f for f in range(n // 2 + 1) for _ in range(1 if f in (0, n // 2) else 2)])
+cyc = [x for x in P["runs"] if x["exp"] == "pop" and x["fam"] in ("bern", "block", "multiblock")]
+keys = sorted({(x["fam"], x["r"], x["lam"], x["p0"]) for x in cyc})
+spec = {}
+for k, v in P["spectra"].items():                      # "fam/r": sigma, c per frequency index f (0..n/2)
+    fam, r = k.split("/"); spec[(fam, float(r))] = (np.array(v["sigma"]), np.array(v["c"]), np.array(v["freq"]))
+tend = {(x["fam"], x["r"], x["lam"], x["p0"]): x["t_end"] for x in cyc}
+K = len(keys)
+
+
+def per_dir(fam, r):
+    s, c, fr = spec[(fam, r)]
+    if len(s) == n:
+        return s, c
+    m = {int(f): (si, ci) for f, si, ci in zip(fr, s, c)}
+    return np.array([m[int(f)][0] for f in FREQ]), np.array([m[int(f)][1] for f in FREQ])
+
+
+Sm = np.array([per_dir(k[0], k[1])[0] for k in keys]); Cm = np.array([per_dir(k[0], k[1])[1] for k in keys])
+lam = np.array([k[2] for k in keys])[:, None]; p0 = np.array([k[3] for k in keys])[:, None]
+Tend = np.array([int(tend[k] / ETA) for k in keys])
+
+
+def flow(floor):
+    a = np.full((K, n), W0); p = np.broadcast_to(p0, (K, n)).copy(); snap = np.zeros((K, n)); amin = np.full((K, n), W0)
+    for t in range(int(Tend.max())):
+        da = -(p * p * Sm * a - p * Cm * a) - lam * a
+        dp = -((p * Sm * a - Cm * a) * a) - lam * p
+        a += ETA * da; p += ETA * dp
+        if floor:
+            f = floor * np.abs(a).max(1, keepdims=True); a = np.where(np.abs(a) < f, f, a)
+        if t % 50 == 0:
+            a[np.abs(a) < 1e-150] = 0.0; p[np.abs(p) < 1e-150] = 0.0
+        amin = np.minimum(amin, np.abs(a))
+        hit = Tend == t + 1
+        snap[hit] = a[hit]
+    return snap, amin
+
+
+def compare(snap):
+    agree = 0; bad = []
+    for x in cyc:
+        i = keys.index((x["fam"], x["r"], x["lam"], x["p0"]))
+        lab = np.abs(snap[i]) > THR
+        fc = np.array([int(lab[FREQ == f].sum()) for f in range(n // 2 + 1)])
+        ok = bool((fc == np.asarray(M[x["id"]]["surv_freq"])).all())
+        agree += ok
+        if not ok:
+            bad.append(dict(id=x["id"], cfg=list(keys[i]) + [x["seed"]], flow_rank=int(lab.sum()), measured=M[x["id"]]["rank_meas"],
+                            pred=x["rank_pred"]))
+    return agree, bad
+
+
+out = dict(runs=len(cyc), configs=K)
+snap, amin = flow(None)
+ag, bad = compare(snap)
+rel_min = amin / np.abs(snap).max(1, keepdims=True)
+out["exact"] = dict(runs_agree=ag, disagree=bad, configs_with_dip_below_1e16_rel=int((rel_min < 1e-16).any(1).sum()))
+for fl in floors:
+    s2, _ = flow(fl)
+    ag2, bad2 = compare(s2)
+    out[f"floor_{fl:g}"] = dict(runs_agree=ag2, disagree=bad2,
+                                configs_label_changed_vs_exact=int(((np.abs(s2) > THR) != (np.abs(snap) > THR)).any(1).sum()))
+print(json.dumps(out, indent=1))

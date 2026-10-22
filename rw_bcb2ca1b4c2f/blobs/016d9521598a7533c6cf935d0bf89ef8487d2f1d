@@ -1,0 +1,24 @@
+import json, gzip, numpy as np
+R=[json.loads(l) for l in gzip.open('prec.jsonl.gz')]
+by={(r['cfg']['id'],r['prec']):r for r in R}
+rows=[]
+for (i,p),r in by.items():
+    if p!='f64' or r['cfg']['p0']!=1.5 or r['truth'].get('counts') is None: continue
+    a=np.array(r['truth']['sv']); b=np.array(by[(i,'f80')]['truth']['sv'])
+    ra=a/a[:,:1]; rb=b/b[:,:1]
+    for j in range(a.shape[1]):
+        lo=np.where(ra[:,j]<=1e-13)[0]
+        if lo.size and (a[lo[0]:,j]>0.05).any():
+            rows.append((r['cfg']['B']==0, np.log10(ra[:,j].min()), np.log10(rb[:,j].min()), int(np.argmax(a[:,j]>0.05)), int(np.argmax(b[:,j]>0.05))))
+rows=np.array(rows)
+for pop in (0,1):
+    x=rows[rows[:,0]==pop]
+    d=x[:,2]-x[:,1]
+    print('pop' if pop else 'noisy','n',len(x),'min level f64 range',x[:,1].min().round(1),x[:,1].max().round(1),
+          'f80-f64 depth diff: median',np.median(d).round(2),'max |d|',np.abs(d).max().round(2),
+          'crossing check differs',int((x[:,3]!=x[:,4]).sum()))
+    print('   share with f64 min below 1e-16:', (x[:,1]< -16).mean().round(2), ' below 1e-15:', (x[:,1]< -15).mean().round(2))
+x=rows[rows[:,0]==0]; d=x[:,2]-x[:,1]
+print('noisy regrowing indices with f80 deeper by >0.5 decade:', int((d<-0.5).sum()), ' >0.1:', int((d<-0.1).sum()), 'of', len(x))
+m=d<-0.5
+print('those 25: f64 min range', x[m,1].min().round(1), x[m,1].max().round(1), ' f80 min range', x[m,2].min().round(1), x[m,2].max().round(1), 'diff range', d[m].min().round(2), d[m].max().round(2))

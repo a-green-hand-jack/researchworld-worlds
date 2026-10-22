@@ -1,0 +1,61 @@
+runs 816 {'f64_pert': 120, 'ld': 120, 'truth': 576} finite {'f64_pert': 120, 'ld': 120, 'truth': 576}
+truth dtypes {'float128': 96, 'float64': 480}
+
+== stats dev2: SV rank_tavg, mean over seeds (static bound sb)
+lam 0.005 a0 0.0001 p0 0.5 sb 24 | both0: 24.0 both0.25: 18.9 both0.5: 17.8 both1: 17.5 in1: 17.5 out1: 18.8
+lam 0.005 a0 0.0001 p0 2.0 sb 24 | both0: 24.0 both0.25: 18.9 both0.5: 17.9 both1: 17.6 in1: 17.5 out1: 18.6
+lam 0.005 a0 0.01   p0 0.5 sb 24 | both0: 24.0 both0.25: 19.1 both0.5: 17.8 both1: 17.5 in1: 17.5 out1: 18.7
+lam 0.005 a0 0.01   p0 2.0 sb 24 | both0: 24.0 both0.25: 19.0 both0.5: 17.9 both1: 17.4 in1: 17.5 out1: 18.8
+lam 0.02  a0 0.0001 p0 0.5 sb 19 | both0: 24.0 both0.25: 21.6 both0.5: 20.8 both1: 20.3 in1: 20.3 out1: 21.4
+lam 0.02  a0 0.0001 p0 2.0 sb 19 | both0: 24.0 both0.25: 21.5 both0.5: 20.6 both1: 20.2 in1: 20.1 out1: 21.7
+lam 0.02  a0 0.01   p0 0.5 sb 19 | both0: 24.0 both0.25: 21.5 both0.5: 20.5 both1: 20.3 in1: 20.3 out1: 21.5
+lam 0.02  a0 0.01   p0 2.0 sb 19 | both0: 24.0 both0.25: 21.5 both0.5: 20.6 both1: 20.2 in1: 20.1 out1: 21.7
+lam 0.05  a0 0.0001 p0 0.5 sb 14 | both0: 24.0 both0.25: 23.1 both0.5: 22.7 both1: 22.6 in1: 22.6 out1: 23.3
+lam 0.05  a0 0.0001 p0 2.0 sb 14 | both0: 24.0 both0.25: 23.0 both0.5: 22.8 both1: 22.6 in1: 22.8 out1: 23.3
+lam 0.05  a0 0.01   p0 0.5 sb 14 | both0: 24.0 both0.25: 23.1 both0.5: 22.8 both1: 22.6 in1: 22.7 out1: 23.3
+lam 0.05  a0 0.01   p0 2.0 sb 14 | both0: 24.0 both0.25: 23.2 both0.5: 22.9 both1: 22.7 in1: 22.6 out1: 23.3
+
+== stats e1b: SV rank_tavg, mean over seeds (static bound sb)
+lam 0.005 a0 0.0001 p0 0.5 sb 21 | both0: 24.0 both0.25: 17.5 both0.5: 16.3 both1: 15.8 in1: 15.8 out1: 16.9
+lam 0.005 a0 0.0001 p0 2.0 sb 21 | both0: 24.0 both0.25: 17.6 both0.5: 16.3 both1: 16.0 in1: 15.8 out1: 16.8
+lam 0.005 a0 0.01   p0 0.5 sb 21 | both0: 24.0 both0.25: 17.5 both0.5: 16.5 both1: 15.8 in1: 15.8 out1: 16.9
+lam 0.005 a0 0.01   p0 2.0 sb 21 | both0: 24.0 both0.25: 17.5 both0.5: 16.3 both1: 15.8 in1: 16.0 out1: 17.0
+lam 0.02  a0 0.0001 p0 0.5 sb 15 | both0: 24.0 both0.25: 19.7 both0.5: 18.6 both1: 18.1 in1: 18.1 out1: 19.4
+lam 0.02  a0 0.0001 p0 2.0 sb 15 | both0: 24.0 both0.25: 19.4 both0.5: 18.3 both1: 18.1 in1: 17.9 out1: 19.1
+lam 0.02  a0 0.01   p0 0.5 sb 15 | both0: 24.0 both0.25: 19.8 both0.5: 18.3 both1: 18.0 in1: 18.0 out1: 19.0
+lam 0.02  a0 0.01   p0 2.0 sb 15 | both0: 24.0 both0.25: 19.6 both0.5: 18.5 both1: 18.0 in1: 18.0 out1: 19.4
+lam 0.05  a0 0.0001 p0 0.5 sb 11 | both0: 24.0 both0.25: 22.1 both0.5: 21.6 both1: 21.5 in1: 21.6 out1: 22.3
+lam 0.05  a0 0.0001 p0 2.0 sb 11 | both0: 24.0 both0.25: 22.1 both0.5: 21.5 both1: 21.4 in1: 21.4 out1: 22.3
+lam 0.05  a0 0.01   p0 0.5 sb 11 | both0: 24.0 both0.25: 22.1 both0.5: 21.6 both1: 21.3 in1: 21.3 out1: 22.4
+lam 0.05  a0 0.01   p0 2.0 sb 11 | both0: 24.0 both0.25: 22.1 both0.5: 21.5 both1: 21.4 in1: 21.4 out1: 22.3
+
+== per-direction count minus SV count (rank_dir_tavg - rank_tavg), by rotation
+both theta 0.0: mean +0.00 median +0.00 p90 +0.00
+both theta 0.25: mean +1.06 median +1.02 p90 +1.67
+both theta 0.5: mean +1.30 median +1.44 p90 +1.92
+both theta 1.0: mean +1.29 median +1.41 p90 +1.81
+in theta 1.0: mean +1.27 median +1.45 p90 +1.74
+out theta 1.0: mean +0.37 median +0.37 p90 +0.55
+
+== paired effects on the SV rank_tavg (difference over seeds; cell sign by the registered measured rule)
+theta 0 -> both 0.25: pairs 96 mean -3.53 share>0.5 0.00 share<-0.5 1.00 | cells 24 (+ 0, - 24, 0 0)
+theta 0 -> both 0.5: pairs 96 mean -4.40 share>0.5 0.00 share<-0.5 1.00 | cells 24 (+ 0, - 24, 0 0)
+theta 0 -> both 1.0: pairs 96 mean -4.72 share>0.5 0.00 share<-0.5 1.00 | cells 24 (+ 0, - 24, 0 0)
+theta 0 -> in 1.0: pairs 96 mean -4.73 share>0.5 0.00 share<-0.5 1.00 | cells 24 (+ 0, - 24, 0 0)
+theta 0 -> out 1.0: pairs 96 mean -3.66 share>0.5 0.00 share<-0.5 1.00 | cells 24 (+ 0, - 24, 0 0)
+lam 0.005 -> 0.02 (theta = 0): pairs 32 mean +0.00 share>0.5 0.00 share<-0.5 0.00 | cells 8 (+ 0, - 0, 0 8)
+lam 0.005 -> 0.02 (theta > 0): pairs 160 mean +2.45 share>0.5 1.00 share<-0.5 0.00 | cells 40 (+ 40, - 0, 0 0)
+lam 0.02 -> 0.05 (theta = 0): pairs 32 mean +0.00 share>0.5 0.00 share<-0.5 0.00 | cells 8 (+ 0, - 0, 0 8)
+lam 0.02 -> 0.05 (theta > 0): pairs 160 mean +2.58 share>0.5 1.00 share<-0.5 0.00 | cells 40 (+ 40, - 0, 0 0)
+a0 0.0001 -> 0.01 (theta = 0): pairs 48 mean +0.00 share>0.5 0.00 share<-0.5 0.00 | cells 12 (+ 0, - 0, 0 12)
+a0 0.0001 -> 0.01 (theta > 0): pairs 240 mean +0.00 share>0.5 0.03 share<-0.5 0.04 | cells 60 (+ 0, - 0, 0 60)
+
+== precision subset (theta > 0, id % 4 == 0)
+runs 120; floor F (SV): median 0.158 p90 0.418 max 0.762; per-direction count: median 0.213 p90 0.467
+Dp = ld - f64 (SV): median |Dp| 0.178 p90 |Dp| 0.426; mean -0.048 95% CI [-0.096, +0.001]
+registered switch rule (development reading): (a) median |Dp| > p90 F: False; (b) signed bias: False -> float64 stands
+  both theta 0.25: n 24 F median 0.144 | Dp mean -0.071 median |Dp| 0.124
+  both theta 0.5: n 24 F median 0.163 | Dp mean +0.025 median |Dp| 0.238
+  both theta 1.0: n 24 F median 0.153 | Dp mean +0.016 median |Dp| 0.312
+  in theta 1.0: n 24 F median 0.158 | Dp mean -0.108 median |Dp| 0.119
+  out theta 1.0: n 24 F median 0.193 | Dp mean -0.101 median |Dp| 0.173

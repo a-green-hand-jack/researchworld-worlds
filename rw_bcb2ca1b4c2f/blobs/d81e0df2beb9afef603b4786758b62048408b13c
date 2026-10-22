@@ -1,0 +1,50 @@
+{
+ "amendment": 1,
+ "of": "results/e6/prediction_r4.json (registered at 2b0c0afa before any held-out run)",
+ "when": "committed while the held-out run (started after 2b0c0afa) is still running, before its score file exists or is read; requested by internal review (experiment-repo#11, R4-1, R4-2, R4-n; internal-review-repo a722765)",
+ "seen_before_this_amendment": "the run's progress log prints each finished run's truth rank (not any prediction or score); 16 of 240 had been printed and seen (truth ranks 19-23 on the first-finished, longest runs). No prediction row, word or score was seen",
+ "code": {
+  "scorer": "code/e6_r4_score_a1.py",
+  "md5": "91c0f125aaeedef33987a4c63c9528fc",
+  "imports_unchanged": {
+   "code/e6_r4_heldout.py": "dd977e41b8e6978242d40746fa9f31bc",
+   "code/e6_r4.py": "2b99b11a8a90c433b51e2e27a2ab30c2"
+  }
+ },
+ "R4-1": {
+  "change": "diverged base runs count as within-1 misses in the sample-robust and settled-only blocks too (block(robust, len(div)), block(settled, len(div))); the frozen cmd_score passed ndiv = 0 there, so a divergence dropped out of the subset on which the verdict word is taken when the truth is ill-posed. MAE stays on finite runs, as registered",
+  "why": "the registration says within-1 is over all base runs and a diverged run is a miss (#21 item 6); the frozen code cut towards pass",
+  "smoke_test": "on synthetic rows built from the development runs (8 diverged, 2 made fragile): sample-robust within-1 0.184 over 38 runs as frozen, 0.152 over 46 with the amendment; 'all' unchanged"
+ },
+ "R4-2": {
+  "inputs_only_rows": [
+   "n2_decay",
+   "ln_static_decay",
+   "r_init",
+   "ln_static_init",
+   "w2_exact_decay",
+   "r_decay",
+   "static",
+   "r_lin",
+   "window",
+   "all_alive",
+   "zero",
+   "the seven mu variants",
+   "the seven mu_ln_* variants",
+   "n2_init"
+  ],
+  "measured_rows": [
+   "early",
+   "n2_meas",
+   "n2_meas_full",
+   "n2_meas_rot",
+   "ln_static_T"
+  ],
+  "rule": "if the verdict word is a fail, the sentence 'no inputs-only criterion of this paper predicts the MLP rank under an LN target' is used only if every inputs-only row is outside rung 2's tolerance (MAE <= 1.5 and within-1 >= 0.70) on the verdict's subset (sample-robust if the truth is ill-posed, else all); otherwise the rows inside are named and 'no' is not used. The other subset's inside rows are reported beside it",
+  "scope": "the sentence is scoped to the grid: full-batch GD at eta = 0.1, the rung 2 MLP encoder (n = 32, H = 64, d = 32, tanh / relu), P0 = p0 I, w0 = 1e-3, mask ratio 0.5, field and latent data",
+  "partial_case": "only the R4 statements whose word is 'confirmed' are the held-out located cause; those 'not confirmed' or 'undetermined' stay development readings. The plan's outcome 'criterion fails, R4-a-c confirmed' is used only if all three are confirmed and no inputs-only row is inside"
+ },
+ "R4-n": "theory/ext_C_ladder.md, Rung 4: the 'unit scale whatever |W2| is' statement is the eps -> 0 one; at t = 0 the held-out targets are in LN's eps-linear regime (|Pi z_t|^2/d = 0.014-0.049 eps, gain 309-314, results/e6/r4_eps_regime.json from code/checks/e6_r4_eps_regime.py, initial weights only), and scale-free once |W2| has grown 4.5-8.5x (rms^2 = eps; within ~5% of scale-free at 14-27x). The argument holds in both phases (A4-T1, N2-ii.2's eps qualification)",
+ "precedence": "the amended score (results/e6/r4_heldout/r4_heldout_score_a1.json) is the registered score; the frozen scorer's r4_heldout_score.json is kept as the as-frozen record and any difference is reported",
+ "command": "python3 code/e6_r4_score_a1.py results/e6/r4_heldout"
+}

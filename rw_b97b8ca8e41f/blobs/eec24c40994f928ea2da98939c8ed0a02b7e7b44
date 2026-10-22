@@ -1,0 +1,51 @@
+\section{Tier A results in full}
+\label{app:tierA}
+
+This appendix gives every Tier~A value summarized in \cref{sec:experiments}; all are computed from the per-seed files in \texttt{results/} by \texttt{notes/tierA\_numbers.py} (output in \texttt{notes/tierA\_numbers.txt}).
+
+\emph{Reduction.} Integrating \eqref{eq:wdot}--\eqref{eq:pdot} per direction reproduces the full-matrix trajectories to a maximum relative error of $2.2\times10^{-16}$ over 40 runs (4 predictor scales $\times$ 2 weight decays $\times$ 5 seeds), with identical final rank in every run: \cref{prop:decouple} is exact in this tier, as it should be.
+
+\emph{P1 (local rates).} Over the 5{,}376 directions of 336 runs, the slope of $\log\mu_j$ fitted over steps 10--500 is compared with $2r_j(p)$ evaluated at initialization, with no fitted constant (\cref{fig:rates}a); \cref{fig:trajectories} shows the per-direction dynamics behind it in one reference run.
+The correlation is $0.9997$ and the median absolute difference $0.0040$ per unit time; the sign agrees for 97.6\% of directions, and for all 5{,}248 directions outside mask ratio $1$.
+All 128 disagreements are the directions at mask ratio $1$: the context is then empty, $c_j=s_j=0$, so the context representation has $\mu_j=c_jw_j^2\equiv0$ and its fitted slope is zero to numerical precision ($10^{-13}$), while $2r_j=-2\lambda=-0.01$. The quantity the theory describes there is $w_j$, whose fitted slope is $-0.00500$ against the predicted $-\lambda=-0.005$ in all 128 directions. The inactive directions of a bottleneck predictor ($p_j=0$) decay at $2\lambda$ as predicted (correlation $1.0000$ and largest difference $0.0044$ over the 512 bottleneck directions).
+
+\emph{P7 (decay calibration).} With the cross-view signal removed, the mean early slope of $\log w_j$ is $-0.0661$, $-0.0711$ and $-0.0861$ at $\lambda=0$, $0.005$ and $0.02$ (128 directions each), against predicted $-0.0667$, $-0.0717$ and $-0.0867$: the slope moves by $\Delta\lambda$ to within $10^{-5}$ (by $2\Delta\lambda$ for $\log\mu_j$), and no direction differs from its prediction by more than $0.0012$.
+With signal, rank is 3, 3 and 2 at the same three values; $\hat R$ is 4, 3 and 2 and the fixed-point count 5, 4 and 3.
+
+\emph{P2 (rank prediction).} The relative rank threshold ($10^{-2}$ of the largest eigenvalue) counts directions of a vanishing representation, all far below their initial size, as rank (up to 11 in the no-signal control). We therefore fixed, before comparing predictions, a \emph{collapse-aware} rank: directions above the relative threshold that also exceed their own initial eigenvalue; runs whose largest eigenvalue is below $10^{-12}$ are counted as collapsed (rank 0).
+On the 11 calibration configurations (the reference of each sweep and the three fixed-decay-rate $\alpha$ cells) $\hat R$ is exact in every run and the fixed-point count is one too high.
+On the 31 held-out configurations (248 runs; $\lambda_P=0$, outside \cref{prop:survival}, excluded), the mean absolute error of $\hat R$ is $0.42$ against $1.62$ for the fixed-point count; $\hat R$ is exact in 68\% of runs against 19\%, is closer in 200 runs, ties in 48 and is never worse.
+Neither count is ever below the observed rank. The largest error of $\hat R$ (3) is the no-stop-gradient run, whose collapse \cref{prop:stopgrad} predicts but \cref{prop:survival}, which assumes a stop-gradient, does not; without it (a post-hoc exclusion) the error is $0.33$ against $1.53$.
+The remaining errors are over-predictions by one direction, at predictor depth 2--3, $\tau=0.9999$, $m\in\{0.5,0.95\}$ and $\lambda=0$, and by two for a single shared scalar predictor.
+With the relative rank instead, the held-out errors are $1.88$ and $2.83$.
+
+\emph{P4 (masking).} \Cref{fig:phase} shows the rank under each heuristic. Across $m=0,0.15,0.35,0.5,0.65,0.8,0.95,1$ rank is 0, 0, 1, 2, 3, 3, 1 and 0: no direction is learned at either end (at $m=0.15$ the window is too short and every run collapses), and rank peaks at $m=0.65$--$0.8$. $\hat R$ is 0, 0, 1, 3, 3, 3, 2, 0 and the fixed-point count 0, 2, 4, 4, 4, 4, 3, 0.
+None of the 784 below-average-power directions ($s_k\le0$) grows in the early window, and no more than the 5 above-average directions survive at any $m$.
+
+\emph{P3 (predictor).} Rank is non-monotone in the predictor's initial gain: 1.1, 3, 3, 2, 1, 0 for $p_0=0.1$, $0.25$, $0.5$, $1$, $1.5$, $2$; the surviving direction at $p_0=1.5$ is near-collapsed (mean trace $8.7\times10^{-7}$) and all 8 runs at $p_0=2$ fall below the absolute floor.
+At fixed end-to-end gain, rank is 3, 2 and 2 for predictor depth 1, 2 and 3, the direction \cref{cor:depth} predicts, though $\hat R$ stays at 3; a rank-$k$ bottleneck gives 2 at $k=2$ and 3 for $k\in\{4,8,16\}$, and a single shared scalar predictor gives 1, all within $\hat R\le k$.
+With the decay coefficient fixed ($\lambda_P=0.005$), rank is 3, 3 and 2 for $\alpha=0.25$, $1$ and $4$, as predicted for that convention. With the absolute decay rate fixed ($\alpha\lambda_P=0.005$), rank is 3 at all three $\alpha$ and so is $\hat R$: the increase predicted for that convention is too small to change the count in this range, so this slice does not discriminate.
+Predictor decay gives 2, 3 and 2 for $\lambda_P=0$, $0.005$ and $0.02$: rank falls from the reference to strong decay, but $\lambda_P=0$ is not the maximum.
+$\lambda_P=0$ is outside \cref{prop:survival}, which needs the predictor to drift ($\lambda_P>0$), and is reported as the regime boundary rather than as a test.
+
+\emph{P5 (target update).} Without stop-gradient all 8 runs collapse below the absolute floor (largest eigenvalue $<10^{-12}$), as \cref{prop:stopgrad} predicts.
+EMA targets give rank 3, 3 and 2 for $\tau=0$, $0.99$ and $0.9999$; the slowest target removes the weakest surviving direction in every seed and leaves a representation two orders of magnitude smaller (mean trace $6.4\times10^{-3}$ against $0.80$), consistent with a lower growth rate inside an unchanged window.
+
+\emph{P8 (prior accounts).} In the matched limits of \cref{app:prior}, the growth-window discriminant reduces algebraically to the weight-decay threshold of \citet{tian2021understanding} and to the decay threshold of \citet{wang2021demystify}; these are identities, not measurements.
+The fixed-point count over-predicts the rank reached from small initialization (4 against 3 at the reference; never below, and above it in 81\% of held-out runs).
+Directions are learned one at a time in order of their cross-view signal, as in the stepwise account of \citet{simon2023stepwise}: at the reference the three surviving directions, those with the three largest $s_j$, first reach amplitude $0.01$ at steps $2{,}000$, $5{,}000$ and $20{,}000$, and the others never do. Removing the cross-view signal while keeping the spectrum, predictor and optimizer lowers the rank from 3 to 0.
+
+\begin{figure}[h]
+\centering
+\IfFileExists{figures/fig_trajectories.pdf}{\includegraphics[width=\linewidth]{figures/fig_trajectories.pdf}}{\todo{figures/fig\_trajectories.pdf from figtab-repo}}
+\caption{\textbf{Per-direction dynamics of a linear JEPA (reference configuration, seed 0).} \textbf{(a)} Eigenvalue $\mu_j$ of the representation covariance along each of the 16 directions against time. Solid: the 3 directions that survive (final $\mu_j\ge10^{-2}\max_k\mu_k$ and above their initial value); dotted: those that collapse; color: context--target covariance $s_j$ (white: $s_j=0$, no drive); shaded: the window over which the rates of \cref{fig:rates}a are fitted. \textbf{(b)} The same directions in the $(p_j,w_j)$ plane from the common initialization $p_j=0.5$, as in \cref{fig:mechanism}b; the direction with $s_j=0.125$ satisfies the fixed-point condition $\rho_js_j>4\lambda$ yet collapses. Markers: logged checkpoints (steps 10 to 30{,}000). $p_0=0.5$, $\lambda=\lambda_P=0.005$, $\alpha=1$, $m=0.65$; the survivor set is identical in all 8 seeds.}
+\label{fig:trajectories}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\IfFileExists{figures/fig_phase.pdf}{\includegraphics[width=\linewidth]{figures/fig_phase.pdf}}{\todo{figures/fig\_phase.pdf from figtab-repo}}
+\caption{\textbf{Rank under each heuristic, linear tier (P2--P5, P7).} Each column varies one factor from the reference ($p_0=0.5$, $L=1$, $\alpha=1$, $\lambda_P=\lambda=0.005$, $m=0.65$, $\tau=0$); shaded: calibration configurations, all others held out. The $\alpha$ column shows the fixed-decay-coefficient slice (circles, left) and the fixed-decay-rate slice $\alpha\lambda_P$ (squares, right; all calibration). \emph{Top:} collapse-aware rank per seed (markers) and mean of 8 seeds (bar); crosses: collapsed runs (largest eigenvalue $<10^{-12}$), rank 0; green: $\hat R$ (\cref{prop:survival}; slightly raised where it coincides with the bar); dashed: fixed-point count. At $\lambda_P=0$, outside \cref{prop:survival}, $\hat R=16$ (arrow). \emph{Bottom:} largest eigenvalue per seed; dotted: the collapse floor; triangles: below $10^{-18}$. Masking here is the stationary covariance model of \cref{prop:masking}, not image patches, and is compared with the patch masks of Tiers B and C only qualitatively.}
+\label{fig:phase}
+\end{figure}
+\clearpage

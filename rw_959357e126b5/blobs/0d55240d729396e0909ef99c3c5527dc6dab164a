@@ -1,0 +1,33 @@
+"""Independent full re-run of E6 rung 2 held-out (experiment 3a53d47) with the frozen runner, then per-run and score comparison."""
+import subprocess, json, gzip, sys, os, time
+H = os.path.dirname(os.path.abspath(__file__)); os.chdir(H)
+t0 = time.time()
+subprocess.run([sys.executable, "-u", "code/e6_r23_run.py", "r2_heldout", "out", "8", "20"], check=True)
+subprocess.run([sys.executable, "-u", "code/e6_r23_a2.py", "score", "r2_heldout", "out", "r2_heldout_inputs.json"],
+               check=True, stdout=open("score.log", "w"))
+def load(p):
+    with gzip.open(p, "rt") as f:
+        return {r["cfg"]["id"]: r for r in map(json.loads, f)}
+A = load("delivered/r23_r2_heldout_runs.jsonl.gz"); B = load("out/r23_r2_heldout_runs.jsonl.gz")
+def leaves(d, p=()):
+    if isinstance(d, dict):
+        for k, v in d.items(): yield from leaves(v, p + (k,))
+    elif isinstance(d, list):
+        for i, v in enumerate(d): yield from leaves(v, p + (i,))
+    else: yield p, d
+run_diff = {}
+for i in sorted(set(A) | set(B)):
+    a = A.get(i, {}); b = B.get(i, {})
+    a = {k: v for k, v in a.items() if k != "accounting"}; b = {k: v for k, v in b.items() if k != "accounting"}
+    la, lb = dict(leaves(a)), dict(leaves(b))
+    d = [str(k) for k in set(la) | set(lb) if repr(la.get(k, "MISSING")) != repr(lb.get(k, "MISSING"))]
+    if d: run_diff[i] = d[:10]
+score_diff = {}
+for fn in ("r23_r2_heldout_score.json", "r23_r2_heldout_score_a2.json"):
+    la = dict(leaves(json.load(open("delivered/" + fn)))); lb = dict(leaves(json.load(open("out/" + fn))))
+    score_diff[fn] = dict(n=len(la), diff=[str(k) for k in set(la) | set(lb) if repr(la.get(k)) != repr(lb.get(k))][:50])
+out = dict(runs_delivered=len(A), runs_rerun=len(B), runs_with_diff=len(run_diff), run_diff_examples=dict(list(run_diff.items())[:20]),
+           score_diff=score_diff, wall_s=time.time() - t0)
+json.dump(out, open("compare.json", "w"), indent=1)
+print("HUTIAN_WAKE: r2_heldout rerun done:", json.dumps(dict(runs=len(B), runs_with_diff=len(run_diff),
+      score_diff={k: len(v["diff"]) for k, v in score_diff.items()})), flush=True)

@@ -1,0 +1,388 @@
+"""E6 / rung 4 held-out (registration results/e6/prediction_r4.json, frozen with this file before any held-out run).
+Model, truth and inputs-only rows are code/e6_r4.py's (imported unchanged, md5 in the registration); this file adds the
+held-out grid, independent draws per base run, a truth-floor re-run for every base run, the full measured-W1 rows of the
+development diagnostic (code/checks/e6_r4_diag.py) and the registered scoring.
+
+Grid 'heldout': values and seeds disjoint from dev (s1 0.6/1.2/2.4, lam 0.004/0.012, p0 0.6/1.2, seed 640). relu stays
+inside the s1 range dev found stable (<= 1.2; every relu run at 2.4 diverged at step 50); tanh adds s1 = 1.8 (tanh was
+stable at 2.4). Base run k (creation order) has seed SEED0 + k and rep = k mod REPS (independent draws per run, as
+rungs 2-3 amendment 2); its floor re-run keeps the seed and perturbs W2(0)'s rows by 1 + U(-1e-3, 1e-3) (rungs 2-3's
+'w2' floor). A base run is fragile if the floor truth differs at all, or either run diverged (A4-R1).
+
+Per base run, beside e6_r4.predict's rows and w2_exact_decay:
+  n2_meas_full  the N2 flow (e6_r4.n2_tv, initial eigenbasis U0, as n2_decay) fed with the run's own W1 every
+                STAT_EVERY steps over the whole run: a measured-input row (never a prediction); the conditional row
+  n2_meas_rot   the same with U re-diagonalised on the measured S11(t) (reported)
+  n2_init       the N2 flow with W1 frozen at W1(0) (reported)
+  ln_static_T   ln_static on the measured W1(T) statistics, eigenbasis of S11(T) (reported)
+  w1_ratio, hid_rank  |W1(t)|/|W1(0)| and #eig(S11(t) centred) > THR^2 at the checks (reported)
+Usage: python3 code/e6_r4_heldout.py list | pilot ID | run OUTDIR [NPROC] [BOUND_CPU_H] | score OUTDIR"""
+import sys, os, json, gzip, time, itertools, hashlib
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+import e6_r2 as r2
+import e6_r4 as r4
+from e6_r2 import sample, phi, dphi, svals, H, d, N, THR, NCHK, EARLY_F, CHECK_EVERY, STAT_EVERY
+
+SEED0 = 40000
+REPS = 3
+GRID = dict(data=["field", "latent"], s1=dict(tanh=[0.8, 1.1, 1.8], relu=[0.8, 1.1]), lam=[0.006, 0.009],
+            p0=[0.8, 1.5], r=0.5, w0=1e-3, eta=0.1, horizon=8.0)
+TOL = dict(mae=1.5, within1=0.70)            # rung 2's tolerance
+FRAGILE_MAX = 0.05
+B_BOOT = 2000
+R4A_DELTA = 0.1                              # delta at the first check, every finite base run
+R4B_SHARE = 0.80                             # truth > criterion on at least this share of finite tanh base runs
+R4C_SHARE = 0.30                             # rank(T) - early > 1 on at least this share of finite tanh base runs
+CRIT, EXTRA = "n2_decay", "ln_static_decay"  # A4 passed with "N2 better" against ln_static (results/e4/a4_heldout)
+MU = ["dvd", "dvd_signed", "dvd_sorted", "dvd_pq", "dvd_pq_signed", "dvd_exact", "dvd_nowd"]
+BASELINES = (["r_init", "ln_static_init", "w2_exact_decay", "r_decay", "static", "r_lin", "window", "all_alive", "zero"]
+             + MU + ["mu_ln_" + k for k in MU])
+REPORTED = ["n2_meas", "n2_meas_rot", "n2_init", "ln_static_T"]
+
+
+def configs():
+    base = []
+    for data, act in itertools.product(GRID["data"], ["tanh", "relu"]):
+        for s1, lam, p0, rep in itertools.product(GRID["s1"][act], GRID["lam"], GRID["p0"], range(REPS)):
+            T = int(round(GRID["horizon"] / (GRID["eta"] * lam)))
+            base.append(dict(data=data, act=act, s1=s1, lam=lam, p0=p0, r=GRID["r"], w0=GRID["w0"], opt="gd",
+                             eta=GRID["eta"], T=T))
+    out = []
+    for k, c in enumerate(base):
+        c.update(id=k, seed=SEED0 + k, rep=k % REPS)
+        out.append(c)
+    out += [dict(c, id=len(base) + k, floor="w2", floor_of=c["id"]) for k, c in enumerate(base)]
+    return out
+
+
+_init0 = r2.init
+
+
+def _init_floor(cfg):
+    W1, W2, P = _init0(cfg)
+    if cfg.get("floor") == "w2":
+        rng = np.random.default_rng(8 * 10 ** 6 + cfg["seed"])
+        W2 = W2 * (1 + rng.uniform(-1e-3, 1e-3, W2.shape[0]))[:, None]
+    return W1, W2, P
+
+
+r2.init = _init_floor        # e6_r4.train / predict call r2.init at call time
+
+
+def train_full(cfg, Xc, Xt):
+    """e6_r4.train (trained W1) with W1 also kept every STAT_EVERY steps over the whole run, |W1| ratio and hidden rank
+    at the checks. Same updates, checks and outputs as e6_r4.train."""
+    W1, W2, P = r2.init(cfg); W10 = W1.copy(); lam, eta, T, act = cfg["lam"], cfg["eta"], cfg["T"], cfg["act"]
+    dec = 1 - eta * lam
+    chk = set(np.linspace(0, T, NCHK + 1).astype(int)[1:].tolist())
+    t_early = int(round(EARLY_F * T))
+    snaps, full = {0: W1.copy()}, {0: W1.copy()}
+    ranks, deltas, early, w1r, hid = [], [], None, [], []
+    for step in range(1, T + 1):
+        ac = Xc @ W1.T; hc = phi(ac, act); ht = phi(Xt @ W1.T, act)
+        zc = hc @ W2.T; tgt = r4.ln(ht @ W2.T)
+        E = zc @ P.T - tgt
+        gP = E.T @ zc / N
+        gz = E @ P
+        gW2 = gz.T @ hc / N
+        gW1 = ((gz @ W2) * dphi(ac, hc, act)).T @ Xc / N
+        W1 = W1 - eta * (gW1 + lam * W1)
+        W2 = W2 - eta * (gW2 + lam * W2); P = P - eta * (gP + lam * P)
+        if step % 50 == 0:
+            for M in (W1, W2, P):
+                M[np.abs(M) < 1e-150] = 0.0
+            if not (np.isfinite(W2).all() and np.abs(W2).max() < 1e8 and np.isfinite(W1).all() and np.isfinite(P).all()):
+                return dict(rank=None, diverged=step)
+        if step <= t_early and step % CHECK_EVERY == 0:
+            snaps[step] = W1.copy()
+        if step % STAT_EVERY == 0:
+            full[step] = W1.copy()
+        if step == t_early or step in chk:
+            h = phi(Xc @ W1.T, act)
+            r, _ = r4.emb_rank(h @ W2.T)
+            if step == t_early:
+                early = r
+            if step in chk:
+                ranks.append(r)
+                deltas.append(float(np.linalg.norm(W1 / dec ** step - W10) / np.linalg.norm(W10)))
+                hcen = h - h.mean(0)
+                w1r.append(float(np.linalg.norm(W1) / np.linalg.norm(W10)))
+                hid.append(int((np.linalg.eigvalsh(hcen.T @ hcen / N) > THR ** 2).sum()))
+    Z = phi(Xc @ W1.T, act) @ W2.T
+    r, sv = r4.emb_rank(Z)
+    sw = svals(r4.PI @ W2)
+    full[T] = W1.copy()
+    return dict(rank=r, diverged=None, ranks=ranks, settled=len(set(ranks[-4:])) == 1, early=early,
+                sv_top=[float(x) for x in sv[:8]], rank_rel=int((sv > THR * max(sv[0], 1e-300)).sum()),
+                w2_rank=int((sw > THR).sum()), delta=deltas, p_max=float(svals(P).max()),
+                p_diag_mean=float(np.trace(P) / d), w1_ratio=w1r, hid_rank=hid, snaps=snaps, full=full)
+
+
+def measured_rows(cfg, Xc, Xt, full):
+    W1, W2, P0 = r2.init(cfg); lam, eta, T, act, p0, seed = cfg["lam"], cfg["eta"], cfg["T"], cfg["act"], cfg["p0"], cfg["seed"]
+    U = np.linalg.eigh(r2.feat_stats(W1, Xc, Xt, act)[0])[1]
+    a0 = np.linalg.norm(r4.PI @ W2 @ U, axis=0)
+    ks = np.array(sorted(full)); near = lambda st: int(ks[ks <= st].max())
+    cache, cache_r = {}, {}
+
+    def meas(st):
+        k = near(st)
+        if k not in cache:
+            cache[k] = r4.proj_stats(full[k], Xc, Xt, act, U)
+        return cache[k]
+
+    def meas_rot(st):
+        k = near(st)
+        if k not in cache_r:
+            Uk = np.linalg.eigh(r2.feat_stats(full[k], Xc, Xt, act)[0])[1]
+            cache_r[k] = r4.proj_stats(full[k], Xc, Xt, act, Uk)
+        return cache_r[k]
+    s0 = r4.proj_stats(W1, Xc, Xt, act, U)
+    out = dict(n2_meas_full=r4.n2_tv(meas, a0, p0, lam, eta, T, seed),
+               n2_meas_rot=r4.n2_tv(meas_rot, a0, p0, lam, eta, T, seed),
+               n2_init=r4.n2_tv(lambda st: s0, a0, p0, lam, eta, T, seed))
+    WT = full[T]
+    UT = np.linalg.eigh(r2.feat_stats(WT, Xc, Xt, act)[0])[1]
+    out["ln_static_T"] = r4.ln_static_stats(*r4.proj_stats(WT, Xc, Xt, act, UT), lam, seed)
+    return {k: (None if v is None else min(int(v), d - 1)) for k, v in out.items()}
+
+
+def run_one(cfg):
+    t0 = time.process_time()
+    Xc, Xt = sample(cfg)
+    if "floor" in cfg:
+        tr = r4.train(cfg, Xc, Xt); tr.pop("snaps", None)
+        return dict(cfg=cfg, truth=tr, pred={}, cpu=time.process_time() - t0)
+    tr = train_full(cfg, Xc, Xt)
+    pr = {}
+    if tr.get("rank") is not None:
+        full = tr.pop("full")
+        pr = r4.predict(cfg, Xc, Xt, tr)
+        dec = 1 - cfg["eta"] * cfg["lam"]; W10 = r2.init(cfg)[0]
+        pr["w2_exact_decay"] = r4.train(cfg, Xc, Xt, W1_path=lambda st: W10 * dec ** st).get("rank")
+        pr.update(measured_rows(cfg, Xc, Xt, full))
+    tr.pop("snaps", None); tr.pop("full", None)
+    return dict(cfg=cfg, truth=tr, pred=pr, cpu=time.process_time() - t0)
+
+
+def md5(path):
+    return hashlib.md5(open(path, "rb").read()).hexdigest()
+
+
+def _job(cfg_dir):
+    cfg, rundir = cfg_dir
+    res = run_one(cfg)
+    json.dump(res, open(os.path.join(rundir, f"run_{cfg['id']:04d}.json"), "w"))
+    return cfg["id"], res["cpu"], res["truth"].get("rank")
+
+
+def cmd_run(outdir, nproc=8, bound=10.0):
+    """Runs every configuration not yet in OUTDIR/runs (longest first, base runs before floors at equal T); stops
+    submitting once the process CPU-h of this invocation plus the runs already present pass BOUND."""
+    rundir = os.path.join(outdir, "runs"); os.makedirs(rundir, exist_ok=True)
+    done = {int(f[4:8]) for f in os.listdir(rundir) if f.startswith("run_")}
+    prev = sum(json.load(open(os.path.join(rundir, f)))["cpu"] for f in os.listdir(rundir) if f.startswith("run_")) / 3600
+    todo = sorted([c for c in configs() if c["id"] not in done], key=lambda c: (-c["T"], "floor" in c, c["id"]))
+    t0 = time.time(); cum = prev; stopped = False
+    pool = Pool(int(nproc))
+    for i, (cid, cpu, rank) in enumerate(pool.imap_unordered(_job, [(c, rundir) for c in todo], chunksize=1)):
+        cum += cpu / 3600
+        print(f"run {cid} cpu={cpu:.0f}s rank={rank} | {i + 1}/{len(todo)} cum {cum:.2f} CPU-h {time.time() - t0:.0f}s",
+              flush=True)
+        if cum > float(bound):
+            stopped = True
+            pool.terminate(); break
+    else:
+        pool.close()
+    pool.join()
+    files = sorted(f for f in os.listdir(rundir) if f.startswith("run_"))
+    rows = [json.load(open(os.path.join(rundir, f))) for f in files]
+    with gzip.open(os.path.join(outdir, "r4_heldout_runs.jsonl.gz"), "wt") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    here = os.path.dirname(os.path.abspath(__file__))
+    meta = dict(runs=len(rows), of=len(configs()), cpu_h=sum(r["cpu"] for r in rows) / 3600, bound_cpu_h=float(bound),
+                bound_stop=stopped, wall_s_this_invocation=time.time() - t0, numpy=np.__version__,
+                md5={p: md5(os.path.join(here, p)) for p in ["e6_r4_heldout.py", "e6_r4.py", "e6_r2.py", "e4_a4.py",
+                                                            "baselines/dvd_mu.py"]})
+    json.dump(meta, open(os.path.join(outdir, "r4_heldout_meta.json"), "w"), indent=1)
+    msg = f"rung 4 heldout: {len(rows)}/{len(configs())} runs, {meta['cpu_h']:.2f} CPU-h" + (" (bound stop)" if stopped else "")
+    if len(rows) == len(configs()):
+        cmd_score(outdir)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), msg, flush=True)
+
+
+# --------------------------------------------------------------------------------------------- scoring
+def ckey(r):
+    c = r["cfg"]; return (c["data"], c["act"], c["s1"], c["lam"], c["p0"])
+
+
+def cboot(rows, x, seed=0):
+    """Configuration-cluster bootstrap 95% interval of mean(x) (each configuration with its REPS draws)."""
+    g = {}
+    for i, r in enumerate(rows):
+        g.setdefault(ckey(r), []).append(i)
+    G = list(g.values()); x = np.asarray(x, float); rng = np.random.default_rng(seed); bs = []
+    for _ in range(B_BOOT):
+        pick = rng.integers(0, len(G), len(G))
+        bs.append(float(np.concatenate([x[G[i]] for i in pick]).mean()))
+    return [float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))]
+
+
+def val(r, k):
+    v = r["truth"]["early"] if k == "early" else r["pred"].get(k)
+    return np.nan if v is None else float(v)
+
+
+def tol(rows, ndiv, k):
+    """MAE on finite base runs with a finite value; within-1 over all base runs (diverged runs and non-finite rows miss)."""
+    t = np.array([r["truth"]["rank"] for r in rows], float); p = np.array([val(r, k) for r in rows])
+    f = np.isfinite(p); e = np.abs(p - t)
+    n_all = len(rows) + ndiv
+    o = dict(n=n_all, finite=int(f.sum()), mae=float(e[f].mean()) if f.any() else None,
+             within1=float((e[f] <= 1).sum() / n_all) if n_all else None, bias=float((p - t)[f].mean()) if f.any() else None)
+    o["inside"] = bool(o["mae"] is not None and o["mae"] <= TOL["mae"] and o["within1"] >= TOL["within1"])
+    return o
+
+
+def compare(rows, k, early=False):
+    t = np.array([r["truth"]["rank"] for r in rows], float)
+    pb = np.array([val(r, k) for r in rows]); pc = np.array([val(r, CRIT) for r in rows])
+    f = np.isfinite(pb) & np.isfinite(pc); R = [r for r, ok in zip(rows, f) if ok]
+    if not R:
+        return dict(runs=0)
+    dlt = np.abs(pb - t)[f] - np.abs(pc - t)[f]
+    ci = cboot(R, dlt)
+    if early:
+        w = ("criterion at least as good as the early reading" if ci[0] > 0 else
+             "early reading better" if ci[1] < 0 else "not separated")
+    else:
+        w = "criterion better" if ci[0] > 0 else ("baseline better" if ci[1] < 0 else "not separated")
+    return dict(runs=len(R), mae_baseline=float(np.abs(pb - t)[f].mean()), mae_criterion=float(np.abs(pc - t)[f].mean()),
+                diff=float(dlt.mean()), ci=ci, word=w)
+
+
+def statements(rows):
+    """R4-a, R4-b, R4-c on finite base runs (rows)."""
+    out = {}
+    d0 = np.array([r["truth"]["delta"][0] for r in rows])
+    out["R4-a"] = dict(threshold=R4A_DELTA, n=len(rows), min=float(d0.min()), q10=float(np.quantile(d0, 0.1)),
+                       median=float(np.median(d0)), max=float(d0.max()), rung2_max=4.3e-3,
+                       by_act={a: float(np.median([r["truth"]["delta"][0] for r in rows if r["cfg"]["act"] == a]))
+                               for a in ("tanh", "relu") if any(r["cfg"]["act"] == a for r in rows)},
+                       word="confirmed" if (d0 > R4A_DELTA).all() else "not confirmed")
+    for act in ("tanh", "relu"):
+        S = [r for r in rows if r["cfg"]["act"] == act]
+        if not S:
+            continue
+        t = np.array([r["truth"]["rank"] for r in S], float)
+        b = {}
+        for k in (CRIT, EXTRA):
+            p = np.array([val(r, k) for r in S]); f = np.isfinite(p); Sf = [r for r, ok in zip(S, f) if ok]
+            under = (t[f] > p[f]).astype(float); bias = (p - t)[f]
+            b[k] = dict(n=int(f.sum()), under_share=float(under.mean()), under_share_ci=cboot(Sf, under),
+                        bias=float(bias.mean()), bias_ci=cboot(Sf, bias))
+        b["word"] = ("confirmed" if b[CRIT]["under_share"] >= R4B_SHARE and b[CRIT]["bias_ci"][1] < 0 else "not confirmed")
+        b["threshold"] = R4B_SHARE
+        e = np.array([r["truth"]["early"] for r in S], float); rise = t - e; up = (rise > 1).astype(float)
+        c = dict(n=len(S), threshold=R4C_SHARE, share_rise_gt1=float(up.mean()), share_ci=cboot(S, up),
+                 mean_rise=float(rise.mean()), mean_rise_ci=cboot(S, rise))
+        c["word"] = "confirmed" if c["share_rise_gt1"] >= R4C_SHARE and c["mean_rise_ci"][0] > 0 else "not confirmed"
+        out[f"R4-b_{act}"] = b; out[f"R4-c_{act}"] = c
+    out["R4-b"] = out.get("R4-b_tanh", {}).get("word"); out["R4-c"] = out.get("R4-c_tanh", {}).get("word")
+    return out
+
+
+def block(rows, ndiv):
+    o = dict(base_runs=len(rows) + ndiv, finite=len(rows), diverged=ndiv)
+    if not rows:
+        return o
+    t = np.array([r["truth"]["rank"] for r in rows])
+    o.update(truth_mean=float(t.mean()), truth_range=[int(t.min()), int(t.max())],
+             settled_share=float(np.mean([r["truth"]["settled"] for r in rows])))
+    o["criterion"] = tol(rows, ndiv, CRIT); o["extra_row"] = tol(rows, ndiv, EXTRA)
+    o["verdict"] = "pass" if o["criterion"]["inside"] else "fail"
+    o["conditional_row"] = tol(rows, ndiv, "n2_meas_full")
+    o["conditional_word"] = ("accounts for the rank given the first layer" if o["conditional_row"]["inside"]
+                             else "does not")
+    o["rows"] = {k: tol(rows, ndiv, k) for k in BASELINES + REPORTED + ["early"] if k in rows[0]["pred"] or k == "early"}
+    o["words"] = {k: compare(rows, k) for k in [EXTRA] + BASELINES if k in rows[0]["pred"]}
+    o["words"]["early"] = compare(rows, "early", early=True)
+    o["statements"] = statements(rows)
+    return o
+
+
+def cmd_score(outdir):
+    rows = [json.loads(l) for l in gzip.open(os.path.join(outdir, "r4_heldout_runs.jsonl.gz"), "rt")]
+    base = sorted([r for r in rows if "floor" not in r["cfg"]], key=lambda r: r["cfg"]["id"])
+    fl = {r["cfg"]["floor_of"]: r for r in rows if "floor" in r["cfg"]}
+    frag, nofloor = set(), []
+    for r in base:
+        f = fl.get(r["cfg"]["id"])
+        if f is None:
+            nofloor.append(r["cfg"]["id"]); continue
+        if r["truth"].get("rank") is None or f["truth"].get("rank") is None or r["truth"]["rank"] != f["truth"]["rank"]:
+            frag.add(r["cfg"]["id"])
+    fin = [r for r in base if r["truth"].get("rank") is not None]
+    div = [r["cfg"]["id"] for r in base if r["truth"].get("rank") is None]
+    robust = [r for r in fin if r["cfg"]["id"] not in frag]
+    settled = [r for r in fin if r["truth"]["settled"]]
+    nb = len(base); share = len(frag) / nb
+    diffs = [abs(r["truth"]["rank"] - fl[r["cfg"]["id"]]["truth"]["rank"]) for r in fin
+             if r["cfg"]["id"] in fl and fl[r["cfg"]["id"]]["truth"].get("rank") is not None]
+    out = dict(base_runs=nb, floor_runs=len(fl), no_floor=nofloor, diverged=div,
+               floor=dict(fragile=sorted(frag), share=share, share_diff_1=float(np.mean([x == 1 for x in diffs])),
+                          share_diff_gt1=float(np.mean([x > 1 for x in diffs])), ill_posed=share > FRAGILE_MAX,
+                          by_cell={f"{a}_{b}": sum(1 for r in base if r["cfg"]["id"] in frag and r["cfg"]["data"] == a
+                                                   and r["cfg"]["act"] == b) for a in GRID["data"] for b in ("tanh", "relu")}))
+    out["all"] = block(fin, len(div))
+    out["sample_robust"] = block(robust, 0)                   # a diverged base run is fragile by definition
+    out["settled_only"] = block(settled, 0)
+    out["cells"] = {f"{a}_{b}": block([r for r in fin if r["cfg"]["data"] == a and r["cfg"]["act"] == b],
+                                      sum(1 for r in base if r["truth"].get("rank") is None and r["cfg"]["data"] == a
+                                          and r["cfg"]["act"] == b))
+                    for a in GRID["data"] for b in ("tanh", "relu")}
+    # registered verdict word (A4 revision 3's floor rule)
+    va, vr = out["all"]["verdict"], out["sample_robust"].get("verdict")
+    if len(robust) <= nb / 2:
+        word = "undetermined (truth ill-posed)"
+    elif share > FRAGILE_MAX:
+        word = f"{vr} on sample-robust runs"
+    else:
+        word = va if vr == va else "undetermined"
+    out["verdict_word"] = word
+    out["reading"] = ("no validated LN criterion in the MLP encoder (a crossing, not a failure of A4)"
+                      if word.startswith("fail") else "the criterion holds as registered" if word.startswith("pass")
+                      else "undetermined")
+    # R4-a..c: the word of the subset the verdict uses (sample-robust if ill-posed), 'undetermined' if the two differ
+    sw = lambda blk, s: (blk["statements"]["R4-a"]["word"] if s == "R4-a" else blk["statements"][s]) if "statements" in blk else None
+    src = "sample_robust" if share > FRAGILE_MAX else "all"
+    out["statement_words"] = {}
+    for s in ("R4-a", "R4-b", "R4-c"):
+        wa, wr = sw(out["all"], s), sw(out["sample_robust"], s)
+        out["statement_words"][s] = dict(all=wa, sample_robust=wr,
+                                         word=sw(out[src], s) if wa == wr or wr is None else "undetermined")
+    ca, cr = out["all"]["conditional_word"], out["sample_robust"].get("conditional_word")
+    out["conditional_word"] = ca if ca == cr else "undetermined"
+    out["settled_sensitivity"] = dict(verdict=out["settled_only"].get("verdict"),
+                                      conditional=out["settled_only"].get("conditional_word"))
+    json.dump(out, open(os.path.join(outdir, "r4_heldout_score.json"), "w"), indent=1, allow_nan=False)
+    return out
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "list":
+        cf = configs(); b = [c for c in cf if "floor" not in c]
+        print(len(b), "base +", len(cf) - len(b), "floor runs; base steps", sum(c["T"] for c in b))
+    elif cmd == "pilot":       # a configuration of the grid with its seed moved to PILOT_SEED (never a registered seed)
+        cfg = [c for c in configs() if c["id"] == int(sys.argv[2])][0]
+        cfg = dict(cfg, seed=int(os.environ.get("PILOT_SEED", "49990")))
+        t = time.time(); r = run_one(cfg); print(json.dumps(r)[:3000]); print("wall", time.time() - t)
+    elif cmd == "run":
+        cmd_run(sys.argv[2], *(sys.argv[3:5] or []))
+    elif cmd == "score":
+        print(json.dumps(cmd_score(sys.argv[2]), indent=1)[:5000])

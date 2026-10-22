@@ -1,0 +1,159 @@
+"""P3-P5, P7 transfer to the controlled nonlinear tier (Tier B): online rank over
+training and at the late checkpoint for each one-factor sweep, with the encoder
+AdamW weight-decay pairs of the predictor-scale and mask sweeps.
+
+Decay (plan rev. 7, story-repo 4c6ee7b): the Tier B encoder uses decoupled AdamW
+(lr 3e-4) with coefficient `weight_decay` in {0, 1e-4 (reference), 5e-4}. This is an
+uncalibrated small-dose sensitivity contrast, not the direct L2 coefficient lambda of
+the linear theory: no Tier A lambda boundary or threshold is drawn, and the symbol
+lambda is not used. "5e-4" is "strong" only relative to the tested doses; its isolated
+direct multiplier over 6,000 steps is (1 - 3e-4*5e-4)^6000 = 0.9991.
+
+Input: experiment-repo results/raw/vit_runs/b_*/{summary,trajectory}_seed<N>.csv
+(commit in data.py), read per seed (data.vit_runs), every committed final run.
+Rank: `numerical_rank` / `late_numerical_rank`, the number of eigenvalues of the
+online encoder's embedding covariance (192 dimensions, 512 images, one fixed
+Bernoulli context mask per seed reused at every checkpoint) at least 1e-3 of the
+largest (code/run_vit_experiments.py::numerical_rank).
+Masks: each of the 64 patches is hidden independently with probability
+`mask_fraction` (code/run_vit_experiments.py::mask_views), so the mask fraction is
+the expected hidden fraction per image, not a count and not contiguous blocks.
+No linear-theory prediction is drawn: the summaries carry predicted_rank_phi =
+predicted_rank_fixedpoint = nan (rank_prediction_scope not_applicable_to_nonlinear_vit).
+Top row: rank against step, one thin line per seed and the seed mean (thick) at the
+reference encoder decay; shaded: the early window (steps 25-250).
+Bottom row: late rank per run (markers) and mean (bar) for each level and encoder
+AdamW coefficient; the same seed at the three coefficients is joined by a thin line
+(matched seeds); n printed where a cell has fewer than the 3 primary seeds.
+"""
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import style, data
+
+style.apply()
+s, t = data.vit_runs("B_controlled")
+assert (s.steps == 6000).all() and (s.late_checkpoint_step.fillna(6000) == 6000).all()
+assert s.predicted_rank_phi.isna().all() and s.predicted_rank_fixedpoint.isna().all()
+REF = dict(predictor_scale=1.0, predictor_depth=2, mask_fraction=0.5, ema_tau=0.99, weight_decay=1e-4)
+LAMBDAS = [0.0, 1e-4, 5e-4]  # encoder AdamW coefficients (not the linear theory's L2 lambda)
+LAM_MK = {0.0: "v", 1e-4: "o", 5e-4: "s"}
+LAM_FILL = {0.0: False, 1e-4: True, 5e-4: True}
+LAM_DX = {0.0: -0.25, 1e-4: 0.0, 5e-4: 0.25}
+# low / reference / high level of each factor, same color in every column
+LEVEL_COL = [style.COLORS[0], "#555555", style.COLORS[1]]
+PANELS = [  # factor, levels, column title, bottom x label, tick labels, paired with encoder decay
+    ("predictor_scale", [0.5, 1.0, 2.0], "predictor scale (P3)", "predictor init. scale",
+     ["0.5", "1", "2"], True),
+    ("predictor_depth", [1, 2, 3], "predictor depth (P3)", "predictor blocks",
+     ["1", "2", "3"], False),
+    ("mask_fraction", [0.25, 0.5, 0.75], "masking (P4)", "expected masked fraction\n(Bernoulli per patch)",
+     [".25", ".5", ".75"], True),
+    ("ema_tau", [0.9, 0.99, 0.999], "target update (P5)", "target EMA rate $\\tau$",
+     [".9", ".99", ".999"], False),
+]
+NMAX = 192
+X0 = 12  # where step 0 (initialization) is drawn on the log axis
+
+
+def sel(df, fac, lev, lam=1e-4):
+    m = np.isclose(df[fac], lev) & np.isclose(df.weight_decay, lam)
+    for k, v in REF.items():
+        if k not in (fac, "weight_decay"):
+            m &= np.isclose(df[k], v)
+    return df[m]
+
+
+fig, axes = plt.subplots(2, len(PANELS), figsize=(style.TEXTWIDTH, 3.1), sharey="row",
+                         gridspec_kw=dict(height_ratios=[1, 1], hspace=0.5, wspace=0.2))
+counts = []
+pair_pts = {}
+for c, (fac, levels, title, xlab, ticks, paired) in enumerate(PANELS):
+    ax = axes[0, c]
+    ax.axvspan(25, 250, color="#eeeeee", lw=0, zorder=0)
+    for i, lev in enumerate(levels):
+        tr = sel(t, fac, lev)
+        if tr.empty:
+            continue
+        per = tr.groupby(["seed", "step"]).numerical_rank.first().unstack("seed")
+        x = np.where(per.index == 0, X0, per.index)
+        for seed in per.columns:
+            ax.plot(x, per[seed], color=LEVEL_COL[i], lw=0.5, alpha=0.6)
+        ax.plot(x, per.mean(axis=1), color=LEVEL_COL[i], lw=1.4,
+                label=f"{ticks[i]} ($n$={per.shape[1]})")
+    ax.set_xscale("log")
+    ax.set_xlim(X0 * 0.85, 7000)
+    ax.set_xticks([X0, 25, 250, 6000])
+    ax.set_xticklabels(["0", "25", "250", "6000"])
+    ax.xaxis.set_minor_locator(plt.NullLocator())
+    ax.set_ylim(0, NMAX)
+    ax.set_title(title, pad=3)
+    ax.set_xlabel("step", labelpad=1)
+    ax.legend(loc="upper left", handlelength=1.0, borderaxespad=0.1, labelspacing=0.15,
+              fontsize=6.5)
+
+    ax = axes[1, c]
+    for i, lev in enumerate(levels):
+        for lam in (LAMBDAS if paired else [1e-4]):
+            if lev == REF[fac] and lam != 1e-4:
+                continue  # not in the Tier B grid (decay pairs only at the low/high levels)
+            r = sel(s, fac, lev, lam)
+            x = i + (LAM_DX[lam] if paired else 0.0)
+            if paired:
+                for seed, v in zip(r.seed, r.late_numerical_rank):
+                    pair_pts.setdefault((fac, lev, seed), []).append((x, v))
+            counts.append((fac, lev, lam, len(r)))
+            if r.empty:
+                ax.text(x, 4, "–", ha="center", va="bottom", fontsize=6.5, color="#999999")
+                continue
+            y = r.late_numerical_rank.to_numpy()
+            jit = (np.arange(len(y)) - (len(y) - 1) / 2) * 0.05
+            ax.scatter(x + jit, y, s=9, marker=LAM_MK[lam], lw=0.7, zorder=3,
+                       facecolor=LEVEL_COL[i] if LAM_FILL[lam] else "white",
+                       edgecolor=LEVEL_COL[i])
+            ax.plot([x - 0.1, x + 0.1], [y.mean()] * 2, color=LEVEL_COL[i], lw=1.4, zorder=2)
+            if len(y) < 3:
+                ax.text(x, y.max() + 6, f"{len(y)}", ha="center", va="bottom", fontsize=6.5,
+                        color="#555555")
+    for (f, lev, seed), pts in pair_pts.items():
+        if f == fac and len(pts) > 1:
+            pts.sort()
+            ax.plot(*zip(*pts), color="#888888", lw=0.5, zorder=1)
+    ax.set_xticks(range(len(levels)))
+    ax.set_xticklabels(ticks)
+    ax.set_xlabel(xlab, labelpad=1, linespacing=1.0)
+    ax.set_xlim(-0.55, len(levels) - 0.45)
+    ax.set_ylim(0, NMAX)
+    ax.grid(axis="x", visible=False)
+axes[0, 0].set_ylabel("online rank")
+axes[1, 0].set_ylabel("late rank (step 6000)")
+handles = [Line2D([], [], ls="", label="encoder AdamW weight decay\n(uncalibrated small doses):")]
+handles += [Line2D([], [], ls="", marker=LAM_MK[l], mfc="#555555" if LAM_FILL[l] else "white",
+                  mec="#555555", label=lab)
+           for l, lab in zip(LAMBDAS, ["0", "$10^{-4}$ (ref.)", "$5\\cdot10^{-4}$"])]
+handles.append(Line2D([], [], color="#555555", lw=1.4, label="mean of seeds"))
+handles.append(Line2D([], [], color="#888888", lw=0.5, label="same seed"))
+fig.legend(handles=handles, loc="lower center", ncol=7, bbox_to_anchor=(0.5, -0.17),
+           handlelength=1.2,
+           handletextpad=0.3, columnspacing=1.2)
+style.save(fig, "fig_nonlinear")
+
+print("Tier B runs:", len(s), "configs:", s.config_id.nunique())
+print(pd.DataFrame(counts, columns=["factor", "level", "adamw_wd", "n"]).to_string(index=False))
+# matched-seed late-rank differences, 5e-4 minus 0 (the caption quotes these)
+for fac, levels, *_ , paired in PANELS:
+    if not paired:
+        continue
+    for lev in levels:
+        if lev == REF[fac]:
+            continue
+        z = sel(s, fac, lev, 0.0).set_index("seed").late_numerical_rank
+        g = sel(s, fac, lev, 5e-4).set_index("seed").late_numerical_rank
+        ref = sel(s, fac, lev, 1e-4).set_index("seed").late_numerical_rank
+        d = (g - z).dropna().astype(int)
+        print(f"{fac}={lev}: 5e-4 minus 0 by seed {d.to_dict()}; "
+              f"1e-4 minus 0 {(ref - z).dropna().astype(int).to_dict()}")
+print(s.groupby("config_id").agg(n=("seed", "size"), late_rank_mean=("late_numerical_rank", "mean"),
+                                 late_rank_sd=("late_numerical_rank", "std"),
+                                 rank_step250=("early_rank_at_end", "mean")).round(1).to_string())

@@ -1,0 +1,54 @@
+"""A3s_mech, post hoc and unregistered (no verdict changes): (1) the cells whose registered sign rests on the size
+cutoff |mean| >= 0.5, re-scored with the truth run of the precision-subset seed replaced by its long-double and by
+its perturbed float64 rerun; (2) precision of the hand-set signs under other rank statistics: the final-checkpoint
+singular-value rank (rank[-1]) and the time-averaged per-direction count (rank_dir_tavg), against the registered
+rank_tavg (time-averaged SV rank over [T/2, T]).
+Usage: python3 code/checks/e4_a3h_sensitivity.py results/e4/a3h results/e4/a3h/posthoc/sensitivity.json
+"""
+import sys, os, json, gzip, copy
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import numpy as np
+import e4_a3h as H
+
+
+def main(d, out):
+    runs = [json.loads(l) for l in gzip.open(os.path.join(d, "a3h_runs.jsonl.gz"), "rt")]
+    V = {}
+    for r in runs:
+        V.setdefault(r["variant"], []).append(r)
+    truth = V["truth"]; res = dict(status="post hoc, unregistered; no verdict changes", input=d)
+    P, _ = H.pairs(truth)
+    near = [i for i, (f, c, x) in enumerate(P) if H.tci(x)[0] != 0 and abs(abs(H.tci(x)[0]) - 0.5) < 0.05 and
+            (H.tci(x)[1] > 0 or H.tci(x)[2] < 0)]
+    res["near_size_cutoff"] = []
+    for i in near:
+        f, cell, x = P[i]
+        row = dict(index=i, factor=f, **cell, mean=H.tci(x)[0], measured=H.msign(x), predicted=H.predicted(cell, f))
+        for var in ("ld", "f64_pert"):
+            ids = {r["id"]: r for r in V[var]}
+            T2 = [ids.get(r["id"], r) if r["id"] in ids else r for r in truth]
+            f2, c2, x2 = H.pairs(T2)[0][i]
+            row[var] = dict(mean=H.tci(x2)[0], measured=H.msign(x2), n_replaced=sum(r["id"] in ids for r in truth))
+        res["near_size_cutoff"].append(row)
+    stat = {}
+    for name, fn in dict(rank_tavg=lambda r: r["rank_tavg"], final_sv_rank=lambda r: float(r["rank"][-1]),
+                         rank_dir_tavg=lambda r: r["rank_dir_tavg"]).items():
+        T2 = [dict(r, rank_tavg=fn(r)) for r in truth]
+        P2, _ = H.pairs(T2)
+        sc = H.score_signs(P2, lambda cell, f: H.predicted(cell, f))
+        wrong = [dict(factor=f, **cell, mean=H.tci(x)[0], measured=H.msign(x), predicted=H.predicted(cell, f))
+                 for f, cell, x in P2 if H.predicted(cell, f) != "0" and H.msign(x) != H.predicted(cell, f)]
+        extra = [dict(factor=f, **cell, mean=H.tci(x)[0], measured=H.msign(x))
+                 for f, cell, x in P2 if H.predicted(cell, f) == "0" and H.msign(x) != "0"]
+        stat[name] = dict(score=sc, misses=wrong, predicted_zero_measured_nonzero=extra)
+    res["statistic_sensitivity"] = stat
+    os.makedirs(os.path.dirname(out), exist_ok=True); json.dump(res, open(out, "w"), indent=1)
+    for r in res["near_size_cutoff"]:
+        print(r["index"], r["factor"], r["stats"], r["theta"], r["side"], r.get("lam0"), r["a0"], "mean %.4f %s | ld %.3f %s | pert %.3f %s" % (
+            r["mean"], r["measured"], r["ld"]["mean"], r["ld"]["measured"], r["f64_pert"]["mean"], r["f64_pert"]["measured"]))
+    for k, v in stat.items():
+        print(k, "precision", v["score"]["precision"], "opposite", v["score"]["opposite"], "misses", [(m["factor"], m["stats"], m["theta"], m["side"], round(m["mean"], 2), m["measured"]) for m in v["misses"]])
+
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[2])

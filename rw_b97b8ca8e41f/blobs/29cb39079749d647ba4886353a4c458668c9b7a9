@@ -1,0 +1,56 @@
+"""P1 (C1): predicted vs measured early per-direction growth rates.
+
+Input: experiment-repo results/raw/early_rate_scatter.csv (commit in data.py).
+x = theory_covariance_growth_rate = 2 r_j(p0), evaluated at initialization from the
+configuration's s_j, c_j, p0, lambda (no fitted constant);
+y = log_eigenvalue_slope, least-squares slope of log mu_j at steps 10..500.
+Excluded: stop_gradient_ablation (different dynamics, Prop. stopgrad) and
+ode_vs_full (validation grid), as in paper-repo notes/tierA_numbers.py.
+Directions at mask ratio 1 (config mask_m1p000) are marked separately: the context
+is empty (c_j = s_j = 0), so mu_j = c_j w_j^2 is identically 0 and its measured slope
+(~1e-13) is numerical noise, not a sign error; w_j itself decays at -lambda there
+(log_amplitude_slope, paper-repo notes/tierA_numbers.txt). They are all of the sign
+disagreements.
+"""
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import style, data
+
+style.apply()
+d = pd.read_csv(data.results() / "raw" / "early_rate_scatter.csv")
+d = d[~d.experiment.isin(["stop_gradient_ablation", "ode_vs_full"])]
+x, y = d.theory_covariance_growth_rate.to_numpy(), d.log_eigenvalue_slope.to_numpy()
+art = (d.config_id == "mask_m1p000").to_numpy()  # empty context: mu_j == 0
+assert len(d) == 5376 and art.sum() == 128, (len(d), art.sum())
+assert np.all(np.abs(y[art]) < 1e-10), "mask ratio 1 slopes should be numerical zero"
+
+lt = 0.1  # symlog: linear within |rate| < 0.1, log beyond; identity stays a diagonal
+fig, ax = plt.subplots(figsize=(style.TEXTWIDTH / 2, 2.45))
+lim = (-3, 0.4)
+ax.set_xscale("symlog", linthresh=lt, linscale=1.2)
+ax.set_yscale("symlog", linthresh=lt, linscale=1.2)
+# sign-disagreement quadrants
+ax.fill_between([lim[0], 0], 0, lim[1], color="#f2f2f2", lw=0, zorder=0)
+ax.fill_between([0, lim[1]], lim[0], 0, color="#f2f2f2", lw=0, zorder=0)
+ax.plot(lim, lim, color=style.THEORY, ls="--", lw=0.8, zorder=1, label="identity")
+ax.scatter(x[~art], y[~art], s=4, c=style.COLORS[0], alpha=0.35, lw=0, zorder=2,
+           label=f"Tier A, other configs ({(~art).sum():,})")
+ax.scatter(x[art], y[art], s=9, marker="D", facecolors="none", edgecolors=style.COLORS[1],
+           lw=0.6, zorder=3, label=f"mask ratio 1: empty context,\n$\\mu_j\\equiv0$ ({art.sum()})")
+ax.axhline(0, color="#999999", lw=0.5, zorder=1); ax.axvline(0, color="#999999", lw=0.5, zorder=1)
+ax.set_xlim(lim); ax.set_ylim(lim)
+ticks = [-1, -0.1, 0, 0.1]
+ax.set_xticks(ticks); ax.set_yticks(ticks)
+ax.set_xticklabels(["$-1$", "$-0.1$", "0", "0.1"]); ax.set_yticklabels(["$-1$", "$-0.1$", "0", "0.1"])
+ax.set_xlabel(r"predicted rate $2r_j(p_0)$ (per unit time)")
+ax.set_ylabel(r"measured slope of $\log\mu_j$")
+r = np.corrcoef(x, y)[0, 1]
+sign = np.mean(np.sign(x) == np.sign(y)); sign_na = np.mean((np.sign(x) == np.sign(y))[~art])
+assert sign_na == 1.0, sign_na  # inset prints 100%
+ax.text(0.03, 0.97, f"$r={r:.4f}$, $n$ = {len(d):,}\nsign agrees: {100*sign_na:.0f}% outside\nmask ratio 1 ($n$ = {(~art).sum():,})",
+        transform=ax.transAxes, va="top", fontsize=6.5)
+ax.legend(loc="lower right", fontsize=6.5, handletextpad=0.3, borderaxespad=0.2, markerscale=1.5)
+style.save(fig, "fig_rates")
+print(f"n={len(d)} r={r:.4f} sign={sign:.4f} sign_outside_mask1={sign_na:.4f} n_mask1={art.sum()} "
+      f"median|resid|={np.median(np.abs(y - x)):.4f}")

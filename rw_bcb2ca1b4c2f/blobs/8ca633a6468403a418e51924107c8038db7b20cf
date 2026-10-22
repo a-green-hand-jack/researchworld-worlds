@@ -1,0 +1,172 @@
+# Direction B (plan v2.9 Sec. 3 B): stage-wise dynamics under weight-decay schedules — working note
+
+Owner: `experiment-repo`. Status: development (2026-10-18). Code: `code/e5_theory.py` (stage model, baselines),
+`code/e5_b1.py` (B1 grids and scoring). Tolerances: `results/e5/b1_tolerance.json`, committed before any B1 grid ran.
+Labels as in `theory/derivations.md`: **exact** (proved, checked), **approximation** (derived with a stated
+approximation; accuracy measured), **hypothesis** (to be tested).
+
+## Setting
+The delivered linear JEPA (derivations Sec. 1) with aligned statistics and an aligned initialisation (Prop. 3), so
+each direction k is the scalar system
+$$\dot w=p\,c\,\bar w-(p^2\sigma+\lambda_W(t))\,w,\qquad \dot p=\alpha\,[(c\bar w-p\sigma w)w-\lambda_P(t)\,p],$$
+with $\bar w=w$ (copy target) or $\dot{\bar w}=\kappa(w-\bar w)$. Weight decay is now a function of $t=\eta\cdot$step;
+$\Lambda_P(t)=\int_0^t\lambda_P$. The static threshold of direction k is $\lambda_k^*=c_k^2/(4\sigma_k)$ (Prop. 4).
+
+## B-0. The balance identity holds for any schedule (exact)
+For $\alpha=1$, a copy target and $\lambda_W(t)=\lambda_P(t)=\lambda(t)$,
+$$p^2-w^2=e^{-2\Lambda(t)}\,(p_0^2-w_0^2).$$
+*Proof.* $\tfrac{d}{dt}p^2=2[(c-p\sigma)w^2p-\lambda p^2]$ and $\tfrac{d}{dt}w^2=2[(pc-p^2\sigma)w^2-\lambda w^2]$, so
+$\tfrac{d}{dt}(p^2-w^2)=-2\lambda(t)(p^2-w^2)$. $\square$ So Cor. 3a holds with $\lambda t\to\Lambda(t)$: the direction is
+an exact one-dimensional non-autonomous system. With $\lambda_P\ne\lambda_W$ the difference obeys
+$\tfrac{d}{dt}(p^2-w^2)=-2\lambda_Pp^2+2\lambda_Ww^2$ and no identity holds. Prop. 3 itself (the matrix flow is n
+independent scalar systems) does not use constant hyperparameters, so it holds for every schedule (checked as B1-0).
+
+## B-i. Race (approximation A1 with a schedule)
+While the direction is small, the predictor decays under its own weight decay only, $p_r(t)=p_0e^{-\alpha\Lambda_P(t)}$,
+and $\log w(t)=\log w_0+\int_0^t g(p_r(\tau),\lambda_W(\tau))\,d\tau$ with the delivered growth rate $g$ (the EMA root
+when $\kappa$ is finite). A schedule changes the race in two ways: the window $(p_-,p_+)$ of $g$ moves with
+$\lambda_W(t)$, and the predictor's clock is $\Lambda_P(t)$ rather than $\lambda t$.
+
+## B-ii. Capture (approximation)
+The direction captures the predictor at the first $t$ with $g>0$ and $w^2\ge\lambda_P(t)\,p_r/(c-p_r\sigma)$, the
+delivered nullcline evaluated at the current $\lambda_P$.
+
+## B-iii. Post-capture: the slaved predictor and the moving static threshold (approximation)
+At the stable fixed point, $\dot p=0$ gives $w^2(c-p\sigma)=\lambda_Pp$ and $\dot w=0$ gives $pc-p^2\sigma=\lambda_W$,
+so $p=w\sqrt{\lambda_W/\lambda_P}$ (balanced, $p=w$, when $\lambda_W=\lambda_P$, as B-0 also gives once
+$e^{-2\Lambda}$ is small). After capture the stage model keeps the predictor on this relation,
+$$\dot w=(pc-p^2\sigma-\lambda_W(t))\,w,\qquad p=w\sqrt{\lambda_W(t)/\lambda_P(t)},$$
+started at the stable fixed point $p_+(\lambda_W(t_c))$. Consequences:
+- **Loss at the crossing.** A captured direction survives while $\lambda_W(t)\le\lambda_k^*$: the fixed point
+  disappears in a saddle-node when $\lambda_W$ passes $\lambda_k^*$. For a step it is lost after a bottleneck delay;
+  for a ramp, after the crossing time $\lambda_W(t)=\lambda_k^*$ plus the delay. A step that stays below
+  $\lambda_k^*$ is survived, because $p_+(\lambda_1)>c/(2\sigma)>p_-(\lambda_2)$ for any two admissible values.
+- **No regrowth below the separatrix; the post-loss predictor (revised twice).** After a loss the window closes as
+  $w$ decays: at small $w$, $g\approx-\lambda_W$, so $w\propto e^{-\Lambda_W(t)}$. The $p$ equation is linear in $p$
+  once $p\sigma w^2$ is negligible,
+  $$\dot p=-\alpha\lambda_P\,p+\alpha c\,\bar w w,\qquad p(t)=e^{-\alpha\Lambda_P(t)}\Big[p_\ell e^{\alpha\Lambda_P(t_\ell)}+\alpha c\int_{t_\ell}^{t}\bar w w\,e^{\alpha\Lambda_P}\,d\tau\Big],$$
+  so $p$ decays at the slower of its own rate $\alpha\lambda_P$ and the rate of its drive $\bar ww$ ($2\lambda_W$ for a
+  copy target; $\lambda_W+\min(\lambda_W,\kappa)$ for an EMA target) (**approximation**). On every grid here
+  $\lambda_P=\rho\lambda_W(t)$, so in the clock $\Lambda_W$: $-d\ln w/d\Lambda_W\to1$, $-d\ln p/d\Lambda_W\to\min(\alpha\rho,2)$,
+  and $\ln(p/w)$ moves with slope $1-\min(\alpha\rho,2)$. The sign rule is therefore $\mathrm{sign}(\lambda_W-\alpha\lambda_P)$:
+  - $\alpha\lambda_P<\lambda_W$ ($\alpha<1$ or $\rho<1$): $p$ is on its own decay and rises above the slaved value
+    $w\sqrt{\lambda_W/\lambda_P}$ without bound;
+  - $\alpha\lambda_P=\lambda_W$: $p/w$ is held at its value at the loss. For $\alpha=1$, $\lambda_P=\lambda_W$ that value
+    is the slaved one, $p/w=1$ (B-0 for a copy target; measured for the EMA target too), so **the slaved relation holds
+    after a loss in this case only**;
+  - $\alpha\lambda_P>\lambda_W$: $p$ falls faster than $w$, below the slaved value without bound, but no faster than
+    $\min(\alpha\lambda_P,2\lambda_W)$. For $\alpha\lambda_P>2\lambda_W$ it rides the forced solution
+    $p\approx\alpha c\,w^2/(\alpha\lambda_P-2\lambda_W)$ (constant $\lambda$), above its own decay. At the resonance
+    $\alpha\lambda_P=2\lambda_W$ (the development cells $\alpha=2$ and $\rho_P=2$), $p\,e^{2\Lambda_W}=C+\alpha c\,w_\ell^2\int d\Lambda_W/\lambda_W$:
+    $p$ sits above its own decay by the log of a growing factor, its rate approaches $2\lambda_W$ from below, and the
+    deficit returns when $\lambda_W$ falls (the forcing per unit $\Lambda_W$ grows as $1/\lambda_W$).
+
+  Measured on the development grid (`code/checks/e5_postloss_law.py` -> `results/e5/b1dev/posthoc/postloss_law.json`,
+  consecutive dead checkpoints of truly lost directions, first dead interval excluded): the median of
+  $-d\ln w/d\Lambda_W$ is 1.000 in every variant, and of $-d\ln p/d\Lambda_W$ 0.500 for $\alpha$ 0.5 and $\rho_P$ 0.5
+  (predicted 0.5; $p/w$ rising on 99.6-99.7% of intervals), 1.000 for base and ema0.1 (predicted 1), and 1.87/1.88 for $\alpha$ 2 /
+  $\rho_P$ 2 (predicted 2 at resonance, approached from below: 1.74-1.75 at $\Delta\Lambda_W\approx5$, 1.97-1.99 by
+  $\Delta\Lambda_W\approx25$-$45$, back to 1.72-1.76 after the high pulse ends; $p/w$ falling on 99%). The split of
+  $\ln(p/(w\sqrt{\lambda_W/\lambda_P}))$ on the truth's own $w$ (`results/e5/b1dev/posthoc/sched_v3.json` `by_variant`,
+  pooled post-loss pairs of the 313 schedule runs; over all 320 runs with a loss, constant $\lambda$ included, the
+  internal review's check gives +13.7/+13.9 for $\alpha$ 0.5/$\rho_P$ 0.5 and the same values in the other four) has
+  the predicted signs: median 0.00
+  for base and ema0.1, +14.1/+14.0 for $\alpha$ 0.5/$\rho_P$ 0.5, -18.1/-15.2 for $\alpha$ 2/$\rho_P$ 2, with the
+  truth 3.8/3.4 nats above its own decay in the last two (the resonant log factor). Two further checks (same file): at the resonance
+  $(2-\text{slope}_p)\,\Delta\Lambda_W$ divided by $\bar\lambda_W/\lambda_W(t)$ (mean $\lambda_W$ since the loss over the
+  current one, the limit the law gives since $p\,e^{2\Delta\Lambda_W}$ grows linearly in $t$) has median 1.02/1.01
+  for $\alpha$ 2/$\rho_P$ 2 (1.05/1.05 on the later half); and a level test, $p$ integrated from $(p,w)$ at the first
+  dead checkpoint by $\dot p=-\alpha\lambda_P p+\alpha c w^2$ with the truth's $w$ (copy-target variants, the internal
+  review's suggestion), misses the truth by a median $|\ln|$ of 0.071 (base), 0.027 ($\alpha$ 0.5), 0.097 ($\alpha$ 2),
+  0.029 ($\rho_P$ 0.5) and 0.096 ($\rho_P$ 2), q90 at most 0.34, against 2.67/2.49 for own decay alone in $\alpha$ 2/$\rho_P$ 2
+  (0.02-0.34 with $w=w_\ell e^{-\Delta\Lambda_W}$). So the forced term accounts for the excess over own decay in level,
+  not only in rate. An earlier version of this note
+  said that $p/w$ is never held and cited a 10-run sample ("truth $p$ far above"); both were wrong for the
+  $\alpha=1$, $\lambda_P=\lambda_W$ cells and for $\alpha\lambda_P>\lambda_W$.
+
+  A later decrease of $\lambda_W$ revives the direction if $p$ is then inside the reopened window and $w$ has not
+  underflowed; the regrowth time is $\int dw/(w\,g)$. Against this law the delivered stage model (slaved $p$, rate
+  $\lambda_W$) is right only for $\alpha\lambda_P=\lambda_W$, falls too fast for $\alpha\lambda_P<\lambda_W$ and too
+  slowly for $\alpha\lambda_P>\lambda_W$. `stage_model_qs` (frozen for the held-out grid) takes the larger of its own
+  decay and the static nullcline $c w^2/(\lambda_P+\sigma w^2)$: right for $\alpha\lambda_P<\lambda_W$, and for
+  $\alpha\lambda_P\ge\lambda_W$ below the truth, because the static nullcline ignores that $w$ itself decays (the
+  factor $\alpha\lambda_P/(\alpha\lambda_P-2\lambda_W)$, unbounded at resonance). The development grid had no regain, so
+  the held-out grid includes short high pulses, $\rho<1$ and $\alpha<1$, where the models differ.
+- **Late decreases do not reopen the race (conditional).** A direction never captured is revived by a later
+  decrease only if its predictor is still inside the reopened window. In the race this means only while the race is
+  still running. The internal review's check found the exception (dev run 2781, step_down 0.12 -> 0.004 at t = 100,
+  rho 0.5): a direction near the capture nullcline is held on a sub-capture plateau (a ~ 0.06, p ~ 0.1, above the
+  decayed p_r) and regains when the window reopens. The claim therefore holds only for directions whose predictor
+  has decayed to the race value; the development revision `stage_model_qs` keeps the plateau (the predictor follows
+  its own nullcline given w, and falls no faster than its own decay), and the held-out registration states which
+  model is frozen.
+
+## B2. Consequences for schedules (derived; tested on the held-out grid)
+- **Increasing schedule:** directions are lost at their crossing times $\lambda_W(t)=\lambda_k^*$ (plus the delay);
+  the final rank is at most the static count at the final $\lambda$.
+- **Warm-up (low during the race, raised after capture):** final rank $=\#\{k$ captured under the schedule and
+  $\lambda_k^*\ge\lambda_{hi}\}$. This approaches the static count at $\lambda_{hi}$ only if the low-$\lambda$ race
+  has captured those directions before the switch. A low $\lambda$ also slows the race (the predictor's clock is
+  $\Lambda_P$), so a switch before the low-$\lambda$ race completes can end **below** the constant-$\lambda_{hi}$
+  race count. The plan's premise ("approaches the static count at the final lambda") is therefore conditional on
+  the switch time, and B1/B2 measure which case holds.
+- **Decreasing schedule:** late decreases revive nothing that was lost or never captured once the race is over
+  (B-iii); early decreases act like a lower constant $\lambda$.
+- **Separate predictor decay** ($\lambda_P=\rho\lambda_W$): the window and the loss threshold depend on $\lambda_W$
+  only; $\lambda_P$ sets the race clock, the capture nullcline and the post-capture amplitude
+  $w^*=p_+\sqrt{\rho}$. Cor. 4a ($\lambda_P=0$: every direction collapses) is the limit $\rho\to0$.
+
+A post hoc consistency, not a test: E8's production grid found that raising weight decay late in the ViT still
+collapses while lowering it late barely recovers (`results/e8/grid/summary.json`). B-iii's no-regrowth part matches
+this for arm T only: in arm P the lost directions regrow after the switch, more slowly than the remaining lr would
+allow (`results/e8/grid/posthoc/`, commit 70cdda4). Whether B-iii is the ViT's mechanism is not tested here.
+
+## B3. SGD noise in the linear copy-target model: multiplicative, faster decay of collapsed directions (registered; `results/e5/prediction_b3.json`)
+Setting: the aligned model above with minibatch SGD (batch $B$, fresh Gaussian samples, step $\eta$), $P_0=p_0I$.
+Near collapse the update is $W\leftarrow W(I+\eta\hat M)$, $\hat M=p\hat S_{21}-p^2\hat S_{11}-\lambda I$, so the
+singular values of $W$ grow at the Lyapunov exponents of a random matrix product.
+
+*Range invariance (exact).* Every SGD step multiplies $W$ on the right and adds $-\eta\,\nabla_P$-driven terms whose
+output lies in $\mathrm{range}(P^\top W)$; with $P=pI$ plus terms in $\mathrm{range}(W)$ the output range of $W$ is
+invariant. A direction that has collapsed to exactly zero therefore cannot be reseeded by the noise: SGD noise is
+multiplicative here, as prior work assumes (window shifted to $g_k-D_k/2$), not additive. In float64 the only additive
+source is round-off, about $10^{-16}$ of the top singular value.
+
+*Accounts.* det: $g_k=pc_k-p^2s_k-\lambda$. shift (prior work): $g_k-(\eta/2B)\,\mathbb E\xi_{kk}^2$, with
+$\mathbb E\xi_{kk}^2=p^2s_k^2(1+\rho_k^2-4p\rho_k+2p^2)$. lyap: a second-order expansion of the ordered exponents
+(inflow from weaker modes, outflow to stronger ones). **It fails a direct check**: exponents computed by QR over
+40,000 steps at fixed $p$ (development, $p\in\{0.8,1.3\}$, $B\in\{4,16\}$) all lie below $g_k$. The deficit grows
+for weaker modes (to $-0.48$ at $p=1.3$, $B=4$). lyap instead predicts positive shifts for the strong modes, and the
+discrete-time term $\log(1+\eta g)/\eta-g$ explains only $-0.01$ to $-0.03$ of the deficit. lyap is kept only as a row.
+mc replaces it: the exponents are computed numerically (QR) on a grid of $p$ with $P$ frozen at $pI$.
+
+*Development* (`results/e5/b3_dev/`, 96 runs, exploratory):
+- Re-escape: one event in 59 noisy runs.
+- Collapsed directions fall *faster* with more noise. The median log10 of (largest dead singular value / top) at
+  $\eta=0.04$ is $-15.4$ at $B=2$, $-14.6$ at $B=4$, $-11.2$ at $B=16$ and $-8.7$ in the population. A floor would give
+  the reverse order, with the level rising with $\eta/B$.
+- Final rank: noise changes it by about one direction. The sign follows $p_0$: $-1.07$ at $p_0=0.8$ and $+1.31$ at
+  $p_0=1.3$, relative to the population run with the same seed.
+- MAE on noisy runs: shift 0.98, lyap 0.93, mc 1.14, det 1.19, early 1.07, window 5.4, static 8.6.
+- No drift account produces the rank *increase* at $p_0>\rho$. All of them lower the rates. A first-passage
+  (diffusion) effect of the log-amplitude near the capture scale is the candidate. It is not derived here.
+- Steps of $\eta=0.1$ with $B\le4$ diverge. The held-out grid uses $\eta\le0.05$.
+
+Registered items S1–S4 (code/e5_b3.py docstring; read as amended in `prediction_b3.json` `amendment_1`, before
+any held-out run). **Scope.** Range invariance excludes reseeding and an additive floor *by construction* in this
+model, so neither is an empirical question here: every term acting on a dead output direction is proportional to its
+own amplitude, and its log-amplitude has a drift and a diffusion but no source. S1 (share of noisy runs with a
+re-escape $\le0.05$) is therefore a numerical consistency check of the invariance; a re-escape under the code's
+definition (alive, below THR, above THR again) can only be a nonzero singular value crossing THR back and forth, and a
+failed S1 would mean such crossings, not reseeding. A separate exact check counts indices that reach round-off
+($\le10^{-13}$ of the top) and later exceed THR (L3's round-off reseeding). S2 (dead level
+$B_{small}<B_{large}<$ population) tests the shift account's prediction that noise *speeds* the decay of collapsed
+directions ($-D_k/2$), against det (no $B$ dependence); levels at or below round-off are tied and the order is then
+read on the dead log-slope. S3 bounds the rank effect; S4 is a measured regularity. The noise clause of N3 holds for
+models with this invariance (linear, copy target, multiplicative minibatch noise). A lagging EMA target, additive
+noise (augmentation, label noise) and nonlinear layers are outside it.
+
+## Scope and what is not claimed
+Aligned statistics and initialisation, full-batch GD. Generic initialisations are handled by N1-general (derivations
+Sec. 6), noise by B3 (above). The slaved relation is exact only at the fixed point and for $\alpha=1$,
+$\lambda_W=\lambda_P$ (B-0); for $\alpha\ne1$, EMA and $\rho\ne1$ it is an approximation measured in B1.

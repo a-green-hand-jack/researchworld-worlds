@@ -1,0 +1,97 @@
+"""B3 held-out, post hoc split (not registered): S2's dead-level order and S4's noise effect per p0 x lam (x eta x B),
+for the delivered float64 runs and for each state precision of the precision check (float32, float64, 80-bit).
+S2 pairs use amendment 1's rule (code/e5_b3.py amendment_1: order B_min, B_max, population; a cell is at round-off when
+its median dead level is <= log10 ROUND; both at round-off -> the order is read on the median dead log-slope; only the
+less noisy at round-off -> fails; only the noisier -> holds; otherwise the levels), applied within each p0 x lam split.
+S4's delta = mean over noisy runs of final rank - final rank of the population run with the same lam, p0, eta, seed
+(same precision). Diverged runs are left out here (one: eta 0.05, B 2); the registered pooled verdict is unchanged.
+Reads: results/e5/b3_heldout/b3_heldout_runs.jsonl.gz, results/e5/b3_heldout/precision/precision_heldout_runs.jsonl.gz
+Usage: python3 code/checks/e5_b3_split.py OUTFILE"""
+import sys, os, json, gzip
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import numpy as np
+import e5_b3 as b3
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+G = b3.GRIDS["heldout"]; L0 = np.log10(b3.ROUND)
+NB = sorted(b for b in G["B"] if b > 0); ORDER = [NB[0], NB[-1], 0]
+
+
+def load(p):
+    return [json.loads(l) for l in gzip.open(os.path.join(ROOT, p), "rt")]
+
+
+def ok(r):
+    return r["truth"].get("counts") is not None
+
+
+def med(v):
+    v = [x for x in v if x is not None]
+    return (float(np.median(v)) if v else None), len(v)
+
+
+def s2_cell(rows):
+    rec = {}
+    for b in G["B"]:
+        rs = [r for r in rows if r["cfg"]["B"] == b]
+        lv, n = med([b3.dead_level(r) for r in rs]); sl, _ = med([r["truth"]["dead_slope_median"] for r in rs])
+        rec[f"B{b}"] = dict(level_median=lv, runs=n, roundoff=bool(lv is not None and lv <= L0), slope_median=sl)
+    pairs = []
+    for a, b in zip(ORDER[:-1], ORDER[1:]):
+        A, C = rec[f"B{a}"], rec[f"B{b}"]
+        if A["level_median"] is None or C["level_median"] is None:
+            pairs.append(None)
+        elif A["roundoff"] and C["roundoff"]:
+            pairs.append(None if A["slope_median"] is None or C["slope_median"] is None
+                         else bool(A["slope_median"] < C["slope_median"]))
+        elif C["roundoff"]:
+            pairs.append(False)
+        elif A["roundoff"]:
+            pairs.append(True)
+        else:
+            pairs.append(bool(A["level_median"] < C["level_median"]))
+    rec["pairs"] = pairs; rec["holds"] = None if None in pairs else all(pairs)
+    return rec
+
+
+def split(rows):
+    rows = [r for r in rows if ok(r)]
+    key = lambda c: (c["lam"], c["p0"], c["eta"], c["seed"])
+    pop = {key(r["cfg"]): r["truth"]["counts"][-1] for r in rows if r["cfg"]["B"] == 0}
+    out = {}
+    for p0 in G["p0"]:
+        for lam in G["lam"]:
+            sub = [r for r in rows if r["cfg"]["p0"] == p0 and r["cfg"]["lam"] == lam]
+            d = dict(S2={f"eta{e}": s2_cell([r for r in sub if r["cfg"]["eta"] == e]) for e in G["eta"]})
+            dl = {f"eta{e}_B{b}": float(np.mean([r["truth"]["counts"][-1] - pop[key(r["cfg"])] for r in sub
+                                                 if r["cfg"]["eta"] == e and r["cfg"]["B"] == b and key(r["cfg"]) in pop]))
+                  for e in G["eta"] for b in NB}
+            nz = [r for r in sub if r["cfg"]["B"] > 0 and key(r["cfg"]) in pop]
+            d["S4_delta"] = float(np.mean([r["truth"]["counts"][-1] - pop[key(r["cfg"])] for r in nz]))
+            d["S4_delta_by_eta_B"] = dl
+            d["pop_final_rank_mean"] = float(np.mean([v for k, v in pop.items() if k[0] == lam and k[1] == p0]))
+            d["noisy_final_rank_mean"] = float(np.mean([r["truth"]["counts"][-1] for r in nz]))
+            d["regrowth_indices"] = dict(noisy=int(sum(b3.roundoff_regrowth(r) for r in nz)),
+                                         pop=int(sum(b3.roundoff_regrowth(r) for r in sub if r["cfg"]["B"] == 0)))
+            d["min_top_sv_median"] = float(np.median([min(s[0] for s in r["truth"]["sv"]) for r in sub]))
+            out[f"p0{p0}_lam{lam}"] = d
+    return out
+
+
+if __name__ == "__main__":
+    res = dict(note=__doc__.split("Reads:")[0].strip(),
+               inputs=["results/e5/b3_heldout/b3_heldout_runs.jsonl.gz",
+                       "results/e5/b3_heldout/precision/precision_heldout_runs.jsonl.gz"])
+    res["delivered_f64"] = split(load("results/e5/b3_heldout/b3_heldout_runs.jsonl.gz"))
+    pr = load("results/e5/b3_heldout/precision/precision_heldout_runs.jsonl.gz")
+    for p in ("f32", "f64", "f80"):
+        res[p] = split([r for r in pr if r["prec"] == p])
+    json.dump(res, open(sys.argv[1], "w"), indent=1)
+    for p in ("delivered_f64", "f32", "f64", "f80"):
+        for k, d in res[p].items():
+            s2 = " | ".join(f"{e}: " + " ".join(f"{b}={v['level_median']:.2f}{'*' if v['roundoff'] else ''}"
+                                                 f"({v['slope_median']:+.4f})" for b, v in d["S2"][e].items()
+                                                 if b.startswith("B")) + f" {d['S2'][e]['pairs']}" for e in d["S2"])
+            print(p, k, f"S4 {d['S4_delta']:+.2f} pop {d['pop_final_rank_mean']:.2f} noisy {d['noisy_final_rank_mean']:.2f}",
+                  "regrow", d["regrowth_indices"], f"mintop {d['min_top_sv_median']:.1e}")
+            print("    ", s2)

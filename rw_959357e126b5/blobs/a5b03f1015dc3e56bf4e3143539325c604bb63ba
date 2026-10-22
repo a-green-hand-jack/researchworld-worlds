@@ -1,0 +1,279 @@
+# Direction C (plan v2.9 Sec. 3 C): the race on each rung of the linear-to-ViT ladder — working note
+
+Owner: `experiment-repo`. Status: development (2026-10-18); rungs 1a, 1b, 2, 4 and 5. Labels as in `theory/derivations.md`.
+
+## Rung 1a. Deep linear encoder (code `code/e6_r1.py`; tolerance `results/e6/r1_tolerance.json`)
+Encoder $W=W_L\cdots W_1$ with weight decay $\lambda$ on every factor and on the predictor, identity predictor
+$P_0=p_0I$, copy target, gradient descent. With aligned statistics and aligned factors, direction k has factor
+amplitudes $w_1,\dots,w_L$, end-to-end amplitude $a=\prod_iw_i$ and predictor gain $p$; with $h(p)=pc-p^2\sigma$,
+$$\dot w_i=h(p)\,a^2/w_i-\lambda w_i,\qquad \dot p=\alpha[(c-p\sigma)a^2-\lambda p].$$
+
+**Balance across layers (exact; Known in substance: layer balancedness of deep linear nets, here with decay).**
+$\tfrac{d}{dt}(w_i^2-w_j^2)=-2\lambda(w_i^2-w_j^2)$ and, for $\alpha=1$, $\tfrac{d}{dt}(p^2-w_i^2)=-2\lambda(p^2-w_i^2)$.
+So from balanced factors $w_i=a^{1/L}$ and
+$$\dot a=L\,[h(p)\,a^{3-2/L}-\lambda a],\qquad p=\sqrt{a^{2/L}+e^{-2\lambda t}(p_0^2-a_0^{2/L})}$$
+is exact (the depth-L analogue of Cor. 3a; `race_deep_1d`).
+
+**Near collapse the drive is of higher order (derived).** For $L\ge2$, $d\log a/dt=L[h(p)a^{2-2/L}-\lambda]\to-L\lambda$
+as $a\to0$: the collapsed point attracts every direction, whatever the predictor (the origin is a local minimum
+under weight decay, `ziyin2022exact`). A direction escapes only from above a basin boundary
+$a_b(p)=(\lambda/h(p))^{L/(2L-2)}$.
+
+**Closed-form race (approximation A1, Bernoulli).** With $p_r=p_0e^{-\alpha\lambda t}$ and $u=a^m$, $m=2-2/L$:
+$\dot u=mL\,h\,u^2-mL\lambda u$, so $v=1/u$ obeys the linear equation $\dot v=mL\lambda v-mLh$ and
+$$v(t)=e^{(2L-2)\lambda t}\Big[a_0^{-m}-(2L-2)\int_0^th(p_r(\tau))\,e^{-(2L-2)\lambda\tau}d\tau\Big].$$
+The direction escapes (finite-time blow-up of $u$) iff $a_0^{-m}\le(2L-2)\max_tI(t)$; with the integral to infinity,
+$I_\infty=\frac{p_0}{\lambda}\big[\frac{c}{\alpha+2L-2}-\frac{\sigma p_0}{2\alpha+2L-2}\big]$. So survival depends on
+the initial amplitude as a power law, $a_0\ge[(2L-2)I^*]^{-1/m}$: the basin and power-law dependence the plan
+anticipated. **Static bound at depth L:** the balanced fixed point needs $\lambda=p^{2L-1}(c-p\sigma)$, so it exists
+iff $\lambda\le\lambda^*_L=\max_pp^{2L-1}(c-p\sigma)$ (for $L=1$, $c^2/(4\sigma)$). The registered prediction counts
+directions that escape and have $\lambda\le\lambda^*_L$.
+
+**Where A1 is expected to be weak.** A1 drops $a^{2/L}$ next to $p_0^2$ in $p$; for $L=3$ and $a_0$ near threshold
+($a_0^{2/3}\approx0.5$ at $p_0=1$) that is not small, and exploration put the exact threshold below A1's. The
+development grid measures this; the exact reduction is reported beside it.
+
+## Rung 1b. Deep predictor with random factors (L6; code `code/e6_r1b.py`; tolerance `results/e6/r1b_tolerance.json`)
+Depth-1 encoder $W$, predictor $P=Q_M\cdots Q_1$ with arbitrary (Gaussian or perturbed-identity) factors, decay
+$\lambda$ on $W$ and on every factor, copy target, gradient descent. The delivered capture correction for depth-$M$
+predictors (E1c) was derived for identity factors $qI$, where $p=q^M$ and $\dot p=\alpha M[p^{2-2/M}(c-p\sigma)a^2-\lambda p]$.
+
+**Capture along a latent direction for general factors (derived).** Near capture the predictor's gradient is the
+rank-one $-(c-p_u\sigma)a^2uu^\top$ along the latent direction $u$ of the growing mode. Each factor moves by
+$Q_{>j}^\top(\cdot)Q_{<j}^\top$ ($Q_{>j}=Q_M\cdots Q_{j+1}$, $Q_{<j}=Q_{j-1}\cdots Q_1$), so $p_u=u^\top Pu$ obeys
+$$\dot p_u=\alpha\big[(c-p_u\sigma)a^2K_u-M\lambda p_u\big],\qquad K_u=\sum_{j=1}^M|Q_{>j}^\top u|^2\,|Q_{<j}u|^2,$$
+and the mode captures the predictor once $a^2(c-p_u\sigma)K_u\ge M\lambda p_u$. For identity factors $K_u=Mp^{2-2/M}$ and
+this is E1c's rule $a^2\ge\lambda p^{2/M-1}/(c-p\sigma)$; for $M=1$, $K_u=1$ and it is the delivered depth-1 rule. Before
+capture each factor only decays, $Q_j(t)=Q_j(0)e^{-\alpha\lambda t}$, so $K_u(t)=e^{-2(M-1)\alpha\lambda t}K_u(0)$.
+The criterion `n1g_K` integrates the delivered N1-general linear system (the actual $W_0$ and $P_0$, the predictor
+decaying as $e^{-M\alpha\lambda t}$) and applies this rule to each singular triplet of the linear $W$.
+
+**Development** (`results/e6/r1b_dev/`, 216 runs, 40 s; `python3 code/e6_r1b.py run dev results/e6/r1b_dev 8`).
+Final-count MAE pooled 0.47 (within-1 0.96); on $M\ge2$: Gaussian factors 0.40, perturbed identity 0.38, within-1 1.00
+in both. The delivered depth-1 rule (`n1g_d1`) has 0.69 overall; its paired CI against `n1g_K` lies above 0 pooled over
+$M\ge2$ in each arm, but includes 0 at $M=2$ alone (where $p^{2/M-1}=1$ and the rules differ least). E1c's rule applied
+with the effective $p_i$ (`n1g_pL`) is indistinguishable from `n1g_K` on development (CI of the difference [−0.01,
+0.05]). The identity-factor race with the nominal gain (`race_id`, 1.89), the static bound (8.84), the initial window
+with the actual $P_0$ (6.85) and every $\mu$ variant (best `dvd_pq` 2.12; `dvd_exact` 3.86) are far behind; so is the
+count at $t=25$ or 50. The count read at 10% of $T$ matches `n1g_K` on Gaussian factors (CI [−0.16, 0.17]) and is
+beaten on perturbed identity ([0.08, 0.46]).
+
+**Held-out (registered, scored once; `results/e6/r1b_heldout/r1b_heldout_score.json`).** Both verdict cells pass. On
+$M\ge2$, `n1g_K` has MAE 0.39 (Gaussian factors) and 0.23 (perturbed identity), within-1 0.96 / 0.99, and beats every
+registered baseline, with paired CIs above 0: the delivered depth-1 rule, the identity race, the static bound, the
+initial window, the early counts and all $\mu$ variants. Two qualifications:
+- On Gaussian factors the gain over the depth-1 rule resolves only when depths are pooled; at single $M$ it does not.
+- The count read at 10% of $T$ is better there than `n1g_K` (0.24 vs 0.39).
+So the $K_u$ correction is supported as the right capture rule for random predictor factors. On Gaussian factors, though,
+an early reading of the run is as good or better as an operational predictor.
+
+## Rung 2. MLP encoder under gradient descent (code `code/e6_r2.py`, scoring `code/e6_r23_a2.py`; registration `results/e6/prediction_r23.json`)
+Encoder $f(x)=W_2\,\phi(W_1x)$ with $\phi=\tanh$ or ReLU (no biases), hidden width $H$, predictor $P$ ($P_0=p_0I$),
+copy target with stop-gradient, weight decay $\lambda$ on $W_1$, $W_2$ and $P$, full-batch GD with step $\eta$ on a
+fixed sample of $N$ (context, target) pairs. Write $A_c=X_cW_1^\top$, $H_c=\phi(A_c)$, $H_t=\phi(X_tW_1^\top)$,
+$Z=HW_2^\top$ and $L=\frac1{2N}\|Z_cP^\top-\mathrm{sg}(Z_t)\|_F^2$.
+
+**Gradients (exact).** With $E=Z_cP^\top-Z_t$ and $G=EP$ (the gradient with respect to $Z_c$),
+$$\nabla_PL=\tfrac1NE^\top Z_c,\qquad \nabla_{W_2}L=\tfrac1NG^\top H_c,\qquad
+\nabla_{W_1}L=\tfrac1N\big[(GW_2)\odot\phi'(A_c)\big]^\top X_c$$
+(`e6_r2.py` `truth`, lines `gP`, `gW2`, `gW1`). The target branch contributes no $W_1$ gradient because of the stop-gradient.
+
+**$W_1$ moves only by its decay before capture (derived; approximation A-C2).** $E$ and $G$ are linear in $W_2$, and
+$G$ carries one more factor $P$: $|E|=O((|P|+1)|W_2||H|)$, $|G|=O(|P|(|P|+1)|W_2||H|)$. The $W_1$ gradient multiplies
+$G$ by $W_2$ once more, so
+$$|\nabla_{W_1}L|\le K\,|P|(|P|+1)\,|W_2|^2\,|W_1|,$$
+with $K$ set by the data's fourth moments and $\sup|\phi'|\le1$, using $|H|\le|A|$ (exact homogeneity for ReLU,
+$|\tanh a|\le|a|$). The gradient is therefore second order in $|W_2|$, against the first-order decay $\lambda W_1$. (The
+code's docstring and an earlier draft of the paper's appendix say "$O(|W_2|)$". That bound holds but is weaker; the
+order is $|W_2|^2$.) Write $W_1(t)=d^{\,t}(W_1(0)+D_t)$ with $d=1-\eta\lambda$. Then
+$D_{t+1}=D_t-\eta d^{-t-1}\nabla_{W_1}L(t)$, and the relative departure from the decay path obeys
+$$\delta(t)=\frac{|W_1(t)-d^{\,t}W_1(0)|}{|d^{\,t}W_1(0)|}\;\lesssim\;\frac{\eta K}{d}\sum_{s<t}|P_s|(|P_s|+1)|W_2(s)|^2 .$$
+While every direction of $W_2$ is near its initial size $w_0=10^{-3}$, the sum is $O(p_0(p_0+1)w_0^2\,t)$ and $\delta$
+stays far below 1. Once a direction escapes ($|W_2|$ of order the rank threshold or larger), the bound is no longer
+small. From then on $W_1$ learns, and the decay path is an approximation. The race uses the statistics up to the step
+at which its own count is decided. That step is the first escape for the first direction, and later for the others.
+
+**The statistics the race integrates.** Along the decay path the hidden statistics are $S_{11}(t)=\frac1NH_c^\top H_c$
+and $S_{21}(t)=\frac1NH_t^\top H_c$ at $W_1=d^{\,t}W_1(0)$.
+- For ReLU (degree-1 homogeneous), $S(t)=d^{\,2t}S(0)$ exactly.
+- For tanh they are recomputed on the sample.
+
+In both cases `n1g_tv` refreshes them every STAT_EVERY = 50 steps and holds them in between. So, within the criterion
+as registered, the statistics lag the path by up to 49 steps. For ReLU that is a relative excess of at most
+$1-d^{98}$: 3.4% / 6.6% / 12.8% at λ = 0.0035 / 0.007 / 0.014 with η = 0.1. For tanh it is about the same or less,
+since tanh's statistics shrink no faster than $d^{2t}$. This hold error is part of the registered criterion, not of the theory.
+`r_decay` integrates the near-collapse linear system of N1-general (approximation A1) with these statistics:
+$\dot W_2=P^\top W_2S_{21}-P^\top PW_2S_{11}-\lambda W_2$, with $P(t)=d^{\,t}P_0$. It counts directions per check as
+N1-general does, and the prediction is the maximum count over checks. `r_init` is the same integration with $S(0)$
+frozen, i.e. the delivered E2 MLP predictor, which ignores the $W_1$ decay.
+
+**Numerical check on the delivered held-out runs** (post hoc, `code/checks/e6_r2_w1path.py` →
+`results/e6/r2_heldout/posthoc/w1path.json`). The check re-trains the 144 base runs of `r2_heldout` with the frozen
+operations in the same order, recording every 50 steps:
+- $\delta(t)$;
+- $|\nabla_{W_1}L|/(|P||W_2|^2|W_1|)$;
+- the relative error of $S_{11}$ and $S_{21}$ at the run's own $W_1(t)$ against the decay path;
+- the $W_2$ singular values.
+
+It also records, from an instrumented copy of `n1g_tv`, the step at which `r_decay`'s count is decided.
+Results (142 finite runs of 144; runs 399 and 423 diverge, as delivered):
+- **Reproduction.** The re-trained final embedding rank equals the delivered `truth.emb_rank`, and the instrumented
+  `r_decay` equals the delivered `pred.r_decay`, on all 142 finite runs.
+- **Gradient order.** Before the first escape (120 runs with a record before it), $|\nabla_{W_1}L|/(|P||W_2|^2|W_1|)$
+  stays bounded: median 0.11, q90 0.20, max 0.35 (tanh max 0.35, ReLU max 0.15). This is consistent with the
+  $O(|P|(|P|+1)|W_2|^2)$ bound; the constant does not grow with $|W_2|$.
+- **Up to the first escape the decay path holds.** Before the first escape the maximum $\delta$ has median
+  $3.4\times10^{-5}$, q90 $3.9\times10^{-4}$, max $4.3\times10^{-3}$. The statistic error has median $1.5\times10^{-4}$,
+  q90 $2.1\times10^{-3}$, max 0.031. At the first escape (123 runs), $\delta$ has median $7.3\times10^{-4}$, max 0.021.
+- **After it, the path breaks down.** At the last escape (the record at which $W_2$ first reaches its final rank),
+  $\delta$ has median 0.080, q90 0.41, max 12; the statistic error has median 0.098, q90 1.9. By the end of training
+  $\delta$ is $O(10^2$–$10^3)$ in every run with truth ≥ 1. With truth 0 it is median $3\times10^{-5}$, so there
+  $W_1$ only decays.
+- **Where the race decides.** `r_decay`'s count reaches its maximum at a median of 9% of $T$ (q90 18%, max 24%).
+  That step comes before the first escape in 51 of 142 runs (32 escaped runs plus the 19 that never escape). In the
+  other 91 runs the race integrates decay-path statistics past the point where $W_1$ has started to learn. At that
+  step the statistic error has median 0.032, q90 1.2, max 11.3.
+  - By cell (median / q90): field-ReLU 0.004 / 0.14, field-tanh 0.060 / 1.24, latent-ReLU 0.048 / 0.25,
+    latent-tanh 0.49 / 2.9.
+- **The departure tracks `r_decay`'s error** (association, not a registered test). Split by terciles of the statistic
+  error at the decision step, `r_decay`'s MAE is 0.09 / 0.40 / 0.75; split by whether the decision comes before the
+  first escape, it is 0.18 (51 runs) vs 0.55 (91 runs). The cell with the largest departure, latent-tanh, also has
+  the largest MAE (0.92, against 0.17 / 0.25 / 0.32 for field-tanh / field-ReLU / latent-ReLU).
+
+**Label.**
+- The decay path is exact to $O(\eta K p_0(p_0+1)w_0^2t)$ before capture, and validated numerically up to the first
+  escape ($\delta\le4\times10^{-3}$ in every run).
+- After the first escape it is an approximation. It is validated where the race decides early (ReLU, field data) and
+  located as failing in the latent-tanh cell. There most runs decide after $W_1$ has moved by tens of percent in the
+  statistics.
+
+The residual error of `r_decay` on rung 2 is therefore located in the later directions' window. In that window
+$W_1$ learns, and a criterion that follows $W_1$'s learned statistics (not its decay) would be needed. That is the
+mechanism rung 4 tests under the LN target, where capture is immediate.
+
+Per-run records (every 50 steps: $\delta$, gradient ratio, statistic errors, $W_2$ singular values) are in
+`results/e6/r2_heldout/posthoc/w1path_records.jsonl.gz`; per-run summaries are in `w1path.json` `rows`. Cost: 617 s
+on 8 processes.
+
+## Rung 4. MLP encoder with a layer-normalised target, GD (code `code/e6_r4.py`, held-out `code/e6_r4_heldout.py`; registration `results/e6/prediction_r4.json`)
+
+**Model.** Rung 2's encoder and predictor, with A4's target:
+$L=\frac1{2N}\sum|PW_2\phi(W_1x_c)-\mathrm{sg}\,\mathrm{LN}(W_2\phi(W_1x_t))|^2+\frac\lambda2(|W_1|^2+|W_2|^2+|P|^2)$, with
+$\mathrm{LN}(y)=\Pi y/\sqrt{|\Pi y|^2/d+\epsilon}$. Truth: the embedding rank of $\Pi Z$ at $T$.
+
+**Why rung 2's reduction does not carry over (order-of-magnitude argument, not a theorem).**
+- In rung 2 the residual $E=Pz_c-z_t$ is $O(|W_2|)$, so $\nabla_{W_1}=O(|P||W_2|^2)$. Near collapse ($w_0=10^{-3}$) this is negligible against $\lambda W_1$, and $W_1$ follows $(1-\eta\lambda)^tW_1(0)$ until the first escape (rung 2 check: $\delta\le4\times10^{-3}$).
+- Under the LN target the residual does not shrink with $|W_2|$, in two phases (A4's N2-ii.2 with its $\epsilon$ qualification, review A4-T1).
+  - *$\epsilon$-linear phase.* At $t=0$ the held-out targets have $|\Pi z_t|^2/d=0.014$–$0.049\,\epsilon$, median $0.027\,\epsilon$ (`results/e6/r4_eps_regime.json`, `code/checks/e6_r4_eps_regime.py`; initial weights only). So $\mathrm{LN}(z_t)\approx\Pi z_t/\sqrt\epsilon$: a gain of about 312 ($1/\sqrt\epsilon=316$) at an rms scale of about 0.16. The target is still linear in $|W_2|$ here, but it is about 300 times the plain target. $E\approx-\Pi z_t/\sqrt\epsilon$, and $\nabla_{W_1}=O(|P||W_2|^2/\sqrt\epsilon)$.
+  - *Scale-free phase.* Once $|W_2|$ has grown by 4.5–8.5 times ($|\Pi z_t|^2/d=\epsilon$; within about 5% of scale-free at 14–27 times), the target has unit scale whatever $|W_2|$ is. Then $E\approx-\mathrm{LN}(z_t)=O(1)$ while $z_c$ is small, and $\nabla_{W_1}=O(|P||W_2|)$, one power of $|W_2|$ fewer than in rung 2.
+  - In both phases the drive on $W_1$ is far larger than rung 2's at the same $|W_2|$: by the factor $1/\sqrt\epsilon$ in the first, and by $1/|W_2|$ in the second.
+- The same drive grows $W_2$ at once (N2-ii: rank $\ge1$, no escape window). Within a fraction of the first e-fold, $|\nabla_{W_1}|$ is then comparable to $\lambda|W_1|$, and the first layer learns from the start.
+- So `n2_decay`, A4's flow on rung 2's decay-path statistics, has no regime in which its premise holds, and its error is not a small correction. Its error does not measure the first layer's learning either. The dev diagnostic (`results/e6/r4_dev/posthoc/diag.json`) gives about the same miss whatever the flow is told about W1: MAE 8.08 with W1 frozen (`n2_init`), 8.40 with W1 measured (`n2_meas_full`) and 8.43 on the decay path (`n2_decay`).
+
+**Development (`results/e6/r4_dev`, results README "rung 4").**
+- $\delta$ at the first check is 0.39–4.1 on every finite run (median 0.84), and $|W_1(T)|$ is about $|W_1(0)|$ rather than $e^{-8}|W_1(0)|$.
+- The tanh rank rises over training. `n2_decay` under-counts it by 12.8 on average (MAE 8.4 over all finite runs).
+- The post hoc diagnostic feeds the same flow the measured $W_1(t)$ (`n2_meas_full`; in a fixed or rotating basis). It still under-counts by about 8, so the failure is not only the first layer's statistics.
+- Two parts of the reduced flow are approximations in this model: the per-direction gain $G$ (A4's N2-i is exact for Gaussian targets; $W_2\phi(W_1x_t)$ is not Gaussian), and the diagonal, one-amplitude-per-direction coupling (exact for A4's orthogonal init, N2-iii). Which of them breaks is not tested.
+
+**Registered for the held-out grid** (`results/e6/prediction_r4.json`):
+- the criterion `n2_decay` (A4 passed, so the plan's exit names it), with rung 2's tolerance and "fail" as the stated expectation;
+- the located cause as three statements: R4-a (decay-path departure at once), R4-b (under-count on tanh) and R4-c (rank growth after the early check on tanh);
+- `n2_meas_full` as a measured conditional row, with dev expectation "does not".
+
+## Rung 5 (E7). The race in the ViT — development (exploratory, 2026-10-18; not registered)
+Development data: the delivered E3 force exports (`results/e3/forces.jsonl`, 34 configs x 3 seeds, steps 0-3800 of the
+first 20 epochs of a 50-epoch schedule) and E8's 100 instrumented runs (`--instrument 1`: per target-token eigendirection
+A, D, S on a fixed probe batch at every log step). Script `code/checks/e7_dev_e3_readouts.py` →
+`results/e7/dev/e3_readouts.json`.
+
+- **Readouts from early-training forces do not beat the step-0 rule on E3.** The epoch-20 count MAE over 102 runs is:
+
+  | Readout | MAE | Arm T | Arm P |
+  |---|---|---|---|
+  | step-0 rule (registered in E3) | 20.9 | 15.7 | 24.1 |
+  | forces of step t held over the horizon | 39.7–49.6 | | |
+  | same, averaged over (0, t] | 40.7–46.6 | | |
+  | count read at t | 23.5 (t = 1600) to 43.0 (t = 200) | | |
+  | log-eigenvalue trend t/2..t extrapolated | 18.5 (t = 1600) | 11.0 | 23.1 |
+
+  The trend extrapolation is the only readout better than the step-0 rule, and only from t = 1600 (8 of 50 epochs). It is
+  an early reading with a slope, not a race.
+- **The linear model's sign structure fails in the ViT after the first steps.** In the linear model the drive part of a
+  direction's growth is positive (2 e p c) and the self-prediction part negative (-2 e p² s), so the static capacity
+  c²/(4s) can be read from the two parts without knowing p. Among the counted directions (e_k ≥ 1e-3 max) of Arm T:
+  - drive > 0 > self holds in 0.29 of directions at step 0, then 0.07, 0.13, 0.17 and 0.45 at steps 50, 200, 800 and 3200;
+  - drive < 0 < self, the reverse, holds in 0.92, 0.85 and 0.75 at steps 50, 200 and 800.
+  
+  Arm P is similar: 0.57 to 0.69 reversed at steps 50 to 200. So during the window in which the count is decided, the
+  cross term of the loss shrinks most counted online directions and the self-prediction term grows them.
+  
+  The eigenvalues are those of the *centred* online token covariance on unmasked images, while the loss acts through
+  the predictor's attention over context and mask tokens. A term can therefore shrink the features' norm while
+  spreading their centred covariance. The per-direction capacity readout is undefined on these directions. Not yet
+  resolved: whether the reversal comes from centring (mean-token motion), from the predictor's input nonlinearity, or
+  from the predictor's effective gain.
+- **E8 instrumentation (A, D, S per target direction).** In Arm T at high decay (wd 0.03), the per-step log-growth of a
+  direction's variance regresses on its net drive per unit variance (D − S)/A with r = 0.33–0.76 across directions
+  within a log interval.
+  - The intercept is −4.8e-3 per step, about 3.2 lr·wd during training; at epoch 50 it is −3.0e-3 = 2 lr·wd.
+  - In the low → high switch at epoch 5 the intercept moves from about 0 to −4.7e-3 at the switch.
+  - At low decay and in Arm P the regression is noise-dominated (|r| < 0.5).
+  
+  So, at least in Arm T at high decay, a direction's growth separates into a drive-dependent part and a decay part
+  proportional to lr·wd.
+- **The headroom race** (`code/checks/e7_dev_headroom.py` → `results/e7/dev/headroom_race.json`; post hoc on delivered
+  runs, development). Weight decay is decoupled in `code/vit_jepa.py` (p ← p(1 − lr·wd) per step, SGD and AdamW alike),
+  so a decayed linear output map loses exactly 2 lr(t) wd(t) per step in log variance; the E8 intercept above
+  (2-3.3 lr·wd) is that rate. The per-direction drive coefficient, by contrast, is not stable (its slope on (D − S)/A
+  falls from 0.5 lr to 0.004 lr per step between steps 0-50 and 3900-9750 in Arm T hi). The readout therefore keeps the
+  drive only through the spectrum it has built by the readout step t_r and races each direction's log headroom against
+  the decay still to come, with no fitted constant:
+  alive_k(T) iff log(e_k(t_r)/e_max(t_r)) − 2 Σ_{t_r ≤ t < T} lr(t) wd(t) ≥ log 1e-3, the top direction held.
+  - E3 Arm T (39 runs, epoch-20 count): MAE 4.6 at t_r = 200 (4.9 at 400, 5.6 at 800-1560) against 15.7 for the
+    registered step-0 rule and 18.9-20.7 for the count read at t_r.
+  - The Arm T transition (seed-mean count below half the init count, log-interpolated along wd): measured 0.0070;
+    headroom race 0.0068 (t_r = 200) and 0.0070 (t_r = 400); step-0 rule 0.0159 (2.3x off on this interpolated
+    definition; 2.6x on the grid definition of E3's C-loc).
+  - E8 Arm T (50 runs, 50 epochs, constant and switch rows): MAE 4.0-5.9 against 11.6-17.5 for the count read at t_r. It
+    follows the hi → lo switches (e2 20.4 vs 21.6 measured, e5 13.4 vs 13.0, e10 4.0 vs 6.0 at t_r = 800). Its two
+    errors are structural: it misses the 4-5 directions that survive any decay (predicts 0-1 at wd 0.03), and it
+    under-counts the low-decay row (25.6 vs 39 at wd 1e-3), where the drive keeps adding directions after t_r.
+  - **Arm P: it fails** (E3 MAE 46-59, E8 54-66, worse than the count read at t_r). Arm P normalises the target and the
+    predictor and does not decay the norm gains, so the output scale is a flat direction and decay does not act on
+    the spectrum through it (Sec. "Normalisation and scale-flat directions" of `theory/derivations.md`). The toggles
+    from T to P locate which normalisation breaks it.
+  - Its prediction for the transition depends on the horizon, which a static (capacity) criterion does not: from the
+    low-decay reference spectra at t_r = 200-400, λ_c = 0.0062-0.0081 at 20 epochs and 0.0024-0.0030 at 50 epochs
+    (E8 T_lo and E3 T_wd0 / T_wd0.001). No delivered Arm T row lies between wd 1e-3 and 0.03 at 50 epochs, so the
+    50-epoch transition is untested.
+  - Caveats. t_r and the half-init transition definition were chosen while looking at E3; the decay coefficient 2 is
+    fixed by the optimiser, not fitted. The readout uses the spectrum of the run at t_r (1-2% of a 50-epoch run).
+- **The μ count of arXiv 2610.02344 in this ViT** (`code/baselines/vit_mu.py`, reimplemented from the definition of
+  their image estimator; `code/checks/e7_dev_vit_mu.py` → `results/e7/dev/vit_mu_e3.json`; development, on E3's 99
+  runs at fixed wd). Their estimator linearises the encoder at its input tokens (patch + positional embedding) and the
+  predictor at proj·embed. Its native count #{μ > 1} runs over width × predictor-width mode pairs: about 1,100 of
+  8,192 here, which is not on the scale of a rank count out of 128 (MAE 1,113 in T, 1,101 in P). Pairing the two
+  factors index-wise gives a count out of 128, n_μ = 21 in every row except the predictor-init and mask rows (MAE
+  14.5 in T, 72 in P). Adding the decoupled decay as the additive floor of their linear criterion
+  ((γ − σ)/(1 − momentum) > wd, defined for SGD only) gives MAE 8.7 in T: between the step-0 rule (15.7) and the
+  headroom race (4.6). It moves too little with decay: from 21 at wd 0 to 9 at wd 0.1, against 51 to 4 measured. It
+  has no horizon and does not reach half the init count anywhere on the T_wd row, so it does not place a transition.
+- **Which μ reading is theirs (E7 amendment 2).** Everything above is computed at initialisation from the input
+  tokens and proj·embed: it is the paper's *tabular* estimator transferred to the ViT, and their App. K.1 reports that
+  this init-time reading is null on images. Their own count is r̃_tight (Cor. 3.3; App. A.4 pairs γ and σ of the same
+  (k, l)), and their image reading is App. K.2: a signed, target-aligned drive along data eigenmodes after K = 10
+  predictor-only steps, with the predictor block's input Jacobian in place of W_p. Amendment 2 registers, beside the
+  index-paired variants above (which are my pairings): r̃_tight with Prop. J.1's decay floor in this run's units,
+  (2/d)·g·(γ − σ) > wd (`vit_jepa.py` trains on a mean-over-width MSE, whose gradient is 2/d times that of their
+  ½E‖·‖²; g = 1/(1 − momentum)), as the μ baseline of H2 with its own λ_c; and a K.2-style reading (`k2_reading`):
+  10 predictor-only steps with the run's optimiser, learning rate and decay, the encoder fixed at initialisation as
+  its own teacher, W_eff by finite differences over 256 masked training images, γ_k = (1 − p) c_k b_kᵀW_eff b_k and
+  σ_k = a_k‖W_eff b_k‖² along each eigenvector b_k of Σ_XX, counted with the same run-unit floor (SGD) or
+  #{γ_k > σ_k} (AdamW). It is a reimplementation from their description, not their code. Weights at t_r are not
+  saved by the frozen run code, so a K.2 reading at t_r is not available. On the six 3-epoch pilot configurations
+  (seed 900, not part of any statistic) r̃_tight = 33, with the run-unit floor 9 (SGD) and 33 (AdamW); the K.2 count is
+  0 under SGD at wd 0.0034 (59-61 of 128 modes have positive drive, none clears the floor) and 11 under AdamW.
+- Next: register E7 (study plan v2.11): C5's Arm T transition rows spaced ≤ √2 around the predicted λ_c at 50 epochs
+  (each run also gives its epoch-20 count, so both horizons are tested), 5 fresh seeds, with the step-0 rule, the
+  count read at t_r, the static bound and the μ count as baselines; and the toggle rows from T towards P.

@@ -1,0 +1,43 @@
+"""E6 rung 1a development grid (experiment results/e6/r1dev/r1_dev_runs.jsonl.gz), re-scored with my own code: per arm
+and per arm x L, MAE and within-1 share of the primary race_deep_A1 and of every baseline against the measured final
+count (truth counts[-1]); 'early' = truth counts[1] (10% of T, as registered); paired bootstrap 95% CI of
+(baseline error - primary error), 10,000 resamples of runs, default_rng(7). Also the time at which the measured count
+first equals its final value, as a share of T (when is the race decided), per arm x L.
+Usage: python3 checks/e6_r1_dev_score.py RUNS.jsonl.gz > checks/e6_r1_dev_score.json"""
+import sys, gzip, json
+import numpy as np
+R = [json.loads(l) for l in gzip.open(sys.argv[1], "rt")]
+NAMES = ["race_deep_A1", "race_deep_1d", "race_depth1", "static1", "staticL", "window", "early"]
+
+
+def pred(r, nm):
+    return r["truth"]["counts"][1] if nm == "early" else r["pred"][nm]
+
+
+def summ(rows):
+    if not rows:
+        return dict(runs=0)
+    y = np.array([r["truth"]["counts"][-1] for r in rows]); rng = np.random.default_rng(7)
+    E = {nm: np.abs(np.array([pred(r, nm) for r in rows]) - y) for nm in NAMES}
+    idx = rng.integers(0, len(rows), size=(10000, len(rows))); out = dict(runs=len(rows))
+    for nm in NAMES:
+        d = E[nm] - E["race_deep_A1"]; bs = d[idx].mean(1)
+        out[nm] = dict(mae=float(E[nm].mean()), within1=float((E[nm] <= 1).mean()),
+                       minus_primary=float(d.mean()), ci=[float(np.quantile(bs, .025)), float(np.quantile(bs, .975))])
+    dec = []
+    for r in rows:
+        c = r["truth"]["counts"]; f = c[-1]; k = len(c) - 1
+        while k > 0 and c[k - 1] == f:
+            k -= 1
+        dec.append((k + 1) / len(c))
+    out["decided_share_of_T"] = dict(median=float(np.median(dec)), share_by_10pct=float(np.mean(np.array(dec) <= 0.1)))
+    return out
+
+
+res = {}
+for arm in ("aligned", "generic"):
+    A = [r for r in R if r["cfg"]["arm"] == arm]; res[arm] = summ(A)
+    for L in (1, 2, 3):
+        res[f"{arm}_L{L}"] = summ([r for r in A if r["cfg"]["L"] == L])
+    res[f"{arm}_Lge2"] = summ([r for r in A if r["cfg"]["L"] >= 2])
+print(json.dumps(res, indent=1))

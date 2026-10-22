@@ -1,0 +1,17 @@
+# Validation and numerical handoff
+
+The local-compute job job-0b61f5177b succeeded. The first study replicate took 0.0221 seconds, and all 20 replicates plus aggregation took 0.344 seconds. Timing is measured wall time on this host, not a portable performance claim. The timed replicate is included; no extra pilot points were drawn.
+
+`python3 code/check_results.py` passes. This independently aggregates the saved integer counts with Python statistics, verifies sample sizes and stream identifiers, checks every estimate and all reported interval/error arithmetic, and matches the generating script SHA-256. Independent re-sampling is delegated to internal review rather than counted as study data.
+
+- Total inside: 15,708,573 of 20,000,000 points.
+- Mean estimate: 3.1417146.
+- Across-stream sample SD: 0.0017041221972492941; SEM: 0.00038105330750157267.
+- Student t critical value (19 df): 2.0930240544083087.
+- 95% CI: [3.140917046261387, 3.1425121537386125].
+- Signed error versus math.pi: +0.00012194641020668584; absolute error: 0.00012194641020668584.
+- math.pi = 3.141592653589793 falls inside the interval.
+
+The theoretical per-stream SD is sqrt(pi(4−pi)/1,000,000) = 0.001642183367736324. The observed/theoretical variance ratio is 1.0768573296669415. An approximate two-sided chi-square variance diagnostic gives p = 0.7347463315628331: no discrepancy is evident, though 20 replicates give limited power. No seeds or sample sizes were selected in response to these results. The requested across-seed t interval remains the primary uncertainty result.
+
+No figure is needed for this scalar estimate. The final half-page report must be self-contained, giving generator and stream construction along with the requested numbers. Root seed 20261019 and spawn keys 0–19 fully identify all 20 PCG64 streams; Python 3.11.2, NumPy 2.4.6, SciPy 1.17.1 were used. Full per-stream data are in per_seed.csv and machine-readable results in summary.json. These supporting files remain working evidence in experiment-repo, not additional released paths.

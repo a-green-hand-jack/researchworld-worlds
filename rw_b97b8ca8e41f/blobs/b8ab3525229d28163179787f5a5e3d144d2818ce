@@ -1,0 +1,29 @@
+import numpy as np
+rng=np.random.default_rng(1)
+def ode(s,c,lam,p0,w0,alpha=1.0,T=3000,dt=0.01):
+    w=w0;p=p0
+    for _ in range(int(T/dt)):
+        dw=w*(p*s-p*p*c-lam); dp=alpha*(w*w*(s-p*c)-lam*p)
+        w+=dt*dw;p+=dt*dp
+        if w>10: break
+    return w
+def crit(s,c,lam,p0,w0,alpha=1.0,T=3000,dt=0.01):
+    # phase-1: p(t)=p0 exp(-alpha lam t); L(t)=int r; survive if w0 e^L crosses p-nullcline while p<rho
+    t=np.arange(0,T,dt); p=p0*np.exp(-alpha*lam*t); r=p*s-p*p*c-lam
+    L=np.concatenate([[0],np.cumsum(r[:-1]*dt)])
+    rho=s/c; ok=p<rho
+    wn=np.sqrt(np.where(ok,lam*p/np.maximum(s-p*c,1e-30),np.inf))
+    return np.any(np.log(w0)+L-np.log(wn)>0)
+def bound(s,c,lam): return s*s/c>4*lam
+agree=0;n=0;fp=0;rows=[]
+for k in range(300):
+    c=10**rng.uniform(-1.5,0.5); rho=rng.uniform(0.1,1.0); s=rho*c
+    lam=10**rng.uniform(-3,-1); p0=10**rng.uniform(-1,0.5); w0=10**rng.uniform(-4,-2)
+    a=ode(s,c,lam,p0,w0)>1e-2*0+ (np.sqrt(lam)*0)  # survive: w stays bounded away from 0
+    surv=ode(s,c,lam,p0,w0)
+    a=surv>1e-3
+    b=crit(s,c,lam,p0,w0)
+    n+=1;agree+=(a==b);fp+=(a==bound(s,c,lam))
+    if a!=b: rows.append((round(s,3),round(c,3),round(lam,4),round(p0,3),w0,surv))
+print('nullcline criterion agree',agree,'/',n,' fixed-point bound agree',fp)
+for r in rows[:15]: print(r)

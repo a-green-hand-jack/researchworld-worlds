@@ -1,0 +1,65 @@
+\section{Beyond the assumptions: optimiser, target, depth and a ViT}
+\label{sec:ext}
+
+The race assumes gradient descent, a one-layer linear encoder, and a collapse decided near the collapsed point.
+We relax each assumption in turn and ask whether the mechanism survives, and in what form.
+Unless marked retrospective or post hoc, each prediction below was frozen before its held-out runs and scored once, against baselines that include the static bound and, in the linear models, the count of \citet{demelocosta2026drive} ($\mu$ count, equal to the initial window in the aligned linear model); \cref{app:ext} gives the derivations and every criterion (\cref{tab:ext-tests}).
+A model of weight-decay schedules, which change the decay after capture, follows the alive state of held-out runs closely but fails its registered test on short pulses and on the predictor after a loss (\cref{sec:sched}).
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig12_ext_main}
+  \caption{(a)~Under AdamW weight decay does not set the count: alive directions at a fixed horizon, three held-out statistic sets, measured (dots) and predicted (dashed), against static bound (squares) and gradient descent (triangles). (b)~The deep closed form at $t=0$ (dashed) matches the count measured early in training (lines). (c)~In the ViT a late switch still moves the count: share $f(e)$ of the gap closed by a switch at epoch $e$ (5 seeds, 95\% CI); grey: bar $f(20)\ge0.5$, premise $D\le5$}
+  \label{fig:ext}
+\end{figure}
+
+\subsection{AdamW: weight decay leaves the count}
+\label{sec:adamw}
+
+AdamW normalises gradients coordinate by coordinate, so in the aligned basis of \cref{prop:reduction} the dynamics reduce exactly to scalar AdamW maps on $(a_k,p_k)$; a rotated encoder breaks this reduction, because Adam is not invariant to rotations of the parameter basis~\citep{xie2024adam}.
+The reduced dynamics pass through four stages (\cref{app:ext}).
+(i)~While a gradient keeps its sign and exceeds Adam's $\epsilon$, the step is close to $\eta\,\mathrm{sign}$ of the gradient, the sign-descent picture of Adam~\citep{kunstner2024heavy,sabanayagam2026optimizer}; this normalises away the factor $a_k^2$ through which weight decay wins the gradient-descent race, and the window becomes $0<p<c_k/\sigma_k$, independent of $\lambda$.
+(ii)~Outside the window a direction shrinks until it loses stability at the adaptive edge of stability~\citep{cohen2022adaptive} and re-escapes; (iii)~it is captured; (iv)~for $\lambda c_k/\sigma_k<1$ it settles at $|a_k|=|p_k|=c_k/\sigma_k$, inside the box $\|\cdot\|_\infty\le1/\lambda$ to which converged AdamW is confined~\citep{xie2024implicit}, through the balance of \citet[Lemma~4.5]{jacobs2026never}.
+Weight decay thus sets only how long stages (ii)--(iii) last, and the settled count is $\#\{k:c_k/\sigma_k>\theta\}$, whatever $\lambda$.
+A phase model that integrates the stages fails at convergence, where \ExtAtwoNonconv{} of \ExtAtwoRuns{} held-out runs are still being captured at the derived horizon, and passes at a fixed horizon: on \ExtAtwopRuns{} prospective runs it is within one direction in \ExtAtwopWithin{} of runs, with error \ExtAtwopMae{} against \ExtAtwopStaticMae{} for the static bound and \ExtAtwopRaceMae{} for the gradient-descent race (\cref{fig:ext}a). Weight decay thus decides when directions return, not how many settle, and AdamW keeps \ExtAtwoAdamGd{}~$\ExtAtwoAdamGdCI$ more directions than gradient descent.
+
+\subsection{A layer-normalised target}
+\label{sec:ln}
+
+I-JEPA layer-normalises its target.
+In the linear model under gradient descent, Stein's lemma turns the drive $W\Sigma_{tc}$ exactly into $G(W)W\Sigma_{tc}$, with $G$ the mean Jacobian of the normalisation.
+This drive does not shrink with $W$, so every run keeps a direction, even the \ExtAfourZeroShare{} for which the plain static bound predicts none, and the other directions race against their normalisation gains.
+A reduced flow of these gains, registered before any held-out rank was computed, predicts the rank with error \ExtAfourMae{} on the \ExtAfourRobust{} of \ExtAfourRuns{} held-out runs whose rank does not change when the run is repeated on a fresh sample of the target view (\ExtAfourAllMae{} on all runs).
+The static bound's error is larger by \ExtAfourStaticDiff{}~$\ExtAfourStaticCI$ directions and that of the set of normalised fixed points by \ExtAfourLnDiff{}~$\ExtAfourLnCI$: here too the race, not fixed-point existence, selects the survivors.
+
+\subsection{Deeper encoders and predictors}
+\label{sec:deep}
+
+With a deep linear encoder $\Wc=W_L\cdots W_1$ and weight decay on every factor, the imbalances between factors decay as $e^{-2\lambda t}$~\citep{kunin2020neural}.
+From balanced factors, direction $k$ obeys exactly $\dot a=L[\gamma_k(p)\,a^{3-2/L}-\lambda a]$ with $p^2-a^{2/L}=e^{-2\lambda t}(p_0^2-a_0^{2/L})$ and $\gamma_k(p)=pc_k-p^2\sigma_k$.
+For $L\ge2$ the drive is of higher order at $a=0$, so the collapsed point attracts every direction~\citep{ziyin2022exact}, and along the freely decaying gain direction $k$ escapes if and only if, with $m=2-2/L$,
+\begin{equation}
+a_0^{-m}\le(2L-2)\max_t\int_0^t\gamma_k\big(p_0e^{-\lambda\tau}\big)e^{-(2L-2)\lambda\tau}d\tau .
+\label{eq:deep}
+\end{equation}
+Survival thus depends on the initial scale as a power law, like the early phase of deep homogeneous networks~\citep{kumar2024early}, not logarithmically as in \eqref{eq:lamrace}.
+On \ExtCRuns{} held-out runs this closed form passes with aligned factors (error \ExtCAlMae{}, against \ExtCAlRaceOne{} for the depth-one race).
+With generic factors it stays within one direction (error \ExtCGeMae{}) but is no better than the count measured at $t=50$, so its registered test fails, and even with aligned factors it gives at $t=0$ only what a measurement gives after a tenth of training (\cref{fig:ext}b).
+For a deep predictor with random factors, a capture rule through the product of the factors passes its registered test.
+In a two-layer MLP encoder under gradient descent the first layer only decays before capture, and the race passes if it reads that layer's decaying features (error \ExtRtwoMae{}; initial features \ExtRtwoInit{}), which also accounts retrospectively for E2's miss; under AdamW or a normalised target no criterion is within tolerance and the rank itself is fragile, so those results hold for linear encoders only.
+
+\subsection{A vision transformer}
+\label{sec:e8}
+
+\paragraph{Early-training criteria (E3, E7).}
+\label{sec:e3}
+We train an I-JEPA-style ViT on CIFAR-10~\citep{krizhevsky2009cifar} in two arms, P with the I-JEPA recipe (AdamW, EMA target) and T matching the theory (SGD, copy target, weight decay on every parameter).
+A rule computed at step 0, the ViT analogue of the initial window (E3, \cref{app:details}), orders Arm T's configurations by weight decay but places the collapse transition $\EthreeLocFactor\times$ too high, and fails in Arm P.
+A race read at step 200 from each direction's log headroom against the decay budget still to come (E7, registered after development on E3 and E8 runs; \cref{app:ext}) predicts Arm T's critical weight decays at epochs 20 and 50, the epoch-50 one prospectively (\ExtSevPredFi{}, measured \ExtSevLcFi{}), and that they fall with training length, in direction only, which no criterion without the remaining schedule gives; that last verdict was seen while the scorer was being fixed, so it is not a blind test.
+Per run it is not separated from the step-0 rule, and removing decay from the norm gains (registered) or AdamW (unregistered) breaks it.
+
+\paragraph{Is collapse decided early? (E8)}
+If collapse is decided early, as the effect of weight decay is in supervised networks~\citep{golatkar2019time}, a later change of weight decay should not move the final count. In each arm we switched weight decay up or down at epoch $e\in\{2,5,10,20\}$ of 50 and measured the share $f(e)$ of the gap between the constant schedules that the switch covers, and the decision time $D$, the earliest switch epoch after which later switches are equivalent to none (by an equivalence test); we registered the premise as $D\le5$ and a stage-wise account as $D>20$ with $f(20)\ge0.5$.
+The premise holds in no cell (\cref{fig:ext}c): raising weight decay at epoch 20 still removes directions, fully in Arm T and $\ExtEeightFPupTwenty$~$\ExtEeightFPupTwentyCI$ of the way in Arm P.
+Lowering it restores lost directions only partly: Arm T regrows almost nothing once the switch comes at epoch 10 or later ($f(20)=\ExtEeightFTdownTwenty$), and Arm P regrows too slowly to close the gap ($f(20)=\ExtEeightFPdownTwenty$).
+The stage-wise account holds only in Arm T, for raising weight decay.

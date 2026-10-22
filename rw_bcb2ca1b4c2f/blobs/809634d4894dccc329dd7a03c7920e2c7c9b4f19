@@ -1,0 +1,103 @@
+"""Early check of the A1 held-out registration (experiment-repo 511249d results/e4/prediction.json section A1, driver
+code/e4_a1.py) before it is scored: is the float64 ground truth (e4_theory.scalar_adamw) exact on this grid, and how
+discriminating is the A1c tolerance there? The held-out grid adds b1 = 0.85 (collapse decay e^{-0.081}/step instead of
+e^{-0.053}), b2 = 0.9995 (second-moment memory 2000 steps) and T = 60000, so the collapse waits are longer and deeper.
+
+A stratified sample of the registered configs (one per stats x p0 x b1 x b2 cell, at lam = 0.007, a0 = 3e-4,
+eta = 0.015, the registered per-direction init) is simulated with the same update in float64 and in np.longdouble
+(x86-64 80-bit, smallest normal 3.4e-4932), tracking min |a| after K. Reported per config: directions whose float64
+min |a| is subnormal (< 2.2e-308) or exactly 0, and directions whose burst step (A1b) or alive state at the 20
+registered checkpoints (A1c) differ between float64 and longdouble; the all-alive predictor's A1c agreement and
+rank-within-1 on the longdouble truth. The frozen model (phase_model_hybrid) is not run here.
+
+Usage: python3 checks/e4_a1_heldout_precision.py /path/to/experiment-repo/code [NPROC] > checks/e4_a1_heldout_precision.json
+"""
+import sys, os, json, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+
+sys.path.insert(0, sys.argv[1])
+import e4_a1 as ho  # noqa: E402
+
+K, T, EVERY, THR, BURST = ho.K, ho.T, ho.EVERY, ho.THR, ho.BURST
+TINY64 = np.finfo(np.float64).tiny
+CP = np.linspace(0, T, 21).astype(int)[1:]
+
+
+def sample():
+    return [c for c in ho.configs() if c["lam"] == 0.007 and c["a0"] == 3e-4 and c["eta"] == 0.015]
+
+
+def sim(cfg, dtype):
+    c, s = ho.stats(cfg["stats"]); c = c.astype(dtype); s = s.astype(dtype); one = dtype(1)
+    b1, b2, eta, lam = (dtype(cfg[k]) for k in ("b1", "b2", "eta", "lam")); eps = dtype(1e-8)
+    a = ho.init_a(cfg).astype(dtype); p = np.full(c.shape, cfg["p0"], dtype)
+    ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c)
+    amin = np.full(c.shape, np.inf, dtype); zero = np.zeros(c.shape, bool)
+    burst = np.full(c.shape, -1); aK = hK = None; alive_cp = []
+    cpset = set(CP.tolist())
+    for t in range(1, T + 1):
+        r = c - p * s
+        ga = -a * p * r; gp = -a * a * r
+        ma = b1 * ma + (one - b1) * ga; va = b2 * va + (one - b2) * ga * ga
+        mp = b1 * mp + (one - b1) * gp; vp = b2 * vp + (one - b2) * gp * gp
+        bc1, bc2 = one - b1 ** t, one - b2 ** t
+        a = a * (one - eta * lam) - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps)
+        p = p * (one - eta * lam) - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+        if t == K:
+            aK = np.abs(a).astype(float); hK = (p * (c - p * s)).astype(float)
+        if t > K:
+            aa = np.abs(a); amin = np.minimum(amin, aa); zero |= (aa == 0)
+            if t % EVERY == 0:
+                burst = np.where((burst < 0) & (aa > BURST), t, burst)
+        if t in cpset:
+            alive_cp.append((np.abs(a) > THR).tolist())
+    return dict(amin=amin, zero=zero, burst=burst, aK=aK, hK=hK, alive=np.array(alive_cp, bool))
+
+
+def one(cfg):
+    t0 = time.time(); f = sim(cfg, np.float64); t1 = time.time(); l = sim(cfg, np.longdouble); t2 = time.time()
+    claim = (f["hK"] < 0) & (f["aK"] <= BURST)
+    sub = f["amin"] < TINY64
+    A = l["alive"]
+    lr = [abs(np.log(x / y)) for x, y, cl in zip(f["burst"], l["burst"], claim) if cl and x > 0 and y > 0]
+    return dict(id=cfg["id"], stats=cfg["stats"], p0=cfg["p0"], b1=cfg["b1"], b2=cfg["b2"], n=int(claim.size),
+                claim_set=int(claim.sum()), subnormal_f64=int(sub.sum()), subnormal_in_claim=int((sub & claim).sum()),
+                zero_f64=int(f["zero"].sum()),
+                min_log10_amin_ld=float(np.log10(l["amin"].min())) if l["amin"].min() > 0 else None,
+                burst_differs_in_claim=int(((f["burst"] != l["burst"]) & claim).sum()),
+                burst_missing_f64_in_claim=int(((f["burst"] < 0) & (l["burst"] > 0) & claim).sum()),
+                burst_missing_ld_in_claim=int(((l["burst"] < 0) & claim).sum()),
+                burst_logratio_max=float(max(lr or [0.0])),
+                alive_pairs_differ=int((f["alive"] != l["alive"]).sum()), alive_pairs=int(A.size),
+                rank_differs_checkpoints=int((f["alive"].sum(1) != A.sum(1)).sum()),
+                allalive_agree_ld=float(A.mean()),
+                allalive_rank_within1_ld=float((np.abs(A.shape[1] - A.sum(1)) <= 1).mean()),
+                seconds_f64=round(t1 - t0, 1), seconds_ld=round(t2 - t1, 1))
+
+
+if __name__ == "__main__":
+    nproc = int(sys.argv[2]) if len(sys.argv) > 2 else 8
+    cfgs = sample()
+    with Pool(nproc) as pool:
+        rows = pool.map(one, cfgs)
+    summ = {}
+    for b2 in (0.995, 0.9995):
+        for b1 in (0.9, 0.85):
+            sel = [r for r in rows if r["b1"] == b1 and r["b2"] == b2]
+            tot = lambda k: int(sum(r[k] for r in sel))
+            summ[f"b1={b1},b2={b2}"] = dict(
+                runs=len(sel), claim_set=tot("claim_set"), subnormal_in_claim=tot("subnormal_in_claim"),
+                zero_f64=tot("zero_f64"), burst_differs_in_claim=tot("burst_differs_in_claim"),
+                burst_missing_f64_in_claim=tot("burst_missing_f64_in_claim"),
+                burst_missing_ld_in_claim=tot("burst_missing_ld_in_claim"),
+                burst_logratio_max=round(max(r["burst_logratio_max"] for r in sel), 3),
+                alive_pairs_differ=tot("alive_pairs_differ"), alive_pairs=tot("alive_pairs"),
+                rank_differs_checkpoints=tot("rank_differs_checkpoints"),
+                allalive_agree_ld=round(float(np.mean([r["allalive_agree_ld"] for r in sel])), 4),
+                allalive_rank_within1_ld=round(float(np.mean([r["allalive_rank_within1_ld"] for r in sel])), 4))
+    json.dump(dict(source="experiment-repo 511249d code/e4_a1.py configs(), stats(), init_a(); update identical to "
+                          "code/e4_theory.py scalar_adamw (eps 1e-8)", numpy=np.__version__,
+                   sample="lam = 0.007, a0 = 3e-4, eta = 0.015; all stats x p0 x b1 x b2 (24 of 384 registered runs)",
+                   summary=summ, rows=rows), sys.stdout, indent=1)

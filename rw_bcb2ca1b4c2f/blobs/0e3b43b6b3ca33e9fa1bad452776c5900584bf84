@@ -1,0 +1,45 @@
+"""F14 (appendix, fig:ext-e8): E8 per-epoch alive count of every row of the weight-decay switch grid (5 seeds per row; line = seed mean,
+band = seed min-max; rows from results/e8/grid/counts.csv, wd levels from results/e8/prediction.json). Rows: constant lo and hi, and the
+switch at epoch e in {2, 5, 10, 20} in each direction, for Arm T (theory-aligned SGD) and Arm P (I-JEPA recipe)."""
+import os, sys, csv, json
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
+ES = [2, 5, 10, 20]
+SHADE = {2: "#C6DBEF", 5: "#6BAED6", 10: "#2171B5", 20: "#08306B"}
+
+def make(outdir):
+    fs.setup(); R = common.results_dir()
+    pc, pp = os.path.join(R, "e8", "grid", "counts.csv"), os.path.join(R, "e8", "prediction.json")
+    rows = {}
+    for r in csv.DictReader(open(pc)):
+        if r["finite"] != "True": continue
+        rows.setdefault(r["row"], []).append([float(r[f"ep{i}"]) for i in range(51)])
+    lev = json.load(open(pp))["grid"]["levels"]
+    ep = np.arange(51)
+    fig, axs = plt.subplots(2, 2, figsize=(fs.TEXTWIDTH, 3.15), sharex=True, constrained_layout=True)
+    for j, arm in enumerate(("T", "P")):
+        for i, (d, a, b) in enumerate((("lo2hi", "lo", "hi"), ("hi2lo", "hi", "lo"))):
+            ax = axs[i, j]
+            def draw(key, **kw):
+                x = np.array(rows[key]); ax.fill_between(ep, x.min(0), x.max(0), color=kw["color"], alpha=0.18, lw=0, zorder=1); ax.plot(ep, x.mean(0), zorder=2, **kw)
+            draw(f"{arm}_{a}", color="0.45", ls="--", lw=1.0); draw(f"{arm}_{b}", color="k", ls="--", lw=1.0)
+            for e in ES:
+                draw(f"{arm}_{d}_e{e}", color=SHADE[e], lw=0.9)
+                m = np.array(rows[f"{arm}_{d}_e{e}"]).mean(0)[e]
+                ax.plot([e], [m], marker="v", ms=3, mfc=SHADE[e], mec="k", mew=0.3, zorder=4)
+            ax.set_title(f"Arm {arm}: wd {lev[arm][a]:g} $\\to$ {lev[arm][b]:g}" + (" (lo$\\to$hi)" if d == "lo2hi" else " (hi$\\to$lo)"), fontsize=6.8)
+            ax.set_ylim(bottom=0); ax.tick_params(length=2, pad=1.5)
+            if j == 0: ax.set_ylabel("alive directions")
+            if i == 1: ax.set_xlabel("epoch")
+    h = [Line2D([], [], color="0.45", ls="--", lw=1.0, label="constant start level"), Line2D([], [], color="k", ls="--", lw=1.0, label="constant end level")] + \
+        [Line2D([], [], color=SHADE[e], lw=0.9, marker="v", ms=3, mec="k", mew=0.3, label=f"switch at $e={e}$") for e in ES]
+    fig.legend(handles=h, fontsize=5.5, frameon=False, loc="outside lower center", ncol=6, handlelength=1.6, columnspacing=1.0, borderaxespad=0.1)
+    fs.save(fig, "fig14_ext_e8", outdir)
+    common.record_inputs(outdir, "fig14_ext_e8", [pc, pp])
+
+if __name__ == "__main__":
+    make(sys.argv[1] if len(sys.argv) > 1 else "/tmp/figtest")

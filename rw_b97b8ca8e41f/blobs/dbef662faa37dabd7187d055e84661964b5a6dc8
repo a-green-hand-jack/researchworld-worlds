@@ -1,0 +1,23 @@
+\section{Introduction}
+\label{sec:intro}
+
+Self-supervised methods that align two views of the same input in embedding space have a trivial optimum: an encoder that maps every input to the same vector predicts any target perfectly.
+Contrastive methods rule this solution out with negative pairs \citep{chen2020simclr}, and redundancy-reduction methods with explicit variance and covariance terms \citep{zbontar2021barlow,bardes2022vicreg}.
+Joint-embedding predictive architectures \citep{assran2023ijepa,bardes2024vjepa,assran2025vjepa2} use neither: an online encoder embeds a visible \emph{context}, a predictor maps that embedding to the embedding of a masked \emph{target} produced by a target encoder that receives no gradient and tracks the online encoder by an exponential moving average (EMA), as in BYOL \citep{grill2020byol} and data2vec \citep{baevski2022data2vec}.
+That these models do not collapse rests on heuristics: a predictor of a particular depth, width and initialization, a large masking ratio, a slowly updated target, and the stop-gradient itself.
+They are known to matter---removing the predictor or the stop-gradient collapses SimSiam \citep{chen2021simsiam}---and partial theories explain some of them in isolation \citep{tian2021understanding,wen2022head,halvagal2023implicit,littwin2024jepa}, but no single account says which heuristic acts on what, or predicts how much rank the representation develops.
+
+\paragraph{The idea.}
+Collapse is a property of the beginning of training.
+At initialization the embeddings are small and the system sits near the collapsed solution; there, the learning dynamics decouple into directions of representation space, and each direction is subject to two competing effects.
+A \emph{driving force} grows a direction in proportion to how much of the target's variation along it is predictable from the context; a \emph{decay} shrinks it, through the predictor's amplification of the context variance and through weight decay.
+A direction survives when the drive exceeds the decay; the number of surviving directions is the rank the representation can develop.
+Every heuristic acts by changing one of the two terms.
+
+\paragraph{Contributions.}
+\begin{itemize}
+\item A linear theory of JEPA training near collapse in which every direction of representation space is a two-dimensional system with a driving force $p_js_j$ and a decay $p_j^2c_j+\lambda$ set by the context--target covariances that the masking induces (\cref{prop:decouple,prop:masking}); the per-direction reduction, the weight-decay threshold and the bistability extend the BYOL/SimSiam analysis of \citet{tian2021understanding} to JEPAs.
+\item The new step is dynamical: near collapse the predictor receives no signal and drifts through each direction's growth window, so survival is decided by how much a direction grows while its window is open. This gives an early-time survival criterion and rank predictor in closed form (\cref{prop:survival}), much more accurate than the fixed-point condition in numerical checks, with an extension to deep predictors (\cref{cor:depth}).
+\item A map from the heuristics to the two terms (\cref{tab:heuristics}): the stop-gradient removes a decay term that always dominates the drive; the predictor's initial gain sets a window, so rank is non-monotone in it, and its weight decay, depth and learning rate set how long the window stays open, with the sign of the learning-rate effect fixed by the weight-decay convention; random masking drives only above-average-power directions and has no drive at mask ratio $0$ or $1$; an EMA target slows growth without moving the window.
+\item Tests of these predictions, stated before the final runs, from linear JEPAs to a small vision JEPA (\cref{sec:experiments}). In linear JEPAs the predicted early rates match the measured ones with no fitted constant (correlation $0.9997$), the predicted rank has a quarter of the fixed-point count's error on held-out configurations and is never worse, and the predicted effects of the heuristics are observed. In a small vision JEPA the early statistic does not transfer, while a slower EMA target lowers rank as predicted (interim).
+\end{itemize}

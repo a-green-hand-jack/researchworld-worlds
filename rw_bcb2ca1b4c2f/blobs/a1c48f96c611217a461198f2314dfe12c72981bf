@@ -1,0 +1,36 @@
+"""Power of the registered B1'-rate statistic on the disclosed pilot (seed 390): median |drift| for the frozen model,
+stage_qs, and two nulls: p held at its value (no decay) and own decay at alpha*lam_P from the episode start (drift 0 by
+construction for the truth's own decay if the truth decays at alpha*lam_P)."""
+import gzip, json, numpy as np
+THR = 0.05
+AR = {"a0.6": "<1", "rP0.4": "<1", "base": "=1", "a0.8rP1.25": "=1", "a1.6": "1-2", "rP1.6": "1-2", "rP3": ">2"}
+def episodes(am):
+    for k in range(am.shape[1]):
+        j = 1
+        while j < am.shape[0]:
+            if am[j - 1, k] and not am[j, k]:
+                e = j
+                while e < am.shape[0] and not am[e, k]:
+                    e += 1
+                if e - j >= 2:
+                    yield k, j, e
+                j = e
+            j += 1
+out = {}; lens = []
+for line in gzip.open("pilot_runs.jsonl.gz", "rt"):
+    r = json.loads(line); cfg, tr, pr = r["cfg"], r["truth"], r["pred"]
+    A = np.array(tr["a"], float); Pt = np.abs(np.array(tr["p"], float)); am = A > THR; t = np.array(tr["t"], float)
+    Pm = np.array(pr["model"]["P"], float); Pq = np.array(pr["stage_qs"]["P"], float)
+    cl = AR[cfg["variant"]]
+    for k, j, e in episodes(am):
+        lens.append(t[e - 1] - t[j])
+        for nm, M in (("model", Pm[j:e, k]), ("stage_qs", Pq[j:e, k]), ("frozen_p", np.full(e - j, 1.0))):
+            with np.errstate(divide="ignore", invalid="ignore"):
+                er = np.log(Pt[j:e, k] / np.maximum(M, 1e-300))
+            d = (er[1:] - er[0]).tolist()
+            out.setdefault(("all", nm), []).extend(d); out.setdefault((cl, nm), []).extend(d)
+res = {}
+for (cl, nm), v in sorted(out.items()):
+    v = np.array(v); res.setdefault(cl, {})[nm] = dict(median_abs=round(float(np.nanmedian(np.abs(v))), 3), median_signed=round(float(np.nanmedian(v)), 3), pairs=int(v.size))
+res["episode_len"] = dict(n=len(lens), median=float(np.median(lens)), p10=float(np.percentile(lens, 10)), p90=float(np.percentile(lens, 90)))
+print(json.dumps(res, indent=1)); json.dump(res, open("rate_null.json", "w"), indent=1)

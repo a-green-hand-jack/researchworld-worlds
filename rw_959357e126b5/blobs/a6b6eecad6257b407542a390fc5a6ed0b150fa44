@@ -1,0 +1,143 @@
+# Release review: assembled delivery
+
+The delivery was assembled with `ht-role delivery` from these revisions:
+
+| Position | Revision | Delivered paths |
+|---|---|---|
+| paper-repo | `6e496ca374badfcf6fa0483ffd7bbe78cbdf8c47` | root, `paper/` |
+| figtab-repo | `7aaa2941857356cf30f9edf94905302bb8c9679b` | `paper/figures/`, `paper/tables/`, `code/figures/` |
+| experiment-repo | `96ecc7db4e27832f3e5e56f541371f53d254432e` | `code/`, `results/` |
+
+- No assembly errors, and nothing is undelivered.
+- Venue rules come from venue-repo `a497c49c17bb488fcb5c2d5a07b353c25da9fbe5`.
+- The study was judged against `REVIEW_STANDARD.md` (objective, brief v3 at `b3a8179d7d91`, assignment at `865169b41471`).
+- The step-by-step history of this judgement is in `reviews/log.md`.
+- Earlier entries record the checks of E1–E3 at the revisions where those results were introduced. The results files they checked are unchanged up to experiment 96ecc7d (E3 last changed at 1bdfa89 and only in `post_hoc` and `compute.json`).
+
+## Verdict
+
+**Approved.** The delivery answers the objective as it asks to be answered:
+- a near-collapse theory, with each direction set by a driving force against decay;
+- the place of each named heuristic in that theory;
+- pre-registered empirical tests on linear JEPAs and on an I-JEPA-style ViT.
+
+Every claim in the abstract, introduction and conclusion is scoped to the evidence behind it. The ViT transfer test is mostly negative, and the paper reports it as such. Approval prescribes no conclusion: the standard asks that failures be shown, not that the theory succeed.
+
+## A. The study against the objective
+
+- **A1 (model and regime).** Sec. 3 states the full model and Sec. 4 the near-collapse regime:
+  - linear JEPA;
+  - context and target encoders with stop-gradient or EMA target;
+  - masks through Σ∘G / Σ∘F;
+  - predictor learning-rate ratio α;
+  - weight decay λ_W, λ_P;
+  - population gradient flow and its Euler discretisation.
+
+  The regime of validity is explicit: an order-one predictor and a small encoder (the unbalanced start of a standard initialisation), up to the first directions reaching order one. Sec. 7 names where it is expected to fail: no noise floor, no post-capture stage, Assumption 1, AdamW, nonlinear encoders.
+- **A2 (per-direction criterion).** Def. 4 (race criterion, labelled an approximation) gives, per direction:
+  - the drive c_k and decay (σ_k, λ);
+  - survival as capture of the decaying predictor gain before it leaves the growth window;
+  - the rank as the count of survivors;
+  - λ_race ≈ h_k(p_0)/log(p_0/a_0) at α = 1, with its proof in App. B.
+
+  Timing and order of escape are shown per direction in Fig. 5 (App. E). The general linear-response form for non-commuting statistics is in App. B.
+- **A3 (heuristics).** Table 1 covers every heuristic the objective names, each with the race term it moves, the predicted effect and the evidence:
+  - predictor scale p_0, learning-rate ratio α, depth L, random/wide predictor;
+  - EMA rate κ;
+  - masking ratio r and mask geometry;
+  - weight decay, initial scale, AdamW;
+  - frozen target, no stop-gradient, no predictor.
+
+  Failed predictions are kept in the table rather than dropped: depth (post hoc correction), one EMA sign, AdamW, and the ViT rows.
+- **A4 (proofs).** I re-derived:
+  - Props. 1–2, Cor. 3 (exact scalar race for α = 1) and the balance identity (`checks/balance_identity.py`, rel. dev. 5e-14);
+  - the λ_race leading order;
+  - the frozen-target condition c_k|a_0| > √(λ_W λ_P);
+  - the no-predictor and Bernoulli-mask conditions;
+  - the depth-L capture nullcline (`checks/depth_factor_fd.py`).
+
+  As independent numerical checks, my own reduced flow reproduces E1's per-mode labels (34560/34560) and the E1b aligned-arm labels at t_end (15840/15840 with the balanced arm; 14400/14400 in this pass). The per-mode system is credited to Tian et al. 2021 (Prop. 1 title, Sec. 2).
+- **A5 (test, not demonstration).**
+  - **Pre-registration:**
+    - E1b, E1c, E2 and E3 were pre-registered, and every `prediction.json` is byte-identical to its registration commit.
+    - E1 is labelled the development set, and the post hoc depth correction was re-tested on a second held-out set (E1c).
+  - **Results:**
+    - Theory-exact regime: E1b aligned arms MAE 0.25 [0.21, 0.30] against 11.2 for the static bound; complete-collapse boundary in λ; per-mode fate 99.7% (E1).
+    - Masking: E2 cyclic MAE 0.03 (population), SGD 0.47; tanh/Bernoulli fails.
+    - Realistic JEPA: E3 is an I-JEPA-style ViT on CIFAR-10 with two arms and 135 runs.
+      - The step-0 rule orders Arm T through its weight-decay sweep.
+      - C-loc fails by 2.6×, and Arm P fails.
+      - The predictor, EMA and masking effects do not transfer.
+      - A linear probe ties rank to representation quality (16.8% vs 34.7% vs random-init 43.7%; healthy Arm P 52%).
+  - **Failures shown:** every registered failure is in the text and in Tables 3–6:
+    - E2 peak criterion;
+    - tanh;
+    - AdamW;
+    - E3 C-loc, Arm P C-rank, predictor lr/depth signs, EMA null, no-stop-gradient, frozen target in Arm T, 4 of 4 mask nulls, 0 of 6 crossings.
+- **A6 (uncertainty, metrics).**
+  - **Seeds and intervals:**
+    - Seeds: ≥ 3 per configuration in the held-out tests (E1b 5 per cell; E2 and E3 3).
+    - Bootstrap 95% intervals in the text and in Table 2.
+    - E3 Spearman with CI [0.45, 0.99].
+  - **Metrics:**
+    - Rank metrics are defined: singular values of W above 0.05 for the linear runs; the E3 count at 10⁻³ of the largest eigenvalue of the centred covariance; RankMe for the E3 directional criteria.
+    - **My robustness check** (`checks/e1b_threshold.py` / `.json`) uses the reduced flow, which reproduces all 14400 measured labels at 0.05.
+      - Surviving amplitudes at t_end are ≥ 0.077 and decayed ones ≤ 0.043.
+      - The headline E1b MAE is 0.285 / 0.255 / 0.253 / 0.27 at thresholds 10⁻³ / 0.01 / 0.05 / 0.1, and the race-vs-static conclusion does not change.
+      - The paper does not state this robustness itself (non-blocking note below).
+  - **Horizon:** finality is checked at long horizon (`results/checks/e1b_long_horizon.json`, `e2_long_horizon.json`), and the λ = 0 horizon ranks are scoped as such.
+- **A7 (prior work, novelty).**
+  - Every work in the standard's list is cited: Tian 2021, Ziyin 2023, Littwin 2024, Simon 2023, Jing 2022, Wen & Li 2022, Halvagal 2023, Richemond 2023, I-JEPA, V-JEPA, RankMe, LeJEPA, PEIRA, Ponce 2025, DirectSet.
+  - The attributions are correct:
+    - the static threshold c² ≥ 4λσ is credited to Tian/PEIRA/Wang/Ponce;
+    - the per-mode system and the exact integral are credited to Tian 2021.
+  - The claimed novelty is the unbalanced-start race, the rank, the heuristics map and the tests, consistent with brief v3 Sec. 5.6.
+  - Cut-off:
+    - No post-cutoff work is cited: no 2610.02344, 2609.23881 or 2609.09630 anywhere in the delivery, and every arXiv id is ≤ 2608.
+    - All 23 pinned libraries were first uploaded to PyPI by 2026-08-31.
+
+## B. The paper
+
+- **B1:**
+  - NeurIPS 2026 template, `neurips_2026.sty` identical to the official file (checker), anonymous mode, US Letter.
+  - The main text ends on page 9: the References heading is on p. 10 with 0 text lines above it.
+  - One PDF in the order paper, references, appendix, checklist.
+  - The checklist answers all 16 of its questions with no TODO; its answers agree with the delivery (data, licence, compute from `results/e3/compute.json`, seeds, intervals).
+  - venue-repo's `check_submission.py` (a497c49) gives PASS on the delivered PDF.
+- **B2:**
+  - `make_numbers.py` regenerates `numbers.tex` byte-identically.
+  - latexmk (TeX Live 2026, pdfTeX 1.40.29) exits 0 with 0 undefined references and 0 overfull boxes.
+  - The rebuild is text- and pixel-identical (72 dpi) to the delivered `main.pdf` on all 33 pages, in a fresh assembly at the revisions above.
+- **B3:**
+  - Every number in the text is a macro generated from `results/`.
+  - Spot checks of every `\Ethree*`, `\Etwo*` and `\EoneB/C*` macro against the results files and my rescorings match.
+  - The abstract, contributions and conclusion carry the scoped E1b/E1c/E2/E3 claims.
+  - Limitations are in Sec. 7.
+  - `paper/CLAIMS.md` maps each claim to its evidence.
+- **B4:** every entry is a real work and correctly attributed. The arXiv metadata of the closest-prior-theory entries was checked, and all are dated before 2026-09-01. The only addition since the last full check is Krizhevsky 2009.
+
+## C. Figures and tables
+
+- `code/figures/render_all.py` re-run on the delivery gives:
+  - all 11 figures pixel-identical (100 dpi);
+  - all 6 tables and all `.inputs.json` byte-identical;
+  - all 45 input hashes matching the delivered results.
+- I opened every figure (Figs. 1–11) and rendered pp. 7 and 9 of the PDF. Axes are labelled, legends are present and off the data, and uncertainty is shown where comparative. Theory and measurement are overlaid where the claim is agreement (e.g. Figs. 2, 3, 5 and 8).
+- Table 1 now has a verdict in every ViT cell.
+- No blank, placeholder, unlabelled or unreadable figure.
+
+## D. Code and results
+
+- **D1:** code for every experiment (`code/e1*.py`, `e2*.py`, `e3_*.py`, `linjepa.py`), per-seed raw results (`results/*/…runs.jsonl`, E3 trajectories and forces), pre-registrations and `results/README.md` with commands. The E3 raw runs are in experiment-repo release `e3-runs`, and the delivered `analyze` regenerates every E3 summary from them (checked at 1bdfa89; unchanged since).
+- **D2:**
+  - **E1b re-run** from the delivered code: `code/e1b.py run` on 8 CPUs took 124 s with numpy 2.3.2 (the pin is 2.4.6). Every one of the 1017 runs equals the delivered `e1b_runs.jsonl` in rank, survivors, divergence, convergence and RankMe, and `summary.json` is identical except for the command, seconds and files.
+  - **Figure and table regeneration** reproduces as stated in C.
+  - **E3 analysis** from the raw runs was checked earlier (`checks/e3_reanalyze.json`).
+- **D3:** no author or institution names in the code or results. The cluster name appears only in the frozen E3 `prediction.json`, which must stay byte-identical. Generic workflow tokens remain (see below).
+- **D4:** `code/requirements.txt` has 23 pins, all first uploaded to PyPI on or before 2026-08-31; the latest are filelock 3.32.5 and fonttools 4.64.0.
+
+## Non-blocking notes (recorded, not required for release)
+
+1. **Rank threshold:** the paper does not report its robustness. A6 above shows it is robust.
+2. **`theory.tex` l. 116:** in "without Assumption 1 it takes a general linear-response form", the antecedent of "it" (the no-predictor condition) is loose.
+3. **Workflow tokens in code:** `/hutian/data/cifar10` as the default data path, `HUTIAN_WAKE` markers, and position names in comments. They identify no author or institution.

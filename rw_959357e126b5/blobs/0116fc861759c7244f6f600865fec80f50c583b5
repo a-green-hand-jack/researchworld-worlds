@@ -1,0 +1,52 @@
+"""Review check (internal-review-repo): re-run a stratified subset of E6 rung 4 held-out runs with the frozen run_one
+(code/e6_r4_heldout.py, md5 dd977e41) and compare every non-timing field with the delivered runs. Subset (chosen from the
+delivered runs file, before any re-run): per (data, act) cell at lam 0.009 one fragile and one not-fragile base run where
+both exist, each with its floor re-run, plus up to two diverged base runs if any. Usage: python3 rerun_subset.py EXPROOT"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+root = os.path.abspath(sys.argv[1]); sys.path.insert(0, os.path.join(root, "code"))
+from multiprocessing import Pool
+import numpy as np
+import e6_r4_heldout as h
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+def one(cfg):
+    t = time.time(); r = h.run_one(cfg); print(f"run {cfg['id']} done {time.time() - t:.0f}s", flush=True); return r
+
+def leaves(d, pth=()):
+    if isinstance(d, dict):
+        for k, v in d.items(): yield from leaves(v, pth + (k,))
+    elif isinstance(d, list):
+        for i, v in enumerate(d): yield from leaves(v, pth + (i,))
+    else: yield pth, d
+
+if __name__ == "__main__":
+    D = {r["cfg"]["id"]: r for r in map(json.loads, gzip.open(os.path.join(root, "results/e6/r4_heldout/r4_heldout_runs.jsonl.gz"), "rt"))}
+    base = [r for r in D.values() if "floor" not in r["cfg"]]; fl = {r["cfg"]["floor_of"]: r for r in D.values() if "floor" in r["cfg"]}
+    def fragile(r):
+        f = fl[r["cfg"]["id"]]; return r["truth"].get("rank") is None or f["truth"].get("rank") is None or r["truth"]["rank"] != f["truth"]["rank"]
+    pick = []
+    for data in ("field", "latent"):
+        for act in ("tanh", "relu"):
+            c = sorted([r for r in base if r["cfg"]["data"] == data and r["cfg"]["act"] == act and r["cfg"]["lam"] == 0.009
+                        and r["truth"].get("rank") is not None], key=lambda r: r["cfg"]["id"])
+            for want in (True, False):
+                s = [r for r in c if fragile(r) == want]
+                if s: pick.append(s[len(s) // 2]["cfg"]["id"])
+    div = sorted(r["cfg"]["id"] for r in base if r["truth"].get("rank") is None)[:2]
+    ids = sorted(set(pick + div)); ids += [fl[i]["cfg"]["id"] for i in ids]
+    json.dump(dict(base=sorted(set(pick + div)), diverged_picked=div, ids=ids), open(os.path.join(HERE, "subset.json"), "w"), indent=1)
+    cf = [c for c in h.configs() if c["id"] in set(ids)]
+    t0 = time.time()
+    with Pool(8) as p:
+        res = p.map(one, cf, chunksize=1)
+    out = {}
+    for r in res:
+        i = r["cfg"]["id"]; a = {k: v for k, v in D[i].items() if k != "cpu"}; b = {k: v for k, v in r.items() if k != "cpu"}
+        la, lb = dict(leaves(a)), dict(leaves(b))
+        diff = [str(k) for k in set(la) | set(lb) if repr(la.get(k, "MISSING")) != repr(lb.get(k, "MISSING"))]
+        out[i] = dict(n_leaves=len(la), n_diff=len(diff), diff=diff[:10], truth_delivered=D[i]["truth"].get("rank"), truth_rerun=r["truth"].get("rank"))
+    summ = dict(runs=len(res), runs_with_diff=sum(1 for v in out.values() if v["n_diff"]), leaves=sum(v["n_leaves"] for v in out.values()),
+                numpy=np.__version__, wall_s=time.time() - t0)
+    json.dump(dict(summary=summ, runs=out), open(os.path.join(HERE, "rerun_subset.json"), "w"), indent=1)
+    print("HUTIAN_WAKE: r4 subset rerun done " + json.dumps(summ), flush=True)

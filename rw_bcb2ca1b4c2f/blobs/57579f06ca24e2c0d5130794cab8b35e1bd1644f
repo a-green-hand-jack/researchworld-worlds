@@ -1,0 +1,114 @@
+{
+ "scorer_exit": 0,
+ "scorer_tail": "{\n \"gpu\": [\n  \"V100\"\n ],\n \"gpu_check\": {\n  \"e20\": {\n   \"per_seed\": {\n    \"20\": 0,\n    \"21\": 0,\n    \"22\": 0\n   },\n   \"mean\": 0.0,\n   \"v100\": {\n    \"20\": 23,\n    \"21\": 22,\n    \"22\": 24\n   },\n   \"p100\": {\n    \"20\": 23,\n    \"21\": 22,\n    \"22\": 24\n   },\n   \"sd\": 0.0,\n   \"n_seeds\": 3,\n   \"t_interval\": [\n    0.0,\n    0.0\n   ]\n  },\n  \"e50\": {\n   \"per_seed\": {\n    \"20\": 0,\n    \"21\": 0,\n    \"22\": 0\n   },\n   \"mean\": 0.0,\n   \"v100\": {\n    \"20\": 10,\n    \"21\": 10,\n    \"22\": 9\n   },\n   \"p100\": {\n    \"20\": 10,\n    \"21\": 10,\n    \"22\": 9\n   },\n   \"sd\": 0.0,\n   \"n_seeds\": 3,\n   \"t_interval\": [\n    0.0,\n    0.0\n   ]\n  },\n  \"reading\": \"no GPU-family difference beyond 2 sd detectable at 3 seeds\"\n },\n \"toggles\": {\n  \"T_adamw\": [\n   17.333333333333332,\n   \"no direction registered\"\n  ],\n  \"T_ema\": [\n   2.6666666666666665,\n   \"borne out\"\n  ],\n  \"T_tln\": [\n   2.6666666666666665,\n   \"borne out\"\n  ],\n  \"T_pln\": [\n   3.3333333333333335,\n   \"not borne out\"\n  ],\n  \"T_nodn\": [\n   14.333333333333334,\n   \"borne out\"\n  ]\n }\n}\ndone: E7-G scored\n",
+ "leaves": [
+  370,
+  370
+ ],
+ "differ": 6,
+ "first_diffs": [
+  [
+   "/rows[0]/k2_positive_drive",
+   61,
+   70
+  ],
+  [
+   "/rows[0]/provenance/node_md5",
+   "f67f47bb",
+   "4d0ac52d"
+  ],
+  [
+   "/rows[1]/k2_positive_drive",
+   68,
+   69
+  ],
+  [
+   "/rows[1]/provenance/node_md5",
+   "f67f47bb",
+   "4d0ac52d"
+  ],
+  [
+   "/rows[2]/k2_positive_drive",
+   65,
+   66
+  ],
+  [
+   "/rows[2]/provenance/node_md5",
+   "f67f47bb",
+   "4d0ac52d"
+  ]
+ ],
+ "loss_logs": {
+  "20": {
+   "n_checks_v": 66,
+   "n_checks_p": 66,
+   "common": 66,
+   "checks_differ": 45,
+   "max_rel": 2.7335437250820405e-06,
+   "steps_equal": true
+  },
+  "21": {
+   "n_checks_v": 66,
+   "n_checks_p": 66,
+   "common": 66,
+   "checks_differ": 56,
+   "max_rel": 0.0010397333535662452,
+   "steps_equal": true
+  },
+  "22": {
+   "n_checks_v": 66,
+   "n_checks_p": 66,
+   "common": 66,
+   "checks_differ": 45,
+   "max_rel": 2.140042720835428e-06,
+   "steps_equal": true
+  }
+ },
+ "toggle_readings": {
+  "T_adamw": {
+   "v100": 17.333333333333332,
+   "v100_reg": "no direction registered",
+   "v100_field_hypothesis": "no direction registered",
+   "v100_sd": 1.0,
+   "p100": 17.333333333333332,
+   "p100_hyp": "no direction registered",
+   "p100_sd": 1.5811388300841898
+  },
+  "T_ema": {
+   "v100": 2.6666666666666665,
+   "v100_reg": "borne out",
+   "v100_field_hypothesis": "not borne out",
+   "v100_sd": 1.0,
+   "p100": 2.6666666666666665,
+   "p100_hyp": "borne out",
+   "p100_sd": 1.5811388300841898
+  },
+  "T_tln": {
+   "v100": 2.6666666666666665,
+   "v100_reg": "borne out",
+   "v100_field_hypothesis": "not borne out",
+   "v100_sd": 1.0,
+   "p100": 2.6666666666666665,
+   "p100_hyp": "borne out",
+   "p100_sd": 1.5811388300841898
+  },
+  "T_pln": {
+   "v100": 3.3333333333333335,
+   "v100_reg": "not borne out",
+   "v100_field_hypothesis": "not borne out",
+   "v100_sd": 1.0,
+   "p100": 3.3333333333333335,
+   "p100_hyp": "not borne out",
+   "p100_sd": 1.5811388300841898
+  },
+  "T_nodn": {
+   "v100": 14.333333333333334,
+   "v100_reg": "borne out",
+   "v100_field_hypothesis": "borne out",
+   "v100_sd": 1.0,
+   "p100": 14.333333333333334,
+   "p100_hyp": "borne out",
+   "p100_sd": 1.5811388300841898
+  }
+ }
+}

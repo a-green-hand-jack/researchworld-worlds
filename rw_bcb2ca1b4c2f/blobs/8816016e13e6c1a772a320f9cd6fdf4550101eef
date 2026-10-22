@@ -1,0 +1,176 @@
+{
+ "experiment": "E7 / direction C rung 5: the race in the ViT (study plan v2.11)",
+ "status": "registered BEFORE any production run of code/e7_grid.py; frozen code = the commit that adds this file (its md5s below). The production grid waits for the feasibility go relayed through the study plan.",
+ "question": "Does the decoupled-decay headroom race, developed on the delivered E3 and E8 runs (theory/ext_C_ladder.md, 'The headroom race'; results/e7/dev/headroom_race.json), predict where weight decay collapses the ViT's token spectrum, at two horizons, better than the delivered step-0 rule, the count read early, and the mu count of arXiv 2610.02344; and which change from Arm T towards Arm P breaks it?",
+ "code": {
+  "grid": "code/e7_grid.py",
+  "scorer": "code/e7_score.py",
+  "mu": "code/baselines/vit_mu.py (mu_of: native, diag, wd, r_tight, r_tight_run; k2_reading: App. K.2)",
+  "readout": "code/checks/e7_dev_headroom.py (headroom, lam_cross)",
+  "step0_rule": "code/e3_grid.py (horizon_rule, schedules)",
+  "run": "code/vit_jepa.py as run for E3/E8 (md5 e503bee9...; the delivered file differs only in a print label and a default path, results/anonymization.json)"
+ },
+ "md5": {
+  "code/e7_grid.py": "eba73d3a026a3ded53b56a15d621b4ed",
+  "code/e7_score.py": "41cdb4f88cbb3594d4b9ae646be13b70",
+  "code/baselines/vit_mu.py": "67fdc17a3ecf96d4be6183fe96ae468b",
+  "code/checks/e7_dev_headroom.py": "e32fddaeda746d4ea5bb752684af9aa9",
+  "code/e3_grid.py": "2a388062fc09bfe81c62bb3d44b4bf84"
+ },
+ "grid": {
+  "C5": "Arm T (SGD momentum 0.9, lr 0.05 constant, copy target, no target/predictor LayerNorm, decay on all parameters), constant wd in {0.0012, 0.0017, 0.0024, 0.0034, 0.0048, 0.0068, 0.0096, 0.0136} (sqrt 2 spacing around the predicted transitions), 50 epochs of the 50-epoch schedule, seeds 20-24: 40 runs",
+  "toggles": "one change each from the Arm T row at wd 0.0034, seeds 20-22: T_adamw (AdamW, lr 3e-4, warm-up + cosine; wd constant 0.0034), T_ema (EMA target 0.996 -> 1), T_tln (target LayerNorm), T_pln (predictor LayerNorms), T_nodn (no decay on biases, norm gains, mask token): 15 runs; reference = the C5 row T_wd0.0034, seeds 20-22",
+  "seeds": "disjoint from E3 (0-2), E8 (0-4) and the pilot (900)",
+  "commands": "python3 code/e7_grid.py sbatch-grid DIR COMMIT (one array, 3 runs per GPU); score: python3 code/e7_score.py RUNS_DIR DATA_DIR results/e7/score.json"
+ },
+ "statistic": {
+  "measured": "target-token count (#eigenvalues >= 1e-3 x max of the token covariance, log.jsonl target_tok count_1e3) at epoch 20 and epoch 50 of the same runs",
+  "lam_c": "wd at which the C5 seed-mean count first falls below half the C5 seed-mean init count, log-linear between adjacent rows; 95% bootstrap over seeds within rows",
+  "per_run": "|predicted - measured| count per C5 run; paired bootstrap 95% CI of (baseline error - headroom_200 error) over the 40 runs"
+ },
+ "predictions": {
+  "H1_transition_50": "lam_c at 50 epochs within a factor 2 of 0.0027, i.e. in [0.00135, 0.0054] (development: 0.0024-0.0030 from the low-decay reference spectra of E3 and E8)",
+  "H1_transition_20": "lam_c at 20 epochs within a factor 2 of 0.0071, i.e. in [0.0035, 0.0142] (development: 0.0062-0.0081; E3 measured 0.0070 on seeds 0-2)",
+  "H1_horizon": "lam_c(50)/lam_c(20) below 1 with the joint bootstrap CI below 1 (headroom race predicts ~0.38; a static/capacity criterion and the mu count predict 1)",
+  "H2_per_run": "on the C5 runs, at each horizon, the headroom race at t_r = 200 has a lower count MAE than the step-0 rule, the count read at t_r = 200, and the mu count (mu_wd and mu_diag), each paired CI above 0",
+  "H3_own_transition": "the transition of the headroom race's own seed-mean counts on the C5 rows is within a factor 1.5 of the measured lam_c at each horizon",
+  "toggles_hypotheses": {
+   "status": "exploratory (3 seeds): reported with the headroom MAE at epoch 50 beside the T reference row and the measured count against the reference; no pass/fail",
+   "T_ema": "holds: an EMA target changes the target but not how decay acts on the encoder's output map",
+   "T_pln": "holds for the decay part; the drive after t_r may be larger (the 3-epoch pilot counted 37 vs 29 predicted at epoch 3)",
+   "T_tln": "holds: the target LayerNorm rescales each target token but its gain is decayed (decay on all parameters), so decay still acts on the spectrum it normalises",
+   "T_nodn": "breaks: with the final LayerNorm gain undecayed, the encoder's output scale is a flat direction and decay no longer removes spectrum through it (the located failure in Arm P)",
+   "T_adamw": "the decay budget 2 sum lr wd is ~0.01 nats, so the headroom race reduces to the count read at t_r; it misses whatever AdamW's normalised steps add or remove after t_r"
+  },
+  "exit": "if H1_transition_50 or H1_horizon fails, the horizon-dependent race claim for the ViT is reported as failed; if H2 fails against the step-0 rule, the claim that the headroom readout improves on the delivered rule is dropped; failures reported with the same prominence as passes"
+ },
+ "baselines": {
+  "step0": "the delivered step-0 horizon rule (code/e3_grid.py horizon_rule) on the step-0 force export (--force-steps 0)",
+  "early": "the count read at t_r = 200 (and 400)",
+  "mu": "the 2610.02344 mu count reimplemented for this ViT (code/baselines/vit_mu.py): native #{mu>1} over all mode pairs (reported; off the count's scale, ~1,100 of 8,192), index-paired mu_diag, and mu_wd with the decoupled decay as additive floor (SGD rows only; undefined for AdamW, stated in the file)",
+  "static_bound": "not registered: the linear static bound c^2/(4s) needs the drive and self coefficients of a fixed linear predictor, and the race probe of E8 shows the linear sign structure reversed in most counted ViT directions (results/e7/dev, commit 8802467), so no faithful ViT form exists"
+ },
+ "development_reference": {
+  "E3_ArmT_epoch20_MAE": {
+   "headroom_200": 4.6,
+   "step0": 15.7,
+   "early_200": 20.7,
+   "mu_wd": 8.7,
+   "mu_diag": 14.5
+  },
+  "files": [
+   "results/e7/dev/headroom_race.json",
+   "results/e7/dev/vit_mu_e3.json"
+  ],
+  "caveat": "t_r and the half-init transition definition were chosen while looking at E3"
+ },
+ "compute": {
+  "pilot": "6 configurations (T_wd0.0034 and the five toggles), seed 900, 3 epochs of the 50-epoch schedule, 3 runs per GPU (GTX 1080 Ti, GPU type not constrained): 0.29-0.32 s/step, 168-185 s per run, 2 jobs (~0.1 GPU-h). Its outputs were read to test the scorer (code/e7_score.py with horizons patched to epochs 1 and 3) and are not part of any statistic",
+  "production": "55 runs x 9,750 steps x ~0.31 s = ~50 min per run on that GPU type, 3 runs per GPU: 19 array tasks (2 h limit), ~17 GPU-h; another GPU type changes wall time, not the statistic"
+ },
+ "environment": {
+  "python_packages": "recorded per run in provenance.json (pip freeze, node GPU, code commit)"
+ },
+ "amendment_1": {
+  "when": "before any production run (the grid has not been generated or submitted)",
+  "what": "maps the registered rows onto the plan's named baselines; no prediction, statistic or tolerance changes",
+  "initial_window": "mu_wd is the ViT's initial window: the index-paired drive minus self-prediction at step 0 with the decoupled decay as floor, #{(gamma_k - sigma_k)/(1 - momentum) > wd}, the analogue of dvd_signed / #{p c - p^2 s > lambda}; mu_diag is the same without the decay floor (dvd_nowd analogue); native n_mu is the uncoupled all-pairs count (dvd analogue)",
+  "early_reading": "the decisive comparison for H2 is early_200 (the count read at the same t_r): the headroom race adds only the decay budget to it, so a pass supports 'the early spectrum plus the decay budget decides the Arm T transition' (the race's decay half), not the linear drive/decay race",
+  "T_adamw_static_bound": "the plan names the static bound as the AdamW toggle's criterion; it has no faithful ViT form here (the linear static bound needs a fixed linear predictor's drive and self coefficients, whose sign structure is reversed in most counted ViT directions on development), so the AdamW toggle is reported with the headroom race, the early count and mu_diag, and the static bound's absence is stated",
+  "dvd_exact": "undefined for the ViT: the exact linearisation of the encoder-predictor flow over all ViT parameters is not formed (8,192 token modes against ~10^7 parameters); stated in the score"
+ },
+ "amendment_2": {
+  "when": "before any production run (the grid has not been generated or submitted); written after the feasibility go, which asked for it, and after the review asked for the paper's own mu reading and a trend null",
+  "what": "adds baselines, censoring rules, a measured-0 sensitivity, a seed-cluster bootstrap for H2, verdict words and a toggle statistic; the registered predictions, bands, rows, seeds and the measured statistic are unchanged",
+  "mu_registered": "mu_tight_run = the paper's r~_tight (their Cor. 3.3, same-(k,l) pairing of their App. A.4) with their Prop. J.1 decay floor in this run's units, (2/d) g (gamma - sigma) > wd, g = 1/(1 - momentum) (the run's loss is a mean-over-width MSE: gradient 2/d times their 1/2 E||.||^2); AdamW rows: no floor. It is the mu baseline of H2 and its lam_c is scored at both horizons beside the race (H1/H3 rows). mu_tight (no floor) and mu_tight_vitmu (floor without 2/d) are reported. mu_wd and mu_diag stay as registered rows, labelled as index pairings of mine, not the paper's count",
+  "mu_k2": "the paper's App. K.2 image reading reimplemented (code/baselines/vit_mu.py k2_reading): 10 predictor-only steps from initialisation with the run's optimiser, learning rate (x pred_lr_mult) and decoupled decay on the predictor's decayed parameters, encoder fixed at initialisation as its own teacher (target LayerNorm per the row), masks from a fixed generator, no augmentation; W_eff = the predictor block's input Jacobian by finite differences (eps 1e-3, 256 training images); signed drive gamma_k = (1 - p) c_k b_k^T W_eff b_k and decay sigma_k = a_k |W_eff b_k|^2 along eigenvectors b_k of Sigma_XX; count #{(2/d) g (gamma_k - sigma_k) > wd} (SGD) or #{gamma_k > sigma_k} (AdamW). Scored in H2 and as a lam_c row. The init-time mu rows are the paper's tabular estimator transferred, which their App. K.1 calls null on images; weights at t_r are not saved, so K.2 at t_r is not available",
+  "trend_null": "trend_200: per sorted eigenvalue index, log(e_k/e_max) extrapolated linearly in steps from its slope between the latest logged steps <= 100 and <= 200 to the horizon, counted >= log 1e-3; compared with headroom_200 in H2 beside early_200 (trend_200_logt, the same in log(1 + step), reported). It is the null that the decay budget adds nothing beyond the early trend of the spectrum",
+  "item1_exclusions": "non-finite (any target-token eigenvalue), diverged (non-finite loss) or short (horizon step not logged) runs are excluded and counted per row and horizon (excluded_per_row); every verdict is recomputed with their measured count set to 0 (sensitivity_measured0, predictors from the early record where it exists); a verdict on which the two scorings disagree is 'undetermined' (verdicts_final)",
+  "item2_censoring": "lam_cross_c distinguishes 'below_grid' (seed-mean count below half already at wd 0.0012) from 'above_grid' (not below half by wd 0.0136). H1_50: below_grid or above_grid = fail (both outside [0.00135, 0.0054]). H1_20: below_grid = fail; above_grid = H1_20 and the horizon ratio undetermined. A bootstrap no-crossing share above 2.5% is reported as censored with the CI conditional on a crossing",
+  "item3_h2_exit": "if headroom_200 does not beat early_200 (seed-cluster CI above 0) at a horizon, the decay-budget claim is dropped at that horizon",
+  "item4_cluster_bootstrap": "H2 paired differences (baseline error - headroom_200 error) bootstrap whole seeds (all rows of a resampled seed together), because seeds 20-24 share initialisation and data order across rows. pass only if the 95% CI is above 0; 'fail (baseline better)' if the CI is below 0 (added so a significant loss is not reported as undetermined); otherwise 'undetermined at n=5'. The registered run-level paired CI is reported beside it",
+  "item5_verdict_words": "H1 bands and H3: pass = point in the band and the CI no wider than the band (CI hi/lo <= band hi/lo: x4 for H1, x2.25 for H3); fail = point outside the band; undetermined = point inside, CI wider. H3 uses a joint bootstrap of lam_c(headroom_200)/lam_c(measured); a headroom count that does not cross inside the grid fails H3 when the grid edge is beyond x1.5 of the measured lam_c, else undetermined. H3's x1.5 is only 6% wider than the grid step x1.41, so it cannot be scored finer than one row. H1_horizon: pass = ratio < 1 with CI below 1; fail = ratio >= 1; else undetermined",
+  "item6_toggle_statistic": "per toggle seed, |headroom_200 - measured| minus the same for the reference row T_wd0.0034 at that seed (and the same for early_200), at epoch 50; borne out for 'breaks' (T_nodn) only if the mean difference >= 2 sd of the reference C5 row's seed-to-seed headroom error (5 seeds); for 'holds' (T_ema, T_tln, T_pln) only if |mean difference| < 2 sd; T_adamw has no registered direction. Exploratory",
+  "item7_toggle_scope": "a toggle that breaks shows the single change is sufficient to break the readout, not that it is the cause; the reverse toggles (adding each change back to a row that lacks it, e.g. decay on norm gains restored inside the P recipe) are untested and listed as a limitation",
+  "sensitivity_thresholds": "counts at 1e-2 and 1e-4 x e_max (measured, early_200, headroom_200 recomputed from the logged eigenvalues) with lam_c at each against half of the init count at the same threshold: an H1 sensitivity row, no verdict",
+  "per_row": "MAE of every predictor per decay row (mae_per_row) at each horizon",
+  "provenance": "per run: GPU name and family, torch, code commit, vit_jepa md5, an environment hash (md5 of the pip freeze), seed; gpu_mix per row; toggles run on a GPU family different from their reference are flagged",
+  "paper_wording": "H1_20 replicates the development reading (E3 measured 0.0070 at 20 epochs); the prospective tests are H1_50, the horizon ratio, and H2/H3 at epoch 50",
+  "smoke_test": "the amended scorer was run on a synthetic tree built from the six 3-epoch pilot runs (seed 900, configs rewritten to the C5 rows, counts altered, one run truncated; horizons patched to epochs 1 and 3; K.2 stubbed except in a separate run on the six pilot configs); outputs are not part of any statistic",
+  "md5": {
+   "code/e7_score.py": "31075c8124d502515cd18ac1a2b4c673",
+   "code/baselines/vit_mu.py": "6cdc0135d085ecd842c443c975ea3b39",
+   "code/e7_grid.py": "eba73d3a026a3ded53b56a15d621b4ed",
+   "code/checks/e7_dev_headroom.py": "e32fddaeda746d4ea5bb752684af9aa9",
+   "code/e3_grid.py": "2a388062fc09bfe81c62bb3d44b4bf84"
+  }
+ },
+ "amendment_3": {
+  "when": "before any production result is read (the production array is running; no run has been scored); answers the review of amendment 2 (E7-1 to E7-5). code/e7_grid.py and code/vit_jepa.py are unchanged, so the running array is not affected",
+  "E7_1_labels": "mu_k2 is relabelled 'a count we build on their App. K.2 signed drive': 2610.02344 App. K.2 reads only the signed drive gamma_l = <r_l, b_l> with W_p replaced by the block's input Jacobian, compares it between two predictors at matched initialisations, and claims no count and no estimator of mu on images. The decay side sigma_k = a_k |W_eff b_k|^2, the (2/d) g floor, the count and the input-token eigenbasis (encoder taken as identity) are ours. mu_tight_run is their Sec. 5 estimator at initialisation, which their App. K.1 reports null on images. H2's mu rows therefore test counts built from their linear criterion, not a prediction 2610.02344 makes on images; the score carries this as `scope`: a headroom win over the mu rows does not contradict 2610.02344. Applied to vit_mu.py's docstring, e7_score.py's docstring and SCOPE. amendment_2's mu_k2 text ('the paper's App. K.2 image reading') is superseded by this one; values are unchanged.",
+  "E7_2_h2_intervals": "seed_cluster_ci adds a t interval (n_seeds - 1 df) on the per-seed mean error differences beside the seed-cluster percentile bootstrap. H2 calls 'pass' only where both lie above 0 and 'fail (baseline better)' only where both lie below 0; otherwise 'undetermined at n=5' with which interval excludes 0. The coverage note (bootstrap ~83% at nominal 95% with five clusters, review simulation) is carried in each H2 record.",
+  "E7_3_lamc_ci": "transition, joint_ratio and horizon_ratio resample whole seeds (one draw of seeds with replacement, every row's runs of the drawn seeds with multiplicity; a row the draw leaves empty keeps its full set), as seed_cluster_ci does. band_verdict's pass tests the CI's width against the band, not its position; a pass now states whether the CI lies inside the band or crosses its lower/upper edge.",
+  "E7_4_adamw": "exploratory T_adamw rows: mu_tight_run_wd (r~_tight with the floor (2/d)(gamma - sigma) > wd, App. D's lambda = wd reading) and mu_k2_wd (the same floor on our K.2-drive count) beside mu_tight_run / mu_k2 (no floor). 'The recipe's learning rate' for the K.2 steps of mu_k2 means the peak rate cfg lr x pred_lr_mult (unchanged, all rows); mu_k2_sched reports the same count with the K steps on the run's own schedule (the warm-up for T_adamw, where it is ~0, so the predictor stays at initialisation; identical to mu_k2 on constant-rate rows, computed only where they differ).",
+  "E7_5_exclusion": "exclusion is decided per horizon on the record up to that horizon (a non-finite loss or spectrum at a step <= the horizon's step), so a run that turns non-finite after epoch 20 is scored at epoch 20. In the measured-0 sensitivity an excluded run keeps every predictor defined for it (init-time rows mu_* and step0 always; early-record rows when its record up to step 200 is finite). Every predictor is scored on the runs where it is defined, with n_runs per predictor reported (score_set), instead of dropping predictors not defined on every run.",
+  "smoke_test": "synthetic tree from the seed-900 pilot runs (8 C5 rows x seeds 20-24 with a wd-dependent spectrum, one run non-finite after step 400, one truncated before step 200, T_adamw, T_ema; mu/K.2 stubbed; horizons moved inside the pilot record): per-horizon exclusion, sensitivity rows, t intervals, seed resampling and verdict words run; no output enters a statistic. Real k2_reading / mu_of on the T_adamw pilot config checked for the new fields. Result on the T_adamw pilot configuration (seed 900, development, not a production run): K.2 peak lr 3e-4: n_k2 = 11, n_k2_wd = 0; schedule (warm-up lr 0, 2.3e-7, 4.6e-7, ...): n_k2_sched = 10, wd floor 0; mu_of: r_tight = 33, r_tight_run = 33, r_tight_run_wd = 2. These are development values used only to check that the code runs; they are not part of any statistic.",
+  "md5": {
+   "code/e7_score.py": "558cfec485b1998ef6e903aa8ed6b6d1",
+   "code/baselines/vit_mu.py": "bcded462e827fe0ddf80b3b80c4aee2a",
+   "code/e7_grid.py": "eba73d3a026a3ded53b56a15d621b4ed"
+  }
+ },
+ "amendment_4": {
+  "when": "before any production result is read (the production array is still running on 6 of 19 tasks; no run has been scored or opened). code/e7_grid.py, code/vit_jepa.py and code/baselines/vit_mu.py are unchanged, so the running array is not affected",
+  "empty_row_share": "reporting only (internal review, minor item b of the amendment-3 check): amendment 3's seed_resample keeps a row's full set when the seed draw leaves it empty, and its docstring said this was 'reported as empty_rows' while nothing reported it. seed_resample now takes an optional tally, and transition, joint_ratio and horizon_ratio each report empty_row_share, the share of their NB draws that left at least one row empty. No point estimate, interval, tolerance, subset or verdict rule changes: the resampled values are bit-identical to amendment 3's for the same rng stream (the tally only counts). Checked on a two-row toy (one row with seed 4 only, five seeds): share 0.317 over 2000 draws against (4/5)^5 = 0.328.",
+  "md5": {
+   "code/e7_score.py": "77929a9841aadb04aed5f57a8aa91853",
+   "code/baselines/vit_mu.py": "bcded462e827fe0ddf80b3b80c4aee2a",
+   "code/e7_grid.py": "eba73d3a026a3ded53b56a15d621b4ed"
+  }
+ },
+ "amendment_5": {
+  "when": "after the single scoring pass crashed in verdicts() and before any score file existed: the pass (55 runs, scorer md5 77929a98) computed every per-run row and every aggregate, then raised KeyError 'censored' at the H1_horizon line, so no score.json, aggregate or interval was written or read",
+  "bug": "horizon_ratio() returned no 'censored' key while verdicts() reads hr['censored'] in the H1_horizon pass branch (joint_ratio and transition return it). The pilot and the amendment-2 smoke test never reached that branch: the pilot has one decay row, so the ratio was undefined there.",
+  "fix": "horizon_ratio() now returns censored = undefined_share > CENSOR, the same rule as joint_ratio. No rng draw, statistic, interval, tolerance, subset or verdict rule changes, so the rerun's values are those the crashed pass computed.",
+  "exposed": "what the crash showed before any value was read: (1) the per-run status lines (all 55 runs 'ok' at both horizons, so no exclusion and no measured-0 sensitivity applies); (2) by the line it failed on, that the primary H1_horizon verdict takes its pass branch (ratio < 1 and the CI's upper end < 1). No number, other verdict or row was seen. H1_horizon is therefore reported as known before the rescore.",
+  "checkpoint": "main() now writes the per-run rows to OUT_rows.json before any aggregate is computed, and 'OUT.json --from-rows' reaggregates from them without recomputing K.2 (reporting robustness only).",
+  "smoke": "aggregation and every verdict branch (pass, fail, undetermined, above-grid, censored, one excluded run with the measured-0 sensitivity) exercised on fabricated rows only; the outputs are not kept",
+  "rescore": "the same single pass rerun from the raw runs (release asset ext-runs-3 e7__production__runs7.tar.gz) with the amended scorer",
+  "md5": {
+   "code/e7_score.py": "6ae0202719d3df5f6b355fd1d59c584d",
+   "code/baselines/vit_mu.py": "bcded462e827fe0ddf80b3b80c4aee2a",
+   "code/e7_grid.py": "eba73d3a026a3ded53b56a15d621b4ed"
+  }
+ },
+ "amendment_6": {
+  "name": "E7-G: same-GPU-family reference for the toggles",
+  "when": "after the production score (3e77313); registered before any E7-G run. No registered verdict is re-scored.",
+  "why": "The five toggles ran on V100 and their reference row (T_wd0.0034, seeds 20-22) on P100 (score.json toggles.*.gpu_family_differs_from_reference). The three small toggles share a measured shift (T_ema 13, T_tln 11-14, T_pln 14-17 against the reference's 9-10) while the race's predictions move little (7-11 against 7-8), so T_pln's 'not borne out' cannot be separated from GPU family.",
+  "design": "The reference row unchanged (code/e7_grid.py T_wd0.0034: Arm T, SGD lr 0.05 constant, wd 0.0034, 50 epochs, seeds 20-22), frozen vit_jepa.py (md5 e503bee9...) and the production environment, three runs packed on one V100 as the toggles were (code/e7g.py sbatch; --gres=gpu:v100:1). Scored with the frozen per-run scorer e7_score.score_run (md5 6ae02027).",
+  "code": "code/e7g.py",
+  "code_md5": "efe63c64df3f59b5930d332027c961f8",
+  "reading": {
+   "gpu_check": "Per seed and seed-mean: V100 measured count minus P100 measured count at the last horizon (epoch 20 reported). |seed-mean difference| <= 3.16 (2 sd, the registered toggle threshold) -> 'flag answered: same count on V100 and P100', the toggles are read as registered. Otherwise 'GPU-family sensitivity': the toggles are read against the V100 reference and the paper states a GPU-family sensitivity beside lam_c and the horizon ratio (the C5 rows mix 2080, P100, 1080 and V100; score.json gpu_mix).",
+   "toggles_v100": "The registered toggle statistic (e7_score.toggles) recomputed with the V100 rows as reference, read with the registered threshold 3.16 and the registered directions (T_ema/T_tln/T_pln holds, T_nodn breaks, T_adamw none), reported beside the registered P100 reading. Where the two readings differ, the toggle is reported 'GPU-family dependent'.",
+   "exclusion": "A V100 run that diverges or is short is reported and its seed dropped from both comparisons; with fewer than 2 seeds left E7-G is 'not scorable'."
+  },
+  "budget": "3 runs, one sbatch job, one submission, about 1 GPU-h (bound 1.5 GPU-h); runs only after a bounded go.",
+  "smoke": "code/e7g.py score was smoke-tested with production P100 rows standing in for the V100 runs (scratch only); no E7-G run exists.",
+  "output": "results/e7/e7g.json; raw runs to release asset beside e7__production__runs7.tar.gz"
+ },
+ "amendment_7": {
+  "name": "E7-G reading words and reporting under the bounded go (wording and reporting only)",
+  "when": "before any E7-G run; no E7-G run exists. No threshold, verdict or registered direction changes.",
+  "why": "The branch |seed-mean V100 - P100 difference| <= 3.16 at 3 seeds per side shows no difference larger than 2 reference sd, not the same count; at n = 3 a true family shift of about 3.5 (the size of the toggle shifts) would still give a seed-mean difference inside 3.16 about 40% of the time (feasibility of the go).",
+  "changes": {
+   "gpu_check_words": "'flag answered: same count on V100 and P100' becomes 'no GPU-family difference beyond 2 sd detectable at 3 seeds'; the other branch ('GPU-family sensitivity: toggles read against the V100 reference') is unchanged. toggles_v100 is reported beside the registered P100 reading in either branch.",
+   "paired_differences": "gpu_check reports, at epochs 20 and 50, the per-seed V100 - P100 measured-count differences, their mean, sd and 95% t interval (2 df).",
+   "scope": "The comparison is hardware plus packing and run-to-run nondeterminism, on shared seeds 20-22 (stated in e7g.json 'scope').",
+   "provenance": "Per run: GPU name, memory and driver (gpu_env.csv written by the job), node as an md5 prefix (node names are redacted in the delivery), torch, pip-freeze hash and its differences from results/e3/cluster_env.json, code commit, seed, SLURM job."
+  },
+  "go": "one sbatch job, three runs packed on one V100 (--gres=gpu:v100:1), time limit 2 h, submitted with --deadline now+8h so SLURM removes it if it cannot start within 6 h; then 'not run' and the toggles keep the flag-only wording. No other GPU family, no CPU fallback. Bound 1.5 GPU-h as sacct Elapsed; a crashed run may be re-run once, a completed one may not.",
+  "code": "code/e7g.py",
+  "code_md5": "644603c819e9d807a2874059539df4c7",
+  "smoke": "cmd_score smoke-tested with the production P100 rows of seeds 20-22, shifted by fixed offsets, standing in for V100 runs (scratch only, discarded)."
+ }
+}

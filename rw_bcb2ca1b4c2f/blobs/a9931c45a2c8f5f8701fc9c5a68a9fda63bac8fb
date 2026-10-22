@@ -1,0 +1,429 @@
+{
+ "experiment": "E5 / B1': prospective test of the post-loss law (plan Sec. 3 B; theory/ext_B_stagewise.md B-iii) after B1's registered B1d failure",
+ "status": "registered before the B1' grid is run; nothing of the b1p grid (seeds 310-314) has been run or read; amendment_1 (before the b1p score) adds the prospective grid b1p_fresh and relabels b1p as a seed replication",
+ "frozen_model": {
+  "name": "stage_model_pl",
+  "file": "code/e5_b1p.py",
+  "statement": "stage_model_qs (code/e5_theory.py, as frozen for E5) up to the model's own loss of a direction (w falls below THR = 0.05); from the loss on, while the direction stays dead, the linearised post-loss law dp/dt = -alpha lam_P(t) p + alpha c w^2 with d log w/dt = p c - p^2 s - lam_W(t) (Heun, dt = eta = 0.1); the quasi-steady rule resumes when w > THR again. Copy target only."
+ },
+ "md5": {
+  "code/e5_b1p.py": "e0ee9af322a6f40c4c6e1df8eb256c2b",
+  "code/e5_b1.py": "d9a5409ace6e9f9d26b970cfd9fa487b",
+  "code/e5_theory.py": "0518e2fc9198675cb8f0db0b56d49294",
+  "code/linjepa.py": "e7d569d4a3537aa3883ddfe847b3df66"
+ },
+ "md5_note": "code/e5_b1.py is E5's scorer as used for the E5 held-out score (last changed by E5 amendment 3, before that score); e5_theory.py and linjepa.py are as frozen in results/e5/prediction.json",
+ "command": [
+  "python3 code/e5_b1p.py run b1p results/e5/b1p 8",
+  "python3 code/e5_b1p.py score b1p results/e5/b1p"
+ ],
+ "grid": {
+  "n": 16,
+  "s": [
+   1.25,
+   0.5
+  ],
+  "ratio": 0.92,
+  "pairs": [
+   [
+    0.01168,
+    0.149881
+   ],
+   [
+    0.01168,
+    0.228688
+   ],
+   [
+    0.019416,
+    0.185321
+   ]
+  ],
+  "p0": [
+   0.85,
+   1.25
+  ],
+  "w0": 0.001,
+  "seeds": [
+   310,
+   311,
+   312,
+   313,
+   314
+  ],
+  "T_cap": 16000.0,
+  "floor": true,
+  "pulse_ts_mult": [
+   0.5,
+   1.0,
+   1.5
+  ],
+  "short_ts_mult": [
+   1.0,
+   1.5
+  ],
+  "short_dur": [
+   0.4,
+   0.8,
+   1.6
+  ],
+  "variants": [
+   "a0.6",
+   "rP0.4",
+   "base",
+   "a0.8rP1.25",
+   "a1.6",
+   "rP1.6",
+   "rP3"
+  ],
+  "kinds": [
+   "pulse",
+   "short_pulse"
+  ],
+  "variants_def": {
+   "a0.6": {
+    "alpha": 0.6,
+    "kappa": null,
+    "rho": 1.0
+   },
+   "rP0.4": {
+    "alpha": 1.0,
+    "kappa": null,
+    "rho": 0.4
+   },
+   "base": {
+    "alpha": 1.0,
+    "kappa": null,
+    "rho": 1.0
+   },
+   "a0.8rP1.25": {
+    "alpha": 0.8,
+    "kappa": null,
+    "rho": 1.25
+   },
+   "a1.6": {
+    "alpha": 1.6,
+    "kappa": null,
+    "rho": 1.0
+   },
+   "rP1.6": {
+    "alpha": 1.0,
+    "kappa": null,
+    "rho": 1.6
+   },
+   "rP3": {
+    "alpha": 1.0,
+    "kappa": null,
+    "rho": 3.0
+   }
+  },
+  "ar_class": {
+   "a0.6": "<1",
+   "rP0.4": "<1",
+   "base": "=1",
+   "a0.8rP1.25": "=1",
+   "a1.6": "1-2",
+   "rP1.6": "1-2",
+   "rP3": ">2"
+  },
+  "runs": 1770,
+  "matrix_runs": 7,
+  "T_range": [
+   580.0,
+   6580.0
+  ],
+  "skipped_short_pulse": [
+   [
+    0,
+    1.25,
+    "a1.6"
+   ],
+   [
+    0,
+    1.25,
+    "a1.6"
+   ],
+   [
+    0,
+    1.25,
+    "a1.6"
+   ],
+   [
+    0,
+    1.25,
+    "a1.6"
+   ],
+   [
+    0,
+    1.25,
+    "a1.6"
+   ],
+   [
+    0,
+    1.25,
+    "rP1.6"
+   ],
+   [
+    0,
+    1.25,
+    "rP1.6"
+   ],
+   [
+    0,
+    1.25,
+    "rP1.6"
+   ],
+   [
+    0,
+    1.25,
+    "rP1.6"
+   ],
+   [
+    0,
+    1.25,
+    "rP1.6"
+   ],
+   [
+    0,
+    1.25,
+    "rP3"
+   ],
+   [
+    0,
+    1.25,
+    "rP3"
+   ],
+   [
+    0,
+    1.25,
+    "rP3"
+   ],
+   [
+    0,
+    1.25,
+    "rP3"
+   ],
+   [
+    0,
+    1.25,
+    "rP3"
+   ],
+   [
+    2,
+    1.25,
+    "rP3"
+   ],
+   [
+    2,
+    1.25,
+    "rP3"
+   ],
+   [
+    2,
+    1.25,
+    "rP3"
+   ],
+   [
+    2,
+    1.25,
+    "rP3"
+   ],
+   [
+    2,
+    1.25,
+    "rP3"
+   ]
+  ],
+  "skipped_note": "short-pulse cells in which the frozen model loses no direction are not generated (the construction places the pulse on the model's own threshold crossings)",
+  "disjoint": "statistics (n=16, s=(1.25, 0.5), ratio 0.92), plateau values (geometric midpoints of adjacent static thresholds), p0 {0.85, 1.25}, seeds 310-314 and the variants differ from E5's dev and held-out grids; alpha rho spans < 1 (0.6, 0.4), = 1 (1 x 1, 0.8 x 1.25), 1-2 (1.6) and > 2 (3)",
+  "truth": "E5's exact per-direction 80-bit GD truth (code/e5_b1.py truth) with the two truth-floor re-runs (w0 and lam perturbations) per run, unchanged"
+ },
+ "scoring": {
+  "tolerance": "results/e5/b1_tolerance_v2.json, unchanged: B1a' (state agreement on the truth-or-model schedule-affected pairs >= 0.90 overall, >= 0.80 per cell with >= 100 pairs, and a paired CI > 0 against every baseline), B1b' (event-time error median <= 0.10, p90 <= 0.30, unmatched <= 5% and below capture_static), B1d (median |ln(|p_truth|/p_model)| over post-loss pairs <= 0.5); the ill-posed rule as amended for E5 (a flag beside pass/fail, never a pass)",
+  "baselines": "E5's scored set (stage_v1, capture_static, static_now, race_frozen0, race_frozenT) plus stage_qs (stage_model_qs as frozen for E5) and mu_dvd (2610.02344's drive-vs-decay criterion at the current lam_W: alive iff p0 c - p0^2 s > lam_W(t); P2). B1a' 'beats every baseline' therefore includes stage_qs and mu_dvd.",
+  "added": {
+   "B1d_by_class": "B1d per alpha rho class (<1, =1, 1-2, >2), each <= 0.5",
+   "B1d_vs_qs": "paired percentile bootstrap over runs (2000 draws, seed 0) of median_abs(stage_qs) - median_abs(model) on the same post-loss pairs: lower bound > 0",
+   "rate": "B1'-rate: per truth loss episode (direction dead from its loss until alive again or T, >= 2 checks), e_i = ln(|p_truth|/p_model) and drift e_i - e_first; median |drift| <= 0.5 pooled and in every alpha rho class. It tests the law's rate free of the level the model carries into the loss (the level is set by the pre-loss quasi-steady rule, which B1' does not change)",
+   "rate_vs_qs": "paired CI of median |drift|(stage_qs) - (model), reported"
+  },
+  "scored_once": "the b1p grid is scored once with code/e5_b1p.py score; no rescoring after reading",
+  "reported_not_verdicts": "B1d for stage_qs, own_decay, slaved_truth_w; per variant and per cell; fragile shares; model_on_law share; regains"
+ },
+ "what_it_supports": {
+  "law_holds": "rate passes: the linearised post-loss law (B-iii) predicts the predictor's post-loss decay on fresh statistics, values and alpha rho classes",
+  "level": "B1d (level) passes only if the loss is entered at the right level; development says it is not (offset below), so B1d is expected to fail except at alpha rho < 1",
+  "improvement": "B1d_vs_qs passes: the law improves on E5's frozen quasi-steady predictor after a loss"
+ },
+ "expected_from_development": {
+  "note": "development used E5's already-read held-out runs (copy target; development use, never a test) and the timed pilot on disjoint seed 390 (354 runs, the b1p construction); both were read before this registration and set these expectations. The model function stage_model_pl was written before either and is unchanged; the scorer's B1'-rate statistic, B1d_by_class and B1d_vs_qs verdicts were added after the pilot and the decomposition were read (they are chosen from development, and their pilot values are stated here)",
+  "e5_heldout_dev_ref": {
+   "file": "results/e5/b1p_dev/heldout_e5_dev_ref.json",
+   "B1d_model": 0.597,
+   "B1d_qs": 1.143,
+   "by_class": {
+    "<1": [
+     0.419,
+     0.523
+    ],
+    "=1": [
+     0.943,
+     1.467
+    ],
+    "=2": [
+     0.706,
+     3.539
+    ]
+   }
+  },
+  "pilot": {
+   "dir": "results/e5/b1p_dev/pilot",
+   "B1a_prime": {
+    "overall": 0.929,
+    "pass_": false,
+    "cells_failing": [
+     "short_pulse|a0.6",
+     "short_pulse|rP0.4",
+     "short_pulse|base",
+     "short_pulse|a0.8rP1.25",
+     "short_pulse|a1.6",
+     "short_pulse|rP1.6"
+    ],
+    "beats_baselines": false
+   },
+   "B1b_prime": {
+    "median": 0.099,
+    "p90": 0.239,
+    "unmatched": 0.137,
+    "pass_": false
+   },
+   "B1d": 0.656,
+   "B1d_by_class": {
+    "1-2": 0.904,
+    "<1": 0.437,
+    "=1": 0.783,
+    ">2": 0.558
+   },
+   "B1d_vs_qs_ci": [
+    0.176,
+    0.446
+   ],
+   "rate_pooled": 0.379,
+   "rate_by_class": {
+    "1-2": 0.611,
+    "<1": 0.21,
+    "=1": 0.383,
+    ">2": 0.393
+   },
+   "rate_vs_qs_ci": [
+    -0.006,
+    0.075
+   ]
+  },
+  "decomposition": {
+   "files": [
+    "results/e5/b1p_dev/heldout_e5_decomp.json",
+    "results/e5/b1p_dev/pilot_decomp.json"
+   ],
+   "reading": "the model's post-loss error is mostly a level offset already present at the first dead check (median +0.74 E5 held-out subsample, +0.97 pilot: the truth's p is ~2-3x the model's), with small drift after it (0.15, 0.38); stage_qs has a larger offset (+0.97, +1.33)"
+  },
+  "detachment_variants": {
+   "file": "results/e5/b1p_dev/pilot_detach.json",
+   "reading": "starting the linear law at the detachment of p from its nullcline instead of at the THR crossing is worse (pilot B1d 1.02, agreement 0.955); with the -alpha s p w^2 term (the exact p equation from the detachment, no longer a stage model) B1d is 0.38 pooled but 0.82 at alpha rho > 2: the level is limited by the pre-detachment state; neither variant is registered"
+  },
+  "expected": {
+   "B1a_prime": "fail (pilot: short-pulse cells < 0.80 and no CI above 0 against stage_v1 / stage_qs)",
+   "B1b_prime": "fail on unmatched (pilot 13.7% > 5%)",
+   "B1d": "fail pooled (~0.6-0.66); by class pass only at alpha rho < 1 (0.42-0.44)",
+   "B1d_vs_qs": "pass",
+   "rate": "pooled pass (0.15-0.38); class 1-2 borderline (pilot 0.61)"
+  }
+ },
+ "pilot_disclosed": {
+  "seeds": [
+   390
+  ],
+  "runs": 354,
+  "seconds": 316,
+  "procs": 8,
+  "note": "timed pilot of the b1p construction on a seed disjoint from the registered grid; also read (see expected_from_development). Full grid: 1770 runs, ~26 min on 8 processes; raw runs to a release asset"
+ },
+ "mu_P2": "mu_dvd is a scored baseline in B1a' and B1b' (and reported per cell), per the P2 requirement for every later registration",
+ "environment": "python 3.11, numpy 2.4.6, CPU (local machine), 8 processes",
+ "amendment_1": {
+  "date": "the commit time of the commit that adds this entry",
+  "status": "made while the registered b1p grid (seeds 310-314) runs and BEFORE any of its records is scored or read; the fresh grid b1p_fresh is registered here before it is run. code/e5_b1p.py (the frozen model, the run path and the registered scorer) is unchanged, md5 e0ee9af3; the amendment is code/e5_b1p_a1.py (md5 in the commit that adds this entry; recorded again in each grid's b1p_GRID_meta_a1.json / score_a1.json), which imports it",
+  "why": "internal review's early check of the registration (B1'-1 fresh-statistics grid, B1'-2 rate relabel, B1'-3 seed clusters) and the plan's four owed texts (verdict word, non-finite rule, mu variants, law_holds wording)",
+  "grids": {
+   "b1p_fresh": {
+    "role": "the prospective test of B1'",
+    "statistics": "n=14, s linear 1.6 -> 0.7, ratio 0.88 (c_k = 0.88^k s_k)",
+    "pairs": [
+     [
+      0.010612,
+      0.138669
+     ],
+     [
+      0.010612,
+      0.254829
+     ],
+     [
+      0.02075,
+      0.188203
+     ]
+    ],
+    "pairs_rule": "geometric midpoints m_i (ascending) of adjacent static thresholds of these statistics: (m1, m9), (m1, m11), (m3, m10); highs chosen from the frozen model's race at lo (stage_model_qs captures lam* >= 0.064 at p0 0.65, >= 0.119 at p0 1.1), never from a truth run",
+    "p0": [
+     0.65,
+     1.1
+    ],
+    "variants": {
+     "a0.7": "alpha 0.7 (alpha rho 0.7, <1)",
+     "rP0.6": "rho 0.6 (<1)",
+     "base": "1 x 1 (=1)",
+     "a1.25rP0.8": "1.25 x 0.8 (=1)",
+     "a1.3": "alpha 1.3 (1-2)",
+     "rP1.8": "rho 1.8 (1-2)",
+     "rP2.5": "rho 2.5 (>2)"
+    },
+    "kinds_schedules": "as b1p: pulse (ts_mult 0.5, 1, 1.5) and short_pulse (ts_mult 1, 1.5; dur 0.4, 0.8, 1.6 x the model's bottleneck loss delay); short-pulse cells in which the frozen model loses nothing are not generated (40 such configurations: pair 0 at p0 1.1 for six variants, pair 2 at p0 1.1 for rP1.8 and rP2.5)",
+    "seeds": [
+     330,
+     331,
+     332,
+     333,
+     334
+    ],
+    "runs": 1650,
+    "matrix_runs": 7,
+    "T_range": [
+     610.0,
+     5120.0
+    ],
+    "disjoint": "statistics, plateau values, p0, the non-unit alpha rho values and seeds differ from E5 dev, E5 held-out, the b1p construction and its pilot; only 'base' (alpha = rho = 1) recurs, as it must for the class alpha rho = 1",
+    "command": [
+     "python3 code/e5_b1p_a1.py run b1p_fresh results/e5/b1p_fresh 8",
+     "python3 code/e5_b1p_a1.py score b1p_fresh results/e5/b1p_fresh"
+    ],
+    "nothing_run_before": "no truth run of these statistics exists; the only computation on them before this entry is the frozen model's construction (pairs, loss delays, skipped cells: `list`) and the mu check (inputs only)"
+   },
+   "b1p": {
+    "role": "seed replication of the development construction: the pilot's statistics, values, p0, variants and schedules on seeds 310-314 (the seed enters only through the initial amplitudes and the floor draws). Its verdicts were chosen on the pilot (seed 390). Reported as a replication, never as the prospective test; 'on fresh statistics' is not claimed for it",
+    "command": "python3 code/e5_b1p_a1.py score b1p results/e5/b1p (replaces the registered `code/e5_b1p.py score b1p`, whose statistics it contains; scored once)"
+   }
+  },
+  "verdict_word": "B1' passes iff B1a', B1b' and B1d pass at v2 (b1_tolerance_v2.json), as B1 was scored; on b1p_fresh. B1d_by_class, B1d_vs_qs, rate and rate_vs_qs each carry their own word beside it and none of them is the B1' verdict. If b1p (replication) and b1p_fresh disagree, b1p_fresh carries the B1' verdict and the disagreement is reported",
+  "nonfinite_rule": "a run is non-finite if the truth or either floor re-run has a non-finite value, or the model's predictor is non-finite at a check. Primary scoring excludes non-finite runs; a sensitivity scoring includes them, each counted against the model (every model state pair a disagreement, every truth event unmatched by the model, every post-loss model error and drift infinite). A verdict word that differs between the two scorings is 'undetermined'. The count per (kind x variant) cell is reported (score_a1.json nonfinite.by_cell); a count of 0 is stated",
+  "seed_clusters": "B1d_vs_qs and rate_vs_qs: paired percentile bootstrap (2000 draws, seeds 0 and 1) over seed clusters, the configuration without its seed (pair, p0, variant, kind, ts_mult, dur_mult); the verdict uses the cluster CI, the run-level CI of e5_b1p.py is reported beside it. B1a's paired CIs against the baselines stay v2's (runs) for the verdict; the cluster-unit CIs are reported as a sensitivity line",
+  "rate_relabel": "rate is a check that stage_qs shares: a dead direction's predictor decays at its own weight-decay rate; both models reduce to that decay as w -> 0. The score reports, per alpha rho class and pooled, median |drift| for the model, stage_qs and the no-decay null (p held at its value at the episode's first dead check; on the pilot 0.379 / 0.400 / 42.3 pooled, reproduced by the review's checks/b1p/rate_null.json). A rate pass is not evidence for the post-loss law on its own",
+  "rate_vs_qs_reading": "cluster CI of median|drift|(stage_qs) - median|drift|(model): 'law better' iff lower bound > 0; 'E5 rule better' iff upper bound < 0; else 'no difference shown'",
+  "what_it_supports": {
+   "B1_prime": "B1' passes: the post-loss law repairs B1 prospectively on fresh statistics (B1 stays E5's registered verdict). B1' fails: B1's failure stands and the post hoc law does not repair it on fresh data",
+   "law_holds": "worded from rate_vs_qs: 'law better' -> the law predicts the post-loss rate better than E5's rule; otherwise -> the drift after the first dead check is small for the law and for E5's rule alike (if rate passes), and with B1d failing the error sits in the level carried into the loss (a located failure)",
+   "improvement": "B1d_vs_qs passes: a relative gain of the law over E5's frozen predictor after a loss, not a pass of the 0.5 bar; the law's own claim rests here",
+   "replaces": "the registered what_it_supports.law_holds ('on fresh statistics, values and alpha rho classes') is withdrawn for b1p, which repeats the pilot's construction"
+  },
+  "mu_P2": "every variant of code/baselines/dvd_mu.py (dvd, dvd_signed, dvd_sorted, dvd_pq, dvd_pq_signed, dvd_exact) gives mu_dvd's count at every plateau value and p0 of both grids (`python3 code/e5_b1p_a1.py mu b1p_fresh`, `... mu b1p`, inputs only; ass32 holds): aligned diagonal statistics with c_k and s_k decreasing and P0 = p0 I, so equal counts are equal sets, as in E5 amendment 5. At p0 > 1 (1.1 here, 1.25 in b1p) the criterion predicts no unstable direction at any plateau (p0 c_k - p0^2 s_k < 0 since c_k / s_k <= 1); mu_dvd stays a scored baseline",
+  "development_for_this_amendment": "the amended scorer was smoke-tested on the already-read pilot (seed 390, results/e5/b1p_dev/pilot; it reproduces the registered pilot values and the review's stage_qs and null columns) and its non-finite path on 80 pilot runs with flags forced on; neither output is kept. Nothing of b1p (310-314) or b1p_fresh has been scored or read",
+  "timing": "b1p_fresh: 1650 runs on 8 processes; the b1p pilot took 316 s for 354 runs, so ~25 min on an idle host (n=14 < 16), longer on the shared host"
+ }
+}

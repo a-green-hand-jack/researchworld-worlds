@@ -1,0 +1,431 @@
+"""E4 / A4 (N2): rank under a layer-normalised target in the linear JEPA (plan Sec. 3 A (b), A4; theory
+theory/ext_A_lntarget.md). Development code; the held-out grid is registered in results/e4/prediction_a4.json.
+
+Exact model (truth). Linear encoder W (d x n), predictor P (d x d, P(0) = p0 I), GD with weight decay lam on both:
+    L = 1/2 E | P W x1 - LN(W x2) |^2 + lam/2 (|W|^2 + |P|^2),   target under stop-gradient,
+    LN(y) = Pi y / sqrt(|Pi y|^2 / d + eps),  Pi = I - 11^T/d,  eps = 1e-5, no affine (I-JEPA's F.layer_norm).
+Data: x2 ~ N(0, diag(tau)), x1 = rho x2 + noise, so S21 = diag(c), S11 = diag(s), c = rho tau, s = rho^2 tau + sig2.
+The quadratic term is the population one (P W S11). The cross term uses the Gaussian identity
+E[f(x2) x1^T] = E[f(x2) x2^T] S22^-1 S21 (exact for x1 | x2 linear-Gaussian) with E[f(x2) x2^T] over a fixed sample of
+M draws of x2 per run (seeded): the truth model is population GD up to that sample.
+Rank = #{singular values of Pi W > 0.05} (the constant direction 1 carries no target, theory N2-ii; its norm at T
+is recorded). Horizon T = max(4000, ceil(8 / (eta lam))) steps (8 weight-decay e-folds); 20 rank checks; settled =
+the same rank over the last 4 checks. Entries below 1e-150 are flushed every 50 steps (as linjepa.simulate).
+
+Criterion N2 (theory N2-iii, approximation): the mean-field reduced flow. Per input direction i, amplitude a_i
+(column norm of Pi W0 at t = 0) and predictor gain p_i (= p0), same Euler step and horizon as the truth:
+    a_i += eta (p_i c_i G_i a_i - p_i^2 s_i a_i - lam a_i),   p_i += eta (c_i G_i a_i^2 - p_i s_i a_i^2 - lam p_i),
+    G_i = E[(1 - y_i^2 / (d r^2)) / r],  r^2 = |y|^2 / d + eps,  y_j = a_j sqrt(tau_j) xi_j  (xi ~ N(0, I), fixed
+    sample of M_FLOW draws; output directions taken orthonormal and orthogonal to 1).
+Count = #{a_i(T) > 0.05}.
+
+Rows beside it (inputs only unless stated): ln_static (self-consistent LN fixed-point set, N2-iv; ignores the
+race), static_bound #{c^2 >= 4 lam s} (no LN), delivered_race (linjepa.escape_score, no LN), window = dvd_signed
+#{p0 c - p0^2 s - lam > 0}, the mu variants (code/baselines/dvd_mu.py), dev_median, all_alive (n; = rank at
+step 0), early_count (the exact run's rank at 10% of T: a measurement).
+Usage: python3 code/e4_a4.py run GRID OUTDIR [NPROC] | score GRID OUTDIR | verdict GRID OUTDIR | inputs GRID OUT_JSON | list GRID"""
+import sys, os, json, time, itertools, gzip, hashlib, math
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+
+N = 8
+EPS = 1e-5
+THR = 0.05
+M_TRUTH = 4096
+M_FLOW = 2048
+NCHK = 20
+
+
+def spectra(fam):
+    """(tau, c, s) of a data family."""
+    n = N
+    if fam == "flat":          # equal target variance, correlation falls with the index
+        tau = np.ones(n); rho = np.linspace(0.9, 0.15, n); sig2 = 0.4 * np.ones(n)
+    elif fam == "decay":       # target variance falls, constant correlation, masking-like noise s ~ tau
+        tau = 2.0 * (0.125) ** (np.arange(n) / (n - 1)); rho = 0.7 * np.ones(n); sig2 = 0.3 * tau
+    elif fam == "flat_h":      # held-out families: values disjoint from development
+        tau = np.ones(n); rho = np.linspace(0.85, 0.1, n); sig2 = 0.55 * np.ones(n)
+    elif fam == "decay_h":
+        tau = 2.6 * (0.08) ** (np.arange(n) / (n - 1)); rho = 0.6 * np.ones(n); sig2 = 0.25 * tau
+    else:
+        raise ValueError(fam)
+    c = rho * tau; s = rho ** 2 * tau + sig2
+    return tau, c, s
+
+
+GRIDS = {
+    "dev": dict(fam=["flat", "decay"], d=[12, 32], p0=[0.6, 1.2, 2.0], lam=[0.004, 0.015, 0.06, 0.25],
+                w0=[1e-3, 3e-2], seeds=[700], eta=0.05),
+    "smoke": dict(fam=["flat"], d=[12], p0=[1.0], lam=[0.05], w0=[1e-3], seeds=[799], eta=0.05),
+    # held-out (results/e4/prediction_a4.json): families, d, p0, lam, w0 and seeds all disjoint from dev and smoke
+    "heldout": dict(fam=["flat_h", "decay_h"], d=[10, 20], p0=[0.8, 1.6, 2.6], lam=[0.01, 0.04, 0.15, 0.4],
+                    w0=[2e-3, 1e-2], seeds=[710, 711, 712, 713, 714], eta=0.05),
+}
+DEV_MEDIAN = 7          # median truth rank of the 96 dev runs (results/e4/a4_dev/a4_dev_score.json truth_hist)
+FLOOR_SEEDS = {710, 711, 712, 713, 714}   # held-out replicates whose runs get a truth-floor re-run (fresh x2 sample)
+ORTH_SEEDS = {710}      # held-out replicate whose configurations also run with an orthogonal init
+
+
+def configs(grid):
+    g = GRIDS[grid]; out = []
+    for fam, d, p0, lam, w0, seed in itertools.product(g["fam"], g["d"], g["p0"], g["lam"], g["w0"], g["seeds"]):
+        T = max(4000, int(math.ceil(8.0 / (g["eta"] * lam))))
+        out.append(dict(id=len(out), grid=grid, fam=fam, d=d, p0=p0, lam=lam, w0=w0, eta=g["eta"], T=T,
+                        seed=seed * 1000 + len(out), rep=seed))
+    return out
+
+
+def ln(Y):
+    Yc = Y - Y.mean(1, keepdims=True)
+    return Yc / np.sqrt((Yc ** 2).mean(1, keepdims=True) + EPS)
+
+
+def init(cfg):
+    rng = np.random.default_rng(cfg["seed"])
+    W0 = cfg["w0"] * rng.standard_normal((cfg["d"], N)) / np.sqrt(N)
+    if cfg.get("init") == "orth":     # orthonormal columns orthogonal to 1, norms w0 exp(0.1 xi): N2-iii is exact here
+        d = cfg["d"]; Q, _ = np.linalg.qr((np.eye(d) - 1.0 / d) @ rng.standard_normal((d, N)))
+        W0 = cfg["w0"] * Q * np.exp(0.1 * rng.standard_normal(N))
+    return rng, W0
+
+
+def truth(cfg, sample_seed=None, keep=False):
+    tau, c, s = spectra(cfg["fam"])
+    d, lam, eta, T = cfg["d"], cfg["lam"], cfg["eta"], cfg["T"]
+    rng, W = init(cfg)
+    Z = np.random.default_rng(cfg["seed"] + 7 if sample_seed is None else sample_seed).standard_normal((M_TRUTH, N)) * np.sqrt(tau)
+    P = cfg["p0"] * np.eye(d)
+    S11 = np.diag(s); K = c / tau
+    Pi = np.eye(d) - 1.0 / d
+    chk = set(np.linspace(0, T, NCHK + 1).astype(int)[1:].tolist())
+    t10 = int(round(0.1 * T))
+    ranks, cols, early = [], [], None
+    for t in range(1, T + 1):
+        C = (ln(Z @ W.T).T @ Z / M_TRUTH) * K          # E[LN(W x2) x1^T]
+        R = P @ W @ S11 - C
+        gW = P.T @ R + lam * W; gP = R @ W.T + lam * P
+        W = W - eta * gW; P = P - eta * gP
+        if t % 50 == 0:
+            W[np.abs(W) < 1e-150] = 0.0; P[np.abs(P) < 1e-150] = 0.0
+            if not (np.isfinite(W).all() and np.abs(W).max() < 1e10):
+                return dict(diverged=t)
+        if t == t10 or t in chk:
+            sv = np.linalg.svd(Pi @ W, compute_uv=False); r = int((sv > THR).sum())
+            if t == t10:
+                early = r
+            if t in chk:
+                ranks.append(r); cols.append(np.linalg.norm(Pi @ W, axis=0).tolist())
+    sv = np.linalg.svd(Pi @ W, compute_uv=False)
+    one = float(np.linalg.norm(W.T @ np.ones(d)) / np.sqrt(d))
+    out = dict(diverged=None, rank=int((sv > THR).sum()), ranks=ranks, settled=len(set(ranks[-4:])) == 1,
+               early=early, sv=sv.tolist(), cols_T=cols[-1], cols=cols, one_norm_T=one,
+               p_diag_T=np.diag(P)[:N].tolist())
+    return out
+
+
+def gains(a, tau, d, Xi):
+    Y = Xi * (a * np.sqrt(tau))
+    r2 = (Y ** 2).sum(1) / d + EPS; r = np.sqrt(r2)
+    return ((1.0 - Y ** 2 / (d * r2[:, None])) / r[:, None]).mean(0)
+
+
+def flow(cfg, a0, p0=None, T=None, record=False, flush=True):
+    tau, c, s = spectra(cfg["fam"])
+    d, lam, eta = cfg["d"], cfg["lam"], cfg["eta"]
+    T = cfg["T"] if T is None else T
+    Xi = np.random.default_rng(cfg["seed"] + 11).standard_normal((M_FLOW, N))
+    a = np.array(a0, float); p = np.full(N, cfg["p0"] if p0 is None else p0)
+    chk = set(np.linspace(0, T, NCHK + 1).astype(int)[1:].tolist())
+    rec, minlog = [], np.log(np.maximum(a, 1e-300))
+    for t in range(1, T + 1):
+        G = gains(a, tau, d, Xi)
+        da = p * c * G * a - p * p * s * a - lam * a
+        dp = c * G * a * a - p * s * a * a - lam * p
+        a = a + eta * da; p = p + eta * dp
+        if flush and t % 50 == 0:
+            a[np.abs(a) < 1e-150] = 0.0
+        minlog = np.minimum(minlog, np.log(np.maximum(np.abs(a), 1e-300)))
+        if record and t in chk:
+            rec.append(np.abs(a).tolist())
+    return dict(count=int((np.abs(a) > THR).sum()), a_T=np.abs(a).tolist(), p_T=p.tolist(),
+                min_log_a=minlog.tolist(), rec=rec)
+
+
+def ln_static(cfg, iters=3000, damp=0.3):
+    """N2-iv: self-consistent set of LN fixed points, a_i = p_i = (G c + sqrt(G^2 c^2 - 4 s lam)) / (2 s) where
+    G_i c_i >= 2 sqrt(s_i lam), else 0; G from the current amplitudes. Started from every direction with c > 0 at
+    the amplitude c sqrt(d)/s (large-gain start), damped iteration."""
+    tau, c, s = spectra(cfg["fam"]); d, lam = cfg["d"], cfg["lam"]
+    Xi = np.random.default_rng(cfg["seed"] + 13).standard_normal((M_FLOW, N))
+    a = np.where(c > 0, c / s, 0.0)
+    for _ in range(iters):
+        G = gains(np.maximum(a, 1e-12), tau, d, Xi)
+        disc = (G * c) ** 2 - 4 * s * lam
+        new = np.where((disc >= 0) & (c > 0), (G * c + np.sqrt(np.maximum(disc, 0))) / (2 * s), 0.0)
+        if np.allclose(new, a, atol=1e-10):
+            break
+        a = (1 - damp) * a + damp * new
+        a[a < 1e-8] = 0.0
+    return int((a > THR).sum())
+
+
+def baselines(cfg, a0):
+    from linjepa import escape_score
+    from baselines.dvd_mu import variants
+    tau, c, s = spectra(cfg["fam"]); lam, p0 = cfg["lam"], cfg["p0"]
+    out = dict(static_bound=int((c ** 2 >= 4 * lam * s).sum()),
+               delivered_race=int(sum(escape_score(c[i], s[i], lam, lam, 1.0, p0, math.log(max(a0[i], 1e-300)),
+                                                   t_end=cfg["eta"] * cfg["T"]) >= 0 for i in range(N))),
+               window=int((p0 * c - p0 * p0 * s - lam > 0).sum()), all_alive=N)
+    mu = variants(np.diag(s), np.diag(c), p0 * np.eye(N), lam)
+    out.update({"mu_" + k: v for k, v in mu.items() if k != "ass32"})
+    # the mu variants on the LN-effective cross-covariance (N2-i: c -> Gamma c), Gamma at the all-alive state
+    # a = c / s (ln_static's start); the fair form of 2610.02344's count under a normalised target
+    Xi = np.random.default_rng(cfg["seed"] + 13).standard_normal((M_FLOW, N))
+    G0 = gains(np.where(c > 0, c / s, 1e-12), tau, cfg["d"], Xi)
+    mu_ln = variants(np.diag(s), np.diag(G0 * c), p0 * np.eye(N), lam)
+    out.update({"mu_ln_" + k: v for k, v in mu_ln.items() if k != "ass32"})
+    out["ln_static"] = ln_static(cfg)
+    out["dev_median"] = DEV_MEDIAN
+    return out
+
+
+def run_one(cfg):
+    t0 = time.process_time(); w0 = time.time()
+    _, W0 = init(cfg)
+    Pi = np.eye(cfg["d"]) - 1.0 / cfg["d"]
+    a0 = np.linalg.norm(Pi @ W0, axis=0)
+    pred = baselines(cfg, a0)
+    fl = flow(cfg, a0, record=True)
+    pred["n2"] = fl["count"]
+    tr = truth(cfg)
+    floor = orth = None
+    if cfg.get("rep") in FLOOR_SEEDS:      # same run on a fresh sample of x2: is the truth sample-robust?
+        f = truth(cfg, sample_seed=cfg["seed"] + 9)
+        floor = dict(rank=f.get("rank"), diverged=f.get("diverged"))
+    if cfg.get("rep") in ORTH_SEEDS:
+        co = dict(cfg, init="orth")         # the same configuration with an orthogonal init (N2-iii exact there)
+        _, Wo = init(co); ao = np.linalg.norm(Pi @ Wo, axis=0); to = truth(co)
+        orth = dict(n2=flow(co, ao)["count"], rank=to.get("rank"), diverged=to.get("diverged"))
+    return dict(cfg=cfg, a0=a0.tolist(), pred=pred, flow=fl, truth=tr, floor=floor, orth=orth,
+                cpu_s=time.process_time() - t0, wall_s=time.time() - w0)
+
+
+def md5(path):
+    return hashlib.md5(open(path, "rb").read()).hexdigest()
+
+
+def cmd_run(grid, outdir, nproc=8):
+    from multiprocessing import Pool
+    os.makedirs(outdir, exist_ok=True)
+    cfgs = configs(grid)
+    t0 = time.time(); rows = []
+    with Pool(nproc) as pool:
+        for r in pool.imap_unordered(run_one, sorted(cfgs, key=lambda c: -c["T"] * c["d"])):
+            rows.append(r)
+            if len(rows) % 8 == 0:
+                print(f"{len(rows)}/{len(cfgs)} {time.time() - t0:.0f}s", flush=True)
+    rows.sort(key=lambda r: r["cfg"]["id"])
+    with gzip.open(os.path.join(outdir, f"a4_{grid}_runs.jsonl.gz"), "wt") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+    meta = dict(grid=grid, runs=len(rows), wall_s=time.time() - t0, cpu_s=sum(r["cpu_s"] for r in rows),
+                numpy=np.__version__, md5={"e4_a4.py": md5(__file__)})
+    json.dump(meta, open(os.path.join(outdir, f"a4_{grid}_meta.json"), "w"), indent=1)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), f"A4 {grid}: {len(rows)} runs, {meta['cpu_s'] / 3600:.2f} CPU-h", flush=True)
+
+
+def summarize(rows, key):
+    e = []
+    for r in rows:
+        t = r["truth"]
+        if t.get("diverged"):
+            e.append(np.nan); continue
+        e.append(r["pred"][key] - t["rank"] if key != "early_count" else t["early"] - t["rank"])
+    e = np.array(e, float); ok = np.isfinite(e)
+    return dict(mae=float(np.abs(e[ok]).mean()), within1=float((np.abs(e) <= 1).mean()), bias=float(e[ok].mean()),
+                n=int(len(e)), nonfinite=int((~ok).sum()))
+
+
+def cmd_score(grid, outdir):
+    rows = [json.loads(l) for l in gzip.open(os.path.join(outdir, f"a4_{grid}_runs.jsonl.gz"), "rt")]
+    keys = ["n2", "ln_static", "static_bound", "delivered_race", "window", "all_alive", "early_count"] + \
+        sorted(k for k in rows[0]["pred"] if k.startswith("mu_"))
+    out = dict(pooled={k: summarize(rows, k) for k in keys})
+    for fac in ("fam", "d", "p0", "lam", "w0"):
+        out["by_" + fac] = {str(v): {k: summarize([r for r in rows if r["cfg"][fac] == v], k)["mae"] for k in keys}
+                            for v in sorted({r["cfg"][fac] for r in rows})}
+    out["truth_hist"] = np.bincount([r["truth"]["rank"] for r in rows if not r["truth"].get("diverged")],
+                                    minlength=N + 1).tolist()
+    out["settled"] = int(sum(r["truth"].get("settled", False) for r in rows))
+    out["one_norm_T_max"] = max(r["truth"].get("one_norm_T", 0) for r in rows if not r["truth"].get("diverged"))
+    json.dump(out, open(os.path.join(outdir, f"a4_{grid}_score.json"), "w"), indent=1)
+    print(json.dumps(out["pooled"], indent=0))
+
+
+FACTORS = ("fam", "d", "p0", "lam", "w0")
+MUST_BEAT = ["static_bound", "delivered_race", "mu_dvd", "mu_dvd_signed", "mu_dvd_exact",
+             "mu_ln_dvd", "mu_ln_dvd_signed", "mu_ln_dvd_exact"]          # pass needs "N2 better" against each
+WORDS_ONLY = ["ln_static", "all_alive", "window", "dev_median", "early_count"]      # verdict words reported
+INFORM = ["ln_static", "static_bound", "delivered_race", "window"]                  # informative-run readings
+
+
+def word(ci, early=False):
+    if ci[0] > 0:
+        return "N2 at least as good as the early reading" if early else "N2 better"
+    if ci[1] < 0:
+        return "early reading better" if early else "baseline better"
+    return "not separated"
+
+
+def pv(r, key):
+    return r["truth"]["early"] if key == "early_count" else r["pred"][key]
+
+
+def cluster_ci(rows, key, B=10000, seed=0):
+    """Mean over runs of |key - truth| - |n2 - truth| (positive = n2 better) and its 95% bootstrap CI resampling
+    configurations (fam, d, p0, lam, w0; each with its seed replicates) as the unit. Finite runs only."""
+    cl = {}
+    for r in rows:
+        t = r["truth"]
+        if t.get("diverged"):
+            continue
+        b = pv(r, key)
+        cl.setdefault(tuple(r["cfg"][f] for f in FACTORS), []).append(abs(b - t["rank"]) - abs(r["pred"]["n2"] - t["rank"]))
+    if not cl:
+        return dict(mean=None, ci=[None, None], n_clusters=0, n_runs=0)
+    sums = np.array([sum(v) for v in cl.values()]); cnt = np.array([len(v) for v in cl.values()])
+    rng = np.random.default_rng(seed); idx = rng.integers(0, len(sums), (B, len(sums)))
+    bs = sums[idx].sum(1) / cnt[idx].sum(1)
+    return dict(mean=float(sums.sum() / cnt.sum()), ci=[float(np.quantile(bs, 0.025)), float(np.quantile(bs, 0.975))],
+                n_clusters=len(sums), n_runs=int(cnt.sum()))
+
+
+def sign_checks(rows):
+    """Adjacent pairs differing in one factor (same seed replicate): share of pairs against each registered sign."""
+    vals = {f: sorted({r["cfg"][f] for r in rows}) for f in FACTORS}
+    T = {(tuple(r["cfg"][f] for f in FACTORS), r["cfg"]["rep"]): r["truth"].get("rank") for r in rows
+         if not r["truth"].get("diverged")}
+    out = {}
+    for j, f in enumerate(FACTORS):
+        if f == "fam":
+            continue
+        up = dn = eq = big = n = 0
+        for (k, rep), t in T.items():
+            i = vals[f].index(k[j])
+            if i + 1 == len(vals[f]):
+                continue
+            k2 = list(k); k2[j] = vals[f][i + 1]; t2 = T.get((tuple(k2), rep))
+            if t2 is None:
+                continue
+            n += 1; up += t2 > t; dn += t2 < t; eq += t2 == t; big += abs(t2 - t) > 1
+        out[f] = dict(pairs=n, increase=up, decrease=dn, equal=eq, abs_change_gt1=big)
+    return out
+
+
+def verdict(rows):
+    """The registered A4 verdict (results/e4/prediction_a4.json; plan v2.31 Sec. 3 A items 1-8)."""
+    mu_all = sorted(k for k in rows[0]["pred"] if k.startswith("mu_"))
+    n2 = summarize(rows, "n2")
+    comp = {}
+    for k in dict.fromkeys(MUST_BEAT + WORDS_ONLY + mu_all):
+        c = cluster_ci(rows, k); c["word"] = word(c["ci"], k == "early_count") if c["n_runs"] else None
+        if k in INFORM:     # the same comparison on the runs where the two predictions differ (inputs only)
+            diff = [r for r in rows if pv(r, k) != r["pred"]["n2"]] if k != "early_count" else rows
+            cd = cluster_ci(diff, k); cd["word"] = word(cd["ci"]) if cd["n_runs"] else None
+            c["differing_runs"] = cd
+        comp[k] = c
+    cond = dict(within1=n2["within1"] >= 0.85, mae=n2["mae"] <= 0.6,
+                n2_better_than_must_beat=all(comp[k]["word"] == "N2 better" for k in MUST_BEAT))
+    sg = sign_checks(rows)
+    fin = [r for r in rows if not r["truth"].get("diverged")]
+    signs = dict(lam_nonincreasing=sg["lam"]["increase"] <= 0.05 * sg["lam"]["pairs"],
+                 d_nondecreasing=sg["d"]["decrease"] <= 0.05 * sg["d"]["pairs"],
+                 w0_weak=sg["w0"]["abs_change_gt1"] <= 0.10 * sg["w0"]["pairs"],
+                 rank_ge1=all(r["truth"]["rank"] >= 1 for r in fin))
+    return dict(n2=n2, conditions=cond, passed=all(cond.values()), comparisons=comp, signs=signs, sign_pairs=sg,
+                static_bound_zero_share=float(np.mean([r["pred"]["static_bound"] == 0 for r in rows])),
+                failed=[k for k, v in {**cond, **signs}.items() if not v])
+
+
+def _inputs(cfg):
+    _, W0 = init(cfg); Pi = np.eye(cfg["d"]) - 1.0 / cfg["d"]; a0 = np.linalg.norm(Pi @ W0, axis=0)
+    pred = baselines(cfg, a0); pred["n2"] = flow(cfg, a0)["count"]
+    return dict(cfg=cfg, pred=pred)
+
+
+def cmd_inputs(grid, out_json, nproc=8):
+    """Inputs only (no truth): every criterion and baseline on every run of GRID; the share of runs where the N2
+    count differs from each baseline, overall and by lam (the two mechanisms of N2-iv)."""
+    from multiprocessing import Pool
+    with Pool(nproc) as pool:
+        rows = pool.map(_inputs, configs(grid))
+    keys = [k for k in rows[0]["pred"] if k != "n2"]
+    differ = {k: float(np.mean([r["pred"][k] != r["pred"]["n2"] for r in rows])) for k in keys}
+    by_lam = {str(l): {k: float(np.mean([r["pred"][k] != r["pred"]["n2"] for r in rows if r["cfg"]["lam"] == l]))
+                       for k in INFORM} for l in sorted({r["cfg"]["lam"] for r in rows})}
+    out = dict(grid=grid, runs=len(rows), md5={"e4_a4.py": md5(__file__)},
+               n2_hist=np.bincount([r["pred"]["n2"] for r in rows], minlength=N + 1).tolist(),
+               share_differing_from_n2=differ, share_differing_by_lam=by_lam,
+               static_bound_zero_share=float(np.mean([r["pred"]["static_bound"] == 0 for r in rows])),
+               rows=[dict(id=r["cfg"]["id"], **r["pred"]) for r in rows])
+    json.dump(out, open(out_json, "w"), indent=1)
+    print(json.dumps({k: v for k, v in out.items() if k != "rows"}, indent=0))
+
+
+def cmd_verdict(grid, outdir):
+    rows = [json.loads(l) for l in gzip.open(os.path.join(outdir, f"a4_{grid}_runs.jsonl.gz"), "rt")]
+    out = dict(all=verdict(rows))
+    # truth floor (every held-out run re-run on a fresh x2 sample): a run is fragile if the two truths differ at all
+    # (or either diverged); shares at exactly 1 and above 1 are reported
+    fl = [r for r in rows if r.get("floor")]
+    div = lambda r: bool(r["truth"].get("diverged") or r["floor"].get("diverged"))
+    dif = lambda r: abs(r["floor"]["rank"] - r["truth"]["rank"])
+    frag = [r["cfg"]["id"] for r in fl if div(r) or dif(r) != 0]
+    nf = max(len(fl), 1); share = len(frag) / nf
+    out["floor"] = dict(checked=len(fl), fragile=frag, share=share, ill_posed=share > 0.05,
+                        share_diff_1=sum(1 for r in fl if not div(r) and dif(r) == 1) / nf,
+                        share_diff_gt1=sum(1 for r in fl if not div(r) and dif(r) > 1) / nf,
+                        share_diverged=sum(1 for r in fl if div(r)) / nf,
+                        exact_equal=sum(1 for r in fl if not div(r) and dif(r) == 0))
+    fset = set(frag)
+    robust = [r for r in rows if r["cfg"]["id"] not in fset]
+    if frag and robust:     # the verdict on the sample-robust runs (fragile runs dropped)
+        out["not_fragile"] = verdict(robust)
+    v = out["all"]["passed"]
+    if share <= 0.05:       # well posed: the word comes from all runs; "undetermined" if the robust runs disagree
+        out["verdict_word"] = ("undetermined" if "not_fragile" in out and out["not_fragile"]["passed"] != v
+                               else "pass" if v else "fail")
+    elif len(robust) < 0.5 * len(rows):     # ill-posed and at most half the runs robust: no verdict
+        out["verdict_word"] = "undetermined (truth ill-posed)"
+    else:                   # ill-posed: the word comes from the sample-robust runs; the all-run verdict is beside it
+        out["verdict_word"] = ("pass" if out["not_fragile"]["passed"] else "fail") + " on sample-robust runs"
+    out["settled"] = int(sum(r["truth"].get("settled", False) for r in rows))
+    st = [r for r in rows if r["truth"].get("settled")]
+    out["settled_only"] = verdict(st) if st else None          # beside the primary scoring (all runs)
+    ob = [r for r in rows if r.get("orth") and not r["orth"].get("diverged")]
+    gb = [r for r in rows if r.get("orth") and not r["truth"].get("diverged")]
+    out["init"] = {"orth": dict(n=len(ob), n2_mae=float(np.mean([abs(r["orth"]["n2"] - r["orth"]["rank"]) for r in ob])) if ob else None,
+                                by_d={str(dd): float(np.mean([abs(r["orth"]["n2"] - r["orth"]["rank"]) for r in ob if r["cfg"]["d"] == dd]))
+                                      for dd in sorted({r["cfg"]["d"] for r in ob})}),
+                   "gaussian_same_runs": dict(n=len(gb), n2_mae=float(np.mean([abs(r["pred"]["n2"] - r["truth"]["rank"]) for r in gb])) if gb else None,
+                                              by_d={str(dd): float(np.mean([abs(r["pred"]["n2"] - r["truth"]["rank"]) for r in gb if r["cfg"]["d"] == dd]))
+                                                    for dd in sorted({r["cfg"]["d"] for r in gb})})}
+    json.dump(out, open(os.path.join(outdir, f"a4_{grid}_verdict.json"), "w"), indent=1)
+    print(json.dumps(dict(verdict_word=out["verdict_word"], failed=out["all"]["failed"], n2=out["all"]["n2"]), indent=0))
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "list":
+        for c in configs(sys.argv[2]):
+            print(c)
+    elif cmd == "run":
+        cmd_run(sys.argv[2], sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 8)
+    elif cmd == "score":
+        cmd_score(sys.argv[2], sys.argv[3])
+    elif cmd == "inputs":
+        cmd_inputs(sys.argv[2], sys.argv[3])
+    elif cmd == "verdict":
+        cmd_verdict(sys.argv[2], sys.argv[3])

@@ -1,0 +1,259 @@
+"""E5 / B1' amendment 1 (results/e5/prediction_b1p.json, amendment_1), written before any record of the registered
+b1p grid (seeds 310-314) is scored or read, while that grid runs. code/e5_b1p.py stays frozen (md5 e0ee9af3); this
+file imports it and adds:
+
+1. A fresh-statistics grid 'b1p_fresh', the prospective test of B1': statistics (n, s, ratio), plateau values, p0,
+   alpha rho values and seeds that no development step used (the E5 dev / held-out grids, the b1p pilot on seed 390,
+   the E5 held-out reference). Same frozen model (stage_model_pl), truth, floors, scorer and verdicts as b1p. The
+   registered b1p grid (seeds 310-314) is the development construction on new seeds: a seed replication (initial
+   amplitudes and floor draws only), reported as such.
+2. The B1' verdict word: B1' passes iff B1a', B1b' and B1d pass at v2 (as B1 was scored). B1d_by_class, B1d_vs_qs,
+   rate and rate_vs_qs carry their own words beside it and are never the B1' verdict.
+3. Non-finite runs (truth, either floor re-run, or the model's predictor at a check): primary scoring excludes them;
+   a sensitivity scoring includes them with every model pair counted as a disagreement, every truth event unmatched
+   by the model and every post-loss model error infinite. A verdict that differs between the two is 'undetermined'.
+   Counts per (kind x variant) cell.
+4. Seed-cluster bootstrap for B1d_vs_qs and rate_vs_qs (unit = the configuration without its seed; the seeds differ
+   only in initial amplitudes and floor draws); the run-level CIs of e5_b1p.py are reported beside them. The B1a'
+   paired CIs stay v2's (runs) and are reported with the cluster unit as a sensitivity line.
+5. rate is a check stage_qs shares: reported with stage_qs's rate and the no-decay null (p held at its value at the
+   episode's first dead check) beside it. rate_vs_qs gets a reading: 'law better' iff the cluster CI of
+   median|drift|(stage_qs) - median|drift|(model) has lower bound > 0, 'E5 rule better' iff upper bound < 0, else
+   'no difference shown'; law_holds is worded from that reading.
+
+Usage: python3 code/e5_b1p_a1.py list GRID | run GRID OUTDIR [NPROC] | score GRID OUTDIR | mu GRID
+       (GRID = b1p_fresh, the prospective test, or b1p, the seed replication)"""
+import sys, os, json, gzip, copy, hashlib
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import e5_theory as th
+import e5_b1 as B
+import e5_b1p as P
+
+THR = th.THR
+
+# Fresh grid. Statistics, p0, alpha rho values and seeds differ from every development grid (E5 dev n=20 s 1.3-0.55
+# ratio .91 p0 .5/1/2; E5 held-out n=18 s 1.45-0.6 ratio .9 p0 .7/1.5; b1p / pilot n=16 s 1.25-0.5 ratio .92 p0
+# .85/1.25). Plateau values at geometric midpoints of adjacent static thresholds of these statistics (so new values,
+# |ln(lam/lam*_k)| >= 0.125): lo at the second and fourth midpoint, highs at the 10th-12th, chosen from the frozen
+# model's race at lo (it captures directions with lam* >= 0.064 at p0 0.65, >= 0.119 at p0 1.1), never from a truth run.
+GRID_FRESH = dict(n=14, s=(1.6, 0.7), ratio=0.88, pairs=None, p0=[0.65, 1.1], w0=1e-3, seeds=[330, 331, 332, 333, 334],
+                  T_cap=16000.0, floor=True, pulse_ts_mult=[0.5, 1.0, 1.5], short_ts_mult=[1.0, 1.5], short_dur=[0.4, 0.8, 1.6],
+                  variants=["a0.7", "rP0.6", "base", "a1.25rP0.8", "a1.3", "rP1.8", "rP2.5"], kinds=["pulse", "short_pulse"])
+VARIANTS_FRESH = {"a0.7": dict(alpha=0.7, kappa=None, rho=1.0), "rP0.6": dict(alpha=1.0, kappa=None, rho=0.6),
+                  "base": dict(alpha=1.0, kappa=None, rho=1.0), "a1.25rP0.8": dict(alpha=1.25, kappa=None, rho=0.8),
+                  "a1.3": dict(alpha=1.3, kappa=None, rho=1.0), "rP1.8": dict(alpha=1.0, kappa=None, rho=1.8),
+                  "rP2.5": dict(alpha=1.0, kappa=None, rho=2.5)}
+AR_FRESH = {"a0.7": "<1", "rP0.6": "<1", "base": "=1", "a1.25rP0.8": "=1", "a1.3": "1-2", "rP1.8": "1-2", "rP2.5": ">2"}
+_m = P.midpoints(GRID_FRESH)
+GRID_FRESH["pairs"] = [(round(float(_m[a]), 6), round(float(_m[b]), 6)) for a, b in ((1, 9), (1, 11), (3, 10))]
+B.GRIDS["b1p_fresh"] = GRID_FRESH
+B.VARIANTS_HO.update(VARIANTS_FRESH)
+P.AR_CLASS.update(AR_FRESH)
+LABEL = {"b1p_fresh": "prospective test of B1' (fresh statistics, values, p0, alpha rho values and seeds)",
+         "b1p": "seed replication of the development construction (the b1p pilot's statistics, values, p0 and variants on seeds 310-314)"}
+
+
+def md5(path):
+    return hashlib.md5(open(path, "rb").read()).hexdigest()
+
+
+def cluster(r):
+    return (r["pair"], r["p0"], r["variant"], r["kind"], r["ts_mult"], r["dur_mult"])
+
+
+def model_finite(rec):
+    Pm = np.array(rec["pred"]["model"]["P"], float)
+    return bool(np.isfinite(Pm).all())
+
+
+def null_drift(rec):
+    """B1'-rate of the no-decay null: p held at its value at the episode's first dead check (any constant gives the
+    same drift, ln|p_truth(t_i)| - ln|p_truth(t_first)|)."""
+    A = np.array(rec["truth"]["a"], float); Pt = np.abs(np.array(rec["truth"]["p"], float)); am = A > THR
+    return P.rate_errors(am, Pt, {"null": np.ones_like(Pt)})["null"]
+
+
+def against_model(r):
+    """Sensitivity: a non-finite run counted against the model."""
+    r = copy.deepcopy(r)
+    r["agree"]["model"] = 0
+    for k in ("sched_agree", "sched_agree_nf", "tm_agree", "tm_agree_nf", "truth_changed_agree"):
+        if k in r:
+            r[k]["model"] = 0
+    for k in ("events_all", "events_post"):
+        if k in r:
+            e = r[k]["model"]
+            e.update(unmatched=e["n_events"], unmatched_nf=e["n_events_nf"], errs=[], frag=[])
+    if "post_loss" in r:
+        pl = r["post_loss"]; pl["model"] = [float("inf")] * len(pl["model"])
+        if "rate" in pl:
+            pl["rate"]["model"] = [float("inf")] * len(pl["rate"]["model"])
+    return r
+
+
+def boot_cluster(rows, key_a, key_b, B_=2000, seed=0):
+    """Paired percentile bootstrap over seed clusters of median_abs(b) - median_abs(a); key_x(row) -> list."""
+    rng = np.random.default_rng(seed); groups = {}
+    for r in rows:
+        groups.setdefault(cluster(r), []).append(r)
+    G = list(groups.values()); bs = []
+    for _ in range(B_):
+        pick = rng.integers(0, len(G), len(G))
+        x = np.array([v for i in pick for r in G[i] for v in key_a(r)], float)
+        y = np.array([v for i in pick for r in G[i] for v in key_b(r)], float)
+        if x.size and y.size:
+            bs.append(float(np.nanmedian(np.abs(y)) - np.nanmedian(np.abs(x))))
+    return dict(ci=[float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))] if bs else None, clusters=len(G),
+                unit="configuration without its seed (pair, p0, variant, kind, ts_mult, dur_mult)")
+
+
+def b1a_cluster_ci(rows, B_=2000, seed=0):
+    """v2's paired B1a' comparison (per-run disagreement share, baseline minus model) resampled by seed cluster."""
+    S = [r for r in rows if "sched_pairs" in r]
+    if not S:
+        return {}
+    sp = sum(r["sched_pairs"] for r in S)
+    dis = lambda r, k: (r["sched_pairs"] - r["sched_agree"][k]) / max(sp / len(S), 1e-12)
+    groups = {}
+    for r in S:
+        groups.setdefault(cluster(r), []).append(r)
+    G = list(groups.values()); rng = np.random.default_rng(seed); out = {}
+    for k in B.BASELINES:
+        d = [np.array([dis(r, k) - dis(r, "model") for r in g]) for g in G]; bs = []
+        for _ in range(B_):
+            pick = rng.integers(0, len(G), len(G))
+            bs.append(float(np.concatenate([d[i] for i in pick]).mean()))
+        out[k] = [float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))]
+    return out
+
+
+def score_set(rows, G):
+    res = dict(runs=len(rows), schedules=B.summ_v2(rows),
+               by_variant={v: B.summ_v2([r for r in rows if r["variant"] == v]) for v in G["variants"]},
+               by_cell={f"{k}|{v}": B.summ_v2([r for r in rows if r["kind"] == k and r["variant"] == v]) for k in G["kinds"] for v in G["variants"]})
+    v = B.verdicts(res); v.pop("cells", None)
+    v["B1_prime"] = dict(pass_=bool(v["B1a_prime"]["pass_"] and v["B1b_prime"]["pass_"] and v["B1d"]["pass_"]),
+                         rule="B1a', B1b' and B1d pass at v2")
+    classes = sorted({P.AR_CLASS[x] for x in G["variants"]})
+    b = dict(all=P.b1d_summary(rows), by_class={c: P.b1d_summary([r for r in rows if r["ar_class"] == c]) for c in classes},
+             by_variant={v: P.b1d_summary([r for r in rows if r["variant"] == v]) for v in G["variants"]})
+    PLr = [r for r in rows if "post_loss" in r]
+    b["qs_minus_model_ci_runs"] = P.boot_diff([np.array(r["post_loss"]["model"], float) for r in PLr],
+                                              [np.array(r["post_loss"]["stage_qs"], float) for r in PLr])
+    b["rate_qs_minus_model_ci_runs"] = P.boot_diff([np.array(r["post_loss"]["rate"]["model"], float) for r in PLr],
+                                                   [np.array(r["post_loss"]["rate"]["stage_qs"], float) for r in PLr], seed=1)
+    b["qs_minus_model_cluster"] = boot_cluster(PLr, lambda r: r["post_loss"]["model"], lambda r: r["post_loss"]["stage_qs"])
+    b["rate_qs_minus_model_cluster"] = boot_cluster(PLr, lambda r: r["post_loss"]["rate"]["model"],
+                                                    lambda r: r["post_loss"]["rate"]["stage_qs"], seed=1)
+    med = lambda x: float(np.nanmedian(np.abs(np.array(x, float)))) if len(x) else None
+    rate_tab = {}
+    for c, sub in [("pooled", PLr)] + [(c, [r for r in PLr if r["ar_class"] == c]) for c in classes]:
+        rate_tab[c] = dict(model=med([d for r in sub for d in r["post_loss"]["rate"]["model"]]),
+                           stage_qs=med([d for r in sub for d in r["post_loss"]["rate"]["stage_qs"]]),
+                           no_decay_null=med([d for r in sub for d in r["null_drift"]]),
+                           drifts=int(sum(len(r["post_loss"]["rate"]["model"]) for r in sub)))
+    b["rate_table"] = rate_tab
+    res["B1d_b1p"] = b
+    w = dict(B1d_by_class={c: dict(median_abs=x["model"]["median_abs"], pass_=bool(x["model"]["median_abs"] is not None and x["model"]["median_abs"] <= P.B1D_TOL))
+                           for c, x in b["by_class"].items() if x.get("runs")})
+    ci = b["qs_minus_model_cluster"]["ci"]
+    w["B1d_vs_qs"] = dict(ci_cluster=ci, ci_runs=b["qs_minus_model_ci_runs"], pass_=bool(ci is not None and ci[0] > 0))
+    rp = rate_tab["pooled"]["model"]
+    w["rate"] = dict(pooled=rp, stage_qs_pooled=rate_tab["pooled"]["stage_qs"], no_decay_null_pooled=rate_tab["pooled"]["no_decay_null"],
+                     pooled_pass=bool(rp is not None and rp <= P.RATE_TOL),
+                     by_class={c: dict(model=rate_tab[c]["model"], stage_qs=rate_tab[c]["stage_qs"], no_decay_null=rate_tab[c]["no_decay_null"],
+                                       pass_=bool(rate_tab[c]["model"] is not None and rate_tab[c]["model"] <= P.RATE_TOL)) for c in classes if rate_tab[c]["model"] is not None},
+                     label="a check stage_qs shares (dead-direction decay at its own weight-decay rate); not evidence for the post-loss law on its own")
+    w["rate"]["pass_"] = bool(w["rate"]["pooled_pass"] and all(x["pass_"] for x in w["rate"]["by_class"].values()))
+    w["rate"]["stage_qs_pass_"] = bool(rate_tab["pooled"]["stage_qs"] is not None and rate_tab["pooled"]["stage_qs"] <= P.RATE_TOL
+                                       and all(rate_tab[c]["stage_qs"] is not None and rate_tab[c]["stage_qs"] <= P.RATE_TOL for c in w["rate"]["by_class"]))
+    rc = b["rate_qs_minus_model_cluster"]["ci"]
+    reading = None if rc is None else "law better" if rc[0] > 0 else "E5 rule better" if rc[1] < 0 else "no difference shown"
+    w["rate_vs_qs"] = dict(ci_cluster=rc, ci_runs=b["rate_qs_minus_model_ci_runs"], reading=reading)
+    res["verdicts"] = v; res["verdicts_b1p"] = w
+    res["B1a_prime_ci_cluster_sensitivity"] = b1a_cluster_ci(rows)
+    return res
+
+
+def words(res):
+    v, w = res["verdicts"], res["verdicts_b1p"]
+    out = {k: v[k]["pass_"] for k in ("B1_prime", "B1a_prime", "B1b_prime", "B1d")}
+    out.update({f"B1d_class_{c}": x["pass_"] for c, x in w["B1d_by_class"].items()})
+    out.update(B1d_vs_qs=w["B1d_vs_qs"]["pass_"], rate=w["rate"]["pass_"], rate_vs_qs=w["rate_vs_qs"]["reading"])
+    return out
+
+
+def law_holds_text(reading):
+    if reading == "law better":
+        return "the law predicts the post-loss rate better than E5's rule"
+    if reading == "E5 rule better":
+        return "E5's rule predicts the post-loss rate better than the law"
+    return "the drift after the first dead check is small for the law and for E5's rule alike (if rate passes); the law's own claim rests on B1d_vs_qs"
+
+
+def cmd_score(grid, outdir):
+    G = B.GRIDS[grid]; rows = []
+    with gzip.open(os.path.join(outdir, f"b1p_{grid}_runs.jsonl.gz"), "rt") as fh:
+        for line in fh:
+            rec = json.loads(line); r = P.score_run(rec)
+            r["model_finite"] = model_finite(rec); r["null_drift"] = null_drift(rec)
+            r["nonfinite"] = bool(not r["finite"] or not r["model_finite"])
+            rows.append(r)
+    rows.sort(key=lambda r: r["id"])
+    nf_cells = {f"{k}|{v}": int(sum(r["nonfinite"] for r in rows if r["kind"] == k and r["variant"] == v)) for k in G["kinds"] for v in G["variants"]}
+    prim = score_set([r for r in rows if not r["nonfinite"]], G)
+    nnf = sum(r["nonfinite"] for r in rows)
+    sens = prim if nnf == 0 else score_set([against_model(r) if r["nonfinite"] else r for r in rows], G)
+    wp, ws = words(prim), words(sens)
+    final = {k: (wp[k] if wp[k] == ws[k] else "undetermined") for k in wp}
+    out = dict(grid=grid, label=LABEL.get(grid), model="stage_model_pl (code/e5_b1p.py, frozen md5 e0ee9af3)",
+               scorer="code/e5_b1p_a1.py (amendment 1)", tolerance="results/e5/b1_tolerance_v2.json (unchanged)",
+               nonfinite=dict(runs=int(nnf), truth_or_floor=int(sum(not r["finite"] for r in rows)),
+                              model=int(sum(not r["model_finite"] for r in rows)), by_cell=nf_cells,
+                              sensitivity="identical to primary (no non-finite run)" if nnf == 0 else "non-finite runs counted against the model"),
+               verdict_words=final, verdict_words_primary=wp, verdict_words_sensitivity=ws,
+               law_holds=law_holds_text(final["rate_vs_qs"]), primary=prim, sensitivity=None if nnf == 0 else sens,
+               md5={f: md5(os.path.join(os.path.dirname(os.path.abspath(__file__)), f)) for f in ("e5_b1p_a1.py", "e5_b1p.py", "e5_b1.py", "e5_theory.py", "linjepa.py")})
+    json.dump(out, open(os.path.join(outdir, f"b1p_{grid}_score_a1.json"), "w"), indent=1)
+    with gzip.open(os.path.join(outdir, f"b1p_{grid}_scored_runs.jsonl.gz"), "wt") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+    print(json.dumps(dict(grid=grid, words=final, nonfinite=out["nonfinite"]["runs"], rate=prim["verdicts_b1p"]["rate"],
+                          B1d_vs_qs=prim["verdicts_b1p"]["B1d_vs_qs"], rate_vs_qs=prim["verdicts_b1p"]["rate_vs_qs"],
+                          B1a=prim["verdicts"]["B1a_prime"], B1b=prim["verdicts"]["B1b_prime"], B1d=prim["verdicts"]["B1d"]), indent=1), flush=True)
+
+
+def cmd_mu(grid):
+    """P2: every 2610.02344 variant of code/baselines/dvd_mu.py on this grid's statistics at every plateau value and
+    p0, against mu_dvd's set #{p0 c - p0^2 s > lam} (inputs only, no run)."""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "baselines"))
+    import dvd_mu
+    G = B.GRIDS[grid]; c, s = B.stats(G); rows = []
+    for lam in sorted({x for pr in G["pairs"] for x in pr}):
+        for p0 in G["p0"]:
+            vs = dvd_mu.variants(np.diag(s), np.diag(c), p0 * np.eye(c.size), lam)
+            ref = int((p0 * c - p0 ** 2 * s > lam).sum())
+            rows.append(dict(lam=lam, p0=p0, mu_dvd=ref, **{k: vs[k] for k in ("dvd", "dvd_signed", "dvd_sorted", "dvd_pq", "dvd_pq_signed", "dvd_exact", "ass32")}))
+    same = all(r[k] == r["mu_dvd"] for r in rows for k in ("dvd", "dvd_signed", "dvd_sorted", "dvd_pq", "dvd_pq_signed", "dvd_exact"))
+    return dict(grid=grid, rows=rows, all_variants_equal_mu_dvd=bool(same),
+                note="aligned diagonal statistics with c, s both decreasing in k and P0 = p0 I: equal counts are equal sets (the top directions)")
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "list":
+        cs = B.configs(sys.argv[2])
+        print(len(cs), "runs;", sum(c["matrix"] for c in cs), "matrix; T", min(c["T"] for c in cs), max(c["T"] for c in cs),
+              "pairs", B.GRIDS[sys.argv[2]]["pairs"], "skipped", B.configs_heldout.skipped)
+    elif cmd == "run":
+        P.cmd_run(sys.argv[2], sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 8)
+        here = os.path.dirname(os.path.abspath(__file__))
+        json.dump(dict(md5_e5_b1p_a1=md5(os.path.join(here, "e5_b1p_a1.py")), command=" ".join(["code/e5_b1p_a1.py"] + sys.argv[1:])),
+                  open(os.path.join(sys.argv[3], f"b1p_{sys.argv[2]}_meta_a1.json"), "w"), indent=1)
+        print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E5 B1' " + sys.argv[2] + " grid done", flush=True)
+    elif cmd == "score":
+        cmd_score(sys.argv[2], sys.argv[3])
+    elif cmd == "mu":
+        print(json.dumps(cmd_mu(sys.argv[2]), indent=1))

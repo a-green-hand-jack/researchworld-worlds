@@ -1,0 +1,52 @@
+"""B3 post hoc (not registered): do the regrowing indices' THR crossings depend on how deep float64 lets them fall?
+For every noisy-run index flagged by e5_b3.roundoff_regrowth in float64, compare float64 with 80-bit state on the same
+sample path: the lowest value relative to the top before the regrowth, and the first check above THR after it.
+Reads: OUTDIR/precision_heldout_runs.jsonl.gz (code/checks/e5_b3_precision.py). Usage: python3 THIS OUTDIR OUT.json"""
+import sys, os, json, gzip, collections
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import numpy as np
+import e5_b3 as b3
+
+
+def flagged(r):
+    S = np.array(r["truth"]["sv"]); rel = S / S[:, :1]; out = []
+    for j in range(S.shape[1]):
+        i = np.where(rel[:, j] <= b3.ROUND)[0]
+        if i.size and (S[i[0] + 1:, j] > b3.THR).any():
+            k = int(i[0]) + 1 + int(np.argmax(S[i[0] + 1:, j] > b3.THR))
+            out.append((int(j), float(np.log10(rel[:k, j].min())), k))
+    return out
+
+
+def lowest_and_cross(r, j, k64):
+    S = np.array(r["truth"]["sv"]); rel = S / S[:, :1]
+    up = np.where(S[:, j] > b3.THR)[0]; up = up[up > int(np.argmin(rel[:k64 + 1, j]))]
+    return float(np.log10(rel[:k64 + 1, j].min())), (int(up[0]) if up.size else None)
+
+
+if __name__ == "__main__":
+    out_dir, outp = sys.argv[1], sys.argv[2]
+    by = collections.defaultdict(dict)
+    for l in gzip.open(os.path.join(out_dir, "precision_heldout_runs.jsonl.gz"), "rt"):
+        r = json.loads(l)
+        if r["truth"].get("counts") is not None:
+            by[r["cfg"]["id"]][r["prec"]] = r
+    ev = []
+    for i, d in sorted(by.items()):
+        if "f64" not in d or "f80" not in d or d["f64"]["cfg"]["B"] == 0:
+            continue
+        for j, lo64, k64 in flagged(d["f64"]):
+            lo80, k80 = lowest_and_cross(d["f80"], j, k64)
+            ev.append(dict(id=i, index=j, low_f64=lo64, low_f80=lo80, cross_f64=k64, cross_f80=k80))
+    f64_floor = [e for e in ev if abs(e["low_f80"] - e["low_f64"]) > 0.5]
+    deep80 = [float(np.log10((np.array(d["f80"]["truth"]["sv"]) / np.array(d["f80"]["truth"]["sv"])[:, :1]).min()))
+              for d in by.values() if "f80" in d and d["f80"]["cfg"]["B"] > 0 and d["f80"]["cfg"]["p0"] == 1.5]
+    s = dict(question=__doc__.split("\n")[1:3], events=len(ev),
+             same_low_within_half_decade=len(ev) - len(f64_floor),
+             deeper_in_f80=dict(n=len(f64_floor), low_f64=[min(e["low_f64"] for e in f64_floor), max(e["low_f64"] for e in f64_floor)] if f64_floor else None,
+                                low_f80=[min(e["low_f80"] for e in f64_floor), max(e["low_f80"] for e in f64_floor)] if f64_floor else None),
+             f80_deepest_median_noisy_p0_1p5=float(np.median(deep80)),
+             same_crossing_check=sum(e["cross_f80"] == e["cross_f64"] for e in ev),
+             differing=[e for e in ev if e["cross_f80"] != e["cross_f64"]], rows=ev)
+    json.dump(s, open(outp, "w"), indent=1)
+    print(json.dumps({k: v for k, v in s.items() if k != "rows"}, indent=1))

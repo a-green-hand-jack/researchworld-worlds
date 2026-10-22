@@ -1,0 +1,49 @@
+"""F13 (appendix, fig:ext-a): A2' predicted vs true AdamW alive count at T_h on all 216 prospective runs, model (phase model v4) against four baselines (static bound, 2610.02344 mu>1 count, all alive, GD).
+True count = sum of the 80-bit AdamW truth's alive vector at the checkpoint T_h (results/e4/a2p/a2p_runs.jsonl.gz); model, static bound and GD
+(exact flow) from the same file, dev-median constant from a2p_score.json. MAE and within-1 are recomputed from the runs and match a2p_score.json."""
+import os, sys, json, gzip
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+
+COLS = {"a2pa": "#CC79A7", "a2pb": "#E69F00", "a2pc": "#009E73"}
+LAB = {"a2pa": "weak set a", "a2pb": "weak set b", "a2pc": "strong control c"}
+
+def make(outdir):
+    fs.setup(); R = common.results_dir()
+    pr, ps = os.path.join(R, "e4", "a2p", "a2p_runs.jsonl.gz"), os.path.join(R, "e4", "a2p", "a2p_score.json")
+    runs = [json.loads(l) for l in gzip.open(pr, "rt")]; sc = json.load(open(ps))
+    n = len(runs[0]["alive"][0]); dev = int(round(n * sc["dev_median"]["fraction"]))
+    truth = np.array([int(np.sum(r["alive"][r["checkpoints"].index(r["T_h"])])) for r in runs])
+    pred = {"model": np.array([r["pred_rank"]["model"] for r in runs]), "static_bound": np.array([r["pred_rank"]["static_bound"] for r in runs]),
+            "mu_count": np.array([r["pred_rank"]["mu_count"] for r in runs]), "dev_median": np.full(len(runs), dev), "gd": np.array([r["gd_rank"] for r in runs])}
+    titles = {"model": "(a) phase model v4", "static_bound": "(b) static bound", "mu_count": r"(c) $\mu>1$ count", "dev_median": "(d) all alive (dev. median)", "gd": "(e) GD (exact flow)"}
+    for k in ("model", "static_bound", "mu_count", "dev_median"):
+        assert abs(np.mean(np.abs(pred[k] - truth)) - sc["all"]["rank_at_T_h"][k]["mae_finite"]) < 1e-9
+    assert np.mean(truth > pred["mu_count"]) == sc["all"]["mu_count_bound_exceedance"]
+    rng = np.random.RandomState(0)
+    fig, axs = plt.subplots(2, 3, figsize=(fs.TEXTWIDTH, 3.3), sharex=True, sharey=True, constrained_layout=True)
+    axl = axs[1, 2]; axs = axs.ravel()[:5]
+    xs = np.arange(0, 36)
+    for ax, k in zip(axs, pred):
+        ax.fill_between(xs, xs - 1, xs + 1, color="0.88", lw=0, zorder=0); ax.plot(xs, xs, color="0.5", lw=0.6, zorder=1)
+        for s, c in COLS.items():
+            m = np.array([r["stats"] == s for r in runs])
+            ax.plot(truth[m] + rng.uniform(-.25, .25, m.sum()), pred[k][m] + rng.uniform(-.25, .25, m.sum()), ls="none", marker="o", ms=2.0, mfc=c, mec="none", alpha=0.7, zorder=3)
+        e = np.abs(pred[k] - truth)
+        lr = k == "dev_median"
+        ax.text(0.96 if lr else 0.04, 0.14 if lr else 0.96, f"MAE {e.mean():.2f}\n$\\pm1$: {np.mean(e <= 1):.2f}" + (f"\ntrue $>$ count: {np.mean(truth > pred[k]):.0%}" if k == "mu_count" else ""), transform=ax.transAxes, fontsize=7, va="center" if lr else "top", ha="right" if lr else "left")
+        ax.set_title(titles[k], fontsize=7.5); ax.set_xlim(4, 35); ax.set_ylim(-1, 35); ax.set_xticks([10, 20, 30]); ax.set_yticks([0, 10, 20, 30])
+        ax.tick_params(length=2, pad=1.5, labelsize=7)
+    for ax in (axs[2], axs[3], axs[4]): ax.set_xlabel("true count at $T_h$", fontsize=7.5)
+    for ax in (axs[0], axs[3]): ax.set_ylabel("predicted count", fontsize=7.5)
+    axl.axis("off"); axs[2].tick_params(labelbottom=True)
+    axl.legend(handles=[Line2D([], [], ls="none", marker="o", ms=3, mfc=c, mec="none", label=LAB[s]) for s, c in COLS.items()] + [Line2D([], [], color="0.5", lw=0.6, label="$y=x\\pm1$")],
+                  fontsize=7, frameon=False, loc="center", handletextpad=0.2, labelspacing=0.15, borderaxespad=0.1)
+    fs.save(fig, "fig13_ext_a2p", outdir)
+    common.record_inputs(outdir, "fig13_ext_a2p", [pr, ps])
+
+if __name__ == "__main__":
+    make(sys.argv[1] if len(sys.argv) > 1 else "/tmp/figtest")

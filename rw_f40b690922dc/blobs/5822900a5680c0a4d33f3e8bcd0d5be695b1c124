@@ -1,0 +1,571 @@
+{
+ "experiment": "E3 follow-up",
+ "status": "pre-registered: written before any of these runs, after the sweep runs had started (selection from their partial logs, see note)",
+ "note": "C4 interventions and the full-length runs (story-repo plan v1.2 Sec. 3 E3). Chosen after the sweep runs had\n    started, from their partial logs (epoch ~6-16 of 20): in Arm T, wd 0.03 and 0.1 fall below 0.5 x the init count\n    (collapsing), wd 0 and 1e-3 rise above it (healthy); in Arm P, the copy target falls to ~21 of 116 (P_base).\n    Each intervention changes one knob of a sweep config (its parent, same seeds and initialisation), in the\n    direction prescribed by theory/derivations.md Sec. 4 (source \"theory\") or by the horizon rule (source \"rule\").\n    Its step-0 forces are those of an existing init run (`init`), rescaled to its wd (`wd_scale`): the predictor lr\n    and the target update do not enter the encoder's step-0 force, and the decay force is linear in wd.",
+ "predictor": "Linearised race over the run's horizon T from the step-0 forces only.\n    Per eigendirection k of the online token covariance at init (eigenvalue e_k): the gradient part (drive D_k +\n    self-prediction S_k, x 1/(1-momentum) for SGD with momentum, whose steady-state step is that much larger) scales\n    with lr(t); the decoupled decay part L_k with lr(t) wd(t). log e_k(T) = log e_k + sum_t rate_k(t), and growth\n    saturates at the initial top eigenvalue. Predicted count = #{e_k(T) >= 1e-3 max_j e_j(T)} (the measured count's\n    rule); predicted total-variance ratio = sum e(T) / sum e(0).",
+ "success_criteria": {
+  "C4 direction": "for each intervention, the measured centred RankMe of the intervention minus that of its parent (same seed) has the prescribed sign in >= 2 of 3 seeds; scored separately for source theory and source rule, per arm",
+  "C4 crossing": "rescue: the parent is dimensionally collapsed (>= 2 of 3 seeds) and the intervention is not (<= 1 of 3); break: the parent is healthy (<= 1 of 3) and the intervention collapses (>= 2 of 3); scored only where the parent behaves as stated",
+  "C-full count": "full-length (50-epoch) runs: the horizon rule at 9750 steps (count_pred) against the measured final count, and the collapse flag (collapse_pred) against measured dimensional collapse (>= 2 of 3 seeds); reported per run, with the epoch-20 count of the same run beside it",
+  "C-full probe": "the collapsing full-length config (F_T_wd0.03) has a lower final linear-probe accuracy than the Arm T baseline (F_T_wd0.01) in >= 2 of 3 seeds; the random-init probe (43.65%, results/e3_pilot) is the reference"
+ },
+ "configs": {
+  "I_T_wd0.1_plr0.1": {
+   "arm": "T",
+   "kind": "rescue",
+   "parent": "T_wd0.1",
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.1,
+     0.1
+    ],
+    "pred_lr_mult": 0.1
+   },
+   "init": "T_wd0.01",
+   "wd_scale": 10.0,
+   "sign": 1,
+   "source": "theory",
+   "why": "Sec. 4 alpha row: with lam > 0 a slower predictor (smaller alpha) lengthens the race clock 1/(alpha lam), so more directions escape",
+   "count_pred": 2.3333333333333335,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 1,
+     "tv_ratio": 2.989398483211849e-09,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27
+    },
+    {
+     "seed": 1,
+     "count": 4,
+     "tv_ratio": 1.618873137595247e-10,
+     "window": 1,
+     "count0": 32,
+     "online_count_1e3": 26
+    },
+    {
+     "seed": 2,
+     "count": 2,
+     "tv_ratio": 6.478613294343736e-10,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27
+    }
+   ],
+   "horizon_steps": 3900,
+   "collapse_pred": true,
+   "parent_count_pred": 2.3333333333333335
+  },
+  "I_T_wd0.1_pinit3": {
+   "arm": "T",
+   "kind": "rescue",
+   "parent": "T_wd0.1",
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.1,
+     0.1
+    ],
+    "pred_init_scale": 3
+   },
+   "init": "T_pinit3",
+   "wd_scale": 10.0,
+   "sign": 1,
+   "source": "rule",
+   "why": "the horizon rule's step-0 drive grows with the predictor init scale (T_pinit3 predicted 115 vs 18 at wd 1e-2); Sec. 4's p0 row is non-monotone, so the sign is the rule's",
+   "count_pred": 88.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 107,
+     "tv_ratio": 51.43147533021275,
+     "window": 108,
+     "count0": 33,
+     "online_count_1e3": 27
+    },
+    {
+     "seed": 1,
+     "count": 66,
+     "tv_ratio": 35.855991497817584,
+     "window": 67,
+     "count0": 32,
+     "online_count_1e3": 26
+    },
+    {
+     "seed": 2,
+     "count": 93,
+     "tv_ratio": 44.855963521273196,
+     "window": 93,
+     "count0": 33,
+     "online_count_1e3": 27
+    }
+   ],
+   "horizon_steps": 3900,
+   "collapse_pred": false,
+   "parent_count_pred": 2.3333333333333335
+  },
+  "I_T_wd0.03_plr0.1": {
+   "arm": "T",
+   "kind": "rescue",
+   "parent": "T_wd0.03",
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.03,
+     0.03
+    ],
+    "pred_lr_mult": 0.1
+   },
+   "init": "T_wd0.01",
+   "wd_scale": 3.0,
+   "sign": 1,
+   "source": "theory",
+   "why": "Sec. 4 alpha row: with lam > 0 a slower predictor (smaller alpha) lengthens the race clock 1/(alpha lam), so more directions escape",
+   "count_pred": 7.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 4,
+     "tv_ratio": 0.0008195568080852502,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27
+    },
+    {
+     "seed": 1,
+     "count": 8,
+     "tv_ratio": 0.0002302462546706432,
+     "window": 1,
+     "count0": 32,
+     "online_count_1e3": 26
+    },
+    {
+     "seed": 2,
+     "count": 9,
+     "tv_ratio": 0.00028897309680274864,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27
+    }
+   ],
+   "horizon_steps": 3900,
+   "collapse_pred": true,
+   "parent_count_pred": 7.0
+  },
+  "I_T_wd0.03_pinit3": {
+   "arm": "T",
+   "kind": "rescue",
+   "parent": "T_wd0.03",
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.03,
+     0.03
+    ],
+    "pred_init_scale": 3
+   },
+   "init": "T_pinit3",
+   "wd_scale": 3.0,
+   "sign": 1,
+   "source": "rule",
+   "why": "the horizon rule's step-0 drive grows with the predictor init scale (T_pinit3 predicted 115 vs 18 at wd 1e-2); Sec. 4's p0 row is non-monotone, so the sign is the rule's",
+   "count_pred": 110.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 120,
+     "tv_ratio": 58.01734034848723,
+     "window": 121,
+     "count0": 33,
+     "online_count_1e3": 27
+    },
+    {
+     "seed": 1,
+     "count": 92,
+     "tv_ratio": 47.29275941374225,
+     "window": 93,
+     "count0": 32,
+     "online_count_1e3": 26
+    },
+    {
+     "seed": 2,
+     "count": 120,
+     "tv_ratio": 61.596438229849404,
+     "window": 121,
+     "count0": 33,
+     "online_count_1e3": 27
+    }
+   ],
+   "horizon_steps": 3900,
+   "collapse_pred": false,
+   "parent_count_pred": 7.0
+  },
+  "I_T_wd0.001_plr10": {
+   "arm": "T",
+   "kind": "break",
+   "parent": "T_wd0.001",
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.001,
+     0.001
+    ],
+    "pred_lr_mult": 10
+   },
+   "init": "T_wd0.01",
+   "wd_scale": 0.1,
+   "sign": -1,
+   "source": "theory",
+   "why": "Sec. 4 alpha row: a faster predictor shortens the race clock, so fewer directions escape",
+   "count_pred": 35.666666666666664,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 38,
+     "tv_ratio": 1.591901142163575,
+     "window": 75,
+     "count0": 33,
+     "online_count_1e3": 27
+    },
+    {
+     "seed": 1,
+     "count": 26,
+     "tv_ratio": 1.199984483855431,
+     "window": 15,
+     "count0": 32,
+     "online_count_1e3": 26
+    },
+    {
+     "seed": 2,
+     "count": 43,
+     "tv_ratio": 2.2094591617190473,
+     "window": 101,
+     "count0": 33,
+     "online_count_1e3": 27
+    }
+   ],
+   "horizon_steps": 3900,
+   "collapse_pred": false,
+   "parent_count_pred": 35.666666666666664
+  },
+  "I_T_wd0.001_pinit0.3": {
+   "arm": "T",
+   "kind": "break",
+   "parent": "T_wd0.001",
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.001,
+     0.001
+    ],
+    "pred_init_scale": 0.3
+   },
+   "init": "T_pinit0.3",
+   "wd_scale": 0.1,
+   "sign": -1,
+   "source": "rule",
+   "why": "the horizon rule predicts 30.3 against the parent's 35.7 at wd 1e-3 (a fall of 5.4, above its tolerance); at wd 1e-2 the same init gave 20.0 against 18.0, so this sign holds only at small wd",
+   "count_pred": 30.333333333333332,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 31,
+     "tv_ratio": 0.6541235232851169,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27
+    },
+    {
+     "seed": 1,
+     "count": 30,
+     "tv_ratio": 0.6460701411818142,
+     "window": 0,
+     "count0": 32,
+     "online_count_1e3": 26
+    },
+    {
+     "seed": 2,
+     "count": 30,
+     "tv_ratio": 0.6495255491923475,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27
+    }
+   ],
+   "horizon_steps": 3900,
+   "collapse_pred": false,
+   "parent_count_pred": 35.666666666666664
+  },
+  "I_P_copy_wd0": {
+   "arm": "P",
+   "kind": "rescue",
+   "parent": "P_copy",
+   "over": {
+    "target": "copy",
+    "wd": [
+     0.0,
+     0.0
+    ]
+   },
+   "init": "P_copy",
+   "wd_scale": 0.0,
+   "sign": 1,
+   "source": "theory",
+   "why": "Sec. 3-4: without decay there is no race (the predictor does not drift and no direction is lost to decay)",
+   "count_pred": 97.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.472651938224956,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.79040770040827,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27
+    }
+   ],
+   "horizon_steps": 3900,
+   "collapse_pred": false,
+   "parent_count_pred": 97.66666666666667
+  },
+  "I_P_copy_plr0.1": {
+   "arm": "P",
+   "kind": "rescue",
+   "parent": "P_copy",
+   "over": {
+    "target": "copy",
+    "pred_lr_mult": 0.1
+   },
+   "init": "P_copy",
+   "wd_scale": 1.0,
+   "sign": 1,
+   "source": "theory",
+   "why": "Sec. 4 alpha row, as for Arm T; registered although the running sweep's P_plr0.1 (epoch 20) was below P_base, i.e. against this sign in Arm P",
+   "count_pred": 97.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.47265193786336,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.79040770034691,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27
+    }
+   ],
+   "horizon_steps": 3900,
+   "collapse_pred": false,
+   "parent_count_pred": 97.66666666666667
+  },
+  "F_P_base": {
+   "arm": "P",
+   "kind": "full",
+   "parent": "P_base",
+   "over": {},
+   "init": "P_base",
+   "wd_scale": 1.0,
+   "count_pred": 97.66666666666667,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 99,
+     "tv_ratio": 48.4726519340776,
+     "window": 100,
+     "count0": 33,
+     "online_count_1e3": 27
+    },
+    {
+     "seed": 1,
+     "count": 97,
+     "tv_ratio": 52.69741165551521,
+     "window": 98,
+     "count0": 32,
+     "online_count_1e3": 26
+    },
+    {
+     "seed": 2,
+     "count": 97,
+     "tv_ratio": 49.790407699284124,
+     "window": 98,
+     "count0": 33,
+     "online_count_1e3": 27
+    }
+   ],
+   "horizon_steps": 9750,
+   "collapse_pred": false,
+   "parent_count_pred": 97.66666666666667,
+   "count_pred_epoch20": 97.66666666666667
+  },
+  "F_T_wd0.01": {
+   "arm": "T",
+   "kind": "full",
+   "parent": "T_wd0.01",
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.01,
+     0.01
+    ]
+   },
+   "init": "T_wd0.01",
+   "wd_scale": 1.0,
+   "count_pred": 9.0,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 8,
+     "tv_ratio": 0.012465059270300102,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27
+    },
+    {
+     "seed": 1,
+     "count": 10,
+     "tv_ratio": 0.0006531526890898074,
+     "window": 1,
+     "count0": 32,
+     "online_count_1e3": 26
+    },
+    {
+     "seed": 2,
+     "count": 9,
+     "tv_ratio": 0.008889853747851709,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27
+    }
+   ],
+   "horizon_steps": 9750,
+   "collapse_pred": true,
+   "parent_count_pred": 18.0,
+   "count_pred_epoch20": 18.0
+  },
+  "F_T_wd0.03": {
+   "arm": "T",
+   "kind": "full",
+   "parent": "T_wd0.03",
+   "over": {
+    "opt": "sgd",
+    "lr": 0.05,
+    "sched": "const",
+    "target": "copy",
+    "target_ln": 0,
+    "pred_norm": 0,
+    "decay_norm": 1,
+    "wd": [
+     0.03,
+     0.03
+    ]
+   },
+   "init": "T_wd0.01",
+   "wd_scale": 3.0,
+   "count_pred": 3.6666666666666665,
+   "per_seed": [
+    {
+     "seed": 0,
+     "count": 2,
+     "tv_ratio": 9.70375813371502e-07,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27
+    },
+    {
+     "seed": 1,
+     "count": 4,
+     "tv_ratio": 2.5016904109586943e-08,
+     "window": 1,
+     "count0": 32,
+     "online_count_1e3": 26
+    },
+    {
+     "seed": 2,
+     "count": 5,
+     "tv_ratio": 6.339021410299816e-08,
+     "window": 1,
+     "count0": 33,
+     "online_count_1e3": 27
+    }
+   ],
+   "horizon_steps": 9750,
+   "collapse_pred": true,
+   "parent_count_pred": 7.0,
+   "count_pred_epoch20": 7.0
+  }
+ },
+ "command": "code/e3_grid.py predict-followup /hutian/scratch/e3init results/e3"
+}

@@ -1,0 +1,13 @@
+\section{Limitations and conclusion}
+\label{sec:discussion}
+
+\paragraph{Limitations.}
+The theory is a near-collapse analysis of the linear model under population gradient flow, valid until the first directions reach order one, with no noise floor (round-off re-seeds a lost direction in three E2 runs) and no post-capture stage; the depth correction was made after a failed test and re-tested only for identity-initialised factors.
+The closed form needs \cref{ass:aligned}, and its general form is tested only on random Gaussian predictors and non-commuting statistics in linear models.
+AdamW is at most partly supported, one pre-registered EMA sign comparison failed, and E1 is a development set.
+Under random masks a tanh encoder gains rank after the race, against the near-collapse premise, a two-layer encoder is mispredicted from its initial features, and a predicted fall of the rank at high $r$ held in \EtwoNonmonoConf{} of \EtwoNonmonoPred{} profiles.
+In the ViT only a step-0 rule is tested, not the race; it misplaces the weight-decay transition, and the predictor, EMA and masking predictions failed.
+
+\paragraph{Conclusion.}
+Near its collapsed solution, weight decay makes collapse an attractor of a JEPA, and a direction escapes only by winning a race between its transient growth and the decay of the predictor that carries its drive.
+Predictor scale, learning rate, depth, the target update and masks act on that race; computed before training, it predicts the rank and collapse boundary of held-out linear JEPAs, also under masking, which the static threshold misses; in a ViT only the weight-decay ordering transferred.

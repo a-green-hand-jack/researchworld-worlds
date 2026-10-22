@@ -1,0 +1,24 @@
+"""Per-run online-token counts (count_1e3) at every epoch, plus online probe accuracy where logged, for an E8 run tree.
+
+Usage: python3 code/e8_counts_csv.py <runs_root> <out.csv>
+"""
+import csv, os, sys
+sys.path.insert(0, os.path.dirname(__file__))
+from e8_analyze import load_run
+
+root, out = sys.argv[1], sys.argv[2]
+rows = []
+for row in sorted(os.listdir(root)):
+    for s in sorted(os.listdir(os.path.join(root, row))):
+        d = os.path.join(root, row, s)
+        if not os.path.isdir(d):
+            continue
+        r = load_run(d)
+        eps = sorted(r["count"])
+        pe = sorted(r["probe"])
+        rows.append(dict(row=row, seed=s, finite=r["ok"], **{f"ep{e}": r["count"][e] for e in eps},
+                         probe_epochs=" ".join(map(str, pe)), probe_last=r["probe"][pe[-1]] if pe else ""))
+keys = ["row", "seed", "finite"] + [f"ep{e}" for e in range(51)] + ["probe_epochs", "probe_last"]
+with open(out, "w", newline="") as f:
+    w = csv.DictWriter(f, keys, extrasaction="ignore"); w.writeheader(); w.writerows(rows)
+print(len(rows), "runs ->", out)

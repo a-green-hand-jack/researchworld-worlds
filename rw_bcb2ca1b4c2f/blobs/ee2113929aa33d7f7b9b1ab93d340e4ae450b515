@@ -1,0 +1,242 @@
+{
+ "experiment": "E6 / direction C rungs 2 and 3: two-layer MLP encoder (tanh, relu; Gaussian field and nonlinear latent model) under GD (rung 2) and AdamW (rung 3) (plan Sec. 3 C items 2-3, kept-and-owed item 4)",
+ "status": "registered before any held-out run; frozen code = the commit adding this file (md5s below). code/e6_r2.py is imported unchanged; code/e6_r23.py adds only the held-out grids, truth floors, settledness classes and scoring; amendment_1 (below) adds the plan v2.20 comparisons C1-C3, the inputs-only informative-run rule and the sensitivities, also before any held-out run",
+ "md5": {
+  "code/e6_r23.py": "fbf11fcb93cc30313ac9b8471a77c140",
+  "code/e6_r2.py": "321bbbe97b5fbe82ebe0965a7333d4c5",
+  "code/linjepa.py": "e7d569d4a3537aa3883ddfe847b3df66",
+  "code/baselines/dvd_mu.py": "88ed281a7bea8dc0b312f88221ff5f4d",
+  "code/e4_theory.py": "72f6b4245a46a2a34c773052e5a5e160"
+ },
+ "model_and_truth": {
+  "model": "f(x) = W2 phi(W1 x), identity predictor P0 = p0 I, copy target, weight decay lam on W1, W2, P, full batch on N = 1024 (input, mask) pairs, n = d = 32, H = 64, mask ratio 0.5, W2(0) = 1e-3 x orthonormal rows x (1 + 0.1 N(0,1)) (code/e6_r2.py)",
+  "truth": "median of the embedding rank #sv((Z - mean Z)/sqrt N) > 0.05 over the last 4 of 20 equally spaced checks (the last at T); T = 8 / (eta lam) (8 weight-decay e-folds)",
+  "truth_sensitivity": "the embedding rank at T alone, scored with the same rule",
+  "classes": "per base run from its 20 checked ranks: settled (max - min of last 4 <= 1); cycling (not settled and max - min of last 10 >= 10); drifting (neither). Counts per class and per cell are reported; the score is also reported on the settled subset",
+  "why_median": "rung 3 development (results/e6/r3_dev_adam2) has runs that cycle between rank ~30 and ~5 (relu, latent, lam 0.03), where the rank at T is phase-dependent; the median of the last 4 checks is the registered reading and the class makes the phase-dependence visible"
+ },
+ "grid": {
+  "r2_heldout": "GD, eta 0.1; data field, latent; act tanh, relu; s1 in {0.7, 1.4, 2.8}; lam in {0.0035, 0.007, 0.014}; p0 in {0.7, 1.3}; seeds 610, 611: 144 base runs + 288 truth-floor re-runs. Dev used s1 0.5-4, lam 0.0025-0.02, p0 0.5/1.0, seeds 600-603: every held-out value and seed is disjoint",
+  "r3_heldout": "AdamW (decoupled, b1 0.9, b2 0.999, eps 1e-8), eta 0.002; data field, latent; act tanh, relu; s1 in {0.7, 1.4}; lam in {0.015, 0.04}; p0 in {0.7, 1.3}; seeds 612, 613: 64 base runs + 64 truth-floor re-runs. Dev used s1 0.5-2, lam 0.01/0.03, p0 0.5/1.0, seed 604: disjoint",
+  "commands": [
+   "python3 code/e6_r23.py run r2_heldout results/e6/r2_heldout 8",
+   "python3 code/e6_r23.py score r2_heldout results/e6/r2_heldout",
+   "python3 code/e6_r23.py run r3_heldout results/e6/r3_heldout 12",
+   "python3 code/e6_r23.py score r3_heldout results/e6/r3_heldout"
+  ],
+  "compute": "timed on development at the loaded local-compute rate: GD ~2.0 ms/step, AdamW ~3.0 ms/step; r2_heldout 5.76 M steps ~3.6 CPU-h (~30 min on 8 processes); r3_heldout 23.5 M steps ~20 CPU-h (~1.8 h on 12 processes). Both exceed the plan's 2 CPU-h line, so they wait for a bounded go"
+ },
+ "floor": "each base run has re-runs perturbing W2(0)'s rows by 1 + U(-1e-3, 1e-3) (both arms) and, under GD, lam x 1.005 at the base run's T; re-runs record the truth only. A base run is fragile if a re-run's truth differs from its own by more than 1; a cell with > 5% fragile runs is reported ill-posed. The verdict is on all runs; the same rule on the not-fragile subset is computed, and if its verdict differs the verdict word is 'undetermined'",
+ "nonfinite": "a base run whose training diverges (code/e6_r2.py's check every 50 steps) has no truth: it counts as a miss in the within-1 share and is left out of the MAE and the paired intervals; the count per cell is reported (development: relu s1 = 4 diverged at eta 0.1; a 4-run stability pilot of relu s1 = 2.8 at seed 690, outside every grid, did not diverge)",
+ "rung2_gd": {
+  "criterion": "r_decay: N1-general's near-collapse linear integration from the actual W2(0), on the hidden-feature statistics of W1(t) = (1 - eta lam)^step W1(0) (recomputed every 50 steps for tanh; exact rescaling for relu); predicted rank = the maximum count over checks",
+  "pass": "on all base runs: within-1 share >= 0.70 and MAE <= 1.5, and r_decay's MAE below r_init's, the window's and every mu variant's with the paired bootstrap 95% CI of mean(|baseline - truth| - |r_decay - truth|) above 0, resampling configurations (data, act, s1, lam, p0; each with its 2 seeds) as the unit",
+  "tolerance_from_development": "dev: MAE 0.26, within-1 0.99 (144 runs); dev2 (wider truth): MAE 1.19, within-1 0.70 (54 finite runs). The tolerance is set at dev2's level, which the held-out lam range spans",
+  "must_beat": {
+   "r_init": "the delivered E2 MLP predictor (feature statistics frozen at initialisation); dev MAE 2.44 / 6.17",
+   "window": "#{p0 c - p0^2 s - lam > 0} on the initial feature statistics",
+   "mu (P2, #12)": "dvd, dvd_signed, dvd_sorted, dvd_pq, dvd_pq_signed, dvd_exact, dvd_nowd of 2610.02344 (code/baselines/dvd_mu.py) on the initial feature statistics and P0"
+  },
+  "reported_beside_no_claim": {
+   "static": "#{c^2 >= 4 lam s}: on dev2 not separated from r_decay (CI [-0.22, 0.78]); on dev worse (2.74)",
+   "r_lin": "the delivered N1 on the input statistics, ignoring the hidden layer: on dev2 not separated (1.13 vs 1.19)",
+   "r_meas": "r_decay with the run's own W1 up to 10% of T (operational)",
+   "early": "the measured count at 10% of T; under the rung 1a reading rule a better MAE of r_decay is stated as 'the criterion gives at t = 0 what a measurement gives from 10% of T', never as 'beats measurement'",
+   "zero": "rank 0"
+  },
+  "expectation_from_development": "r_decay passes its tolerance and beats r_init, the window and mu; it is not expected to separate from static or r_lin on a wide-truth grid. The claim supported by a pass is that the frozen-feature E2 predictor fails in the MLP because W1 decays near collapse, and accounting for that decay restores the race's accuracy; it is not that the race beats every simple count"
+ },
+ "rung3_adamw": {
+  "criterion": "the static bound #{c > 0 and c^2 >= 4 lam s} on the eigen-paired initial feature statistics (A2's exit, plan v2.9)",
+  "pass": "on all base runs: within-1 share >= 0.60 and MAE <= 2.0 (no must-beat condition: the static bound is the plan's fallback criterion, not a candidate)",
+  "reading_stated_before": [
+   "A2 already showed the static bound failing on weak-direction statistics (within-1 0.0, MAE 7.8 on the converged a2a runs). A tolerance crossing here is read as 'no validated AdamW criterion; the static bound's error', not as a failure of the delivered theory to transfer (plan v2.9 exit)",
+   "rung 3 development at eta 0.002 (results/e6/r3_dev_adam2, README E6 rungs 2-3) gives static MAE 13.5, bias -11.9, 40% of runs settled, so a fail is expected"
+  ],
+  "extra_rows_never_criteria": {
+   "v4": "E4's phase model v4 run per eigen-paired direction of the initial feature statistics (a0_k = |W2(0) u_k|; scalar AdamW to step 300, then phase_model_v4 to T); dev MAE 12.2",
+   "cs_thr": "the closed-form AdamW count #{c/s > 0.05} (v4's settled law, plan v2.10); dev MAE 11.9"
+  },
+  "reported_beside": [
+   "window",
+   "every mu variant (P2)",
+   "r_lin",
+   "early (count at 10% of T; dev MAE 7.0, the best row)",
+   "zero",
+   "each row's paired configuration-cluster CI against the static bound"
+  ],
+  "also_reported": "the share of runs at full rank 32 at the truth reading (the horizon at eta 0.002 does not bring collapse there), the class counts, the score on the settled subset and at T, per (data, act) cell",
+  "not_defined": "r_init / r_decay / r_meas are not defined under AdamW (Adam normalises W1's tiny gradient to steps ~eta, so W1 is neither near-static nor decaying; the race integrator is the gradient-flow map)"
+ },
+ "mu_P2": "registered from the start in both arms: every dvd_mu.py variant on the initial feature statistics and P0 = p0 I; in rung 2 each is a must-beat row",
+ "exit": "rung 2: if the verdict fails, the MLP rung is a located failure (which condition, which cell) and the race's claim stays linear-encoder only (L2 open); rung 3: a fail is read as stated above. Each grid is scored once, not iterated; fails are reported with the same prominence as passes",
+ "development_disclosed": [
+  "results/e6/r2_dev (144 runs), r2_dev2 (64 runs, 10 diverged): r_decay chosen on these",
+  "results/e6/r2_dev_adam (eta 0.02, unstable) and code/checks/e6_r3_adam_eta.py (eta chosen from stability)",
+  "results/e6/r3_dev_adam2 (eta 0.002): the median-of-last-4 truth and the classes were chosen after reading it",
+  "a scorer smoke test on grid r23_smoke (seed 695, outside every grid; outputs discarded) and the 4-run relu s1 = 2.8 stability pilot at seed 690 (no divergence; ranks 1-4 read)"
+ ],
+ "scorer": "python3 code/e6_r23.py score GRID OUTDIR -> results/e6/GRID/r23_GRID_score.json (verdict_word per arm)",
+ "amendment_1": {
+  "written": "before any held-out run of r2_heldout or r3_heldout (plan v2.20 Sec. 3 C 'Rung 2/3 registration'). The registered scorer code/e6_r23.py is run unchanged inside the amendment's scorer; nothing registered above is relaxed",
+  "md5": {
+   "code/e6_r23_a1.py": "f475400bf6bf7032643a70605b4a6d1a",
+   "code/e6_r23.py": "fbf11fcb93cc30313ac9b8471a77c140",
+   "code/e6_r2.py": "321bbbe97b5fbe82ebe0965a7333d4c5"
+  },
+  "scorer": "python3 code/e6_r23_a1.py score GRID results/e6/GRID results/e6/GRID_inputs.json -> results/e6/GRID/r23_GRID_score_a1.json (also writes the registered r23_GRID_score.json); each grid scored once",
+  "C1_r_decay_vs_r_init (rung 2, GD)": {
+   "statistic": "configuration-cluster paired bootstrap 95% CI (2000 resamples; unit = data x act x s1 x lam x p0 with its seeds) of mean(|r_init - truth| - |r_decay - truth|) on all finite base runs",
+   "words": {
+    "located": "CI above 0 and r_decay inside its registered tolerance (within-1 >= 0.70, MAE <= 1.5). Reads: 'the delivered two-layer misprediction from initial features (E2 MLP, MAE 2.69) is located in the first layer's own decay near collapse'",
+    "better than r_init, outside tolerance": "CI above 0, tolerance crossed: rung 2's located failure (which cell crosses is reported)",
+    "not shown": "CI not above 0"
+   }
+  },
+  "C2_r_decay_vs_baselines": {
+   "rung 2 (GD)": "r_decay against the static bound #{c^2 >= 4 lam s}, r_lin and the early count (count at 10% of T), each by the same cluster CI of mean(|baseline - truth| - |r_decay - truth|)",
+   "words": {
+    "race better": "CI above 0",
+    "not separated": "CI spans 0",
+    "baseline better": "CI below 0"
+   },
+   "readings": {
+    "static not separated": "no race-specific claim for MLP encoders",
+    "r_lin not separated": "the hidden layer adds nothing measurable",
+    "early: not 'race better'": "no claim beyond an early measurement"
+   },
+   "informative_runs": {
+    "rule": "from inputs alone (the criteria's own predictions on the run's sampled data and initial weights, no training): informative against static if |r_decay - static| >= 2, against r_lin if |r_decay - r_lin| >= 2. The early count is a training measurement, so it has no input-only informative set and is scored pooled",
+    "committed_file": "results/e6/r2_heldout_inputs.json (per-run predictions and the informative id lists; job ran code/e6_r23_a1.py inform r2_heldout). At scoring, every finite run's own predictions must equal the committed ones (prediction_mismatch, reported)",
+    "r2_heldout_counts": {
+     "static": 119,
+     "r_lin": 71,
+     "of_base_runs": 144,
+     "per_cell": {
+      "field_tanh": {
+       "static": 28,
+       "r_lin": 15,
+       "runs": 36
+      },
+      "field_relu": {
+       "static": 36,
+       "r_lin": 18,
+       "runs": 36
+      },
+      "latent_tanh": {
+       "static": 23,
+       "r_lin": 18,
+       "runs": 36
+      },
+      "latent_relu": {
+       "static": 32,
+       "r_lin": 20,
+       "runs": 36
+      }
+     }
+    },
+    "word_carried_by": "the informative-run result (also with fewer than 10 finite informative runs: 'too few informative runs'; none: 'no informative runs', read as 'in the MLP model the race and the static bound agree wherever training is stable'); the pooled result is reported beside it",
+    "sizing_from_development": "on dev2's informative runs (28/54 vs static) the paired difference had mean 0.36, between-configuration SD of configuration means 2.44 (2 seeds), within-configuration variance 4.75; on dev (120/144 informative) mean 2.92, SD 1.07. r2_heldout's 119 informative runs span about 60 configurations, so the cluster CI half-width is about 1.96 x 2.44 / sqrt(60) = 0.62 directions against static (about 0.85 against r_lin: 71 runs, about 36 configurations). Doubling seeds would cut it only to about 0.55 (the between-configuration part dominates); adding configurations to resolve a dev2-sized edge (0.36) needs about 3 x the grid (+7 CPU-h), beyond the bounded go. Stated before the run: an edge of dev's size is resolved, an edge of dev2's size reads 'not separated'. No runs added"
+   },
+   "rung 3 (AdamW)": "the static bound (criterion) against r_lin and the early count, same words; informative set vs r_lin from results/e6/r3_heldout_inputs.json",
+   "beside_each": "the window and every mu variant (P2, #12: dvd, dvd_signed, dvd_sorted, dvd_pq, dvd_pq_signed, dvd_exact, dvd_nowd) with MAE and cluster CI against the primary, on the same runs"
+  },
+  "C3_tolerance": "unchanged from rung2_gd.pass (within-1 >= 0.70, MAE <= 1.5 and every must-beat row) and rung3_adamw.pass; committed before the held-out grid; a crossing is the rung's located failure",
+  "sensitivities": "every word above is computed on all finite base runs (primary; unsettled runs scored at the registered horizon), on the settled subset and on the not-fragile subset; a word that differs between the primary and a subset with >= 10 base runs is 'undetermined'. The registered pass/fail likewise becomes 'undetermined' if the settled subset's verdict differs. Diverged runs: a miss in the within-1 share, outside the MAE and the paired CIs, counted per cell (as registered)",
+  "rung3_horizon": "a fixed derived horizon, not a settled end: T = 8 / (eta lam) at eta 0.002 (8 weight-decay e-folds), truth = median of the embedding rank over the last 4 of 20 checks; unsettled runs are scored at that horizon in the primary and excluded in the settled sensitivity",
+  "L2_tanh_random_mask_item": "r2_heldout contains tanh hidden layers under Bernoulli (per-coordinate) masks at r = 0.5, lam 0.0035-0.014, 36 runs per data x act cell; it does NOT contain E2's one-layer tanh encoder on the n = 64 cyclic field with Bernoulli patch masks at lam = 1e-3, where the late gain was 38-62 against 9-13. Reported per data x act cell: rank at T minus r_decay (mean, share > 1, CI) and rank at T minus the early count. On development this gap was small (dev tanh mean 0.14, share > 1 0.01; dev2 tanh -0.31, share 0.19). Reading: the result speaks to late gain in the MLP-with-tanh form only; for E2's one-layer tanh/Bernoulli regime the item stays open",
+  "smoke_test_disclosed": "the amendment's scorer was smoke-tested on grid r23_smoke (seed 695, outside every grid; outputs discarded; MIN_INF and MIN_SUB set to 1 for the test only). No held-out run was made",
+  "commands": [
+   "python3 code/e6_r23_a1.py inform r2_heldout results/e6/r2_heldout_inputs.json 8",
+   "python3 code/e6_r23_a1.py inform r3_heldout results/e6/r3_heldout_inputs.json 8",
+   "python3 code/e6_r23.py run r2_heldout results/e6/r2_heldout 8",
+   "python3 code/e6_r23_a1.py score r2_heldout results/e6/r2_heldout results/e6/r2_heldout_inputs.json",
+   "python3 code/e6_r23.py run r3_heldout results/e6/r3_heldout 12",
+   "python3 code/e6_r23_a1.py score r3_heldout results/e6/r3_heldout results/e6/r3_heldout_inputs.json"
+  ]
+ },
+ "amendment_2": {
+  "written": "before any held-out run of r2_heldout or r3_heldout, after the review's early check of amendment 1 (R23-1, R23-2). Supersedes amendment 1's scorer; code/e6_r23_a1.py is kept unchanged for the record. Nothing registered (truth, tolerances, must-beat rows, verdict words) is relaxed.",
+  "md5": {
+   "code/e6_r23_a2.py": "9ae651c3d7528eb02073b589eb807b65",
+   "code/e6_r23.py": "fbf11fcb93cc30313ac9b8471a77c140",
+   "code/e6_r2.py": "321bbbe97b5fbe82ebe0965a7333d4c5"
+  },
+  "R23_2_independent_draws": {
+   "problem": "e6_r2.sample draws X and the masks from default_rng(seed) and init draws W1, W2(0) from default_rng(1e5 + seed); with seeds [610, 611] every configuration of a (data, seed) shared one draw up to the s1 scaling, so the 72-configuration bootstrap rested on 2 draws per data type and was conditional on them.",
+   "change": "Base run k of the grid (creation order) gets seed SEED0 + k (r2_heldout 20000 + k, r3_heldout 30000 + k; disjoint from every development and smoke seed); its truth-floor re-runs keep it. rep = k mod 2 (the number of registered seeds), so the two registered seed replicates become two halves of independently drawn configurations. Same configurations, values, run count and cost.",
+   "unit": "Every configuration has its own independent draws; the configuration-cluster bootstrap now resamples independent units.",
+   "per_half": "Every C1 and C2 word is also computed on each rep half separately and reported beside the pooled word (paired r_decay - baseline difference per half). Sign disagreement rule: a pooled 'race better', 'baseline better' or C1 'located' becomes 'undetermined' when a half's CI lies entirely on the other side of 0; a half whose CI spans 0 does not change the pooled word."
+  },
+  "R23_1_nonfinite": {
+   "problem": "The registered cmd_score counts non-finite base runs as within-1 misses on all runs (nonfinite=nnf) but summarises not_fragile (and settled) without them; a non-finite run is never fragile (its floor check continues), so one divergence changed within-1 on all runs only and could turn the word 'undetermined' with no fragile run.",
+   "change": "Non-finite base runs count as within-1 misses in the all-runs, settled and not-fragile summaries alike, and in C1's tolerance check; the registered verdict word is recomputed so ('verdict_word' in r23_GRID_score_a2.json). The registered scorer's own r23_GRID_score.json is still written and reported beside it."
+  },
+  "informative_runs": {
+   "rule": "unchanged from amendment 1 (|r_decay - static| >= 2, |r_decay - r_lin| >= 2, from inputs alone), recomputed under the new seeding",
+   "r2_heldout": {
+    "file": "results/e6/r2_heldout_inputs.json",
+    "base_runs": 144,
+    "counts": {
+     "static": 120,
+     "r_lin": 69
+    },
+    "cells": {
+     "field_tanh": {
+      "static": 27,
+      "r_lin": 12,
+      "runs": 36
+     },
+     "field_relu": {
+      "static": 35,
+      "r_lin": 17,
+      "runs": 36
+     },
+     "latent_tanh": {
+      "static": 26,
+      "r_lin": 20,
+      "runs": 36
+     },
+     "latent_relu": {
+      "static": 32,
+      "r_lin": 20,
+      "runs": 36
+     }
+    }
+   },
+   "r3_heldout": {
+    "file": "results/e6/r3_heldout_inputs.json",
+    "base_runs": 64,
+    "counts": {
+     "r_lin": 40
+    },
+    "cells": {
+     "field_tanh": {
+      "r_lin": 11,
+      "runs": 16
+     },
+     "field_relu": {
+      "r_lin": 12,
+      "runs": 16
+     },
+     "latent_tanh": {
+      "r_lin": 8,
+      "runs": 16
+     },
+     "latent_relu": {
+      "r_lin": 9,
+      "runs": 16
+     }
+    }
+   },
+   "note": "amendment 1's counts (119 / 71 of 144) were for the shared-draw seeding and are superseded"
+  },
+  "commands": {
+   "inform": "python3 code/e6_r23_a2.py inform GRID results/e6/GRID_inputs.json 8 (done, committed with this amendment)",
+   "run": "python3 code/e6_r23_a2.py run GRID results/e6/GRID 8 (after the bounded go)",
+   "score": "python3 code/e6_r23_a2.py score GRID results/e6/GRID results/e6/GRID_inputs.json -> results/e6/GRID/r23_GRID_score_a2.json; each grid scored once"
+  },
+  "smoke": "scorer smoke on r23_smoke (seeds 40000+, outside every grid; 20 runs, 37 s): prediction_mismatch empty, seed check true, per-half words computed; scratch only, no held-out run",
+  "reporting": "With the verdict: static's and r_lin's minus-primary cluster CIs on all runs (review note: on dev2 both sat inside r_decay's absolute tolerance; a pass shows decay corrects E2's frozen-feature predictor, not that hidden-layer decay is needed)."
+ }
+}

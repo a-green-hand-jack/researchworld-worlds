@@ -1,0 +1,73 @@
+"""Referee check of E1c's measured labels (experiment-repo 0ce2e2b, results/e1c/e1c_runs.jsonl) against the forecast
+pre-registered in checks/e1c_prereg.py (the exact per-mode reduction of simulate(): copy target, identity factors,
+Euler eta = 0.1, 1e-150 flush every 50 steps), run independently of E1c's code, per run and per mode, at t_end and
+2 t_end.  Also checks the reported summary (results/e1c/summary.json) against the measured labels.
+Usage: python3 checks/e1c_results.py PREDICTION_JSON RUNS_JSONL SUMMARY_JSON
+"""
+import sys, json
+import numpy as np
+
+pred_path, runs_path, summ_path = sys.argv[1:4]
+R = json.load(open(pred_path))["runs"]; N = len(R)
+M = {j["id"]: j for j in map(json.loads, open(runs_path))}
+n = d = 16; SIG = np.linspace(2.0, 0.6, n); C = SIG * 0.88 ** np.arange(n); ETA = 0.1; THR = 0.05; W0 = 1e-3; JIT = 0.1
+
+
+def init_norms(seed):
+    rng = np.random.default_rng(seed); rng.standard_normal((d, n))
+    return W0 * np.exp(JIT * rng.standard_normal(n))
+
+
+a = np.array([init_norms(r["seed"]) for r in R]); lam = np.array([r["lam"] for r in R])[:, None]
+L = np.array([r["depth"] for r in R], float)[:, None]
+q = np.broadcast_to(np.array([r["p0"] ** (1.0 / r["depth"]) for r in R])[:, None], a.shape).copy()
+marks = {"t_end": np.array([int(round(r["t_end"] / ETA)) for r in R]),
+         "2t_end": np.array([int(round(2 * r["t_end"] / ETA)) for r in R])}
+snap = {k: np.zeros((N, n)) for k in marks}
+for t in range(int(marks["2t_end"].max())):
+    p = q ** L
+    da = -(p * p * SIG * a - p * C * a) - lam * a
+    dq = -(q ** (L - 1) * (p * SIG * a - C * a) * a + lam * q)
+    a = a + ETA * da; q = q + ETA * dq
+    if t % 50 == 0:
+        a[np.abs(a) < 1e-150] = 0.0; q[np.abs(q) < 1e-150] = 0.0
+    for k, Tm in marks.items():
+        hit = Tm == t + 1
+        if hit.any():
+            snap[k][hit] = a[hit]
+F = {k: np.abs(v) > THR for k, v in snap.items()}
+ids = [r.get("id", i) for i, r in enumerate(R)]
+meas = {"t_end": np.array([M[i]["surv"] for i in ids], bool), "2t_end": np.array([M[i]["surv_2t"] for i in ids], bool)}
+rank_meas = np.array([M[i]["rank_meas"] for i in ids]); rank_2t = np.array([M[i]["rank_meas_2t"] for i in ids])
+out = dict(source="experiment-repo 0ce2e2b results/e1c/{prediction.json,e1c_runs.jsonl,summary.json}", runs=N,
+           diverged=int(sum(bool(M[i]["diverged"]) for i in ids)),
+           surv_sum_equals_rank_meas=bool((meas["t_end"].sum(1) == rank_meas).all()),
+           rank_changed_t_end_to_2t_end=int((rank_meas != rank_2t).sum()))
+for k in marks:
+    out[f"forecast_vs_measured_{k}"] = dict(mode_disagree=int((F[k] != meas[k]).sum()), modes=int(F[k].size),
+                                             run_rank_disagree=int((F[k].sum(1) != meas[k].sum(1)).sum()))
+predL = np.array([r["pred_depthL"] for r in R], bool); pred1 = np.array([r["pred_depth1"] for r in R], bool)
+Lc = L[:, 0].astype(int); S = json.load(open(summ_path))["by_depth"]; chk = {}
+for v in (1, 2, 3, 4):
+    h = Lc == v; row = {}
+    for name, P in (("depthL", predL), ("depth1", pred1)):
+        err = P[h].sum(1) - meas["t_end"][h].sum(1)
+        mine = dict(exact=float((err == 0).mean()), mae=float(np.abs(err).mean()), over=int((err > 0).sum()),
+                    under=int((err < 0).sum()), mode_acc=float((P[h] == meas["t_end"][h]).mean()))
+        rep = S[str(v)][name]
+        row[name] = dict(mine=mine, matches_summary=bool(np.isclose(mine["exact"], rep["exact"][0])
+                                                         and np.isclose(mine["mae"], rep["mae"][0])
+                                                         and mine["over"] == rep["over"] and mine["under"] == rep["under"]
+                                                         and np.isclose(mine["mode_acc"], rep["mode_acc"][0])))
+    chk[f"L={v}"] = row
+h = Lc >= 2; err = predL[h].sum(1) - meas["t_end"][h].sum(1); err1 = pred1[h].sum(1) - meas["t_end"][h].sum(1)
+chk["L>=2"] = dict(depthL_mae=float(np.abs(err).mean()), depth1_mae=float(np.abs(err1).mean()),
+                   depthL_over=int((err > 0).sum()), depthL_under=int((err < 0).sum()))
+# where the depth-L criterion misses: which modes (index k) and at which (L, lam)
+miss = (~predL) & meas["t_end"]
+chk["depthL_missed_modes"] = dict(total=int(miss.sum()), by_L={str(v): int(miss[Lc == v].sum()) for v in (2, 3, 4)},
+                                  by_lam={str(x): int(miss[lam[:, 0] == x].sum()) for x in sorted(set(lam[:, 0]))},
+                                  false_survivals=int((predL & ~meas["t_end"]).sum()))
+out["summary_check"] = chk
+print(json.dumps(out, indent=1))
+json.dump(out, open("checks/e1c_results.json", "w"), indent=1)

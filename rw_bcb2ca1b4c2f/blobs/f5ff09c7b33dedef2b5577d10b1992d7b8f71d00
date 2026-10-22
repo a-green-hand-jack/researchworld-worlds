@@ -1,0 +1,65 @@
+"""Early check of experiment-repo e16e822 theory/ext_A_adamw.md, A-ii (scalar mode).
+
+Same update as code/checks/e4_scalar_adam.py (AdamW, decoupled decay, bias correction).
+Question: what re-excites a collapsed amplitude? Hypothesis: once sqrt(vhat) << eps, Adam is
+gradient descent with step eta/eps; for the amplitude, a_{t+1} = a_t (1 - eta*lam - eta*h(p)/eps),
+which is unstable (|1 - eta h/eps| > 1, sign flip every step) whenever eta*|h(p)|/eps > 2,
+whatever the sign of h(p), i.e. also outside the window.
+Prints, per setting: min |a|, step of the minimum, p and h(p) there, sqrt(vhat_a) there,
+sign flips of a in the 200 steps after the minimum, and |a| at the end.
+Linear stability of Adam with momentum b1 on curvature k: unstable when eta*k/(sqrt(vhat)+eps) > 2(1+b1)/(1-b1)
+(= 38 for b1 = 0.9; Cohen et al. 2022, arXiv 2207.14484); in the stable complex regime |a| decays by sqrt(b1) per step.
+"""
+import json, sys
+import numpy as np
+
+def run(a0, p0, c, s, lam, eta=0.02, T=20000, b1=0.9, b2=0.999, eps=1e-8, dtype=np.float64):
+    th = np.array([a0, p0], dtype); m = np.zeros(2, dtype); v = np.zeros(2, dtype)
+    A = np.empty(T); P = np.empty(T); SV = np.empty(T)
+    one = dtype(1)
+    for t in range(1, T + 1):
+        a, p = th
+        g = np.array([-a * (p * c - p * p * s), -a * a * (c - p * s)], dtype)
+        m = dtype(b1) * m + dtype(1 - b1) * g
+        v = dtype(b2) * v + dtype(1 - b2) * g * g
+        mh = m / dtype(1 - b1 ** t); vh = v / dtype(1 - b2 ** t)
+        th = th * dtype(1 - eta * lam) - dtype(eta) * mh / (np.sqrt(vh) + dtype(eps))
+        A[t - 1], P[t - 1], SV[t - 1] = th[0], th[1], np.sqrt(vh[0])
+    return A, P, SV
+
+def summarise(A, P, SV, c, s, eta, eps):
+    absA = np.abs(A); i = int(np.argmin(np.where(absA > 0, absA, np.inf))) if (absA > 0).any() else 0
+    seg = np.sign(A[i:i + 200]); flips = int((seg[1:] * seg[:-1] < 0).sum())
+    p = float(P[i]); h = p * (c - p * s)
+    r = eta * abs(h) / (SV[i] + eps)                      # preconditioned curvature at the minimum
+    later = np.nonzero(absA[i:] > 1e-2)[0]; re_step = int(i + later[0] + 1) if later.size else None
+    # collapse rate: slope of ln|a| while 1e-80 < |a| < 1e-10 before the minimum (theory: ln(1/sqrt(b1)))
+    seg_idx = np.nonzero((absA[:i] < 1e-10) & (absA[:i] > 1e-80))[0]
+    rate = float(-np.polyfit(seg_idx, np.log(absA[seg_idx]), 1)[0]) if seg_idx.size > 20 else None
+    return dict(min_abs_a=float(absA[i]), step_min=i + 1, p_at_min=p, h_at_min=h,
+                precond_curv_at_min=r, reescape_step=re_step, collapse_rate_per_step=rate,
+                in_window=bool(0 < p < c / s), sqrt_vhat_at_min=float(SV[i]),
+                eta_abs_h_over_eps=eta * abs(h) / eps, flips_next_200=flips,
+                final_abs_a=float(absA[-1]), final_p=float(P[-1]), zero_at_end=bool(absA[-1] == 0))
+
+out = []
+c, s = 0.5, 1.0
+cases = []
+for eps in [1e-8, 1e-6, 1e-4, 1e-2]:
+    cases.append(dict(a0=1e-3, p0=1.0, lam=0.0, eta=0.02, eps=eps, b2=0.999, dtype="float64"))
+for eta in [0.002]:
+    cases.append(dict(a0=1e-3, p0=1.0, lam=0.0, eta=eta, eps=1e-8, b2=0.999, dtype="float64"))
+for b2 in [0.99, 0.9999]:
+    cases.append(dict(a0=1e-3, p0=1.0, lam=0.0, eta=0.02, eps=1e-8, b2=b2, dtype="float64"))
+cases.append(dict(a0=1e-3, p0=1.0, lam=0.0, eta=0.02, eps=1e-8, b2=0.999, dtype="float32"))
+cases.append(dict(a0=1e-3, p0=1.0, lam=0.01, eta=0.02, eps=1e-8, b2=0.999, dtype="float32"))
+cases.append(dict(a0=1e-3, p0=1.0, lam=0.2, eta=0.02, eps=1e-8, b2=0.999, dtype="float64"))
+cases.append(dict(a0=1e-3, p0=1.0, lam=0.2, eta=0.02, eps=1e-2, b2=0.999, dtype="float64"))
+for cs in cases:
+    dt = np.float32 if cs["dtype"] == "float32" else np.float64
+    A, P, SV = run(cs["a0"], cs["p0"], c, s, cs["lam"], eta=cs["eta"], b2=cs["b2"], eps=cs["eps"], T=40000, dtype=dt)
+    r = dict(cs, **summarise(A, P, SV, c, s, cs["eta"], cs["eps"]))
+    out.append(r)
+    print(json.dumps(r), flush=True)
+json.dump(dict(source="experiment-repo e16e822 code/checks/e4_scalar_adam.py update rule; c=0.5, s=1, b1=0.9, T=40000",
+               numpy=np.__version__, runs=out), open(sys.argv[1] if len(sys.argv) > 1 else "adamw_scalar_reescape.json", "w"), indent=1)

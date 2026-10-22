@@ -1,0 +1,16 @@
+{
+ "experiment": "E6 / rung 1a of direction C, revision 2 of the tolerance (before the held-out registration)",
+ "status": "written after the development grid (results/e6/r1dev) and its per-depth post hoc reading (results/e6/r1dev/posthoc/byL.json) and the internal review's early check; before the held-out grid is registered. The held-out grid is scored once against this file; the v1 per-arm statistics are reported beside it.",
+ "why": "v1 pooled L = 1, where A1 is the delivered race and equals race_depth1, into the per-arm tolerance; its early baseline (10% of a horizon set by the depth-1 race) is outcome-dependent and at L >= 2 is read after the race is decided",
+ "tolerance": "per arm, applied separately at L = 2 and at L = 3 and pooled over L >= 2: within-1 share >= 0.90 and A1's MAE lower than every static/race/window baseline's and than early(t_e) at each t_e, paired bootstrap 95% CI of (baseline - A1) above 0",
+ "control": "L = 1 is a control, not scored: A1 must equal race_depth1 there on every run (a check of the code)",
+ "early": "the measured count at fixed absolute times t_e = 25 and 50 (in units of the flow time, eta = 0.05 per step), the same for every run and below the smallest 10% horizon of the development grid (52); the measured count along the trajectory at 5, 10, 15, 20, 30 and 50% of T is reported, not scored",
+ "race_deep_1d": "reported as a check of the alpha = 1 layer-balance reduction (exact on the aligned arm), not as support for A1",
+ "floor_and_well_posedness": {
+  "design": "held-out lam values satisfy |ln(lam / lam*_{L,k})| >= 0.10 for every direction k at the run's L",
+  "truth_floor": "every held-out run is re-run twice: a0_k multiplied by 1 + d_k, d_k ~ U(-1e-3, 1e-3), and lam multiplied by 1 + e, e = +-0.005 (default_rng(seed + 7919)); a final count is fragile if either re-run differs",
+  "use": "the floor is reported beside each statistic; tolerances apply unchanged on all runs and are also reported on the non-fragile runs; a cell whose floor exceeds 5% of runs is reported as ill-posed instead of pass/fail"
+ },
+ "exit": "as v1",
+ "amendment_2026-10-18": "the 'use' text should read: pass/fail is always reported for every cell; a cell whose floor exceeds 5% of runs is flagged ill-posed beside its pass/fail, with its floor. code/e6_r1.py score_v2 always behaved this way (pass computed regardless, floor.ill_posed beside it), so no score changes; non-finite base runs count as A1 misses (see results/e6/prediction.json note_2026-10-18)"
+}

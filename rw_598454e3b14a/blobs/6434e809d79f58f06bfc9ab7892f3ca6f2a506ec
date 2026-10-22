@@ -1,0 +1,29 @@
+"""Convert CIFAR-10 (Hugging Face `uoft-cs/cifar10`, config plain_text, parquet) to uint8 npz arrays.
+
+Download (done once, needs network; the E3 jobs themselves run offline):
+  https://huggingface.co/datasets/uoft-cs/cifar10/resolve/main/plain_text/train-00000-of-00001.parquet
+  https://huggingface.co/datasets/uoft-cs/cifar10/resolve/main/plain_text/test-00000-of-00001.parquet
+saved as DIR/train.parquet, DIR/test.parquet. Expected sha256:
+  train.parquet 8428b53a88a11ac374111006708df51469e315a22ac6d66470afd9c78d2ae883
+  test.parquet  841389e6f2d64f28bf17310e430aebac20ec3ba611a3c5e231dc93c645ce84de
+Usage: python3 code/prepare_cifar10.py DIR   -> DIR/train.npz, DIR/test.npz (x: N x 32 x 32 x 3 uint8, y: int64)
+"""
+import hashlib, io, sys
+import numpy as np
+import pyarrow.parquet as pq
+from PIL import Image
+
+SHA = {"train": "8428b53a88a11ac374111006708df51469e315a22ac6d66470afd9c78d2ae883",
+       "test": "841389e6f2d64f28bf17310e430aebac20ec3ba611a3c5e231dc93c645ce84de"}
+
+if __name__ == "__main__":
+    d = sys.argv[1] if len(sys.argv) > 1 else "data/cifar10"
+    for split in ("train", "test"):
+        fn = f"{d}/{split}.parquet"
+        h = hashlib.sha256(open(fn, "rb").read()).hexdigest()
+        assert h == SHA[split], (fn, h)
+        t = pq.read_table(fn).to_pydict()
+        x = np.stack([np.array(Image.open(io.BytesIO(im["bytes"])).convert("RGB")) for im in t["img"]])
+        y = np.array(t["label"], dtype=np.int64)
+        np.savez(f"{d}/{split}.npz", x=x, y=y)
+        print(split, x.shape, np.bincount(y))

@@ -1,0 +1,107 @@
+"""Development only (A3): summary of development grid v2 (results/e4/a3dev2/a3dev_runs.jsonl.gz; code d54f0cf, rules
+of results/e4/a3_tolerance.json v2, committed before it ran). On the delivered SV rank (count of singular values of W
+above 0.05) time-averaged over [T/2, T]:
+  - cell means by rotation (truth variant: float64 for theta > 0, long double for theta = 0), with the static bound;
+  - the per-direction count's excess over the SV count;
+  - paired effects of theta, lam and a0 with the registered measured-sign rule (paired 95% t-CI excludes 0 and
+    |mean| >= 0.5) per cell (development has 4 seeds; the held-out grid needs >= 8);
+  - the 1e-15 floor F = |rank_tavg(f64, a0 x (1 +- 1e-15)) - rank_tavg(f64)| and the precision difference
+    Dp = rank_tavg(long double) - rank_tavg(f64) on the precision subset, with the registered switch rule applied
+    (development reading of the rule; the held-out decision is taken on the held-out truth).
+Usage: python3 code/checks/e4_a3_dev2_summary.py > results/e4/a3dev2/summary.txt"""
+import sys, os, json, gzip, itertools
+import numpy as np
+from scipy import stats as sps
+
+runs = [json.loads(l) for l in gzip.open("results/e4/a3dev2/a3dev_runs.jsonl.gz", "rt")]
+V = {}
+for r in runs:
+    V.setdefault(r["variant"], []).append(r)
+print("runs", len(runs), {k: len(v) for k, v in V.items()}, "finite", {k: sum(x["finite"] for x in v) for k, v in V.items()})
+T = V["truth"]
+print("truth dtypes", {d: sum(r["dtype"] == d for r in T) for d in sorted({r["dtype"] for r in T})})
+rot = sorted({(r["side"], r["theta"]) for r in T}, key=str)
+
+
+def tci(d):
+    d = np.asarray(d, float)
+    if d.size < 2 or np.all(d == d[0]):
+        return d.mean(), d.mean(), d.mean()
+    h = sps.t.ppf(0.975, d.size - 1) * d.std(ddof=1) / np.sqrt(d.size)
+    return d.mean(), d.mean() - h, d.mean() + h
+
+
+def sign(d):
+    m, lo, hi = tci(d)
+    return ("+" if m > 0 else "-") if (lo > 0 or hi < 0) and abs(m) >= 0.5 else "0"
+
+
+for st in sorted({r["stats"] for r in T}):
+    sub = [r for r in T if r["stats"] == st]
+    print(f"\n== stats {st}: SV rank_tavg, mean over seeds (static bound sb)")
+    for lam, a0, p0 in itertools.product(*(sorted({r[k] for r in sub}) for k in ("lam", "a0", "p0"))):
+        cell = [r for r in sub if (r["lam"], r["a0"], r["p0"]) == (lam, a0, p0)]
+        line = []
+        for sd, th in rot:
+            x = [r["rank_tavg"] for r in cell if (r["side"], r["theta"]) == (sd, th) and r["finite"]]
+            line.append(f"{sd[:4]}{th:g}:{np.mean(x):5.1f}" if x else f"{sd[:4]}{th:g}:  -  ")
+        print(f"lam {lam:<5} a0 {a0:<6} p0 {p0:<3} sb {cell[0]['static_bound']:>2} | " + " ".join(line))
+
+print("\n== per-direction count minus SV count (rank_dir_tavg - rank_tavg), by rotation")
+for sd, th in rot:
+    d = np.array([r["rank_dir_tavg"] - r["rank_tavg"] for r in T if (r["side"], r["theta"]) == (sd, th)])
+    print(f"{sd} theta {th}: mean {d.mean():+.2f} median {np.median(d):+.2f} p90 {np.quantile(d, 0.9):+.2f}")
+
+print("\n== paired effects on the SV rank_tavg (difference over seeds; cell sign by the registered measured rule)")
+def effect(name, key, sel0, sel1):
+    A = {key(r): r["rank_tavg"] for r in T if sel0(r)}
+    pairs = [(key(r), r["rank_tavg"] - A[key(r)]) for r in T if sel1(r) and key(r) in A]
+    d = np.array([x for _, x in pairs])
+    cells = {}
+    for k, x in pairs:
+        cells.setdefault(k[:-1], []).append(x)
+    sg = [sign(v) for v in cells.values()]
+    print(f"{name}: pairs {d.size} mean {d.mean():+.2f} share>0.5 {np.mean(d > 0.5):.2f} share<-0.5 {np.mean(d < -0.5):.2f}"
+          f" | cells {len(cells)} (+ {sg.count('+')}, - {sg.count('-')}, 0 {sg.count('0')})")
+
+for sd, th in rot:
+    if th == 0:
+        continue
+    effect(f"theta 0 -> {sd} {th}", lambda r: (r["stats"], r["lam"], r["a0"], r["p0"], r["seed"]),
+           lambda r: r["theta"] == 0, lambda r, sd=sd, th=th: (r["side"], r["theta"]) == (sd, th))
+lams = sorted({r["lam"] for r in T})
+for l0, l1 in zip(lams, lams[1:]):
+    for zero in (True, False):
+        effect(f"lam {l0} -> {l1} ({'theta = 0' if zero else 'theta > 0'})",
+               lambda r: (r["stats"], r["side"], r["theta"], r["a0"], r["p0"], r["seed"]),
+               lambda r, l0=l0, z=zero: r["lam"] == l0 and (r["theta"] == 0) == z,
+               lambda r, l1=l1, z=zero: r["lam"] == l1 and (r["theta"] == 0) == z)
+a0s = sorted({r["a0"] for r in T})
+for x0, x1 in zip(a0s, a0s[1:]):
+    for zero in (True, False):
+        effect(f"a0 {x0} -> {x1} ({'theta = 0' if zero else 'theta > 0'})",
+               lambda r: (r["stats"], r["side"], r["theta"], r["lam"], r["p0"], r["seed"]),
+               lambda r, x0=x0, z=zero: r["a0"] == x0 and (r["theta"] == 0) == z,
+               lambda r, x1=x1, z=zero: r["a0"] == x1 and (r["theta"] == 0) == z)
+
+print("\n== precision subset (theta > 0, id % 4 == 0)")
+tr = {r["id"]: r for r in T}
+P = {r["id"]: r for r in V.get("f64_pert", [])}; L = {r["id"]: r for r in V.get("ld", [])}
+ids = sorted(set(P) & set(L))
+F = np.array([abs(P[i]["rank_tavg"] - tr[i]["rank_tavg"]) for i in ids])
+Dp = np.array([L[i]["rank_tavg"] - tr[i]["rank_tavg"] for i in ids])
+Fd = np.array([abs(P[i]["rank_dir_tavg"] - tr[i]["rank_dir_tavg"]) for i in ids])
+print(f"runs {len(ids)}; floor F (SV): median {np.median(F):.3f} p90 {np.quantile(F, 0.9):.3f} max {F.max():.3f}; "
+      f"per-direction count: median {np.median(Fd):.3f} p90 {np.quantile(Fd, 0.9):.3f}")
+m, lo, hi = tci(Dp)
+print(f"Dp = ld - f64 (SV): median |Dp| {np.median(np.abs(Dp)):.3f} p90 |Dp| {np.quantile(np.abs(Dp), 0.9):.3f}; mean {m:+.3f} 95% CI [{lo:+.3f}, {hi:+.3f}]")
+a = np.median(np.abs(Dp)) > np.quantile(F, 0.9); b = (lo > 0 or hi < 0) and abs(m) >= 0.25
+print(f"registered switch rule (development reading): (a) median |Dp| > p90 F: {a}; (b) signed bias: {b} -> "
+      f"{'long double' if a or b else 'float64 stands'}")
+for sd, th in rot:
+    if th == 0:
+        continue
+    f_ = [abs(P[i]["rank_tavg"] - tr[i]["rank_tavg"]) for i in ids if (tr[i]["side"], tr[i]["theta"]) == (sd, th)]
+    d_ = [L[i]["rank_tavg"] - tr[i]["rank_tavg"] for i in ids if (tr[i]["side"], tr[i]["theta"]) == (sd, th)]
+    if f_:
+        print(f"  {sd} theta {th}: n {len(f_)} F median {np.median(f_):.3f} | Dp mean {np.mean(d_):+.3f} median |Dp| {np.median(np.abs(d_)):.3f}")

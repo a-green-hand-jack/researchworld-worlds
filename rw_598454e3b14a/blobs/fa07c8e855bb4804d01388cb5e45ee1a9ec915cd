@@ -1,0 +1,146 @@
+"""T1: what each heuristic changes in the race (term moved, signed prediction, evidence status).
+Terms and predictions are transcribed from theory/derivations.md Sec. 4 (experiment-repo, a61cb8a) and the paper's Sec. 5.
+The evidence column is computed: for knobs with an E1 slice, the number of slice points where the seed-mean measured rank is
+within 0.5 of the seed-mean race prediction; other statuses are the plan's state (held-out pending / known)."""
+import os, sys, json
+sys.path.insert(0, os.path.dirname(__file__))
+import common
+
+# knob, term it moves, prediction, evidence key (E1 slice name, or fixed status text)
+ROWS = [
+    (r"weight decay $\lambda$", r"narrows the window; shortens the clock $1/(\alpha\lambda_P)$",
+     r"$\downarrow$ rank; $\lambda_k^{\mathrm{race}}\ll c_k^2/4\sigma_k$", "lam+E1b:lam"),
+    (r"pred. scale $p_0$", r"start point relative to the window",
+     r"non-monotone; at $\lambda=0$ lost once $p_0\ge c_k/\sigma_k$", "p0+E1b:p0"),
+    (r"pred. lr ratio $\alpha$", r"clock $1/(\alpha\lambda_P)$", r"$\downarrow$ rank if $\lambda_P>0$; none if $\lambda_P=0$", "alpha"),
+    (r"pred. depth $L$", r"clock $1/(L\alpha\lambda_P)$, capture amplitude", r"$\downarrow$ rank (clock); capture also changes (post hoc, App.~\ref{app:more})", "depth+E1b:depth"),
+    (r"random/wide pred.", r"non-normal $P_0$ (growth matrix)",
+     r"scale, not width $d$, sets growing directions", "E1b:randpred"),
+    (r"EMA rate $\kappa$", r"target lag; window unchanged",
+     r"$\downarrow$ if $p_0$ in window; slight $\uparrow$ if $p_0>p_+^k$", "kappa+E1b:ema"),
+    (r"initial scale $a_0$", r"distance $\log(1/a_0)$ to cover", r"larger $a_0$ keeps more directions", "w0"),
+    (r"mask ratio $r$", r"data quantities $(\sigma_k,c_k)$", r"set by $(\sigma_k,c_k)$; can peak in $r$", "E2:mask"),
+    (r"AdamW", r"preconditioned; same clock", r"less $p_0$-, more $\lambda$-dependence", "E1b:adam"),
+    (r"AdamW weight decay $\lambda$", r"drops out of the settled count $\#\{k:c_k/\sigma_k>\theta\}$; sets only the waits (\cref{sec:adamw})",
+     r"settled count unchanged by $\lambda$ (waits change)", "ext:adamw"),
+    (r"encoder depth $L\ge2$", r"collapsed point attracts every direction; survival a power law in $a_0$, \eqref{eq:deep} (\cref{sec:deep})",
+     r"direction $k$ survives iff \eqref{eq:deep} holds, $m=2-2/L$", "ext:deep"),
+    (r"$\lambda$ schedule / warm-up", r"clock $\int\lambda_P$ and, after capture, the static threshold at $\lambda_W(t)$ (\cref{sec:sched})",
+     r"increasing: count $\le$ static count at final $\lambda$; early warm-up can end below constant high $\lambda$", "ext:sched"),
+    (r"frozen target", r"no feedback (no exp.\ growth)",
+     r"collapse if $\lambda>0$ unless $c_k|a_0|>\sqrt{\lambda_W\lambda_P}$; none at $\lambda=0$", "not run"),
+    (r"no stop-gradient", r"extra $\dot W$ term", r"all directions collapse \citep{tian2021understanding,halvagal2023implicit}", "E1b:nosg"),
+    (r"no predictor", r"$g_k=c_k-\sigma_k-\lambda_W$",
+     r"no growth if $c_k\le\sigma_k+\lambda_W$; can fail under heavy masking", "E1b:nopred+E2:nopred"),
+]
+
+E3KEY = {"lam+E1b:lam": "wd", "p0+E1b:p0": "p0", "alpha": "alpha", "depth+E1b:depth": "depth", "kappa+E1b:ema": "kappa", "E2:mask": "mask",
+         "E1b:adam": "adam", "not run": "frozen", "E1b:nosg": "nosg"}
+
+def e3_evidence(key):
+    """Terse E3 (ViT) outcomes for the rows E3 tested, all from results/e3/summary.json and runs.csv."""
+    if key is None:
+        return None
+    rows, S, F, _ = common.load_e3()
+    C = S["criteria"]; th = C["C-theory signs"]
+    if key == "wd":
+        ratio = C["C-loc wd arm T"]["predicted"] / C["C-loc wd arm T"]["observed"]
+        ok = th[0]["passed"] and th[1]["passed"]
+        return rf"ViT: {'' if ok else 'sign fails, '}${ratio:.1f}\times$ off"
+    if key == "p0":
+        t = rows["T_pinit3"]
+        return rf"ViT T$\times3$: rule {t['count_pred']:.0f}, got {t['count']:.0f}"
+    if key == "alpha":
+        return "ViT: sign fails" if not (th[2]["passed"] or th[3]["passed"]) else "ViT: sign " + ", ".join(f"{a} {'holds' if t['passed'] else 'fails'}" for a, t in (("P", th[2]), ("T", th[3])))
+    if key == "depth":
+        assert not th[4]["passed"]; return "ViT P: fails"
+    if key == "kappa":
+        assert not th[7]["passed"]
+        return "ViT P: null fails"
+    if key == "mask":
+        nf = sum(1 for x in C["C-dir"]["null_list"] if x["factor"] == "mask P" and not x["holds"]); n = sum(1 for x in C["C-dir"]["null_list"] if x["factor"] == "mask P")
+        return f"ViT P: {nf}/{n} nulls fail"
+    if key == "adam":
+        return rf"ViT P: rule fails"
+    if key == "frozen":
+        res = next(t for t in th if t["test"].startswith("frozen target"))["result"]
+        v = lambda a: "fails" if res[a + "_frozen"] else "holds"
+        return rf"ViT (pred.\ none): T {rows['T_frozen']['count']:.0f}, {v('T')}; P {rows['P_frozen']['count']:.0f}, {v('P')}"
+    if key == "nosg":
+        assert not th[5]["passed"]; return "ViT: no full collapse"
+
+def lam_ratio(e1b):
+    """lambda_c of the pre-registered boundary at the grid's p0 <= 1 versus the static threshold, as a range of ratios."""
+    import json, numpy as np
+    b = json.load(open(os.path.join(common.results_dir(), "e1b", "prediction.json")))["boundary"]
+    bp = np.array(b["p0"]); r = []
+    for p0 in (0.1, 0.5, 1.0):
+        i = int(np.argmin(abs(bp - p0))); r.append(b["static_lam_collapse"] / b["lam_collapse"][i])
+    return rf"$\lambda_c$ {min(r):.0f}--{max(r):.0f}$\times$ below static"
+
+def ext_evidence(key):
+    """Extension rows (Sec. 7 / App. F): outcomes read from the score files named in tab_ext_tests."""
+    R = common.results_dir(); J = lambda rel: json.load(open(os.path.join(R, rel))); f = lambda x, d=2: f"{x:.{d}f}"
+    if key == "ext:adamw":
+        a2 = J("e4/a2/a2_score.json")["all"]; a2p = J("e4/a2p/a2p_score.json")["all"]
+        return (rf"A2$'$ passes (rank $\pm1$ {f(a2p['rank_at_T_h']['model']['within1'])}, {a2p['runs']} runs); "
+                rf"A2 (rank at convergence) fails ({f(a2['rank']['model']['within1_strict'])} vs.\ 0.90)")
+    if key == "ext:deep":
+        E6 = J("e6/r1heldout/r1_heldout_score.json"); al = E6["aligned"]["L_ge2"]; ge = E6["generic"]["L_ge2"]
+        return (rf"E6: aligned passes (MAE {f(al['A1']['mae'], 3)}, {al['runs']} runs); generic fails (MAE {f(ge['A1']['mae'], 3)})")
+    if key == "ext:sched":
+        E5 = J("e5/b1heldout/b1_heldout_score.json"); V = E5["verdicts"]; B2 = E5["B2"]; G = J("e8/grid/summary.json")
+        fv = lambda c: G[c]["prediction"]["f20"][0]
+        return (rf"E5: warm-up sign {f(B2['B2a']['sign_agree'])} and increasing bound hold; B1a$'$, B2c, B2d fail. "
+                rf"ViT $f(20)$: T lo$\to$hi {f(fv('T_lo2hi'))}, P lo$\to$hi {f(fv('P_lo2hi'))}; hi$\to$lo {f(fv('T_hi2lo'))}, {f(fv('P_hi2lo'))}")
+    raise KeyError(key)
+
+def evidence(rows, key, e1b=None):
+    if key == "lam+E1b:lam":
+        return evidence(rows, "lam") + "; E1b: " + lam_ratio(e1b)
+    if key == "p0+E1b:p0":
+        return evidence(rows, "p0") + f"; E1b: exact rank {100*e1b['grid']['rank_pred']['exact'][0]:.0f}\\%"
+    if key == "depth+E1b:depth":
+        c = json.load(open(os.path.join(common.results_dir(), "e1c", "summary.json")))["criteria"]["depthL nullcline, L >= 2"]
+        rb = json.load(open(os.path.join(common.results_dir(), "e6", "r1b_heldout", "r1b_heldout_score.json")))
+        return (evidence(rows, "depth") + f"; E1b: over by {-e1b['depth']['rank_pred']['bias']:.1f}; "
+                f"E1c (post hoc): MAE {c['mae']:.2f} vs {c['mae_depth1']:.2f} uncorrected; "
+                f"rung 1b (held-out): n1g\\_K MAE {rb['gauss_M_ge2']['n1g_K']['mae']:.2f} / {rb['nearid_M_ge2']['n1g_K']['mae']:.2f} vs {rb['gauss_M_ge2']['baselines']['n1g_d1']['mae']:.2f} / {rb['nearid_M_ge2']['baselines']['n1g_d1']['mae']:.2f} for the depth-1 rule")
+    if key.startswith("kappa+"):
+        return evidence(rows, "kappa") + f"; E1b: {e1b['criteria']['ema_alpha signs']['agree']}/{e1b['criteria']['ema_alpha signs']['of']} signs (pre-reg.\\ fails)"
+    if key == "E1b:randpred":
+        return f"E1b: MAE {e1b['randpred']['rank_pred']['mae'][0]:.2f} ({e1b['randpred']['runs']} runs)"
+    if key.startswith("ext:"):
+        return ext_evidence(key)
+    if key == "E1b:adam":
+        return f"E1b: partly ({100*e1b['adam']['converged'][0]:.1f}\\% conv.)"
+    if key == "E1b:nopred+E2:nopred":
+        return evidence(rows, "E1b:nopred", e1b) + f"; E2: grows {common.load_e2()[1]['criteria']['nopred (Prop. 6 under masks)']['uncorrected_wrong']}/{common.load_e2()[1]['criteria']['nopred (Prop. 6 under masks)']['configs_pred_growth']}"
+    if key == "E2:mask":
+        S = common.load_e2()[1]["criteria"]; pk = S["pop peak"]
+        return f"E2: MAE {S['pop cyclic (N1)']['mae_N1']:.2f}; fall {pk['non_monotone_confirmed']}/{pk['non_monotone_pred']}"
+    if key in ("E1b:nosg", "E1b:nopred"):
+        n = e1b[key[4:]]["runs"]
+        return rf"E1b: rank 0 in {n}/{n}"
+    if key not in common.SLICES:
+        return key
+    ok = n = 0
+    for exp, knob, fixed in common.SLICES[key]:
+        for z in common.knob_slice(rows, exp, knob, **fixed):
+            n += 1; ok += abs(z[1] - z[3]) < 0.5
+    return f"E1 dev.: {ok}/{n}"
+
+def make(outdir, tabdir):
+    rows, path = common.load_e1(); e1b, path_b = common.load_e1b_summary()
+    L = [r"{\footnotesize\setlength{\tabcolsep}{3pt}", r"\newcolumntype{R}[1]{>{\raggedright\arraybackslash}p{#1}}", r"\begin{tabular}{@{}R{0.12\linewidth}R{0.24\linewidth}R{0.30\linewidth}R{0.27\linewidth}@{}}", r"\toprule",
+         r"Knob & Term of the race it moves & Prediction & Evidence \\", r"\midrule"]
+    for knob, term, pred, ev in ROWS:
+        e = evidence(rows, ev, e1b); x = e3_evidence(E3KEY.get(ev))
+        if x:
+            e = x if ev == "not run" else f"{e}; {x}"
+        L.append(f"{knob} & {term} & {pred} & {e} \\\\")
+    L += [r"\bottomrule", r"\end{tabular}", r"}"]
+    os.makedirs(tabdir, exist_ok=True)
+    open(os.path.join(tabdir, "tab_heuristics.tex"), "w").write("\n".join(L) + "\n")
+    common.record_inputs(tabdir, "tab_heuristics", [path, path_b, os.path.join(common.results_dir(), "e1c", "summary.json"), os.path.join(common.results_dir(), "e1b", "prediction.json"), common.load_e2()[2][2]] + common.load_e3()[3]
+                  + [os.path.join(common.results_dir(), x) for x in ("e4/a2/a2_score.json", "e4/a2p/a2p_score.json", "e6/r1heldout/r1_heldout_score.json", "e6/r1b_heldout/r1b_heldout_score.json", "e5/b1heldout/b1_heldout_score.json", "e8/grid/summary.json")])

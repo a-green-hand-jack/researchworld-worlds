@@ -1,0 +1,65 @@
+"""B1' development (already-read E5 held-out runs, a subsample: pulse/short_pulse/step_up/ramp_up, copy target, seed % 3 == 0;
+or the timed pilot on disjoint seed 390): split the post-loss log error ln(|p_truth|/p_model) per truth loss episode into
+the offset at its first dead check and the drift after it, for stage_model_pl and stage_model_qs, by alpha rho class.
+Usage: python3 code/checks/e5_b1p_dev_decomp.py RUNS.jsonl.gz OUT.json"""
+import sys, os, json, gzip
+os.environ["OMP_NUM_THREADS"] = "1"
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import numpy as np
+from multiprocessing import Pool
+import e5_b1p as P, e5_b1 as B
+THR = B.THR
+def one(rec):
+    cfg, tr, pr = rec["cfg"], rec["truth"], rec["pred"]
+    if cfg["kappa"] is not None: return None
+    G = B.GRIDS[cfg["grid"]]; c, s = B.stats(G); n = c.size
+    t = np.array(tr["t"]); A = np.array(tr["a"], float); Pt = np.abs(np.array(tr["p"], float)); am = A > THR
+    if "model" in pr and "post" in pr["model"]:
+        Pl = np.array(pr["model"]["P"], float); Pq = np.array(pr["stage_qs"]["P"], float)
+    else:
+        w0 = np.linalg.norm(B.init_amp(cfg, n), axis=0)
+        m = P.stage_model_pl(c, s, w0, cfg["p0"], cfg["kW"], cfg["kP"], cfg["alpha"], None, cfg["T"], dt=B.ETA, t_out=t)
+        Pl = m["P"]; Pq = np.array(pr["model"]["P"], float)
+    out = dict(variant=cfg["variant"], kind=cfg["kind"], ar=cfg["alpha"]*cfg["rho"], off={"pl": [], "qs": []}, drift={"pl": [], "qs": []}, slope_t=[], slope={"pl": [], "qs": []})
+    for k in range(n):
+        j = 1
+        while j < len(t):
+            if am[j-1, k] and not am[j, k]:
+                e = j
+                while e < len(t) and not am[e, k]: e += 1
+                seg = np.arange(j, e)
+                if seg.size >= 2:
+                    lt = np.log(Pt[seg, k])
+                    for name, M in (("pl", Pl), ("qs", Pq)):
+                        er = lt - np.log(np.maximum(M[seg, k], 1e-300))
+                        out["off"][name].append(float(er[0])); out["drift"][name] += (er[1:] - er[0]).tolist()
+                        sl = np.polyfit(t[seg], np.log(np.maximum(M[seg, k], 1e-300)), 1)[0]
+                        out["slope"][name].append(float(sl))
+                    out["slope_t"].append(float(np.polyfit(t[seg], lt, 1)[0]))
+                j = e
+            j += 1
+    return out
+def load(path, filt):
+    with gzip.open(path, "rt") as fh:
+        for l in fh:
+            r = json.loads(l)
+            if filt(r["cfg"]): yield r
+if __name__ == "__main__":
+    src, outp = sys.argv[1], sys.argv[2]
+    filt = (lambda c: c["kind"] in ("pulse", "short_pulse", "step_up", "ramp_up") and c["kappa"] is None and c["seed"] % 3 == 0) if "heldout" in src else (lambda c: True)
+    with Pool(8) as p:
+        R = [r for r in p.imap_unordered(one, load(src, filt), chunksize=2) if r]
+    cls = lambda a: "<1" if a < 1-1e-9 else "=1" if a < 1+1e-9 else "1-2" if a < 2-1e-9 else "=2" if a < 2+1e-9 else ">2"
+    res = {}
+    for key, sel in [("all", lambda r: True)] + [(f"cls{c}", (lambda c: lambda r: cls(r["ar"]) == c)(c)) for c in ("<1","=1","1-2","=2",">2")] + [(f"var {v}", (lambda v: lambda r: r["variant"] == v)(v)) for v in sorted({r["variant"] for r in R})]:
+        S = [r for r in R if sel(r)]
+        if not S: continue
+        d = dict(runs=len(S), episodes=sum(len(r["off"]["pl"]) for r in S))
+        st = np.array([x for r in S for x in r["slope_t"]])
+        for m in ("pl", "qs"):
+            off = np.array([x for r in S for x in r["off"][m]]); dr = np.array([x for r in S for x in r["drift"][m]]); sl = np.array([x for r in S for x in r["slope"][m]])
+            d[m] = dict(off_med=float(np.median(off)) if off.size else None, off_absmed=float(np.median(np.abs(off))) if off.size else None,
+                        drift_absmed=float(np.median(np.abs(dr))) if dr.size else None, slope_err_med=float(np.median(sl - st)) if sl.size else None)
+        res[key] = d
+    json.dump(res, open(outp, "w"), indent=1)
+    for k, v in res.items(): print(k, v)

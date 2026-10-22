@@ -1,0 +1,322 @@
+"""E6 / rung 1a of direction C (plan v2.9 Sec. 3 C): the race for a deep linear encoder W = W_L ... W_1 (depth L,
+weight decay on every factor), identity predictor P0 = p0 I, copy target, gradient descent.
+Tolerance: results/e6/r1_tolerance.json, committed before any grid of this file is run. Theory: theory/ext_C_ladder.md.
+
+Per direction k (aligned statistics, aligned balanced factors w_i = a^(1/L)), with h(p) = p c - p^2 s:
+  da/dt = L [h(p) a^(3 - 2/L) - lam a],   dp/dt = alpha [(c - p s) a^2 - lam p].
+  * exact for alpha = 1: p^2 - w_i^2 = exp(-2 lam t)(p0^2 - w_i(0)^2) for every factor, so the direction is the 1D ODE
+    da/dt = L [h(p) a^(3-2/L) - lam a], p = sqrt(a^(2/L) + exp(-2 lam t)(p0^2 - a0^(2/L)))      ('race_deep_1d')
+  * near collapse (A1: p = p0 exp(-alpha lam t)), u = a^m with m = 2 - 2/L is a Bernoulli equation and 1/u is linear:
+    escape iff a0^(-m) <= (2L - 2) max_t int_0^t h(p0 e^{-alpha lam tau}) e^{-(2L-2) lam tau} dtau   ('race_deep_A1',
+    the registered prediction); the escaped direction survives iff lam <= lam*_L = max_p p^(2L-1) (c - p s)
+    (fixed point of the balanced system); L = 1 is the delivered race.
+Arms: 'aligned' (exact per-direction maps, 80-bit) and 'generic' (Gaussian factors, the full matrix flow in float64;
+a0_k = |W_L...W_1 u_k| at initialisation is used by every predictor).
+Held-out grid (results/e6/r1_tolerance_v2.json, registered in results/e6/prediction.json before it runs): the truth
+also records the count at the fixed early times EARLY_T, and every run has two truth-floor re-runs (pert 'a0': a0_k
+times 1 + d_k, d_k ~ U(-1e-3, 1e-3); pert 'lam': lam times 1 +- 0.005; rng seed + 7919), truth only.
+Usage: python3 code/e6_r1.py list GRID | pilot GRID ID | run GRID OUTDIR [NPROC] | score GRID OUTDIR"""
+import sys, os, json, time, itertools, gzip, hashlib, math
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+from linjepa import escape_score, race_end_time, growth_rate
+
+THR = 0.05
+ETA = 0.05
+T_CAP = 3000.0
+NCHK = 20
+EARLY_T = (25.0, 50.0)
+WELL_POSED = 0.10
+GRIDS = {"dev": dict(n=16, s=(1.4, 0.6), ratio=0.90, L=[1, 2, 3], a0=[0.01, 0.03, 0.1, 0.3], p0=[0.5, 1.0, 2.0],
+                     lam=[0.005, 0.01, 0.02, 0.04], seeds_aligned=[200, 201, 202, 203, 204], seeds_generic=[210, 211, 212]),
+         # held-out: statistics, values and seeds disjoint from dev; lam per L at |ln(lam / lam*_{L,k})| >= 0.10 for all k
+         "heldout": dict(n=16, s=(1.5, 0.5), ratio=0.88, L=[1, 2, 3], a0=[0.02, 0.05, 0.2], p0=[0.7, 1.5],
+                         lam={1: [0.00632, 0.01281, 0.02498, 0.04985], 2: [0.006, 0.01197, 0.02498, 0.04659],
+                              3: [0.006, 0.01197, 0.02498, 0.04985]},
+                         seeds_aligned=[300, 301, 302, 303, 304], seeds_generic=[310, 311, 312], floor=True)}
+# generic seeds 313-314 added after the held-out score (the commitment asks >= 5 seeds per setting); scored beside it
+GRIDS["heldout_g45"] = dict(GRIDS["heldout"], seeds_aligned=[], seeds_generic=[313, 314])
+
+
+def stats(G):
+    s = np.linspace(G["s"][0], G["s"][1], G["n"])
+    return G["ratio"] ** np.arange(G["n"]) * s, s
+
+
+def configs(grid):
+    G = GRIDS[grid]; c, s = stats(G); out = []
+    lams = G["lam"] if isinstance(G["lam"], dict) else {L: G["lam"] for L in G["L"]}
+    for arm, L, a0, p0 in itertools.product(["aligned", "generic"], G["L"], G["a0"], G["p0"]):
+        if arm == "generic" and L == 1:
+            continue
+        for lam in lams[L]:
+            if G.get("floor"):
+                assert np.min(np.abs(np.log(lam / lam_star(c, s, L)))) >= WELL_POSED, (L, lam)
+            for seed in G["seeds_" + arm]:
+                T = min(3 * race_end_time(c, s, lam, lam, 1.0, p0) + 300.0, T_CAP)
+                base = dict(id=len(out), grid=grid, arm=arm, L=L, a0=a0, p0=p0, lam=lam, alpha=1.0, seed=seed,
+                            T=float(math.ceil(T / 10) * 10))
+                out.append(base)
+                if G.get("floor"):
+                    for pert in ("a0", "lam"):
+                        out.append(dict(base, id=len(out), pert=pert, floor_of=base["id"]))
+    return out
+
+
+def init(cfg):
+    """aligned: per-direction end-to-end amplitude a0 exp(0.1 xi_k), split evenly over the L factors.
+    generic: Gaussian factors with entries N(0, a0^(2/L) / n) (end-to-end singular values of order a0)."""
+    G = GRIDS[cfg["grid"]]; n = G["n"]; L = cfg["L"]; r = np.random.default_rng(cfg["seed"])
+    if cfg["arm"] == "aligned":
+        ini = cfg["a0"] * np.exp(0.1 * r.standard_normal(n))
+    else:
+        ini = [cfg["a0"] ** (1.0 / L) * r.standard_normal((n, n)) / np.sqrt(n) for _ in range(L)]
+    if cfg.get("pert") == "a0":            # truth floor: a0_k times 1 + d_k (column k of W_1 for the generic arm)
+        d = 1.0 + np.random.default_rng(cfg["seed"] + 7919).uniform(-1e-3, 1e-3, n)
+        if cfg["arm"] == "aligned":
+            ini = ini * d
+        else:
+            ini[0] = ini[0] * d[None, :]
+    return ini
+
+
+def lam_truth(cfg):
+    if cfg.get("pert") != "lam":
+        return cfg["lam"]
+    return cfg["lam"] * (1.0 + 0.005 * (1 if np.random.default_rng(cfg["seed"] + 7919).random() < 0.5 else -1))
+
+
+def e2e(Ws):
+    M = Ws[0]
+    for X in Ws[1:]:
+        M = X @ M
+    return M
+
+
+def a0_of(cfg, ini):
+    return np.asarray(ini, float) if cfg["arm"] == "aligned" else np.linalg.norm(e2e(ini), axis=0)
+
+
+def truth(cfg, ini):
+    G = GRIDS[cfg["grid"]]; c, s = stats(G); n = c.size; L = cfg["L"]; lam = lam_truth(cfg)
+    N = int(round(cfg["T"] / ETA)); chk = set(np.linspace(0, N, NCHK + 1).astype(int)[1:].tolist()); A = []
+    ech = {int(round(te / ETA)): te for te in EARLY_T} if cfg["grid"] != "dev" else {}; early = {}
+    if cfg["arm"] == "aligned":
+        X = np.longdouble
+        w = np.tile((np.asarray(ini, float) ** (1.0 / L)).astype(X), (L, 1)); p = np.full(n, cfg["p0"], dtype=X)
+        cl, sl, e, lm = c.astype(X), s.astype(X), X(ETA), X(lam)
+        for k in range(N):
+            a = w.prod(0)
+            dw = (p * cl - p * p * sl) * a * a / np.where(w == 0, 1, w) - lm * w
+            dp = (cl - p * sl) * a * a - lm * p
+            w = w + e * dw; p = p + e * dp
+            if (k + 1) in ech:
+                early[str(ech[k + 1])] = int((np.abs(w.prod(0)) > THR).sum())
+            if (k + 1) in chk:
+                A.append([float(x) for x in np.abs(w.prod(0))])
+        out = dict(counts=[int((np.array(x) > THR).sum()) for x in A], amp=A)
+        if ech:
+            out["early"] = early
+        return out
+    Ws = [W.copy() for W in ini]; P = cfg["p0"] * np.eye(n); S11 = np.diag(s); S21 = np.diag(c); cnt = []
+    for k in range(N):
+        M = e2e(Ws)
+        R = P @ M @ S11 - M @ S21
+        G_M = P.T @ R                                  # dL/dM
+        grads = []
+        for i in range(L):
+            left = np.eye(n)
+            for X in Ws[i + 1:]:
+                left = X @ left
+            right = np.eye(n)
+            for X in Ws[:i]:
+                right = X @ right
+            grads.append(left.T @ G_M @ right.T)
+        gP = R @ M.T
+        Ws = [W - ETA * (g + lam * W) for W, g in zip(Ws, grads)]
+        P = P - ETA * (gP + lam * P)
+        if (k + 1) % 200 == 0 and not all(np.isfinite(W).all() for W in Ws):
+            return dict(counts=None, diverged=(k + 1) * ETA)
+        if (k + 1) in ech:
+            early[str(ech[k + 1])] = int((np.linalg.svd(e2e(Ws), compute_uv=False) > THR).sum())
+        if (k + 1) in chk:
+            sv = np.linalg.svd(e2e(Ws), compute_uv=False); cnt.append(int((sv > THR).sum()))
+    return dict(counts=cnt, early=early) if ech else dict(counts=cnt)
+
+
+def lam_star(c, s, L, ngrid=20001):
+    out = []
+    for ck, sk in zip(c, s):
+        if ck <= 0:
+            out.append(-np.inf); continue
+        pp = np.linspace(0, ck / sk, ngrid); out.append(float((pp ** (2 * L - 1) * (ck - pp * sk)).max()))
+    return np.array(out)
+
+
+def race_deep_A1(c, s, a0, p0, lam, L, alpha, T, ngrid=40001):
+    """Registered prediction (closed form under A1, Bernoulli). L = 1: the delivered race (escape_score)."""
+    if L == 1:
+        esc = np.array([escape_score(ck, sk, lam, lam, alpha, p0, math.log(ak), t_end=T) >= 0 for ck, sk, ak in zip(c, s, a0)])
+        return int(esc.sum())
+    k = 2 * L - 2; m = 2.0 - 2.0 / L
+    t = np.linspace(0, T, ngrid); dt = t[1]
+    pr = p0 * np.exp(-alpha * lam * t)
+    h = pr[:, None] * c[None, :] - pr[:, None] ** 2 * s[None, :]
+    f = h * np.exp(-k * lam * t)[:, None]
+    I = np.concatenate([np.zeros((1, c.size)), np.cumsum(0.5 * (f[1:] + f[:-1]) * dt, axis=0)])
+    esc = np.asarray(a0, float) ** (-m) <= k * I.max(0)
+    return int((esc & (lam <= lam_star(c, s, L))).sum())
+
+
+def race_deep_1d(c, s, a0, p0, lam, L, T, dt=0.05):
+    """The alpha = 1 exact reduction integrated (RK4); exact for the aligned arm up to the Euler step of the truth."""
+    a = np.asarray(a0, float).copy(); D = p0 ** 2 - a ** (2.0 / L)
+    def f(t, a):
+        a = np.maximum(a, 0)
+        p = np.sqrt(np.maximum(a ** (2.0 / L) + math.exp(-2 * lam * t) * D, 0))
+        return L * ((p * c - p * p * s) * a ** (3 - 2.0 / L) - lam * a)
+    t = 0.0
+    for _ in range(int(round(T / dt))):
+        k1 = f(t, a); k2 = f(t + dt / 2, a + dt / 2 * k1); k3 = f(t + dt / 2, a + dt / 2 * k2); k4 = f(t + dt, a + dt * k3)
+        a = np.clip(a + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4), 0, 1e3); t += dt
+    return int((a > THR).sum())
+
+
+def predict(cfg, a0):
+    G = GRIDS[cfg["grid"]]; c, s = stats(G); L, lam, p0, T = cfg["L"], cfg["lam"], cfg["p0"], cfg["T"]
+    return {"race_deep_A1": race_deep_A1(c, s, a0, p0, lam, L, cfg["alpha"], T),
+            "race_deep_1d": race_deep_1d(c, s, a0, p0, lam, L, T),
+            "race_depth1": race_deep_A1(c, s, a0, p0, lam, 1, cfg["alpha"], T),
+            "static1": int((c * c >= 4 * lam * s).sum()),
+            "staticL": int((lam <= lam_star(c, s, L)).sum()),
+            "window": int((growth_rate(p0, c, s, lam) > 0).sum())}
+
+
+def run_one(cfg):
+    t0 = time.time(); ini = init(cfg); a0 = a0_of(cfg, ini)
+    tr = truth(cfg, ini); pr = None if cfg.get("pert") else predict(cfg, a0)
+    return dict(cfg=cfg, a0=[float(x) for x in a0], truth=tr, pred=pr, seconds=time.time() - t0)
+
+
+def md5(path):
+    return hashlib.md5(open(path, "rb").read()).hexdigest()
+
+
+def cmd_run(grid, outdir, nproc=8):
+    os.makedirs(outdir, exist_ok=True); cfgs = configs(grid); t0 = time.time(); done = 0
+    with gzip.open(os.path.join(outdir, f"r1_{grid}_runs.jsonl.gz"), "wt") as fh, Pool(nproc) as pool:
+        for rec in pool.imap_unordered(run_one, sorted(cfgs, key=lambda c: -c["T"] * (1 + 2 * (c["arm"] == "generic") * c["L"])), chunksize=1):
+            fh.write(json.dumps(rec) + "\n"); done += 1
+            if done % 100 == 0 or done == len(cfgs):
+                print(f"{done}/{len(cfgs)} {time.time() - t0:.0f}s", flush=True)
+    json.dump(dict(grid=grid, runs=len(cfgs), seconds=time.time() - t0, numpy=np.__version__,
+                   command=f"code/e6_r1.py run {grid} {outdir} {nproc}",
+                   md5={f: md5(os.path.join(os.path.dirname(__file__), f)) for f in ("e6_r1.py", "linjepa.py")}),
+              open(os.path.join(outdir, f"r1_{grid}_meta.json"), "w"), indent=1)
+
+
+def boot_ci(x, B=2000, seed=0):
+    x = np.asarray(x, float); r = np.random.default_rng(seed)
+    if x.size == 0:
+        return [None, None]
+    m = x[r.integers(0, x.size, (B, x.size))].mean(1); return [float(np.quantile(m, 0.025)), float(np.quantile(m, 0.975))]
+
+
+def summarize(rows, primary="race_deep_A1"):
+    rows = [r for r in rows if r["truth"].get("counts")]
+    if not rows:
+        return dict(runs=0)
+    tru = np.array([r["truth"]["counts"][-1] for r in rows])
+    names = list(rows[0]["pred"]) + ["early"]
+    def val(r, nm):
+        return r["truth"]["counts"][1] if nm == "early" else r["pred"][nm]   # early: measured at 10% of T (checkpoint 2 of 20)
+    err = {nm: np.abs(np.array([val(r, nm) for r in rows]) - tru) for nm in names}
+    out = dict(runs=len(rows))
+    for nm in names:
+        d = dict(mae=float(err[nm].mean()), mae_ci=boot_ci(err[nm]), within1=float((err[nm] <= 1).mean()),
+                 exact=float((err[nm] == 0).mean()))
+        if nm != primary:
+            diff = err[nm] - err[primary]; d["minus_primary"] = float(diff.mean()); d["minus_primary_ci"] = boot_ci(diff)
+        out[nm] = d
+    return out
+
+
+def score_v2(R, frag):
+    """results/e6/r1_tolerance_v2.json on one group of runs (base runs only); frag: set of fragile base ids.
+    A non-finite (diverged) base run counts as an A1 miss in within-1 and pass; MAEs are over the finite runs."""
+    n_all = len(R); R = [r for r in R if r["truth"].get("counts")]; nf = n_all - len(R)
+    if not R:
+        return dict(runs=n_all, nonfinite=nf, pass_=False)
+    tru = np.array([r["truth"]["counts"][-1] for r in R]); ep = np.abs(np.array([r["pred"]["race_deep_A1"] for r in R]) - tru)
+    out = dict(runs=n_all, nonfinite=nf, A1=dict(mae=float(ep.mean()), mae_ci=boot_ci(ep), within1=float((ep <= 1).sum() / n_all)))
+    scored = {nm: np.array([r["pred"][nm] for r in R]) for nm in ("race_depth1", "static1", "staticL", "window")}
+    for te in EARLY_T:
+        scored[f"early_{te:g}"] = np.array([r["truth"]["early"][str(te)] for r in R])
+    base = {}
+    for nm, v in scored.items():
+        e = np.abs(v - tru); d = e - ep
+        base[nm] = dict(mae=float(e.mean()), minus_A1=float(d.mean()), minus_A1_ci=boot_ci(d))
+    out["baselines"] = base
+    e1d = np.abs(np.array([r["pred"]["race_deep_1d"] for r in R]) - tru)
+    out["race_deep_1d_check"] = dict(mae=float(e1d.mean()), exact=float((e1d == 0).mean()))
+    out["trajectory"] = []
+    for j in (0, 1, 2, 3, 5, 9):
+        e = np.abs(np.array([r["truth"]["counts"][j] for r in R]) - tru); d = e - ep
+        out["trajectory"].append(dict(frac=(j + 1) / NCHK, mae=float(e.mean()), minus_A1_ci=boot_ci(d)))
+    out["pass"] = bool(out["A1"]["within1"] >= 0.90 and all(b["minus_A1_ci"][0] > 0 for b in base.values()))
+    fr = np.array([r["cfg"]["id"] in frag for r in R])
+    out["floor"] = dict(fragile=int(fr.sum()), share=float(fr.mean()), ill_posed=bool(fr.mean() > 0.05))
+    if (~fr).any():
+        out["non_fragile"] = dict(runs=int((~fr).sum()), A1_mae=float(ep[~fr].mean()), A1_within1=float((ep[~fr] <= 1).mean()),
+                                  minus_A1={nm: float((np.abs(v - tru) - ep)[~fr].mean()) for nm, v in scored.items()})
+    out["A1_miss_on_fragile"] = int(((ep > 0) & fr).sum()); out["A1_miss"] = int((ep > 0).sum())
+    return out
+
+
+def cmd_score_v2(grid, outdir):
+    rows = [json.loads(l) for l in gzip.open(os.path.join(outdir, f"r1_{grid}_runs.jsonl.gz"), "rt")]
+    base = [r for r in rows if not r["cfg"].get("pert")]; fl = [r for r in rows if r["cfg"].get("pert")]
+    fin = {r["cfg"]["id"]: (r["truth"]["counts"] or [None])[-1] for r in base}
+    frag = {r["cfg"]["floor_of"] for r in fl if (r["truth"].get("counts") or [None])[-1] != fin[r["cfg"]["floor_of"]]}
+    res = dict(grid=grid, tolerance="results/e6/r1_tolerance_v2.json", runs=len(base), floor_runs=len(fl),
+               nonfinite=sum(1 for r in rows if not r["truth"].get("counts")), fragile=len(frag))
+    ctl = [r for r in base if r["cfg"]["L"] == 1]
+    res["control_L1"] = dict(runs=len(ctl), A1_equals_race_depth1=all(r["pred"]["race_deep_A1"] == r["pred"]["race_depth1"] for r in ctl),
+                             **{k: v for k, v in score_v2(ctl, frag).items() if k in ("A1", "floor")})
+    for arm in ("aligned", "generic"):
+        R = [r for r in base if r["cfg"]["arm"] == arm and r["cfg"]["L"] >= 2]
+        res[arm] = dict(L_ge2=score_v2(R, frag), **{f"L{L}": score_v2([r for r in R if r["cfg"]["L"] == L], frag) for L in (2, 3)})
+        res[arm]["pass_all"] = bool(all(res[arm][k].get("pass", False) for k in ("L_ge2", "L2", "L3")))
+    res["md5"] = {f: md5(os.path.join(os.path.dirname(__file__), f)) for f in ("e6_r1.py", "linjepa.py")}
+    json.dump(res, open(os.path.join(outdir, f"r1_{grid}_score.json"), "w"), indent=1)
+    print(json.dumps({k: res[k] for k in ("control_L1", "fragile", "nonfinite")}, indent=1),
+          json.dumps({a: {g: {k: res[a][g].get(k) for k in ("runs", "A1", "pass", "floor")} for g in ("L_ge2", "L2", "L3")} for a in ("aligned", "generic")}, indent=1), flush=True)
+
+
+def cmd_score(grid, outdir):
+    if GRIDS[grid].get("floor"):
+        return cmd_score_v2(grid, outdir)
+    rows = [json.loads(l) for l in gzip.open(os.path.join(outdir, f"r1_{grid}_runs.jsonl.gz"), "rt")]
+    res = dict(grid=grid, nonfinite=sum(1 for r in rows if not r["truth"].get("counts")))
+    for arm in ("aligned", "generic"):
+        R = [r for r in rows if r["cfg"]["arm"] == arm]
+        res[arm] = summarize(R)
+        res[arm + "_by_L"] = {str(L): summarize([r for r in R if r["cfg"]["L"] == L]) for L in GRIDS[grid]["L"]}
+    json.dump(res, open(os.path.join(outdir, f"r1_{grid}_score.json"), "w"), indent=1)
+    print(json.dumps({k: res[k] for k in ("aligned", "generic", "nonfinite")}, indent=1), flush=True)
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "list":
+        cs = configs(sys.argv[2]); print(len(cs), "runs;", sum(c["arm"] == "generic" for c in cs), "generic; T", min(c["T"] for c in cs), max(c["T"] for c in cs))
+    elif cmd == "pilot":
+        cs = configs(sys.argv[2]); i = int(sys.argv[3]); t0 = time.time(); run_one(cs[i]); print("pilot", i, cs[i]["arm"], cs[i]["L"], cs[i]["T"], f"{time.time() - t0:.1f}s")
+    elif cmd == "run":
+        cmd_run(sys.argv[2], sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 8)
+        cmd_score(sys.argv[2], sys.argv[3])
+        print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E6 rung 1a " + sys.argv[2] + " grid done and scored", flush=True)
+    elif cmd == "score":
+        cmd_score(sys.argv[2], sys.argv[3])

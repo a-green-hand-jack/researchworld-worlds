@@ -1,0 +1,43 @@
+"""Early check of experiment-repo 44357b3 results/e8/prediction.json addendum_E8R: what does the delivered linear
+account predict for the recipe's weight-decay ramp? Same reduced flow and E1b spectrum as checks/e8_linear_switch.py
+(GD, stop-gradient, lam_W = lam_P = lam, a0 1e-3), lam ramped by the recipe's cosine increase
+lam(f) = hi + (lo - hi) (1 + cos(pi f)) / 2 over the horizon (lo -> hi, ratio 10 as 0.04 -> 0.4), against constant
+lo and constant hi. Step size either constant (eta 0.05) or the recipe's schedule (linear warm-up over 40/300 of the
+horizon, cosine to 0; peak 0.05), which weights the decay dose as vit_jepa.hyper does. Rank = modes with |a| > 0.05.
+f_ramp = (R(ramp) - R(lo)) / (R(hi) - R(lo)); dose = lr-weighted decay above lo as a fraction of constant hi's.
+"""
+import json, sys
+import numpy as np
+n = 24
+SIG = np.linspace(1.5, 0.5, n); C = SIG * 0.92 ** np.arange(n)   # as checks/e8_linear_switch.py
+
+def flow(lams, etas, a0=1e-3, p0=1.0):
+    a = np.full(n, a0); p = np.full(n, p0)
+    for lam, eta in zip(lams, etas):
+        da = -p ** 2 * SIG * a + p * C * a - lam * a
+        dp = (C * a - p * SIG * a) * a - lam * p
+        a = a + eta * da; p = p + eta * dp
+    return a, p
+
+def etas_of(T, sched, peak=0.05):
+    if sched == "const":
+        return np.full(T, peak)
+    t = np.arange(T); warm = int(40 / 300 * T)
+    return np.where(t < warm, peak * t / max(warm, 1), peak * 0.5 * (1 + np.cos(np.pi * (t - warm) / max(T - warm, 1))))
+
+out = []
+for lo, hi, p0 in [(0.005, 0.05, 1.0), (0.002, 0.02, 1.0), (0.005, 0.05, 2.0)]:
+    for sched in ["const", "recipe"]:
+        for T in [20000, 100000]:
+            f = np.arange(T) / T; et = etas_of(T, sched)
+            ramp = hi + (lo - hi) * 0.5 * (1 + np.cos(np.pi * f))
+            R = {}
+            for name, lams in dict(lo=np.full(T, lo), hi=np.full(T, hi), ramp=ramp).items():
+                a, p = flow(lams, et, p0=p0)
+                R[name] = int((np.abs(a) > 0.05).sum())
+            dose = float((et * (ramp - lo)).sum() / (et * (hi - lo)).sum())
+            fr = (R["ramp"] - R["lo"]) / (R["hi"] - R["lo"]) if R["hi"] != R["lo"] else None
+            row = dict(lo=lo, hi=hi, p0=p0, eta=sched, T=T, eff_time=float(et.sum()), rank=R, f_ramp=fr, dose=dose)
+            out.append(row); print(json.dumps(row), flush=True)
+json.dump(dict(source="reduced flow as checks/e8_linear_switch.py; ramp as vit_jepa.hyper", runs=out),
+          open(sys.argv[1], "w"), indent=1)

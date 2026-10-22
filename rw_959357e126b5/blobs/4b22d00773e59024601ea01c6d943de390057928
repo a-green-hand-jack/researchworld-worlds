@@ -1,0 +1,28 @@
+"""Rung 4 theory note (review R4-n): the LN target's scale regime at t = 0 on the held-out initialisations.
+Uses only the inputs and initial weights of code/e6_r4_heldout.py's base configurations (no training, no truth).
+rms2 = mean over samples of |Pi z_t|^2 / d, z_t = W2(0) phi(W1(0) x_t); ratio = rms2 / eps; gain = 1 / sqrt(rms2 + eps)
+(the LN gain, = 1/sqrt(eps) in the eps-linear regime). Also the |W2| growth factor at which rms2 = eps (beta_eq) and at
+which rms2 = 10 eps (beta_10, LN within ~5% of scale-free). -> results/e6/r4_eps_regime.json"""
+import os, sys, json
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import e6_r4_heldout as h
+from e6_r2 import sample, phi
+from e4_a4 import EPS
+
+rows = []
+for c in [c for c in h.configs() if "floor" not in c]:
+    Xc, Xt = sample(c); W1, W2, P = h._init0(c)
+    Z = phi(Xt @ W1.T, c["act"]) @ W2.T
+    Zc = Z - Z.mean(1, keepdims=True)
+    rms2 = float(((Zc ** 2).mean(1)).mean())
+    rows.append(dict(id=c["id"], act=c["act"], data=c["data"], s1=c["s1"], ratio=rms2 / EPS,
+                     gain=float(np.mean(1 / np.sqrt((Zc ** 2).mean(1) + EPS))), beta_eq=float(np.sqrt(EPS / rms2)),
+                     beta_10=float(np.sqrt(10 * EPS / rms2))))
+q = lambda k: dict(min=min(r[k] for r in rows), median=float(np.median([r[k] for r in rows])), max=max(r[k] for r in rows))
+out = dict(eps=EPS, n=len(rows), ratio=q("ratio"), gain=q("gain"), beta_eq=q("beta_eq"), beta_10=q("beta_10"),
+           by_act={a: dict(ratio_median=float(np.median([r["ratio"] for r in rows if r["act"] == a]))) for a in ("tanh", "relu")},
+           runs=rows)
+p = os.path.join(os.path.dirname(__file__), "..", "..", "results", "e6", "r4_eps_regime.json")
+json.dump(out, open(p, "w"), indent=1)
+print(json.dumps({k: v for k, v in out.items() if k != "runs"}, indent=1))

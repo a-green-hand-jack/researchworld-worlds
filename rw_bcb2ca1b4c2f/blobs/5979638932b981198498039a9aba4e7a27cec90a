@@ -1,0 +1,301 @@
+"""E6 / rung 4 of direction C (plan Sec. 3 A "A4 scope and registration", exit for rung 4; Sec. 3 C): the rung-2 MLP
+encoder f(x) = W2 phi(W1 x) (phi = tanh or relu, no biases, n = 32, H = 64, d = 32), identity predictor P0 = p0 I,
+weight decay lam on W1, W2 and P, full-batch GD (step ETA) on N = 1024 (input, mask) pairs, with the target
+layer-normalised as in A4 (I-JEPA's F.layer_norm, no affine), under stop-gradient:
+    L = 1/(2N) sum | P f(x_c) - LN(f(x_t)) |^2,   LN(y) = Pi y / sqrt(|Pi y|^2 / d + eps),  eps = 1e-5.
+Theory: theory/ext_C_ladder.md, "Rung 4" (built on theory/ext_A_lntarget.md, N2-i..iv, and rung 2's decay path).
+
+Truth: the embedding rank #sv((Z - mean Z) Pi / sqrt N) > THR on the sample at T (Z = f(x_c)); the constant output
+direction carries no target (N2-ii) and is projected out, as A4 counts on Pi W. Recorded beside it: the W2 rank, the
+rank with a relative threshold (sv / sv_max > THR), the deviation of W1 from its decay path
+delta(t) = |W1(t) / (1 - eta lam)^t - W1(0)| / |W1(0)| at the checks, the early count (embedding rank at EARLY_F of T).
+
+Rows (all from the inputs, W1(0), W2(0), P0 and the sample, unless stated):
+  n2_decay        A4's N2 reduced flow (e4_a4.flow's update) per direction k of the eigenbasis U0 of the initial
+                  context-feature covariance, with s_k, c_k (symmetrised cross term) and tau_k (target-feature
+                  variance) along u_k recomputed every STAT_EVERY steps on rung 2's decay path W1(t) = (1 - eta lam)^t
+                  W1(0); a_k(0) = |Pi W2(0) u_k|, p_k(0) = p0; count = min(#{a_k(T) > THR}, d - 1)
+  ln_static_decay A4's ln_static (self-consistent LN fixed points, N2-iv) on the decay-path statistics at T, capped d - 1
+  n2_meas         n2 with the run's own W1 at the checks up to EARLY_F of T, then decaying from there (uses early
+                  training: operational, as rung 2's r_meas)
+  w2_exact_decay  the exact (W2, P) dynamics of this loss on the sample with W1 forced onto its decay path (isolates
+                  the decay-path assumption; costs one training run)
+  ln_static_init  ln_static on the initial statistics
+  r_decay, r_init rung 2's criteria (plain target, N1-general on the decay-path / initial statistics)
+  static, window, r_lin, the mu variants of 2610.02344 on the initial feature statistics and P0, and mu_ln_* (the mu
+  variants on the LN-effective cross term diag(G0 c), G0 the gains at a = c / s, as in A4), all_alive (= d - 1, the
+  count with every direction kept), zero, early (a measurement; never "beats measurement").
+Usage: python3 code/e6_r4.py list GRID | pilot GRID ID | run GRID OUTDIR [NPROC] | score GRID OUTDIR"""
+import sys, os, json, time, itertools, gzip, hashlib
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+import e6_r2 as r2
+from e6_r2 import sample, phi, dphi, feat_stats, svals, n, H, d, N, THR, NCHK, EARLY_F, CHECK_EVERY, STAT_EVERY
+from e4_a4 import gains, EPS
+from baselines.dvd_mu import variants as mu_variants
+
+M_FLOW = 2048
+MU = ["dvd", "dvd_signed", "dvd_sorted", "dvd_pq", "dvd_pq_signed", "dvd_exact", "dvd_nowd"]
+PI = np.eye(d) - 1.0 / d
+
+GRIDS = {
+    # development: values and seeds disjoint from rung 2's dev (s1 0.5-4, lam 0.0025-0.02, p0 0.5/1.0, seeds
+    # 600-603) and held-out (s1 0.7/1.4/2.8, lam 0.0035/0.007/0.014, p0 0.7/1.3, seeds 610-613)
+    "dev": dict(data=["field", "latent"], act=["tanh", "relu"], s1=[0.6, 1.2, 2.4], lam=[0.004, 0.012],
+                p0=[0.6, 1.2], r=[0.5], w0=[1e-3], eta=0.1, horizon=8.0, seeds=[640]),
+    "smoke": dict(data=["field"], act=["tanh"], s1=[1.0], lam=[0.03], p0=[1.0], r=[0.5], w0=[1e-3], eta=0.1,
+                  horizon=2.0, seeds=[649]),
+}
+
+
+def configs(grid):
+    g = GRIDS[grid]; out = []
+    for data, act, s1, lam, p0, r, w0, seed in itertools.product(g["data"], g["act"], g["s1"], g["lam"], g["p0"],
+                                                                g["r"], g["w0"], g["seeds"]):
+        T = int(round(g["horizon"] / (g["eta"] * lam)))
+        out.append(dict(data=data, act=act, s1=s1, lam=lam, p0=p0, r=r, w0=w0, opt="gd", seed=seed, eta=g["eta"], T=T))
+    for i, c in enumerate(out):
+        c["id"] = i
+    return out
+
+
+def ln(Y):
+    Yc = Y - Y.mean(1, keepdims=True)
+    return Yc / np.sqrt((Yc ** 2).mean(1, keepdims=True) + EPS)
+
+
+def emb_rank(Z):
+    sv = svals((Z - Z.mean(0)) @ PI) / np.sqrt(N)
+    return int((sv > THR).sum()), sv
+
+
+# --------------------------------------------------------------------------------------------- truth
+def train(cfg, Xc, Xt, W1_path=None):
+    """Full-batch GD on the LN-target loss. W1_path(step) -> W1 forces W1 (w2_exact_decay); else W1 is trained."""
+    W1, W2, P = r2.init(cfg); W10 = W1.copy(); lam, eta, T, act = cfg["lam"], cfg["eta"], cfg["T"], cfg["act"]
+    dec = 1 - eta * lam
+    chk = set(np.linspace(0, T, NCHK + 1).astype(int)[1:].tolist())
+    t_early = int(round(EARLY_F * T))
+    snaps = {0: W1.copy()}
+    ranks, deltas, early = [], [], None
+    for step in range(1, T + 1):
+        ac = Xc @ W1.T; hc = phi(ac, act); ht = phi(Xt @ W1.T, act)
+        zc = hc @ W2.T; tgt = ln(ht @ W2.T)
+        E = zc @ P.T - tgt
+        gP = E.T @ zc / N
+        gz = E @ P
+        gW2 = gz.T @ hc / N
+        if W1_path is None:
+            gW1 = ((gz @ W2) * dphi(ac, hc, act)).T @ Xc / N
+            W1 = W1 - eta * (gW1 + lam * W1)
+        else:
+            W1 = W1_path(step)
+        W2 = W2 - eta * (gW2 + lam * W2); P = P - eta * (gP + lam * P)
+        if step % 50 == 0:
+            for M in (W1, W2, P):
+                M[np.abs(M) < 1e-150] = 0.0
+            if not (np.isfinite(W2).all() and np.abs(W2).max() < 1e8 and np.isfinite(W1).all() and np.isfinite(P).all()):
+                return dict(rank=None, diverged=step)
+        if W1_path is None and step <= t_early and step % CHECK_EVERY == 0:
+            snaps[step] = W1.copy()
+        if step == t_early or step in chk:
+            r, _ = emb_rank(phi(Xc @ W1.T, act) @ W2.T)
+            if step == t_early:
+                early = r
+            if step in chk:
+                ranks.append(r)
+                deltas.append(float(np.linalg.norm(W1 / dec ** step - W10) / np.linalg.norm(W10)))
+    Z = phi(Xc @ W1.T, act) @ W2.T
+    r, sv = emb_rank(Z)
+    sw = svals(PI @ W2)
+    out = dict(rank=r, diverged=None, ranks=ranks, settled=len(set(ranks[-4:])) == 1, early=early,
+               sv_top=[float(x) for x in sv[:8]], rank_rel=int((sv > THR * max(sv[0], 1e-300)).sum()),
+               w2_rank=int((sw > THR).sum()), delta=deltas, p_max=float(svals(P).max()),
+               p_diag_mean=float(np.trace(P) / d))
+    if W1_path is None:
+        out["snaps"] = snaps
+    return out
+
+
+# --------------------------------------------------------------------------------------------- criteria
+def proj_stats(W1, Xc, Xt, act, U):
+    hc, ht = phi(Xc @ W1.T, act), phi(Xt @ W1.T, act)
+    S11 = hc.T @ hc / N; S21 = ht.T @ hc / N; S22 = ht.T @ ht / N
+    s = np.einsum("ik,ij,jk->k", U, S11, U)
+    c = np.einsum("ik,ij,jk->k", U, (S21 + S21.T) / 2, U)
+    tau = np.einsum("ik,ij,jk->k", U, S22, U)
+    return s, c, tau
+
+
+def n2_tv(stat_at, a0, p0, lam, eta, T, seed):
+    """A4's reduced flow (e4_a4.flow's update) with statistics stat_at(step) -> (s, c, tau), every STAT_EVERY steps."""
+    Xi = np.random.default_rng(seed + 11).standard_normal((M_FLOW, H))
+    a = np.array(a0, float); p = np.full(H, p0)
+    s, c, tau = stat_at(0)
+    for t in range(1, T + 1):
+        if t % STAT_EVERY == 0:
+            s, c, tau = stat_at(t)
+        G = gains(a, np.maximum(tau, 0), d, Xi)
+        da = p * c * G * a - p * p * s * a - lam * a
+        dp = c * G * a * a - p * s * a * a - lam * p
+        a = a + eta * da; p = p + eta * dp
+        if t % 50 == 0:
+            a[np.abs(a) < 1e-150] = 0.0
+            if not np.isfinite(a).all():
+                return None
+    return min(int((np.abs(a) > THR).sum()), d - 1)
+
+
+def ln_static_stats(s, c, tau, lam, seed, iters=3000, damp=0.3):
+    """e4_a4.ln_static on given per-direction statistics."""
+    Xi = np.random.default_rng(seed + 13).standard_normal((M_FLOW, H))
+    pos = (c > 0) & (s > 0)
+    a = np.where(pos, c / np.where(pos, s, 1.0), 0.0)
+    for _ in range(iters):
+        G = gains(np.maximum(a, 1e-12), np.maximum(tau, 0), d, Xi)
+        disc = (G * c) ** 2 - 4 * s * lam
+        new = np.where((disc >= 0) & pos, (G * c + np.sqrt(np.maximum(disc, 0))) / (2 * np.where(pos, s, 1.0)), 0.0)
+        if np.allclose(new, a, atol=1e-10 * max(1.0, np.abs(a).max())):
+            break
+        a = (1 - damp) * a + damp * new
+        a[a < 1e-8 * max(1.0, a.max())] = 0.0
+    return min(int((a > THR).sum()), d - 1)
+
+
+def predict(cfg, Xc, Xt, tr):
+    W1, W2, P0 = r2.init(cfg); lam, eta, T, act, p0, seed = cfg["lam"], cfg["eta"], cfg["T"], cfg["act"], cfg["p0"], cfg["seed"]
+    dec = 1 - eta * lam
+    out = r2.predict(cfg, Xc, Xt, tr)          # static, window, cs_thr, mu, r_lin, zero, r_init, r_decay, r_meas
+    out.pop("r_meas", None); out.pop("cs_thr", None)
+    S0 = feat_stats(W1, Xc, Xt, act)
+    U = np.linalg.eigh(S0[0])[1]
+    a0 = np.linalg.norm(PI @ W2 @ U, axis=0)
+    s0, c0, tau0 = proj_stats(W1, Xc, Xt, act, U)
+    if act == "relu":
+        dec_stats = lambda st: tuple(x * dec ** (2 * st) for x in (s0, c0, tau0))
+    else:
+        dec_stats = lambda st: proj_stats(W1 * dec ** st, Xc, Xt, act, U)
+    out["n2_decay"] = n2_tv(dec_stats, a0, p0, lam, eta, T, seed)
+    out["ln_static_decay"] = ln_static_stats(*dec_stats(T), lam, seed)
+    out["ln_static_init"] = ln_static_stats(s0, c0, tau0, lam, seed)
+    snaps = tr.get("snaps")
+    if snaps:
+        ks = sorted(snaps); kmax = ks[-1]
+        cache = {}
+        def meas(st):
+            if st <= kmax:
+                k = max(x for x in ks if x <= st)
+                if k not in cache:
+                    cache[k] = proj_stats(snaps[k], Xc, Xt, act, U)
+                return cache[k]
+            if act == "relu":
+                if kmax not in cache:
+                    cache[kmax] = proj_stats(snaps[kmax], Xc, Xt, act, U)
+                return tuple(x * dec ** (2 * (st - kmax)) for x in cache[kmax])
+            return proj_stats(snaps[kmax] * dec ** (st - kmax), Xc, Xt, act, U)
+        out["n2_meas"] = n2_tv(meas, a0, p0, lam, eta, T, seed)
+    # mu on the LN-effective cross term, eigen-paired on U (G0 at a = c / s, as e4_a4.baselines)
+    Xi = np.random.default_rng(seed + 13).standard_normal((M_FLOW, H))
+    pos = (c0 > 0) & (s0 > 0)
+    G0 = gains(np.where(pos, c0 / np.where(pos, s0, 1.0), 1e-12), np.maximum(tau0, 0), d, Xi)
+    mu_ln = mu_variants(np.diag(s0), np.diag(G0 * c0), P0[:1, :1] * np.eye(H), lam)
+    out.update({"mu_ln_" + k: int(mu_ln[k]) for k in MU})
+    out["all_alive"] = d - 1
+    # the rank of Pi Z is at most d - 1: every count is capped there (a free correction for the H-dimensional rows)
+    return {k: (min(v, d - 1) if isinstance(v, int) else v) for k, v in out.items()}
+
+
+def run_one(cfg):
+    t0 = time.process_time()
+    Xc, Xt = sample(cfg)
+    tr = train(cfg, Xc, Xt)
+    t1 = time.process_time()
+    pr = {}
+    if tr.get("rank") is not None:
+        pr = predict(cfg, Xc, Xt, tr)
+        W10 = r2.init(cfg)[0]; dec = 1 - cfg["eta"] * cfg["lam"]
+        w2d = train(cfg, Xc, Xt, W1_path=lambda st: W10 * dec ** st)
+        pr["w2_exact_decay"] = w2d.get("rank")
+    tr.pop("snaps", None)
+    return dict(cfg=cfg, truth=tr, pred=pr, cpu_truth=t1 - t0, cpu_pred=time.process_time() - t1)
+
+
+def md5(path):
+    return hashlib.md5(open(path, "rb").read()).hexdigest()
+
+
+def cmd_run(grid, outdir, nproc=8):
+    os.makedirs(outdir, exist_ok=True); cf = configs(grid); t0 = time.time()
+    with Pool(int(nproc)) as pool:
+        res = pool.map(run_one, sorted(cf, key=lambda r: -r["T"]), chunksize=1)
+    res.sort(key=lambda r: r["cfg"]["id"])
+    with gzip.open(os.path.join(outdir, f"r4_{grid}_runs.jsonl.gz"), "wt") as f:
+        for r in res:
+            f.write(json.dumps(r) + "\n")
+    here = os.path.dirname(os.path.abspath(__file__))
+    cpu = sum(r["cpu_truth"] + r["cpu_pred"] for r in res) / 3600
+    meta = dict(grid=grid, runs=len(res), seconds=time.time() - t0, cpu_h=cpu, numpy=np.__version__,
+                md5={p: md5(os.path.join(here, p)) for p in ["e6_r4.py", "e6_r2.py", "e4_a4.py", "linjepa.py",
+                                                            "baselines/dvd_mu.py", "e4_theory.py"]},
+                config=GRIDS[grid], THR=THR, N=N, n=n, H=H, d=d, EARLY_F=EARLY_F, M_FLOW=M_FLOW)
+    json.dump(meta, open(os.path.join(outdir, f"r4_{grid}_meta.json"), "w"), indent=1)
+    cmd_score(grid, outdir)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), f"rung 4 {grid}: {len(res)} runs, {cpu:.2f} CPU-h", flush=True)
+
+
+def boot_ci(x, B=2000, seed=0):
+    x = np.asarray(x, float); r = np.random.default_rng(seed)
+    m = x[r.integers(0, x.size, (B, x.size))].mean(1)
+    return [float(np.quantile(m, 0.025)), float(np.quantile(m, 0.975))]
+
+
+def summarize(rows, primary="n2_decay"):
+    tru = np.array([r["truth"]["rank"] for r in rows])
+    keys = [k for k in rows[0]["pred"]] + ["early"]
+    val = lambda r, k: r["truth"]["early"] if k == "early" else r["pred"].get(k)
+    out = dict(runs=len(rows), truth_mean=float(tru.mean()), truth_hist=np.bincount(tru, minlength=d).tolist(),
+               settled=float(np.mean([r["truth"]["settled"] for r in rows])),
+               delta_at_T=dict(median=float(np.median([r["truth"]["delta"][-1] for r in rows])),
+                               max=float(np.max([r["truth"]["delta"][-1] for r in rows]))),
+               delta_first_check=dict(median=float(np.median([r["truth"]["delta"][0] for r in rows]))))
+    ep = None
+    for k in [primary] + [k for k in keys if k != primary]:
+        pk = np.array([np.nan if val(r, k) is None else val(r, k) for r in rows], float)
+        e = np.where(np.isfinite(pk), np.abs(pk - tru), np.inf)
+        fin = np.isfinite(e)
+        out[k] = dict(mae=float(e[fin].mean()) if fin.any() else None, nonfinite=int((~fin).sum()),
+                      within1=float((e <= 1).mean()), bias=float((pk[fin] - tru[fin]).mean()) if fin.any() else None)
+        if k == primary:
+            ep = e
+        elif fin.all() and np.isfinite(ep).all():
+            out[k]["minus_primary_ci"] = boot_ci(e - ep)
+    return out
+
+
+def cmd_score(grid, outdir):
+    rows = [json.loads(l) for l in gzip.open(os.path.join(outdir, f"r4_{grid}_runs.jsonl.gz"), "rt")]
+    div = [r["cfg"]["id"] for r in rows if r["truth"].get("rank") is None]
+    rows = [r for r in rows if r["truth"].get("rank") is not None]
+    out = dict(grid=grid, diverged=div, all=summarize(rows) if rows else None)
+    for data, act in itertools.product(GRIDS[grid]["data"], GRIDS[grid]["act"]):
+        S = [r for r in rows if r["cfg"]["data"] == data and r["cfg"]["act"] == act]
+        if S:
+            out[f"{data}_{act}"] = summarize(S)
+    json.dump(out, open(os.path.join(outdir, f"r4_{grid}_score.json"), "w"), indent=1)
+    return out
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "list":
+        cf = configs(sys.argv[2]); print(len(cf), "configs; total steps", sum(c["T"] for c in cf))
+    elif cmd == "pilot":
+        cfg = configs(sys.argv[2])[int(sys.argv[3])]
+        t = time.time(); r = run_one(cfg); r["truth"].pop("delta", None)
+        print(json.dumps(r)[:3000]); print("wall", time.time() - t)
+    elif cmd == "run":
+        cmd_run(sys.argv[2], sys.argv[3], *(sys.argv[4:5] or [8]))
+    elif cmd == "score":
+        print(json.dumps(cmd_score(sys.argv[2], sys.argv[3]), indent=1)[:6000])

@@ -1,0 +1,96 @@
+# Prior work map for the JEPA-collapse study
+
+Owner: `idea-repo`. Every entry below is in `refs.bib` (key in backticks), verified against the arXiv API on
+2026-10-11; all first versions pre-date the objective's cutoff (2026-09-01). The one-line summaries paraphrase the
+papers' own abstracts; specific numbers from their ablations are **not** quoted here — anyone citing a number must take
+it from the paper itself. Venues are deliberately not asserted in `refs.bib`; `paper-repo` may upgrade entries after
+checking.
+
+## 1. JEPA systems and the heuristics the objective names
+
+| Work | Role for us |
+|------|-------------|
+| `assran2023ijepa` (I-JEPA) | The canonical image JEPA: context encoder, narrow ViT predictor conditioned on target positions, EMA target encoder, multi-block masking. Its ablations on predictor depth and masking strategy/scale are the empirical "heuristics" (a) and (b) the theory should explain. |
+| `bardes2024vjepa` (V-JEPA), `assran2025vjepa2` (V-JEPA 2) | Video JEPAs with high masking ratios, narrow deep predictors, EMA targets; further heuristic evidence (masking, predictor). |
+| `li2025salt` (SALT) | V-JEPA-style masked latent prediction from a *frozen* teacher (itself pretrained by pixel reconstruction) instead of an EMA teacher: evidence on heuristic (c), target-encoder update. |
+| `grill2020byol` (BYOL), `chen2021simsiam` (SimSiam) | Non-contrastive self-distillation; the original evidence that a predictor + stop-gradient (+ EMA in BYOL) avoids collapse and that removing the predictor or stop-gradient collapses. |
+| `baevski2022data2vec`, `caron2021dino`, `zhou2022ibot`, `oquab2023dinov2` | Self-distillation with EMA teachers and masking (latent-target prediction); context for heuristic (c) and masking. |
+| `he2022mae` (MAE) | The reconstruction counterpart (objective: JEPAs have "no reconstruction loss"). |
+| `garrido2024iwm`, `bardes2023mcjepa`, `sobal2022slow`, `mo2024cjepa` | JEPA variants; `mo2024cjepa` explicitly targets I-JEPA collapse/EMA issues by adding VICReg-style terms; `sobal2022slow` gives a failure mode of JEPA (slow features). |
+| `balestriero2025lejepa` (LeJEPA) | Replaces the heuristics (stop-gradient, teacher–student, schedulers) with an explicit isotropic-Gaussian regulariser (SIGReg). The natural "heuristic-free" reference point; its claim that the heuristics are unnecessary *with an explicit regulariser* is complementary to a theory of why they work *without* one. |
+| `bardes2022vicreg`, `zbontar2021barlow` | Explicit variance/covariance anti-collapse terms; reference for "explicit regulariser" comparison. |
+
+## 2. Theory of collapse and of non-contrastive / JEPA dynamics (the comparison set)
+
+Closest, must be discussed and compared in the paper:
+
+- `tian2021understanding` (DirectPred). Linear-network analysis of BYOL/SimSiam dynamics in the eigenbasis of the
+  data/predictor: shows how predictor, stop-gradient, EMA and weight decay "all come into play" in avoiding collapse;
+  eigenspace alignment between predictor and representation correlation; weight decay creates a threshold below which
+  eigenmodes go to zero. **This is the closest prior account of "per-direction competition with a decay term"** — the
+  novelty risk (§3).
+- `wang2021demystifying` (DirectCopy). Linear non-contrastive SSL: "weight decay acts as an implicit threshold that
+  discards the features with high variance under data augmentations". Again a per-feature survival threshold.
+- `littwin2024jepa`. Deep linear self-distillation (JEPA) vs MAE dynamics from small init: JEPAs are biased toward
+  high-influence (high regression-coefficient) features, more so with encoder depth. The only JEPA-specific
+  learning-dynamics theory before the cutoff that we found; directly relevant to what the "driving force" is.
+- `ziyin2023shapes`. Analytically tractable SSL loss landscape; collapse as a transition at the origin; causes of
+  dimensional collapse (e.g. weight decay, augmentation strength), effect of normalisation and bias.
+- `halvagal2023implicit`. Eigenspace analysis of closed-form linear predictors (Euclidean and cosine loss): implicit
+  variance regularisation; eigenvalues act as per-mode learning-rate multipliers; IsoLoss lets them drop the EMA.
+- `richemond2023edge`. Optimal linear predictor ≈ orthogonal projection; EMA + stop-gradient as orthonormalisation.
+- `wen2022mechanism`. Identity-initialised prediction head: substitution and acceleration effects prevent learning only
+  the strongest features (dimensional collapse); predictor initialisation/scale matters.
+- `zhuo2023rank`. Rank Differential Mechanism: asymmetric designs (predictor, EMA, centering) create a rank difference
+  between branches that increases effective dimensionality; unified account of asymmetry.
+- `simon2023stepwise`. From small init, joint-embedding SSL learns eigenmodes one at a time (stepwise), closed form for
+  linearised Barlow Twins; experiments on ResNets. Template for "early-phase spectral dynamics" measurement.
+- `tang2023selfpredictive`, `ni2024bridging`, `khetarpal2024unifying`, `lelan2023bootstrapped`, `schwarzer2021spr`.
+  Self-predictive RL (latent prediction with stop-gradient/EMA): faster predictor optimisation + semi-gradient updates
+  prevent collapse; ODE analysis showing spectral decomposition of the transition matrix. A JEPA in RL form; same
+  driving/decay structure in a different domain.
+- `jing2022dimensional`. Dimensional collapse (in contrastive SSL) from strong augmentation and implicit regularisation
+  across layers; spectrum-of-embedding methodology.
+- `li2022collapse`. Empirical: SimSiam partially collapses when the model is small relative to the data; a collapse
+  metric predicts downstream performance.
+- `tian2020dual`, `esser2023dynamics`, `pokle2022contrasting`, `zhang2022simsiam`, `hua2021decorrelation`,
+  `wang2022asymmetry`, `assran2023hidden`, `balestriero2022spectral`, `balestriero2025gaussian`,
+  `vanassel2025joint`, `yu2025auxiliary`. Further theory/analysis of (non-)contrastive and JEPA objectives; useful
+  for related work, less central.
+
+General learning-dynamics tools near a degenerate start: `saxe2014exact` (exact deep-linear dynamics, mode-by-mode
+sigmoidal growth), `gidel2019implicit`, `arora2019implicit`, `jacot2021saddle` (incremental/saddle-to-saddle learning
+from small init), `galanti2022sgd` (weight decay drives low rank).
+
+## 3. Novelty boundary (what the study must add beyond prior work)
+
+The insight "per-direction growth vs decay near the collapsed point, with weight decay as threshold" is **partly
+present** in `tian2021understanding` and `wang2021demystifying` (for BYOL/SimSiam with two augmented views and a
+linear predictor) and the small-init spectral picture in `simon2023stepwise`, `littwin2024jepa`. For the paper to be
+novel it must add, and say explicitly that it adds, at least:
+1. JEPA-specific structure: driving force from **context→target predictability under masking** (masking ratio enters
+   the driving term), predictor conditioned on target positions, separate context/target encoders.
+2. A **unified** account of all three heuristic families (predictor design/scale, masking, target update) as changes to
+   driving or decay terms, with **quantitative predictions** (rank, collapse boundaries) tested against measurements.
+3. An explicit **rank prediction** (how many directions survive) rather than only "collapse or not".
+The paper's related-work section must state where it agrees with and where it departs from the works in this section;
+reviewers will check against `tian2021understanding` and `littwin2024jepa` first.
+
+## 4. Conventions for analysis, figures and reporting in this literature
+
+- Rank measures: entropy-based effective rank of the embedding covariance spectrum (RankMe, `garrido2023rankme`, which
+  uses the Roy & Vetterli 2007 effective rank — cite that paper via the RankMe reference or add it after verifying);
+  LiDAR (`thilak2024lidar`) for JEPA-specific rank; singular-value spectra plotted on log scale sorted by index
+  (`jing2022dimensional`, `li2022collapse`).
+- Dynamics: eigenvalue trajectories vs training step (log-y) per mode (`simon2023stepwise`, `tian2021understanding`);
+  phase diagrams over hyperparameters (`ziyin2023shapes`, `tian2021understanding`).
+- Downstream: frozen-backbone linear probe accuracy (`assran2023ijepa`, `garrido2023rankme`).
+- Ablation tables over predictor depth/width, masking ratio, EMA momentum as in `assran2023ijepa`, `grill2020byol`,
+  `chen2021simsiam`.
+- Theory papers at NeurIPS in this area pair a solvable (linear) model with experiments on small real datasets
+  (STL-10/CIFAR-10/ImageNet subsets in `tian2021understanding`; synthetic + ImageNet in `littwin2024jepa`).
+
+## 5. Excluded (post-cutoff) — do not use
+
+Searches on arXiv for "JEPA collapse" return several preprints first posted after 2026-09-01 (e.g. arXiv 2609.* and
+2610.* entries on spectral anti-collapse regularisation for JEPAs). Under R8 these are not read, cited or used.

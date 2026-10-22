@@ -1,0 +1,173 @@
+"""E1c: held-out, pre-registered test of the depth-L capture nullcline (post-hoc correction after E1b's depth failure,
+internal review) against the pre-registered depth-1 nullcline.
+
+E1b measured N1 failing at predictor depth L >= 2 (rank MAE 1.03 at L = 2, 1.40 at L = 3, all false survivals).
+The correction changes only the capture condition: identity-initialised factors q I with weight decay on every
+factor give p = q^L and dp/dt = alpha L [p^(2-2/L) (c - p s) a^2 - lam p], so capture needs
+a^2 >= lam p^(2/L-1) / (c - p s) instead of a^2 >= lam p / (c - p s) (code/linjepa.py escape_score,
+depth_nullcline=True). It was found on E1b's depth arm, so it is tested here on new statistics and a new grid.
+
+New statistics (not used in E1 or E1b): n = d = 16, sigma_k = linspace(2.0, 0.6), c_k = sigma_k * 0.88^k (aligned).
+Grid: L in {1, 2, 3, 4} x lam in {0.003, 0.006, 0.012, 0.024} x p0 in {0.4, 0.8, 1.2} x 3 seeds; identity predictor
+(each factor p0^(1/L) I), copy target, alpha = 1, w0 = 1e-3, orthogonal W with jitter 0.1, population GD, eta = 0.1.
+p0 = 1.2 starts the predictor above 1 (where p^(2/L-1) < p); p drifts below 1 before most captures, so the two
+rules still differ there in the same direction (checked when writing the predictions, not a criterion).
+Rank = #singular values of W above 0.05 at t_end; a value below 1e-150 is flushed to 0 (counts as collapsed).
+Each run is also continued to 2 t_end and the rank there is recorded (finite-horizon check).
+Usage:
+  python3 code/e1c.py predict results/e1c   # prediction.json from the initialisation only
+  python3 code/e1c.py run results/e1c       # simulations -> e1c_runs.jsonl
+  python3 code/e1c.py analyze results/e1c   # scoring -> summary.json
+"""
+import sys, os, json, time, itertools
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+from linjepa import simulate, init_params, escape_score, race_end_time, growth_rate
+
+n = d = 16
+SIG = np.linspace(2.0, 0.6, n)
+C = SIG * 0.88 ** np.arange(n)
+ETA = 0.1
+SV_THR = 0.05
+T_CAP = 4000.0
+W0 = 1e-3
+JIT = 0.1
+DEPTHS = [1, 2, 3, 4]
+LAMS = [0.003, 0.006, 0.012, 0.024]
+P0S = [0.4, 0.8, 1.2]
+SEEDS = range(3)
+
+
+def horizon(lam, p0, L):
+    return float(min(3.0 * race_end_time(C, SIG, lam, lam, 1.0, p0, L) + 300.0, T_CAP))
+
+
+def configs():
+    out = []
+    for L, lam, p0, s in itertools.product(DEPTHS, LAMS, P0S, SEEDS):
+        out.append(dict(id=len(out), depth=L, lam=lam, p0=p0, seed=s, t_end=horizon(lam, p0, L)))
+    return out
+
+
+def predict_one(cfg):
+    L, lam, p0 = cfg["depth"], cfg["lam"], cfg["p0"]
+    _, W, _ = init_params(cfg["seed"], n, d, W0, p0, L, None, "identity", "orthogonal", JIT)
+    logw = np.log(np.linalg.norm(W, axis=0))
+    out = dict(id=cfg["id"])
+    for key, dn in [("depthL", True), ("depth1", False)]:
+        sc = np.array([escape_score(C[k], SIG[k], lam, lam, 1.0, p0, logw[k], t_end=cfg["t_end"], depth=L,
+                                    depth_nullcline=dn) for k in range(n)])
+        out["pred_" + key] = (sc >= 0).astype(int).tolist(); out["rank_" + key] = int((sc >= 0).sum())
+    out["rank_bound"] = int((C ** 2 >= 4 * lam * SIG).sum())
+    out["rank_window"] = int((growth_rate(p0, C, SIG, lam) > 0).sum())
+    return out
+
+
+def run_one(cfg):
+    L, lam, p0 = cfg["depth"], cfg["lam"], cfg["p0"]
+    res = dict(id=cfg["id"])
+    for tag, t in [("", cfg["t_end"]), ("_2t", 2 * cfg["t_end"])]:
+        o = simulate(np.diag(SIG), np.diag(C), d, lam, lam, p0=p0, w0=W0, eta=ETA, T=int(round(t / ETA)), alpha=1.0,
+                     depth=L, pred_init="identity", seed=cfg["seed"], w_init="orthogonal", jitter=JIT, rank_checks=20,
+                     sv_thr=SV_THR)
+        if o["diverged"] is not None:
+            res.update({"diverged" + tag: o["diverged"], "rank_meas" + tag: None, "surv" + tag: None})
+            continue
+        res.update({"diverged" + tag: None, "rank_meas" + tag: int((o["sv"] > SV_THR).sum()),
+                    "surv" + tag: (o["mode_norms"] > SV_THR).astype(int).tolist()})
+        if tag == "":
+            res["rank_t"] = o["ranks"]; res["sv_top"] = [float(x) for x in o["sv"][:6]]
+    return res
+
+
+def boot(x, B=2000, seed=0):
+    x = np.asarray(x, float)
+    if x.size == 0:
+        return [float("nan")] * 3
+    rng = np.random.default_rng(seed)
+    bs = x[rng.integers(0, x.size, (B, x.size))].mean(1)
+    return [float(x.mean()), float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))]
+
+
+CRITERIA = {
+    "depthL nullcline, L >= 2": "per-mode accuracy >= 0.95 and rank MAE <= 0.5 against the measured rank at t_end; "
+                                "MAE below the depth-1-nullcline MAE",
+    "depthL nullcline, L = 1": "identical to the depth-1 nullcline (same predictions), per-mode accuracy >= 0.95",
+}
+
+
+def cmd_predict(outdir):
+    cfgs = configs(); t0 = time.time()
+    with Pool(int(os.environ.get("NPROC", "8"))) as pool:
+        preds = pool.map(predict_one, cfgs)
+    P = {p["id"]: p for p in preds}
+    doc = dict(experiment="E1c", status="pre-registered: written from the initialisation and hyperparameters before any E1c run",
+               note=__doc__.split("Usage")[0].strip(), statistics=dict(n=n, sigma="linspace(2.0, 0.6, 16)",
+                                                                      c="sigma_k * 0.88^k", eta=ETA, w0=W0, jitter=JIT),
+               predictors=dict(rank_depthL="N1 with the depth-L capture nullcline (primary)",
+                               rank_depth1="N1 as pre-registered in E1b (depth enters only the clock)",
+                               rank_bound="static #{c_k^2 >= 4 lam sigma_k}", rank_window="#{g_k(p0) > 0}"),
+               success_criteria=CRITERIA,
+               runs=[dict(c, **{k: v for k, v in P[c["id"]].items() if k != "id"}) for c in cfgs],
+               seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv))
+    json.dump(doc, open(os.path.join(outdir, "prediction.json"), "w"))
+    print("prediction.json", len(cfgs), "configs", f"{time.time()-t0:.0f}s")
+
+
+def cmd_run(outdir):
+    assert os.path.exists(os.path.join(outdir, "prediction.json")), "pre-register first"
+    cfgs = configs(); t0 = time.time()
+    with Pool(int(os.environ.get("NPROC", "8"))) as pool:
+        res = pool.map(run_one, sorted(cfgs, key=lambda c: -c["t_end"] * c["depth"]), chunksize=1)
+    res.sort(key=lambda r: r["id"])
+    with open(os.path.join(outdir, "e1c_runs.jsonl"), "w") as f:
+        for r in res:
+            f.write(json.dumps(r) + "\n")
+    json.dump(dict(runs=len(res), seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv)),
+              open(os.path.join(outdir, "e1c_meta.json"), "w"), indent=1)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E1c finished", len(res), "runs", f"{time.time()-t0:.0f}s", flush=True)
+
+
+def cmd_analyze(outdir):
+    P = json.load(open(os.path.join(outdir, "prediction.json")))
+    M = {r["id"]: r for r in map(json.loads, open(os.path.join(outdir, "e1c_runs.jsonl")))}
+    rows = [dict(c, **M[c["id"]]) for c in P["runs"]]
+    bad = [r["id"] for r in rows if r["rank_meas"] is None]
+    rows = [r for r in rows if r["rank_meas"] is not None]
+    S = dict(excluded=bad, by_depth={})
+    for L in DEPTHS:
+        rr = [r for r in rows if r["depth"] == L]
+        e = {}
+        for key in ["depthL", "depth1", "bound", "window"]:
+            err = np.array([r["rank_" + key] - r["rank_meas"] for r in rr])
+            e[key] = dict(exact=boot(err == 0), mae=boot(np.abs(err)), over=int((err > 0).sum()), under=int((err < 0).sum()))
+            if key in ("depthL", "depth1"):
+                e[key]["mode_acc"] = boot(np.concatenate([np.array(r["pred_" + key]) == np.array(r["surv"]) for r in rr]))
+        e["runs"] = len(rr)
+        e["rank_changed_2t"] = int(sum(r["rank_meas_2t"] is not None and r["rank_meas_2t"] != r["rank_meas"] for r in rr))
+        S["by_depth"][str(L)] = e
+    deep = [r for r in rows if r["depth"] >= 2]
+    eL = np.array([abs(r["rank_depthL"] - r["rank_meas"]) for r in deep]); e1 = np.array([abs(r["rank_depth1"] - r["rank_meas"]) for r in deep])
+    accL = np.mean(np.concatenate([np.array(r["pred_depthL"]) == np.array(r["surv"]) for r in deep]))
+    crit = {"depthL nullcline, L >= 2": dict(mode_acc=float(accL), mae=float(eL.mean()), mae_depth1=float(e1.mean()),
+                                             passed=bool(accL >= 0.95 and eL.mean() <= 0.5 and eL.mean() < e1.mean()))}
+    one = [r for r in rows if r["depth"] == 1]
+    acc1 = np.mean(np.concatenate([np.array(r["pred_depthL"]) == np.array(r["surv"]) for r in one]))
+    crit["depthL nullcline, L = 1"] = dict(mode_acc=float(acc1), identical=all(r["pred_depthL"] == r["pred_depth1"] for r in one),
+                                           passed=bool(acc1 >= 0.95 and all(r["pred_depthL"] == r["pred_depth1"] for r in one)))
+    for k, v in crit.items():
+        v["criterion"] = P["success_criteria"][k]
+    S["criteria"] = crit
+    json.dump(S, open(os.path.join(outdir, "summary.json"), "w"), indent=1)
+    for k, v in crit.items():
+        print(k, {True: "PASS", False: "FAIL", None: "NOT TESTED"}[v["passed"]], {a: b for a, b in v.items() if a not in ("criterion", "passed")})
+    for L, e in S["by_depth"].items():
+        print("L", L, {k: (v["mae"][0] if isinstance(v, dict) else v) for k, v in e.items()})
+
+
+if __name__ == "__main__":
+    cmd, outdir = sys.argv[1], sys.argv[2]
+    os.makedirs(outdir, exist_ok=True)
+    dict(predict=cmd_predict, run=cmd_run, analyze=cmd_analyze)[cmd](outdir)

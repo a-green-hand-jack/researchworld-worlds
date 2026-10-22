@@ -1,0 +1,668 @@
+# Drive vs. Decay (arXiv 2610.02344v1): source-faithful summary
+
+De Melo Costa, Ahn, Popineau, Rimmel, Doan (Université Paris-Saclay, CNRS,
+CentraleSupélec, LISN). arXiv 2610.02344v1 [cs.LG], 1 Oct 2026. Footer says
+"40th Conference on Neural Information Processing Systems (NeurIPS 2026)". 57
+pages including the NeurIPS checklist. Source: `refs/papers/dvd.txt` (pdftotext),
+checked against `refs/papers/2610.02344v1.pdf` for Fig. 3, 4 and 6, Table 1 and
+App. J (pp. 6-9, 48-49).
+
+Conventions here:
+- "§", "Eq.", "Tab.", "Fig.", "App." refer to the paper's own numbering.
+- **[UNCLEAR]** marks places where the text is ambiguous, garbled, or leaves
+  something out.
+- **[OUR INFERENCE]** marks anything that is our reading and not a claim the
+  paper makes. Sections 1-8 report what the paper says. Section 9 keeps the
+  paper's statements and our inferences clearly apart.
+
+**Notation trap.** The paper's `p_ℓ` is an eigenvalue of `W_pᵀW_p`, the
+**squared** predictor gain. The bare `p` in Tab. 3 and Prop. J.6 is the
+**context keep probability**. `p_tgt` is the keep probability of the target
+feature mask. Our paper's `p` is the predictor **gain**. The mapping is in §9.1.
+
+---
+
+## 1. Model and setting
+
+**Architecture (§3.1, Fig. 2).** The theory uses a fully **linear** JEPA:
+- context encoder `W ∈ R^{d×N}`
+- target encoder `W_a ∈ R^{d×N}`
+- predictor `W_p ∈ R^{d×d}`
+- context view `x_1 = m_1 ⊙ x`, a feature-wise Bernoulli input mask with keep
+  probability `p_{m1} := P(m_{1j}=1)` (§5, Mechanism 2)
+- The target encoder sees the **unmasked** `x`. A target **feature** mask
+  `m_2 ∈ {0,1}^d`, `M_2 = diag(m_2)`, `m_2^i ~ Bernoulli(p_tgt)`, acts on the
+  target encoder's *output* (§3.1). So target masking happens in embedding
+  space, not input space, and enters only through `M̄_2 = E[M_2]` (`= p_tgt I`
+  in App. A.4, B).
+
+**Loss (Eq. 1).** `L(W, W_p; W_a) = ½ E‖W_p W x_1 − sg(M_2 W_a x)‖²`, with a
+stop-gradient on the target.
+
+**Dynamics (Lemma 3.1, Eq. 2; derivation in App. A.1).** The model is a
+continuous-time gradient flow:
+- `Ẇ = −W_pᵀW_p W Σ_11 + W_pᵀ M̄_2 W_a Σ_X1`
+- `Ẇ_a = β(W − W_a)`
+- `Σ_11 = E[x_1x_1ᵀ]`, `Σ_X1 = E[x x_1ᵀ]`
+- `β = 1 − m`, the continuous-time limit of an EMA with momentum `m` (Eq. 16)
+
+"For the stability analysis W_p is taken as given: the framework governs
+encoder-side escape given the predictor's state" (§3.1). App. F.1 derives the
+predictor gradient, and App. F.6 adds it back (§2 below).
+
+**Weight decay.** The core theory has none. Encoder weight decay is added only
+in App. J, Prop. J.1, as `−η_wd W`, and the paper notes "This assumes the decay
+acts on the context encoder only." The predictor is never given weight decay in
+the theory. The experiments use AdamW (§4: lr 1e-3, weight decay 1e-5, cosine
+to 1e-5 over 40 epochs, grad-clip 1.0 for the Tabular-JEPA variants. I-JEPA
+"followed the training protocol of Assran et al. [2023]").
+
+**Predictor parameterisation and initialisation.**
+- Theory: `W_p` is a generic fixed matrix. Mechanism 1 (§5) rescales it,
+  `W_p ← αW_p` (the "predictor scale" α).
+- ResidualPred: `W_p = I + ΔW_p`, `ΔW_p ≈ 0` at init (§6.1).
+- Tabular-JEPA variants: "linear encoders and a scaled predictor" (§4).
+  **[UNCLEAR]** The text never says whether the Tabular-JEPA predictor is
+  linear or a transformer. App. C.7 says "Linear T-JEPA ... no residual
+  predictor". App. K.1 refers to "the estimator of Section 5 [which] reads the
+  predictor's two linear maps", which suggests a predictor with more than one
+  linear map. The base init distribution, before scaling by α, is not stated.
+
+**What "linearising around the trivial fixed point" means (§3.2, Eq. 3; App.
+A.2, F.6).**
+- The fixed point is `W = 0, W_a = 0`. The state `z = [vec W; vec W_a]` is the
+  small variable.
+- The predictor is **not small**: it is held at its current, generally `O(1)`
+  value `W_p` (e.g. `≈ I` for ResidualPred, `α·W_p` for scaled init).
+- The Jacobian is
+  `J = [[−(Σ_11 ⊗ W_pᵀW_p), (Σ_X1ᵀ ⊗ W_pᵀM̄_2)], [βI, −βI]]` (Eq. 3).
+- Lemma 3.4 / Lemma F.2: the predictor gradient (Eq. 68,
+  `∇_{W_p}L = W_p W Σ_11 Wᵀ − M̄_2 W_a Σ_X1 Wᵀ`) is quadratic in `(W, W_a)`. So
+  `E = {W = 0, W_a = 0}` is a `d²`-dimensional **manifold of equilibria** for
+  every `W_p`, and the full Jacobian is `diag(J(W_p), 0_{d²×d²})` for any
+  predictor learning-rate ratio `η_p`.
+- So "trivial fixed point" means a point on this manifold, with the predictor
+  at an arbitrary O(1) value.
+
+---
+
+## 2. Drive, decay, µ, decoupling, factorisation, rank; all formal results
+
+**Definitions (Eqs. 4-6, App. A.4 Eq. 29).**
+- driving operator `Σ_X1ᵀ ⊗ W_pᵀM̄_2`, with eigenvalues `γ_i ∈ Spec(Σ_X1ᵀ ⊗ W_pᵀM̄_2)`
+- decay operator `Σ_11 ⊗ W_pᵀW_p`, with eigenvalues `σ_i ∈ Spec(Σ_11 ⊗ W_pᵀW_p)`
+- stability ratio `µ_i := γ_i/σ_i`
+- Per-mode characteristic equation: `λ² + (β + σ_i)λ + βσ_i(1 − µ_i) = 0` (§3.2,
+  App. A.3 Eq. 28).
+- `µ_i > 1` makes the constant term negative, giving a positive real root:
+  escape (the learning regime). The paper's dichotomy (boxed, §3.2): "Collapse
+  Regime (µ ≪ 1): Decay dominates. The trivial fixed point is a stable
+  attractor. Learning Regime (µ ≫ 1): ... The trivial solution becomes
+  unstable."
+
+**Assumption 3.2 (approximate spectral decoupling).** "we assume Σ_11 and Σ_X1
+share an eigenbasis, and P := W_pᵀW_p and Q := W_pᵀM̄_2 share an eigenbasis."
+The paper calls this "mild":
+- Data side: `Σ_X1 ≈` a scaled `Σ_11` under mild masking.
+- Predictor side: P and Q nearly commute when `M̄_2` is diagonal and `W_p` is
+  near-orthogonal.
+- It is quantified by relative Frobenius commutators `C_Σ`, `C_P` (Eq. 37).
+  Closed form under Bernoulli masking (Eqs. 38-39):
+  - `Σ_X1 = p_{m1} Σ_XX`
+  - `Σ_11 = p_{m1} diag(Σ_XX) + p_{m1}² offdiag(Σ_XX)`
+  - `[Σ_11, Σ_X1] = p_{m1}²(1 − p_{m1}) [diag(Σ_XX), Σ_XX]`
+- Measured `C_Σ` (Tab. 6): about 1e-4 on CIFAR-10 raw patches at
+  `p_{m1} = 0.85`; 6.7e-3 to 9.7e-3 on rotated synthetic spectra.
+
+**Factorisation (Eq. 7).** `µ_kℓ = (c_k/a_k)·(q_ℓ/p_ℓ)`.
+- `a_k, c_k` are eigenvalues of `Σ_11, Σ_X1` (data mode k).
+- `p_ℓ, q_ℓ` are eigenvalues of `W_pᵀW_p, W_pᵀM̄_2` (predictor mode ℓ).
+- `c_k/a_k` is "a cross-view retention coefficient governed by data structure
+  and masking". `q_ℓ/p_ℓ` is "a predictor alignment ratio".
+- Per mode: `σ_kℓ = a_k p_ℓ`, `γ_kℓ = c_k q_ℓ` (Cor. A.4, App. J.1).
+
+**Rank prediction.** Let `U = {(k,ℓ): µ_kℓ > 1}`.
+
+Corollary 3.3 (Eq. 8):
+- Assumptions: exact Assumption 3.2 with orthonormal eigenbases, real spectra
+  (so Σ_X1 and W_pᵀM̄_2 symmetric), all `a_k p_ℓ > 0`.
+- The linearised flow leaves the origin exactly along the modes in U.
+- `rank W_+(t) ≤ r_tight := min(|π_ℓ U|, |π_k U|, d, N)`, where `W_+` is the
+  growing component.
+- Finite-time ε-rank and ERank versions are included.
+- The paper stresses (after Eq. 8 and end of App. C.6) that this bounds the
+  **growing component**, not the full rank: "rtight is therefore an upper bound
+  and not a prediction of ERank". With a fixed predictor "the fastest escaping
+  mode eventually dominates and the effective rank relaxes toward one".
+- The experiments use `r̃_tight`, built from the absolute-value form
+  `µ̃_kℓ = (|c_k|/a_k)(|q_ℓ|/p_ℓ)` (Eqs. 51-52), with `µ ≤ µ̃`, so
+  `r_tight ≤ r̃_tight` (Prop. C.4).
+- **[UNCLEAR]** §5 calls it "the singular-value form µ̃_kℓ". App. A.4 Eq. 31
+  defines a different, independently sorted singular-value µ̃ and gives an
+  example where the two disagree (`Σ_11 = diag(2,1)`, `Σ_X1 = diag(0.5,1.5)`).
+  App. C.7 says the reported results use Eq. 51. It is also not explained how
+  `q_ℓ` is paired with `p_ℓ` for a trained, non-commuting predictor.
+
+**All formal statements, with assumptions and proof status.**
+
+| Result | Statement (abridged) | Assumptions | Proof |
+|---|---|---|---|
+| Lemma 3.1 | Coupled flow Eq. 2 | linear model, `M_2` independent of x, `W_a` deterministic (App. F.1) | derivation App. A.1 |
+| Eq. 30 (App. A.4) | Complex drive: escape iff `Re γ_i + β(Im γ_i)²/(β+σ_i)² > σ_i`; `Re µ_i > 1` sufficient, `|µ_i| > 1` necessary | decoupled modes | yes, inline |
+| Thm A.1 | `det(λI − J) = det Q(λ)`, `Q(λ) = λ²I + λ(S + βI) + β(S − G)` | none | yes |
+| Thm A.2 | `α(J) ≤ max{0, σ_max(G) − λ_min(S)}`; collapse certificate `µ̌ = κ(Σ_11)κ(W_pᵀW_p)µ̃_11 < 1` ⇒ stable; converse false (non-normal example `G_12 = 100`) | none | yes |
+| Thm A.3 | `det(S − G) < 0` ⇒ escape; for symmetric G: escape iff `λ_min(S − G) < 0` (drive beats decay as quadratic forms), with rate bounds Eq. 35 | (ii) needs `G = Gᵀ` | yes |
+| Cor A.4 | Exact decoupling recovers the per-mode criterion; `α(J) = max_{γ>σ} λ⁺_kℓ` (Eq. 36) | exact Assumption 3.2 | yes |
+| Cor 3.3, Thms C.1-C.3, Prop C.4, Thm C.11, Cor C.12 | rank budget; finite-time ε-rank; ERank ≤ `r_tight` + exponentially small; transfer to embeddings `Z = WX` | (A1) fixed predictor, β > 0; (A2) exact decoupling, real spectra; (A3) non-degeneracy `µ ≠ 1`, `Δ ≠ 0`. "The approximate version ... is not covered" | yes (App. C) |
+| Lemma 3.4 / Lemma F.2 | collapsed set = manifold of equilibria; Eq. 3 is the exact linearisation at any `η_p` | predictor trained by the loss gradient only (no predictor weight decay) | yes |
+| Thm F.3 | predictor drift until `‖z‖` reaches δ: `‖W_p(t) − W_p0‖_F ≤ ρ_∞ = η_p C_p(1 + L_α)δ²/λ_*` (Eq. 69), independent of init scale ε | exact decoupling **at init only**, `Δ_kℓ ≠ 0`, `U ≠ ∅`, conditions (C0)-(C2) | yes |
+| Cor F.4 | `J(W_p(t))` keeps exactly `|U|` unstable eigenvalues if `|µ_kℓ − 1| > C′δ²` (Eq. 76) | as Thm F.3 | yes (Bauer-Fike) |
+| Thm F.1 | adiabatic limit `W_a = τW`: non-trivial stationary points iff `1/τ ∈ Spec(A_Rᵀ ⊗ A_L)`, `A_R = Σ_X1Σ_11⁻¹`, `A_L = W_p⁻¹M̄_2`; `τ_crit = 1/(|λ_max(A_L)||λ_max(A_R)|)` (Eq. 67) | `W_p`, `Σ_11` invertible | derivation App. F.2 |
+| Props J.1-J.7 | seven mechanisms as doses on µ (§3) | Assumption 3.2 | short derivations; "verified" by integrating the linear model (152/152 runs) |
+
+The checklist claims full proofs. In practice the proofs are complete for the
+App. A, C and F.6 results. The App. J propositions come with one-line
+derivations plus simulation checks.
+
+---
+
+## 3. How each heuristic enters (formulas and predicted sign)
+
+**Predictor scale (Mechanism 1; Eq. 9; Prop. J.2).**
+- `W_p → αW_p` gives `p_ℓ ∝ α²` and `q_ℓ ∝ α`, so `µ_kℓ(α) = µ_kℓ(1)/α`.
+- "nothing escapes above `α_ext = max_kℓ µ_kℓ(1)`".
+- Predicted sign: smaller init ⇒ larger µ ⇒ escape ("one must initialize the
+  predictor with a sufficiently small variance").
+- Fig. 3: measured µ follows `1/α` for `p_{m1} ≤ 0.4`, and bends downward for
+  `p_{m1} ≥ 0.5`.
+- **Not treated:** predictor width, depth, and learning rate get no formula.
+  Depth appears only as an experimental factor (ImageNet-100 depth 2/6;
+  App. K depth 2/6/12). The predictor learning-rate ratio `η_p` appears only in
+  Thm F.3 (drift ∝ `η_p`), in App. F.6.3 (104/104, 104/104 and 102/104
+  sign-classification at 1×, 3× and 10× the predictor rate), and in an App. I.8
+  BYOL check where rank and accuracy increase with the predictor/encoder lr
+  ratio over {0, 0.1, 1, 10} (2 seeds).
+
+**Masking ratio (Mechanism 2; Eq. 10; Eq. 38).**
+- `Σ_X1 ≈ p_{m1} Σ_XX`. Diagonal entries of `Σ_11` scale as `p_{m1}`,
+  off-diagonals as `p_{m1}²`.
+- `µ_i` therefore "depends on how the data covariance is structured".
+- Stated sign: "Low context ratios, corresponding to higher masking, reduce the
+  correlation between the context and target views, weakening ... γ and
+  subsequently lowering µ" (§5).
+- For a unit-diagonal `Σ_XX` with spectrum `{s_k}` (Prop. J.6):
+  `a_k = p(1−p) + p² s_k` and `c_k = p s_k` [OUR ALGEBRA, consistent with
+  J.6]. So `c_k/a_k = s_k/((1−p) + p s_k)`.
+- **[UNCLEAR]** The paper calls `p_{m1}` both the "context masking ratio"
+  (Fig. 4, Mechanism 2 title) and the "keep probability" (§5). Throughout it
+  behaves as a keep probability (higher = less masking).
+- The target mask enters only as the scalar `p_tgt` inside
+  `q_ℓ = eig(W_pᵀM̄_2)`.
+
+**EMA (Mechanism 3; Prop. J.7).** "β multiplies the constant term without
+changing its sign, so for a real drive spectrum it cannot decide whether a mode
+escapes; it acts as a timescale separator: for µ_i ≪ 1, smaller β slows
+collapse, while for µ_i ≫ 1, it throttles feature growth."
+- The escape rate `λ⁺(β) = ½[−(β+σ) + √((β−σ)² + 4βγ)]` is strictly increasing
+  in β.
+- As β → ∞ (proportional target), `λ⁺ → γ − σ` (Cor. A.4(4)).
+- For a complex drive, β *does* enter the escape condition (Eq. 30).
+- Tab. 25 check: β = 0.01 to 50, escape count 8 at all five values.
+
+**Weight decay (Prop. J.1; Tab. 3).** Encoder weight decay only: `σ′_kℓ =
+σ_kℓ + η_wd`, and a mode escapes iff `γ_kℓ − σ_kℓ > η_wd`, equivalently
+`µ_i > 1 + η_wd/σ_i`. Tab. 25: five doses × 3 seeds, predicted counts
+24/19/8/2/0, all matched. App. J.2 also reproduces Tian 2021's DirectPred
+weight-decay "death threshold" `η > τ² max_k(c_k² p_tgt²/a_k)/4`, as the
+supremum over predictor eigenvalue `p̂` of `τ c_k p_tgt p̂/(a_k p̂² + η)`.
+
+**Stop-gradient.** It is built into Eq. 1 and never varied or analysed. There
+is no derivation of the no-stop-gradient case. The Conclusion still says the
+framing "clarifies the role of EMA, stop-gradient, and predictor design".
+**[UNCLEAR: no supporting derivation found.]**
+
+**Other mechanisms (Tab. 3/25, App. J).**
+- SIGReg: `p_ℓ → p_ℓ − ρ`, escape iff `µ > 1 − ρ/p_ℓ` (Prop. J.3).
+- VICReg hinge: `p_ℓ − λ̃` (Prop. J.4).
+- Mimetic init: a decaying dose (§6 below).
+- Frozen identity predictor (Prop. J.6): `P = I`, `Q = p_tgt I`,
+  `µ_k = p_tgt s_k/((1 − p) + p s_k)`. A mode escapes iff
+  `s_k > (1 − p)/(p_tgt − p)`, which "requires p_tgt > p". "Under symmetric
+  additive view noise instead of masking (the BYOL-style setting), c_k/a_k < 1
+  for every mode and nothing escapes."
+- Also recovered as limits (App. J.2): DirectPred, Halvagal et al. 2023's rate
+  equation and IsoLoss, and Richemond et al. 2023's orthonormal predictor.
+
+---
+
+## 4. Experiments
+
+### 4.1 Tabular-JEPA phase boundary / rank sweep (§5, App. C.7, Tabs. 1, 2, 7, 11-15)
+- Datasets (Tab. 10): Jannis (83,733 samples, 54 numerical features, 4
+  classes), Helena (65,196, 27, 100), ALOI (108,000, 128, 1,000).
+  Split 80/10/10, min-max scaling. Metric: accuracy.
+- **Rank sweep, the "800+" (App. C.7).**
+  - Grid: 3 datasets × 9 predictor scales `α ∈ {1e-4, 1e-3, 1e-2, 1e-1, 0.5, 1, 2, 5, 10}`
+    × 10 context ratios `p_{m1} ∈ {1e-3, 1e-2, 0.1, ..., 0.8}` × 3 seeds
+    = 810 cells, 804 completed.
+  - "Linear T-JEPA, 40 epochs, AdamW, embed dim d=64, no residual predictor;
+    final-checkpoint values reported".
+  - **[NOTE]** The abstract's "more than 800 configurations" counts seeds:
+    270 distinct settings × 3 seeds.
+- **Rank metric.** Effective rank `ERank(Z) = exp(−Σ p_i log p_i)` with
+  `p_i = σ_i/Σ_j σ_j` over singular values of the embeddings (§4, App. H,
+  Eqs. 78-80). On ImageNet, RankMe (App. I.5).
+- **Phase boundary.** Fig. 4 shows heatmaps of normalised linear-probe score
+  over (log10 α, p_{m1}) per dataset, with "the thick red curve highlights the
+  critical boundary µ = 1". **[UNCLEAR]** The paper does not say how the red
+  curve is computed: which µ statistic, whether at init, whether µ or µ̃. The
+  phase boundary is shown visually. No quantitative boundary-agreement metric
+  is reported.
+- **Rank-budget correlation (Fig. 5, Tab. 2, Tab. 7).** Spearman
+  ρ(ERank, r̃_tight), with 1000-resample bootstrap 95% CIs:
+  - aloi +0.905 [.87, .93] (n=264)
+  - helena +0.906 [.88, .93] (n=270)
+  - jannis +0.619 [.54, .70] (n=270)
+  - Signed `r_tight`: +0.672, +0.908, +0.648. Loose `|U|`: +0.766, +0.897,
+    +0.574 (abs. form) or +0.772, +0.897, +0.697 (signed) (Tab. 7).
+  - Scalar `log10 max µ̃`: +0.493, +0.844, +0.470.
+  - The weaker jannis result is attributed to a near-degenerate top spectrum:
+    its minimum relative gap among the top-10 eigenvalues is about 15× smaller
+    than helena's (App. B.4).
+- **Aggregated table (Tab. 1; per-dataset Tabs. 11-15).**
+  - Separate grid: context 0.2-0.7 × predictor scale {0.01, 0.05, 0.1, 0.2,
+    0.3, 0.5, 1.0}, "mean values over 5 runs".
+  - Test accuracy is normalised within each dataset.
+  - Tabular-JEPA with high context: 0.872 (low scale) → 0.789 (medium) → 0.586
+    (high).
+  - T-JEPA with low context and medium/high scale: µ_50 ∈ [0.05, 0.11], ERank
+    ≈ 4.6, accuracy 0.464, which is a class prior (App. I.3).
+- **[OUR OBSERVATION, not discussed by the paper]** The T-JEPA rows of Tab. 1
+  match single cells of Tab. 16 exactly. Its "low" scale is α = 0.05. In
+  Tab. 16 (T-JEPA, jannis):
+  - The smallest scale α = 0.01 has epoch-0 µ_50 = 1.11-4.22 for contexts
+    0.2-0.6, yet **collapses** (accuracy 0.464, ERank 4.3-4.7) in 4 of 5
+    contexts. Context 0.3 learns (0.639).
+  - At α = 0.05, µ_50 = 0.09-0.89 at every context, yet **learns** in 6 of 6
+    (ERank 15-28, accuracy 0.65-0.73).
+  - At α = 0.10 and 0.20, µ_50 ≤ 0.58 and every listed cell collapses
+    (accuracy 0.464). That is consistent with µ < 1.
+  - So on T-JEPA jannis only a narrow band of predictor scales learns, with
+    collapse on both sides of it.
+  - Caveats: µ_50 is a median, not the count criterion; T-JEPA is a nonlinear
+    transformer.
+- **µ moves during training (Tab. 1).** Example: Tabular-JEPA, high context,
+  medium scale: µ_75 goes from 1.84 at epoch 0 to 36.63 at the last epoch. The
+  theory uses only the initial value.
+
+### 4.2 ResidualPred (§6, App. D, E, I.3-I.9, K)
+- **Definition (§6.1, Eq. 56).**
+  - `Attention(Q,K,V) = Softmax(QKᵀ/√d + β_init·B)V`, with `β_init = 10`.
+  - Saturation: `A_ii = 1/(1 + (n_ctx − 1)e^{−β_init})` (Eq. 57);
+    `β_init ≈ log n_ctx + 5` gives `A_ii > 0.99`.
+  - Images: learnable per-head β initialised at β_init (no weight decay). B is
+    the identity on **context tokens only**; mask tokens use standard attention.
+  - Tabular: a fixed shared β = 10 with full identity.
+  - Motivation in the linear model: `W_p = I + ΔW_p`, so `W_pᵀW_p = I + O(‖ΔW_p‖)`
+    and the initial regime is "view-limited": σ is set by Σ_11 and γ by Σ_X1.
+  - Limitations admit it "extends the identity-bias principle to attention by
+    analogy rather than formal derivation".
+  - Zero-init MLP output was ablated and dropped (App. E, Tab. 8: ZeroInit only
+    +0.46/+0.32 points, not significant).
+- **Tabular (Tab. 4, Fig. 6a, Tabs. 17-18, Fig. 13).**
+  - Linear probe, "brittle regime": T-JEPA vs +ResPred.
+    - Jannis 43.4 ± 1.7 vs 46.9 ± 3.5
+    - Helena 8.6 ± 1.1 vs 21.3 ± 3.0
+  - Subcritical stress grid (Tab. 17, 3 seeds per config): no Standard run
+    escapes. ResPred escapes on some seeds (jannis 65.36%, 61.65%). On helena
+    the separation is 6 vs 6 (ResPred minimum 15.39 vs Standard maximum 11.58).
+  - Fig. 6a (averaged over contexts and scales), Standard vs ResPred:
+    - ERank0 ~6.8-7.1 for both
+    - final ERank 4.2/4.3 (Standard) vs 12.5/7.2 (ResPred), non-brittle/brittle
+    - accuracy 28.2/27.2 vs 43.3/35.1
+- **I-JEPA CIFAR / STL (Tab. 4, Tabs. 19-20).** ViT-S/4 on CIFAR (L = 64),
+  ViT-S/8 on STL-10 (L = 144), `p_{m1} = 0.85`, AdamW, 100 epochs. Linear probe:
+
+  | Dataset | Seeds | Standard | +ResPred | ERank at epoch 100 (Std → ResPred) |
+  |---|---|---|---|---|
+  | CIFAR-10 | 3 | 64.55 ± 1.71 | 68.61 ± 0.59 | 37.4 → 56.6 |
+  | CIFAR-100 | 5 | 36.83 ± 1.49 | 40.85 ± 0.66 | 39.0 → 44.3 |
+  | STL-10 | 3 | 71.25 ± 1.14 | 75.31 ± 0.78 | 121.9 → 163.3 |
+
+  - CIFAR-100 at 300 epochs (Tab. 8): 46.89 ± 0.77 vs 50.36 ± 0.53.
+  - **Initial µ_50 is tiny for both** (Tab. 19): 0.0072-0.0093 on CIFAR,
+    0.0250-0.0286 on STL, yet both predictors escape (ERank 4 → 30-160).
+- **ImageNet (Tabs. 21-24, Fig. 6c, App. I.5-I.7, I.9).** ViT-S/16 at 128 px,
+  matched budget. Probes: linear, k-NN (k = 20), attentive. RankMe. Exact
+  permutation tests.
+  - **IN-100, 150 epochs, 3 seeds** (Tab. 21). Linear probe 37.09 ± 0.68 vs
+    42.73 ± 0.41 (Tab. 4).
+
+    | Depth | Linear | k-NN | Attentive | ERank |
+    |---|---|---|---|---|
+    | 2 | +3.6 | +8.3 | +2.8 pp | +49.1 (90.7 → 139.8) |
+    | 6 | +5.6 | +5.5 | +5.5 pp | +26.9 |
+
+    Paired p = 0.031 per probe. ViT-B/16 (100 epochs, depth 6): 0.339 → 0.398
+    (+6.0 pp, no seed overlap).
+  - **IN-1k pilot, 30 epochs, depth 6, 5 seeds** (Tab. 22):
+    - linear 0.2522 → 0.3169 (+6.48 pp)
+    - k-NN 0.0916 → 0.1774
+    - attentive 0.2847 → 0.3292
+    - ERank 107.2 → 188.5
+    - p = 0.008
+    - k-NN and attentive use a 200-image-per-class bank.
+  - **Stresses** (Tab. 23):
+    - 224 px: +6.16 pp
+    - 90 epochs: +3.45 pp (0.3279 vs 0.3624, 3 seeds). Over 30 → 90 epochs
+      Standard's ERank rises 111 → 179, ResPred's 200 → 251.
+  - **vs SIGReg** (Tab. 24/5):
+    - SIGReg λ = 0.05: 0.2919, ERank 179-196
+    - ResPred: 0.3169
+    - ResPred + SIGReg: 0.3223, ERank 205-208
+    - Mimetic init: +1.6 over Standard, trails ResPred by 4.9 (App. I.9)
+    - A VICReg arm destabilised and was excluded.
+- **Controls (App. I.8).**
+  - Freezing the ResPred predictor at init collapses the representation:
+    linear 0.427 → 0.099, ERank 82.1 → 1.67, every frozen seed below every
+    Standard seed.
+  - Skip-only predictor: the encoder gradient is identically zero ("null
+    anchor").
+  - Linear model, fixed `W_p`: ERank relaxes to 1.00-1.04 in all 17 settings.
+  - Trained system: `λ_max(W_pᵀW_p)` "re-equilibrates to 0.80 to 1.10 from
+    initialisations spanning a 500× range".
+- **Mediation (App. K).**
+  - At init, the whole-block-Jacobian µ̃ does **not** separate the predictors
+    (depth 6: 0.313-0.326 ResPred vs 0.312-0.315 Standard).
+  - After K = 10 predictor-only steps, the signed target-aligned drive is
+    higher for ResPred in 9/9 matched comparisons (ratios 1.17-9.29).
+  - "No estimator of µ is claimed to mediate the accuracy gain."
+- **Nonlinear/deep tests of the theory itself.** T-JEPA (transformer) appears
+  in Tab. 1/16. All image tests are ResidualPred comparisons. App. J's
+  152/152 "verifications" are all linear-model simulations ("not a test of the
+  criterion against JEPA training").
+
+---
+
+## 5. Stated limitations and future work (§7 "Limitations", App. B.4, I.3, K)
+- The theory is linear and relies on Assumption 3.2. On jannis, per-mode
+  identification degrades while the count prediction survives.
+- "The criterion is proven in the linear regime, while its extension to images
+  is an empirical prediction whose mediating variable is measured after
+  predictor equilibration, not at initialisation."
+- "the quantitative relation between the initialisation-time budget and the
+  effective rank is claimed on tabular data only."
+- "The framework governs encoder-side escape given the predictor's state".
+- On images, "effective rank is necessary for accuracy without being
+  sufficient." Example: at depth 12 on CIFAR-100, SIGReg raises ERank by
+  34.5-61.1 with no accuracy change (App. K).
+- At deeply subcritical tabular settings ResPred "widens the escape basin
+  without guaranteeing a large rank budget: escape there is partial and
+  seed-dependent."
+- ResPred extends identity bias to attention "by analogy rather than formal
+  derivation".
+- "µ = 1 is a local initialisation criterion". The ImageNet-1k runs are
+  matched-budget pilots, and the full I-JEPA recipe is untested.
+- Not covered: the coupled (non-decoupled) derivation ("We do not claim the
+  coupled derivation here", App. B.4); the approximate-decoupling version of
+  the rank theorems (App. C.6).
+- No explicit future-work section. The Conclusion gestures at "theory-driven
+  architecture design".
+
+---
+
+## 6. Specific questions
+
+| Topic | Answer | Evidence (quote / location) |
+|---|---|---|
+| Weight decay making the collapsed point stable | **Yes, for encoder weight decay; framed as an additive floor** | Prop. J.1: "σ′_kℓ = σ_kℓ + η_wd ... escapes if and only if γ_kℓ − σ_kℓ > η_wd. This assumes the decay acts on the context encoder only." App. J.2 reproduces Tian 2021's death threshold `η > τ² max_k(c_k²p_tgt²/a_k)/4`. Collapse is equated with stability of the origin: "if all eigenvalues satisfy Re(λ) < 0, the origin is a stable attractor, leading to model collapse. Conversely, learning requires an unstable origin" (§3.2). |
+| Predictor's own decay over training (time-dependent gain) | **No for gain decay or predictor weight decay.** Only a washed-out identity *dose* (mimetic init) | No predictor weight-decay term anywhere (J.1 restricts to encoder; Eq. 68 / Lemma F.2 use the pure loss gradient, so `E` is a manifold of equilibria). Prop. J.5: "identity dose m(t) = m₀e^{−ζt}" at **fixed Frobenius norm**. Empirically the predictor moves: "λ_max(W_pᵀW_p) re-equilibrates to 0.80 to 1.10" (I.8); µ changes from epoch 0 to last (Tab. 1). |
+| Race / capture / separatrix | **No** such framing. Two related items | (i) Prop. J.5: "In the adiabatic approximation a mode escapes when ∫₀ᵀ λ⁺_k(t) dt > log(10³)", an integrated-growth-vs-threshold criterion under a decaying predictor dose (T not specified). (ii) Thm F.3 bounds predictor drift "before the encoder escapes" and concludes quasi-staticity: "Quasi-staticity of the predictor near the collapsed set is therefore a consequence of the initialisation scale rather than of a learning-rate choice" (§3.3). "escape basin" appears (§7) but is undefined. No separatrix. |
+| Finite horizon | **Partly** (finite-time bounds for a fixed predictor; no horizon-dependent rank criterion except J.5) | Thm C.2: `rank_ε(W(t)) ≤ r_tight` for `t ≥ T(ε) = η⁻¹log(K̄Z₀/ε)`. Thm C.3/C.11: ERank bounds after `T₀`, `T₁`. Thm F.3: escape time `T_δ ≤ T̄ = λ_*⁻¹ log(4κδ/(αε))`. Experiments at fixed budgets (40 epochs tabular; 30/90 epochs IN-1k, where "tripling the schedule to 90 epochs attenuates the margin"). |
+| AdamW vs SGD | **No** | Theory is continuous-time gradient flow. Experiments use AdamW (§4, App. C.7, I.4). No discussion of Adam normalisation or decoupled weight decay. |
+| Training far from collapse | **No** for dynamics; existence of non-trivial equilibria only in the adiabatic limit | "All statements are local at the collapsed fixed point ... they say nothing about non-trivial equilibria elsewhere" (App. A.5). Thm F.1 / F.4 give bifurcation of non-trivial stationary points at `τ_crit` (proportional-target limit). "How the predictor adapts after escape is measured in Section 6.2" (empirical only). |
+
+---
+
+## 7. Related work they cite (with ids/venues as given)
+
+**Stated as closest:**
+- **TD-JEPA**, Bagatella et al., ICLR 2026, openreview SzXDuBN8M1: "We are
+  closest in spirit to TD-JEPA ... which also connects predictor initialisation
+  to collapse prevention, but in a TD-RL setting".
+- **Tian, Chen & Ganguli 2021** (ICML, PMLR 139): "the seminal study ...
+  dissected several anti-collapse mechanisms". Its proportional-target
+  assumption is "the β → ∞ limit" (§5). DirectPred is recovered in App. J.2.
+- **Mimetic initialisation**, Trockman & Kolter, ICML 2023, and **Wen & Li
+  2022** (NeurIPS) on the prediction head: "Closer still". The paper states
+  "we claim no architectural novelty for identity-biasing attention, and none
+  of these works contains a per-mode stability ratio ..., a supercriticality
+  count, or a rank budget."
+
+**Training dynamics of non-contrastive SSL:**
+- Zhang et al. 2022 (ICLR, SimSiam)
+- Halvagal, Laborieux & Zenke 2023 (NeurIPS, implicit variance regularisation)
+- Richemond et al. 2023 (ICML, edge of orthogonality)
+- Littwin et al. 2024 (NeurIPS, implicit bias of deep linear self-distillation)
+
+**JEPA / anti-collapse:**
+- Assran et al. 2023 (I-JEPA)
+- Grill et al. 2020 (BYOL)
+- Bardes et al. 2022 (VICReg)
+- LeJEPA/SIGReg, Balestriero & LeCun, **arXiv:2511.08544** (Nov 2025)
+- Yu et al., **arXiv:2509.12249** (2025)
+- Balestriero et al., Gaussian Embeddings, **arXiv:2510.05949** (Oct 2025)
+- Li et al. 2026 (ICLR, frozen teachers)
+- Mo & Tong 2024 (C-JEPA)
+- Drozdov et al., **arXiv:2412.10925**
+- Huang 2026 (VJEPA, ICML)
+- Thimonier et al. 2025 (T-JEPA, ICLR)
+- Fei et al., A-JEPA, **arXiv:2311.15830**
+- Dong et al. 2024 (Brain-JEPA)
+- Bardhan et al. 2025 (HEP-JEPA)
+- Skenderi et al. 2025 (graph JEPA)
+- Ghosh et al. 2024 (small projectors)
+- Garrido et al. 2023 (RankMe)
+
+**Identity init:**
+- Fixup (Zhang et al. 2019)
+- ReZero (Bachlechner et al. 2021)
+- SkipInit (De & Smith 2020)
+- IDInit (Pan et al. 2025)
+
+**Not cited** (we grepped the reference list): PEIRA (Arbel, Terver & Ponce
+2026), Ponce et al. 2025, Wang et al. 2021, Simon et al. 2023, Saxe et al.
+2014, Busbridge et al. 2023, and the Ziyin et al. weight-decay papers.
+
+---
+
+## 8. Code
+
+- URL: "Code is available at https://github.com/jose-melo/drive-vs-decay"
+  (abstract, §4, App. G.1).
+- As stated:
+  - Python 3.12, PyTorch ≥ 2.0, PyTorch Lightning, wandb, and others (Tab. 9).
+  - "All experiments were conducted on a single NVIDIA HGX A100 GPU with 40 GB"
+    (App. G.1). The acknowledgements also mention Jean Zay H100s.
+  - The checklist says the supplement ships "Anonymised code, configs, and
+    per-run results ... with reproduce_all.sh, reproduce_subset.sh, test.sh;
+    tabular data via OpenML, image data via torchvision", and a README listing
+    per-experiment GPU-hours.
+- We have not inspected the repository itself.
+
+---
+
+## 9. Points of contact with the race-criterion paper
+
+### 9.1 Notation map (the paper's statements, mapped by us)
+
+Take their per-mode flow (App. C.1, Eq. 42; Prop. J.1):
+`ẇ = −(a_k p_ℓ + η_wd) w + c_k q_ℓ y`, `ẏ = β(w − y)`.
+
+Set the predictor to a scalar gain, `W_p = p·I` (our `p`), with `M̄_2 = p_tgt I`.
+Then `p_ℓ = p²` and `q_ℓ = p_tgt·p` for all ℓ, so
+`γ_kℓ − σ_kℓ − η_wd = p·(p_tgt c_k^{DvD}) − p²·a_k − η_wd`.
+
+**[OUR INFERENCE]** This is exactly our
+`g_k(p) = p c_k − p² σ_k − λ_W`, under the dictionary:
+- our `c_k` ↔ `p_tgt·c_k^{DvD}`
+- our `σ_k` ↔ `a_k`
+- our `λ_W` ↔ `η_wd`
+- our stop-grad target `w̄ = w` ↔ `β → ∞`
+
+Their µ is the ratio `µ = p_tgt c_k/(a_k p)`, i.e. `µ > 1 ⇔ p < c_k/σ_k` (our
+upper window edge at `λ_W = 0`). β does not change membership (Prop. J.7), and
+`λ⁺ → γ − σ` as β → ∞ (Cor. A.4(4)), which is our `g_k`.
+
+Caveat: their `Σ_11, Σ_X1` come from input masking of the context only, with
+the target masked in feature space. Our `c_k, σ_k` come from (possibly
+disjoint) input-space context/target masks, so the data-side formulas differ
+(their `Σ_X1 = p_{m1}Σ_XX`, Eq. 38).
+
+### 9.2 Where their criterion coincides with our initial window
+
+**Paper says:**
+- Escape set `U = {(k,ℓ): µ_kℓ > 1}`, or with encoder weight decay
+  `{γ − σ > η_wd}` (Prop. J.1), evaluated at the initial predictor.
+- Rank budget `r_tight = min(|π_ℓU|, |π_kU|, d, N)` (Eq. 8).
+- Lemma 3.4 / Cor. F.4: this count is exact under joint training locally,
+  because predictor drift is O(δ²).
+
+**[OUR INFERENCE]**
+- For a scalar-gain predictor, `|π_ℓU| = d` whenever U ≠ ∅, so
+  `r_tight = min(#{k: g_k(p0) > 0}, d, N)`. **This is our initial window**.
+  Their criterion *is* the initial-window count, generalised to matrix
+  predictors (counting pairs (k,ℓ)), with a finite-EMA two-variable mode.
+- Our claim (c) coincides with their statements:
+  - Prop. J.2: "nothing escapes above α_ext = max µ(1)", i.e. gain at or above
+    `c_k/σ_k` for every k.
+  - Prop. J.6: frozen identity predictor; "BYOL-style ... c_k/a_k < 1 for
+    every mode and nothing escapes".
+  - App. I.8: ResPred frozen at init collapses (linear 0.427 → 0.099, ERank
+    82.1 → 1.67).
+  - These are static, fixed-predictor statements in both papers.
+- With encoder weight decay their condition, `γ − σ > η_wd`, has the same
+  lower window edge as ours (`p ≳ λ_W/c_k` for small `λ_W`). Their **headline**
+  criterion (Eq. 6, Fig. 1, Fig. 4 red curve, Mechanism 1) omits weight decay,
+  so `µ ∝ 1/α` predicts that ever-smaller predictor init is ever-safer, with
+  no lower edge.
+
+### 9.3 Where it differs
+
+1. **Is collapse an instability? (our claim a)**
+   - Paper says: collapse ⇔ origin stable at the current predictor; learning ⇔
+     origin unstable (§3.2 box). Weight decay enters only as an encoder floor,
+     and the predictor is quasi-static near collapse (Lemma 3.4, Thm F.3).
+   - [OUR INFERENCE] Their quasi-staticity argument depends on the predictor
+     field vanishing at `W = W_a = 0` (Lemma F.2(i)). With **predictor**
+     weight decay, `Ẇ_p = −η_p∇L − λ_P W_p ≠ 0` on `E`. `E` is then no longer
+     a manifold of equilibria, the predictor decays at an O(1) rate
+     independent of δ, and the "exact local criterion" of Lemma 3.4 no longer
+     applies. Their theory never includes this term (J.1 explicitly excludes
+     it).
+   - So both papers agree that with large enough encoder weight decay the
+     origin is stable. They do not analyse a predictor whose gain
+     `p(t) = p0 e^{−αλ_P t}` sweeps the window. That decay makes the origin
+     stable eventually for every mode (`g_k(p → 0) = −λ_W < 0`), which is the
+     content of our (a).
+2. **Initial window vs race (our claim b).**
+   - Paper says: the count is an **upper bound**, not an ERank prediction
+     (App. C.6). For a fixed predictor, ERank relaxes to ~1 (I.8). On images
+     "the mediating variable is measured after predictor equilibration, not at
+     initialisation" (§6.2, §7, App. K). The init-time µ̃ is "null" on images
+     (K.1).
+   - Their tabular rank sweep supports the initial count: ρ = 0.91 on
+     helena/aloi, 0.62 on jannis. It is a Spearman correlation, not exact
+     agreement.
+   - [OUR INFERENCE] Their tabular sweep is close to our `λ_P → 0` limit. With
+     AdamW, lr 1e-3 → 1e-5 and weight decay 1e-5, the per-step decoupled decay
+     is about lr·wd ≤ 1e-8, so `p(t)` barely decays in 40 epochs. Our race
+     criterion should reduce to the initial window there, consistent with
+     their ρ ≈ 0.9.
+   - [OUR INFERENCE] Their image runs follow the I-JEPA protocol (weight decay
+     0.04 → 0.4 in the official recipe, `refs/ijepa_recipe.md`; this paper does
+     not restate it). That is exactly where they report the init-time
+     criterion fails. Initial µ_50 is about 0.008 for both predictors (Tab. 19),
+     yet both escape, and the init estimator does not separate them (K.1).
+     This fits our claim (b), with a caveat: µ_50 is a median, and they report
+     no `r̃_tight` for images.
+   - [OUR OBSERVATION] In T-JEPA Tab. 16 the highest-µ cells (α = 0.01, µ_50 >
+     1) collapse in 4/5 contexts, while α = 0.05 (µ_50 < 1) learns 6/6. This
+     is unexplained by Eq. 6 and compatible with a lower window edge or a lost
+     race. The paper does not comment.
+3. **Integrated-growth criterion.**
+   - Paper says: their only time-dependent-predictor criterion is Prop. J.5
+     (mimetic init): `∫₀ᵀ λ⁺_k(t) dt > log(10³)` with
+     `m(t) = m₀e^{−ζt}`, adiabatic approximation, 24/24 runs matched.
+   - [OUR INFERENCE] This is structurally our race (integrated growth vs a log
+     threshold along a decaying predictor trajectory) and should be cited as
+     the nearest precedent. Differences:
+     - What decays is the *identity component at fixed Frobenius norm*
+       (rotating the predictor's eigenphases `cos φ_ℓ`), not the gain via
+       weight decay.
+     - The threshold is a fixed `log 10³`, not `log(1/w_0)`.
+     - T is unspecified.
+     - It is not used as a rank predictor for neural JEPAs.
+4. **Optimiser.**
+   - Paper says: gradient flow only; no AdamW-specific analysis.
+   - [OUR INFERENCE] Our `p(t) = p0 exp(−αλ_P t)` is the decoupled-weight-decay
+     (AdamW) form and has no counterpart in their paper.
+
+### 9.4 What ResidualPred means in our terms
+
+**Paper says:**
+- In the linear model, `W_p = I + ΔW_p` ⇒ `p_ℓ ≈ 1`, `q_ℓ ≈ p_tgt`
+  ("view-limited": `µ = p_tgt c_k/a_k`).
+- In transformers it is an attention bias, applied to context tokens only on
+  images.
+- Frozen, it collapses (I.8).
+- At init its whole-block Jacobian µ̃ matches the standard predictor's (≈ 0.31
+  at depth 6, K.1).
+- Its advantage appears in the drive after a few predictor steps (K.2).
+- App. E.3: the bias changes the token-space **support** of the predictor's
+  deviation from identity (rank `L` vs rank 1, Eq. 64), so it "amplifies µ_kℓ"
+  on all LN token-feature modes rather than at most N.
+
+**[OUR INFERENCE]**
+1. Linear reading: ResidualPred puts the initial gain at `p0 = 1`. If
+   `c_k < σ_k` (data-side ratio below 1, generic for additive-noise views; for
+   masking only when `s_k > (1−p)/(p_tgt−p)` can modes escape at p0 = 1), the
+   initial window is **empty**. With a frozen gain nothing survives, which is
+   our claim (c) and their J.6 / I.8.
+2. **[CORRECTED by idea-repo, v4.2]** An earlier draft of this note said the
+   race makes a large initial gain harmless. That is wrong. If `p0 > p_{+,k}`,
+   then while the gain decays from p0 to `p_{+,k}` the mode *shrinks*:
+   `log a_k` falls by `(αλ_P)⁻¹∫_{p_{+,k}}^{p0} |g_k(p)|/p dp`, which grows like
+   `σ_k p0²/(2αλ_P)` for large p0 (eq. F of the delivered paper counts both
+   phases). The window phase then adds a p0-independent
+   `(αλ_P)⁻¹∫_{p−}^{p+} g_k(p)/p dp`. Net: the race predicts that the rank
+   *falls* for p0 beyond `p_{+,k}`, which is the delivered paper's "rank
+   non-monotone in p0" prediction (verified on E1/E1b). A scalar gain p0 = 1
+   therefore does **not** explain a ResidualPred benefit in either theory.
+3. Consequence: if ResidualPred helps, the scalar-gain reading is the wrong
+   translation. Two readings remain, neither tested: (i) the token-support /
+   predictor-rank reading of their App. E.3 (more predictor modes ℓ with a
+   non-trivial ratio `q_ℓ/p_ℓ`, i.e. a larger `|π_ℓU|`); (ii) in the image
+   code the end-to-end feature gain is **not** 1. At pinned commit 3176215b
+   (`image/src/models/vision_transformer.py`, `ResidualPredPredictor`),
+   `predictor_embed` and `predictor_proj` are `trunc_normal(std=0.02)`
+   linear maps, and a final `LayerNorm` (`predictor_norm`) precedes
+   `predictor_proj`. The identity bias `diag_bias·I` (beta_init = 10, one
+   learnable scalar per head) acts on the context-context block of attention
+   only, and mask (target) tokens attend without bias; MLP `fc2` is
+   zero-initialised and excluded from weight decay (`image/src/helper.py`).
+   So the identity is a token-routing prior inside the residual stream, not
+   an O(1) gain from context embedding to prediction. On tabular data
+   (`tabular/src/linear_tjepa/predictor.py`) the residual predictor is
+   `z + ΔW z` with `ΔW ~ N(0, init_scale²)`, i.e. p0 ≈ 1 literally.
+4. This conflicts with their linear Mechanism 1 (small α is best) only if
+   predictor decay is ignored. In a fixed-predictor world (their tabular
+   sweep) a large p0 is simply supercritical-free.
+5. Caveat: K.1's measurement suggests that ResidualPred's feature-space gain
+   at init is *not* 1 (both blocks ≈ 0.31). App. D/I.8 also show the
+   "identity" lives in token space: context-only bias, while a skip-only
+   predictor gives zero encoder gradient. Mapping ResidualPred to a scalar
+   gain `p0 = 1` is therefore a linear-model idealisation. The token-support
+   reading (more predictor modes ℓ with non-trivial `q_ℓ/p_ℓ`, which raises
+   `|π_ℓU|`) may be the more faithful translation, i.e. a change in the
+   predictor's rank, not its gain.

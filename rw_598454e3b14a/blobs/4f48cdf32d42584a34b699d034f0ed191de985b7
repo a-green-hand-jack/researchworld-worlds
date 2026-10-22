@@ -1,0 +1,239 @@
+"""E4 / A2': prospective test of the fixed-horizon reading of A2 (plan v2.9 section A, "A2 outcome", addition A2';
+registration results/e4/prediction.json, section A2p). A2 stays failed whatever this shows.
+Claim tested: the frozen phase model v4 (4327b3d) predicts the alive count at a fixed, registered horizon
+T_h = K + ceil(5 / (eta lam)), with no convergence requirement, better than every baseline and within tolerance.
+Same model, horizon rule, ground truth (80-bit scalar AdamW maps, code/e4_a1.py truth()) and baselines as code/e4_a2.py.
+New: a fresh grid that includes A2's failing regime (weak statistics whose c/s crosses thr, eta >= 0.027) and a strong
+control set; the truth is continued to 4 T_h; v4 is read at the 8 checkpoints in [T_h/2, T_h].
+Primary scoring: rank at T_h on every run, non-finite runs as misses for every predictor.
+Reported without tolerance: per-checkpoint reading over [T_h/2, T_h]; convergence and flicker shares by statistics set
+and eta; whether v4 marks the runs that do not settle; the truth at [T_h, 4 T_h] (slow settling or sustained flicker).
+Usage: python3 code/e4_a2p.py list | pilot ID | run results/e4/a2p [NPROC]"""
+import sys, os, json, time, itertools, gzip, hashlib, math
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+import e4_a1 as A
+import e4_a1h2 as H2
+import e4_a2 as A2
+import e4_theory as th
+from linjepa import escape_score, reduced_flow
+from baselines.dvd_mu import variants
+
+A2P_STATS = {"a2pa": (np.linspace(1.5, 0.45, 32), 0.85),     # weak: c/s > thr for k <= 18 (0.85^18 = 0.054)
+             "a2pb": (np.linspace(2.0, 0.5, 32), 0.875),     # weak: c/s > thr for k <= 22 (0.875^22 = 0.053)
+             "a2pc": (np.linspace(2.8, 0.8, 32), 0.965)}     # strong control: all c/s >= 0.33
+SEED = 59
+P0, LAM, A0, ETA, B1, B2 = [0.7, 1.4, 2.3], [0.0055, 0.013, 0.021], [9e-4, 6e-3], [0.017, 0.031], [0.915], [0.9965, 0.9988]
+NCONV, NLATE = 8, 9
+BASELINES = A2.BASELINES
+FLOOR_MAX = 0.10
+_INIT_A = A.init_a
+
+
+def horizon(cfg):
+    return A.K + int(math.ceil(5.0 / (cfg["eta"] * cfg["lam"])))
+
+
+def checks_half(Th):
+    return A2.checks(Th)                      # 8 log-spaced in [T_h/2, T_h], T_h last
+
+
+def checks_late(Th):
+    return [int(x) for x in np.unique(np.round(np.geomspace(Th, 4 * Th, NLATE)))]   # T_h first, 4 T_h last
+
+
+def configs():
+    out = []
+    for st, p0, lam, a0, eta, b1, b2 in itertools.product(A2P_STATS, P0, LAM, A0, ETA, B1, B2):
+        cfg = dict(id=len(out), stats=st, p0=p0, lam=lam, a0=a0, eta=eta, b1=b1, b2=b2, seed=SEED)
+        cfg["T_h"] = horizon(cfg)
+        out.append(cfg)
+    return out
+
+
+def disjoint():
+    """Set intersection of the grid values with every grid v4 was developed, diagnosed or scored on (A2's included)."""
+    import importlib, e4_dev, e4_dev2, e4_dev3, e4_a1h3
+    used = {k: set() for k in ("p0", "lam", "a0", "eta", "b1", "b2", "seed")}
+    ratios = {0.92, 0.94, 0.93, 0.90, 0.89, 0.91, 0.88, 0.95, 0.87, 0.96, 0.86, 0.97}  # dev1-3, ho1, H2, H3, A2
+    old = []
+    for mod in (e4_dev, e4_dev2, e4_dev3):
+        old += mod.configs()
+    a1 = importlib.reload(A); old += a1.configs(); old += H2.configs(); old += e4_a1h3.configs()
+    A.STATS = dict(A2.A2_STATS); old += A2.configs()
+    for c in old:
+        for k in used:
+            if k in c:
+                used[k].add(c[k])
+    A.STATS = dict(A2P_STATS)
+    new = configs()
+    hit = {k: sorted(set(c[k] for c in new) & used[k]) for k in used}
+    hit["ratio"] = sorted({r for _, r in A2P_STATS.values()} & ratios)
+    return hit
+
+
+def run_one(cfg):
+    A.STATS = dict(A2P_STATS)
+    c, s = A.stats(cfg["stats"]); n = c.size; Th = cfg["T_h"]
+    ch, cl = checks_half(Th), checks_late(Th)
+    ck = sorted(set(ch) | set(cl))
+    A.T, A.CHECKS = 4 * Th, ck
+    r = dict(cfg, checkpoints=ck, checks_half=ch, checks_late=cl, **A.truth(cfg))
+    t0 = time.time()
+    stK = {k: np.array(v) for k, v in r["state_K"].items()}
+    o = th.phase_model_v4(c, s, stK, A.K, cfg["lam"], cfg["eta"], Th, b1=cfg["b1"], b2=cfg["b2"], checks=ch)
+    r["model_seconds"] = time.time() - t0
+    a0k = _INIT_A(cfg); lam, p0 = cfg["lam"], cfg["p0"]
+    pred = dict(model=int(np.sum(o["alive"][Th])),
+                static_bound=int((c ** 2 >= 4 * lam * s).sum()),
+                delivered_race=int(sum(escape_score(c[k], s[k], lam, lam, 1.0, p0, np.log(a0k[k]), t_end=cfg["eta"] * Th) >= 0
+                                       for k in range(n))),
+                window_mu_wd=int((p0 * c - p0 ** 2 * s - lam > 0).sum()),
+                persistence_K=int((np.abs(stK["a"]) > A.THR).sum()), all_alive=n)
+    mu = variants(np.diag(s), np.diag(c), p0 * np.eye(n), lam)
+    pred["mu_count"] = int(mu["dvd_exact"]); r["mu_variants"] = {k: int(v) for k, v in mu.items()}
+    r["pred_rank"] = pred
+    r["pred_alive_model_half"] = [np.asarray(o["alive"][t], bool).tolist() for t in ch]
+    r["model_last_toggle"] = [float(max(tt for tt, _ in tg)) for tg in o["toggles"]]
+    aG, _ = reduced_flow(c, s, a0k, p0, lam, lam, alpha=1.0, eta=cfg["eta"], T=Th)
+    r["gd_rank"] = int((np.abs(aG) > A.THR).sum()) if np.all(np.isfinite(aG)) else None
+    if cfg["id"] % 8 == 0:                    # truth floor at T_h: a0_k (1 +- 1e-15), as code/e4_a1h2.py
+        try:
+            A.init_a = H2.perturbed_init; A.T, A.CHECKS = Th, ch
+            fl = A.truth(cfg)
+            r["floor_alive_half"] = fl["alive"]; r["floor_finite"] = fl["finite"]
+        finally:
+            A.init_a = _INIT_A
+    return r
+
+
+def _true_counts(r):
+    ck = r["checkpoints"]
+    return {t: int(np.sum(x)) for t, x in zip(ck, r["alive"])} if r["finite"] else None
+
+
+def score(runs, dev_med, sel=lambda r: True):
+    runs = [r for r in runs if sel(r)]
+    names = ["model"] + BASELINES; nrun = len(runs)
+    err = {k: [] for k in names}; fin = []
+    for r in runs:
+        n = len(r["alive"][0]); tc = _true_counts(r); fin.append(r["finite"])
+        p = dict(r["pred_rank"], dev_median=int(round(n * dev_med)))
+        for k in names:
+            err[k].append(abs(p[k] - tc[r["T_h"]]) if tc else None)
+    res = dict(runs=nrun, nonfinite=int(nrun - sum(fin)))
+    tab = {}
+    for k in names:
+        e = np.array([x for x in err[k] if x is not None], float)
+        tab[k] = dict(mae_finite=float(e.mean()) if e.size else None,
+                      within1=float((e <= 1).sum() / nrun) if nrun else None)
+    res["rank_at_T_h"] = tab
+    model = np.array([x for x in err["model"] if x is not None], float)
+    cmp = {}
+    for k in BASELINES:
+        b = np.array([x for x in err[k] if x is not None], float)
+        ci = A2.boot_ci(b - model) if b.size else [None, None]
+        cmp[k] = dict(mae_diff_baseline_minus_model=float((b - model).mean()) if b.size else None, ci95=ci,
+                      model_better=bool(b.size and ci[0] > 0))
+    res["model_vs_baseline"] = cmp
+    ex = [r["pred_rank"]["mu_count"] < _true_counts(r)[r["T_h"]] for r in runs if r["finite"]]
+    res["mu_count_bound_exceedance"] = float(np.mean(ex)) if ex else None
+    # truth floor: every 8th run, rank at T_h of the 1e-15-perturbed truth against the truth
+    fl = [float((not r["floor_finite"]) or abs(int(np.sum(r["floor_alive_half"][-1])) - _true_counts(r)[r["T_h"]]) > 1)
+          for r in runs if "floor_alive_half" in r and r["finite"]]
+    res["truth_floor_within1_failure"] = float(np.mean(fl)) if fl else None
+    res["truth_floor_runs"] = len(fl)
+    # reported without tolerance
+    per_ck, conv, late_conv, flick, flick_cap, marks = [], [], [], [], [], []
+    for r in runs:
+        if not r["finite"]:
+            continue
+        tc = _true_counts(r); ch, cl = r["checks_half"], r["checks_late"]
+        pm = [int(np.sum(x)) for x in r["pred_alive_model_half"]]
+        per_ck.append([abs(pm[i] - tc[t]) <= 1 for i, t in enumerate(ch)])
+        conv.append(len({tc[t] for t in ch}) == 1)
+        late_conv.append(len({tc[t] for t in cl if t >= 2 * r["T_h"]}) == 1)
+        ck = r["checkpoints"]; Al = np.array(r["alive"], bool)
+        c, s = A.stats(r["stats"]); pc = c / s
+        ch_ = (np.diff(Al.astype(int), axis=0) != 0).sum(0)
+        flick.append(bool((ch_ >= 2).any()))
+        ret = [k for k in range(Al.shape[1]) if pc[k] > 2 * A.THR and _dies_and_returns(Al[:, k])]
+        flick_cap.append(bool(ret))
+        marks.append(len(set(pm)) > 1 or any(r["T_h"] / 2 <= x <= r["T_h"] for x in r["model_last_toggle"]))
+    if per_ck:
+        conv = np.array(conv); marks = np.array(marks); late_conv = np.array(late_conv)
+        res["reported"] = dict(
+            model_within1_per_checkpoint_half=[float(v) for v in np.mean(per_ck, 0)],
+            model_within1_all_checkpoints_half=float(np.mean([all(x) for x in per_ck])),
+            converged_share_half=float(conv.mean()),
+            late_constant_share_2Th_4Th=float(late_conv.mean()),
+            nonconverged_then_late_constant=float(late_conv[~conv].mean()) if (~conv).any() else None,
+            flicker_share_half_to_4Th=float(np.mean(flick)),
+            captured_dies_and_returns_share=float(np.mean(flick_cap)),
+            v4_marks=dict(share=float(marks.mean()), recall_on_nonconverged=float(marks[~conv].mean()) if (~conv).any() else None,
+                          false_mark_on_converged=float(marks[conv].mean()) if conv.any() else None))
+    if nrun:
+        floor_f = res["truth_floor_within1_failure"] or 0.0
+        res["tolerance"] = dict(within1_min=0.90 - floor_f, all_baselines_beaten=all(v["model_better"] for v in cmp.values()),
+                                floor_max=FLOOR_MAX)
+        res["pass"] = bool(tab["model"]["within1"] >= 0.90 - floor_f and res["tolerance"]["all_baselines_beaten"])
+        res["well_posed"] = bool(floor_f <= FLOOR_MAX)
+        res["reading"] = ("not well posed: truth floor %.3f > %.2f" % (floor_f, FLOOR_MAX) if not res["well_posed"]
+                          else "passes" if res["pass"] else "fails")
+    return res
+
+
+def _dies_and_returns(col):
+    seen_alive = seen_dead_after = False
+    for v in col:
+        if v and seen_dead_after:
+            return True
+        if v:
+            seen_alive = True
+        elif seen_alive:
+            seen_dead_after = True
+    return False
+
+
+if __name__ == "__main__":
+    A.STATS = dict(A2P_STATS)
+    cmd = sys.argv[1]
+    cfgs = configs()
+    if cmd == "list":
+        Th = [c["T_h"] for c in cfgs]
+        print(len(cfgs), "runs; T_h", min(Th), "-", max(Th), "; truth steps (to 4 T_h)", 4 * sum(Th),
+              "; floor runs", sum(c["id"] % 8 == 0 for c in cfgs))
+        print("intersection with earlier grids:", disjoint())
+        for st in A2P_STATS:
+            c, s = A.stats(st); print(st, "directions with c/s > thr:", int((c / s > A.THR).sum()), "of", c.size,
+                                      "; static bound at lam", LAM, [int((c ** 2 >= 4 * l * s).sum()) for l in LAM])
+        sys.exit()
+    if cmd == "pilot":
+        t0 = time.time(); r = run_one(cfgs[int(sys.argv[2])]); print("pilot seconds", round(time.time() - t0, 1), "T_h", r["T_h"]); sys.exit()
+    outdir = sys.argv[2]; nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    os.makedirs(outdir, exist_ok=True)
+    dev_med, dev_n = A2.dev_median_fraction()
+    order = sorted(cfgs, key=lambda c: -c["T_h"])
+    t0 = time.time(); runs = []
+    with Pool(nproc) as pool:
+        for i, r in enumerate(pool.imap_unordered(run_one, order)):
+            runs.append(r)
+            if (i + 1) % 24 == 0:
+                print(f"{i+1}/{len(cfgs)} {time.time()-t0:.0f}s", flush=True)
+    runs.sort(key=lambda r: r["id"])
+    with gzip.open(os.path.join(outdir, "a2p_runs.jsonl.gz"), "wt") as f:
+        for r in runs:
+            f.write(json.dumps(r) + "\n")
+    res = dict(all=score(runs, dev_med), dev_median=dict(fraction=dev_med, runs=dev_n))
+    res["splits"] = {f"{k}={v}": score(runs, dev_med, lambda r, k=k, v=v: r[k] == v)
+                     for k in ("stats", "eta", "lam", "b2", "p0") for v in sorted({c[k] for c in cfgs})}
+    res["splits_stats_eta"] = {f"{a}|eta={e}": score(runs, dev_med, lambda r, a=a, e=e: r["stats"] == a and r["eta"] == e)
+                               for a in A2P_STATS for e in ETA}
+    res.update(runs=len(runs), seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv),
+               e4_theory_md5=hashlib.md5(open(os.path.join(os.path.dirname(__file__), "e4_theory.py"), "rb").read()).hexdigest())
+    json.dump(res, open(os.path.join(outdir, "a2p_score.json"), "w"), indent=1)
+    print(json.dumps(dict(reading=res["all"].get("reading"), rank=res["all"]["rank_at_T_h"]["model"],
+                          floor=res["all"]["truth_floor_within1_failure"]), indent=1))
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E4 A2' fixed-horizon grid scored", flush=True)

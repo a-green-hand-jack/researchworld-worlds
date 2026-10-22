@@ -1,0 +1,207 @@
+"""E4 / A3 held-out grid: sign replication of the rotation mechanism (results/e4/a3_tolerance.json v3, part A3s_mech;
+registration results/e4/prediction.json section A3). The level model A3r asks for is not derived (theory/ext_A_adamw.md,
+A3), so A3r and the model-derived A3s of v2 are not registered and stay open; this grid tests the four signs the
+qualitative mechanism gives, set by hand before it runs, against the GD/static accounts:
+  theta (0 -> 0.5, 0 -> 1 on sides both, out, in): '-'   (Adam's entrywise normalisation leaks updates into P's unused
+                                                          subspace and keeps weak directions dead)
+  lam low -> high at theta > 0: '+'                       (decoupled decay removes the leaked spectrum)
+  lam and a0 at theta = 0: from A-iv' (v4's settled law, alive iff c/s > thr once captured): '0'
+  a0 low -> high at theta > 0: '0'                        (the leaked state forgets the initialisation)
+Truth, rank, checkpoints, time average, precision subset and switch as v2 (code/e4_a3.py matrix_adamw, SV rank > 0.05,
+rank_tavg over [T/2, T]; theta = 0 in long double; the precision subset stratified, precision_jobs_stratified).
+Grid disjoint from development (new statistics sets, lam, a0, p0 values and seeds; eta, b1, b2 as development: the
+scope is the delivered AdamW configuration eta = 0.02, b = (0.9, 0.999)).
+Usage: python3 code/e4_a3h.py list | run results/e4/a3h [NPROC] | score results/e4/a3h"""
+import sys, os, json, time, itertools, gzip
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+import scipy.stats as sps
+sys.path.insert(0, os.path.dirname(__file__))
+import e4_a3 as a3
+
+a3.STATS_EXTRA.update({"h1": (np.linspace(1.8, 0.6, 24), 0.925), "h2": (np.linspace(2.4, 0.5, 24), 0.86)})
+ROT = [(0.0, "both"), (0.5, "both"), (1.0, "both"), (1.0, "out"), (1.0, "in")]
+LAM, A0, P0, SEEDS = [0.003, 0.012, 0.035], [3e-4, 3e-3], [1.0], list(range(11, 19))
+PREC_SEED = 424242
+THR = a3.THR
+
+
+def configs():
+    out = []
+    for st, (th, side), lam, a0, p0, seed in itertools.product(["h1", "h2"], ROT, LAM, A0, P0, SEEDS):
+        out.append(dict(a3.DEV_BASE, id=len(out), stats=st, theta=th, side=side, lam=lam, a0=a0, p0=p0, seed=seed))
+    return out
+
+
+def predicted(cfg_or_cell, factor):
+    """The registered signs (hand-set from the mechanism, see the docstring), per (cell, factor)."""
+    th = cfg_or_cell["theta"]
+    if factor == "theta":
+        return "-"
+    if th == 0:
+        return "0"            # A-iv': alive iff c/s > thr, independent of lam and a0 once captured
+    return "+" if factor == "lam" else "0"
+
+
+def baseline_sign(name, cell, factor):
+    c, s = a3.stats_extra(cell["stats"])
+    if name == "gd_account":
+        return {"theta": "0", "lam": "-", "a0": "+"}[factor]
+    if name == "aligned_model":
+        return "0"            # theta '0' by construction; lam and a0 '0' from A-iv' at theta = 0
+    if name in ("static_bound", "mu_count"):
+        if factor != "lam":
+            return "0"
+        n0, n1 = ((c ** 2 >= 4 * l * s).sum() for l in (cell["lam0"], cell["lam1"]))
+        return "-" if n1 - n0 <= -0.5 else ("+" if n1 - n0 >= 0.5 else "0")
+    raise KeyError(name)
+
+
+def tci(d):
+    d = np.asarray(d, float)
+    if d.size < 2 or np.all(d == d[0]):
+        return float(d.mean()), float(d.mean()), float(d.mean())
+    h = sps.t.ppf(0.975, d.size - 1) * d.std(ddof=1) / np.sqrt(d.size)
+    return float(d.mean()), float(d.mean() - h), float(d.mean() + h)
+
+
+def msign(d):
+    m, lo, hi = tci(d)
+    return ("+" if m > 0 else "-") if (lo > 0 or hi < 0) and abs(m) >= 0.5 else "0"
+
+
+def pairs(T):
+    """Paired cells: (factor, cell dict, differences over seeds). Non-finite runs drop their pair (counted)."""
+    key = lambda r, drop: tuple((k, r[k]) for k in ("stats", "theta", "side", "lam", "a0", "p0") if k not in drop)
+    by = {(r["stats"], r["theta"], r["side"], r["lam"], r["a0"], r["p0"], r["seed"]): r for r in T}
+    out, dropped = [], 0
+    def add(factor, cell, sel0, sel1):
+        nonlocal dropped
+        d = []
+        for sd in SEEDS:
+            r0, r1 = by.get(sel0 + (sd,)), by.get(sel1 + (sd,))
+            if r0 is None or r1 is None:
+                continue
+            if r0["rank_tavg"] is None or r1["rank_tavg"] is None:
+                dropped += 1; continue
+            d.append(r1["rank_tavg"] - r0["rank_tavg"])
+        out.append((factor, cell, d))
+    for st, lam, a0, p0 in itertools.product(["h1", "h2"], LAM, A0, P0):
+        for th, side in ROT[1:]:
+            add("theta", dict(stats=st, theta=th, side=side, lam=lam, a0=a0, p0=p0),
+                (st, 0.0, "both", lam, a0, p0), (st, th, side, lam, a0, p0))
+    for st, (th, side), a0, p0 in itertools.product(["h1", "h2"], ROT, A0, P0):
+        for l0, l1 in zip(LAM, LAM[1:]):
+            add("lam", dict(stats=st, theta=th, side=side, lam0=l0, lam1=l1, a0=a0, p0=p0),
+                (st, th, side, l0, a0, p0), (st, th, side, l1, a0, p0))
+    for st, (th, side), lam, p0 in itertools.product(["h1", "h2"], ROT, LAM, P0):
+        add("a0", dict(stats=st, theta=th, side=side, lam=lam, a0_0=A0[0], a0_1=A0[1], p0=p0),
+            (st, th, side, lam, A0[0], p0), (st, th, side, lam, A0[1], p0))
+    return out, dropped
+
+
+def score_signs(P, pred_fn):
+    rows = [(pred_fn(cell, f), msign(d)) for f, cell, d in P]
+    nz = [(p, m) for p, m in rows if p != "0"]; mz = [(p, m) for p, m in rows if m != "0"]
+    z = [(p, m) for p, m in rows if p == "0"]
+    return dict(pairs=len(rows),
+                precision=float(np.mean([p == m for p, m in nz])) if nz else None,
+                opposite=float(np.mean([m != "0" and m != p for p, m in nz])) if nz else None,
+                recall=float(np.mean([p == m for p, m in mz])) if mz else None,
+                predicted_zero_measured_nonzero=float(np.mean([m != "0" for p, m in z])) if z else None,
+                n_pred_nonzero=len(nz), n_meas_nonzero=len(mz))
+
+
+def precision_switch(V):
+    T = {r["id"]: r for r in V["truth"]}
+    F, D = [], []
+    for r in V.get("f64_pert", []):
+        t = T[r["id"]]
+        if r["rank_tavg"] is not None and t["rank_tavg"] is not None:
+            F.append(abs(r["rank_tavg"] - t["rank_tavg"]))
+    for r in V.get("ld", []):
+        t = T[r["id"]]
+        if r["rank_tavg"] is not None and t["rank_tavg"] is not None:
+            D.append(r["rank_tavg"] - t["rank_tavg"])
+    F, D = np.array(F), np.array(D)
+    m, lo, hi = tci(D)
+    a = bool(np.median(np.abs(D)) > np.quantile(F, 0.9)); b = bool((lo > 0 or hi < 0) and abs(m) >= 0.25)
+    return dict(n=int(D.size), floor_median=float(np.median(F)), floor_p90=float(np.quantile(F, 0.9)),
+                dp_median_abs=float(np.median(np.abs(D))), dp_mean=m, dp_ci=[lo, hi], rule_a=a, rule_b=b, switch=a or b)
+
+
+def score(outdir):
+    runs = [json.loads(l) for l in gzip.open(os.path.join(outdir, "a3h_runs.jsonl.gz"), "rt")]
+    V = {}
+    for r in runs:
+        V.setdefault(r["variant"], []).append(r)
+    res = dict(runs={k: len(v) for k, v in V.items()}, nonfinite={k: sum(not r["finite"] for r in v) for k, v in V.items()})
+    sw = precision_switch(V); res["precision"] = sw
+    truth = V["truth"]
+    if sw["switch"]:  # rule: the theta > 0 truth is recomputed in long double; scored on it (both reported)
+        res["note"] = "precision switch fired: the theta > 0 truth must be recomputed in long double (run 'run_ld')"
+    P, dropped = pairs(truth); res["dropped_pairs_nonfinite"] = dropped
+    res["model"] = score_signs(P, lambda cell, f: predicted(cell, f))
+    res["baselines"] = {b: score_signs(P, lambda cell, f, b=b: baseline_sign(b, cell, f))
+                        for b in ("gd_account", "aligned_model", "static_bound", "mu_count")}
+    sep = {}
+    for b in res["baselines"]:
+        rows = [(predicted(cell, f), baseline_sign(b, cell, f), msign(d)) for f, cell, d in P]
+        dif = [(p, m) for p, q, m in rows if p != q and m != "0"]
+        sep[b] = dict(pairs=len(dif), right=float(np.mean([p == m for p, m in dif])) if dif else None)
+    res["separation"] = sep
+    mo = res["model"]
+    res["pass"] = bool(mo["precision"] is not None and mo["precision"] >= 0.80 and mo["opposite"] <= 0.05
+                       and mo["recall"] is not None and mo["recall"] >= 0.80
+                       and all(v["right"] is None or v["right"] >= 0.80 for v in sep.values()))
+    res["cells"] = [dict(factor=f, **{k: v for k, v in cell.items()}, n=len(d), mean=tci(d)[0], ci=list(tci(d)[1:]),
+                         measured=msign(d), predicted=predicted(cell, f)) for f, cell, d in P]
+    res["by_factor"] = {}
+    for f in ("theta", "lam", "a0"):
+        rows = [c for c in res["cells"] if c["factor"] == f]
+        for th in sorted({c["theta"] for c in rows}):
+            rr = [c for c in rows if c["theta"] == th]
+            res["by_factor"][f"{f} theta={th}"] = dict(cells=len(rr), right=sum(c["measured"] == c["predicted"] for c in rr),
+                                                     measured={s: sum(c["measured"] == s for c in rr) for s in "+-0"},
+                                                     mean_diff=float(np.mean([c["mean"] for c in rr])))
+    res["rank_tavg_by_cell"] = {f"{st} {side}{th:g} lam {lam}": float(np.mean([r["rank_tavg"] for r in truth if r["finite"] and
+                                (r["stats"], r["side"], r["theta"], r["lam"]) == (st, side, th, lam)]))
+                                for st in ("h1", "h2") for th, side in ROT for lam in LAM}
+    json.dump(res, open(os.path.join(outdir, "a3h_score.json"), "w"), indent=1)
+    return res
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]; cfgs = configs()
+    if cmd == "list":
+        prec = a3.precision_jobs_stratified(cfgs, PREC_SEED)
+        print(len(cfgs), "truth runs;", len(prec), "precision jobs;", sum(c["theta"] == 0 for c in cfgs), "long double truth runs")
+        import e4_dev
+        old = a3.dev_configs()
+        for k in ("lam", "a0", "p0", "seed"):
+            print(k, "intersection with development:", sorted({c[k] for c in cfgs} & {c[k] for c in old}))
+        print("c/s ratios: held-out 0.925, 0.86; development", sorted(r for _, r in e4_dev.STATS.values()))
+        sys.exit()
+    outdir = sys.argv[2]
+    if cmd == "score":
+        r = score(outdir); print(json.dumps({k: r[k] for k in ("precision", "model", "baselines", "separation", "pass", "by_factor")}, indent=1))
+        print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E4 A3 held-out scored", flush=True); sys.exit()
+    nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    os.makedirs(outdir, exist_ok=True); t0 = time.time(); runs = []
+    jobs = [(c, "truth") for c in cfgs] + a3.precision_jobs_stratified(cfgs, PREC_SEED)
+    jobs.sort(key=lambda j: -(j[1] == "ld") - (j[0]["theta"] == 0))  # long double first
+    from multiprocessing import Pool
+    with Pool(nproc) as pool:
+        for i, r in enumerate(pool.imap_unordered(a3.run_job, jobs)):
+            runs.append(r)
+            if (i + 1) % 48 == 0:
+                print(f"{i+1}/{len(jobs)} {time.time()-t0:.0f}s", flush=True)
+    runs.sort(key=lambda r: (r["variant"], r["id"]))
+    with gzip.open(os.path.join(outdir, "a3h_runs.jsonl.gz"), "wt") as f:
+        for r in runs:
+            f.write(json.dumps(r) + "\n")
+    json.dump(dict(runs=len(runs), seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv)),
+              open(os.path.join(outdir, "a3h_meta.json"), "w"), indent=1)
+    r = score(outdir)
+    print(json.dumps({k: r[k] for k in ("precision", "model", "baselines", "separation", "pass", "by_factor")}, indent=1))
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E4 A3 held-out grid done and scored", flush=True)

@@ -1,0 +1,54 @@
+"""Rung 4 held-out, post hoc (after the registered score was read; not registered):
+is a row's miss larger than the truth's own sample sensitivity? For each finite base run
+the truth interval is [min, max] of the base and floor-re-run ranks; a row's bracket
+error is its distance to that interval (0 inside). Reported per act and per subset
+(all / sample-robust / fragile), beside the plain MAE.
+usage: python3 code/checks/e6_r4_floor_bracket.py results/e6/r4_heldout OUT_JSON"""
+import sys, json, gzip, os
+import numpy as np
+
+ROWS = ["n2_decay", "ln_static_decay", "n2_meas_full", "early", "static", "r_init",
+        "ln_static_init", "n2_init", "mu_ln_dvd_signed", "r_decay", "dvd_signed"]
+
+def main(d, out):
+    rs = [json.loads(l) for l in gzip.open(os.path.join(d, "r4_heldout_runs.jsonl.gz"), "rt")]
+    base = {r["cfg"]["id"]: r for r in rs if "floor_of" not in r["cfg"]}
+    flo = {r["cfg"]["floor_of"]: r for r in rs if "floor_of" in r["cfg"]}
+    recs = []
+    for i, b in sorted(base.items()):
+        f = flo[i]
+        if b["truth"]["diverged"] or f["truth"]["diverged"]:
+            continue
+        tb, tf = b["truth"]["rank"], f["truth"]["rank"]
+        lo, hi = min(tb, tf), max(tb, tf)
+        row = {"id": i, "act": b["cfg"]["act"], "data": b["cfg"]["data"], "tb": tb, "tf": tf,
+               "fragile": tb != tf, "settled": bool(b["truth"]["settled"])}
+        for k in ROWS:
+            v = b["truth"]["early"] if k == "early" else b["pred"][k]
+            row[k] = {"plain": abs(v - tb), "bracket": max(lo - v, v - hi, 0)}
+        recs.append(row)
+    res = {"n_finite_pairs": len(recs), "floor_spread": {}, "subsets": {}}
+    sp = np.array([abs(r["tb"] - r["tf"]) for r in recs])
+    for a in ["tanh", "relu", "all"]:
+        m = np.array([a == "all" or r["act"] == a for r in recs])
+        res["floor_spread"][a] = {"n": int(m.sum()), "mean_abs_diff": float(sp[m].mean()),
+                                  "max_abs_diff": int(sp[m].max()), "share_gt1": float((sp[m] > 1).mean())}
+    for sub in ["all", "sample_robust", "fragile"]:
+        for a in ["tanh", "relu", "all"]:
+            sel = [r for r in recs if (a == "all" or r["act"] == a) and
+                   (sub == "all" or (sub == "fragile") == r["fragile"])]
+            if not sel:
+                continue
+            res["subsets"][f"{sub}/{a}"] = {"n": len(sel), **{k: {
+                "mae_plain": float(np.mean([r[k]["plain"] for r in sel])),
+                "within1_plain": float(np.mean([r[k]["plain"] <= 1 for r in sel])),
+                "mae_bracket": float(np.mean([r[k]["bracket"] for r in sel])),
+                "within1_bracket": float(np.mean([r[k]["bracket"] <= 1 for r in sel]))} for k in ROWS}}
+    json.dump(res, open(out, "w"), indent=1)
+    for key, v in res["subsets"].items():
+        print(key, v["n"], {k: (round(v[k]["mae_plain"], 2), round(v[k]["mae_bracket"], 2),
+                                round(v[k]["within1_bracket"], 2)) for k in ["n2_decay", "early", "static", "n2_meas_full"]})
+    print(res["floor_spread"])
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[2])

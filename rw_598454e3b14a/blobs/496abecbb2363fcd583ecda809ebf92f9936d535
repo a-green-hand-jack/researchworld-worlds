@@ -1,0 +1,306 @@
+"""T-ext (tab:ext-tests): one row per registered extension test, in the README order. Every measured value, CI, baseline and verdict is read from
+the score files named in each group header (results/ paths); only the registered predictions/tolerances (the text of the registration) are typed here."""
+import os, sys, json
+sys.path.insert(0, os.path.dirname(__file__))
+import common
+
+R = common.results_dir()
+USED = []
+
+def J(rel):
+    p = os.path.join(R, rel); USED.append(p); return json.load(open(p))
+
+def f(x, d=3): return f"{x:.{d}f}".replace("-", "$-$")
+def ci(c, d=2): return f"[{f(c[0], d)}, {f(c[1], d)}]"
+def tt(s): return r"\texttt{" + s.replace("_", r"\_") + "}"
+
+BASE = {"all_alive": "all-alive", "persistence_K": "persistence at $K$", "static_bound": "static bound", "majority_oracle": "majority oracle",
+        "delivered_race": "delivered race", "window_mu_wd": "window", "mu_count": "$\\mu$ count", "dev_median": "dev.\\ median",
+        "early_25": "reading at $t{=}25$", "early_50": "reading at $t{=}50$", "window": "window", "staticL": "static$_L$", "static1": "static$_1$",
+        "race_depth1": "race, depth 1"}
+
+rows = []   # ("group", title, files) | ("row", test, pred, meas, base, verdict)
+def group(title, files): rows.append(("group", title, files))
+def row(*a): rows.append(("row",) + a)
+
+# ---- A1 grid 1 (frozen v3)
+def a1_block(d, tag, with_a1a):
+    same = lambda t: "as in grid 1" if not with_a1a else t
+    nr = d["runs"]
+    if with_a1a:
+        a = d["A1a"]
+        row("A1a (reduction)", "state agr.\\ $\\ge$0.99 and rank equality $\\ge$0.99",
+            f"{f(a['state_agreement'])} and {f(a['rank_equal'])} ({a['runs']} runs)", "--", "fails" if not a["pass"] else "passes")
+    b = d["A1b"]
+    row("A1b (burst wait)", same("median $|\\ln$ ratio$|\\le$0.05, p90 $\\le$0.15, misses $\\le$5\\%, median $\\le\\frac12$ oracle"),
+        f"median {f(b['median'], 4)}, p90 {f(b['p90'], 4)}, misses {100 * b['miss_share']:.2f}\\% ({b['scored']} dirs.)",
+        f"constant-wait oracle: median {f(b['constant_wait_oracle']['median'], 2)}", "passes" if b["pass"] else "fails")
+    c = d["A1c"]
+    row("A1c (return wait)", same("median $\\le$0.10, p90 $\\le$0.30, misses $\\le$5\\%, median $\\le\\frac12$ oracle"),
+        f"median {f(c['median'], 4)}, p90 {f(c['p90'], 3)}, misses {100 * c['miss_share']:.2f}\\% ({c['scored']} dirs.)",
+        f"constant-wait oracle: median {f(c['constant_wait_oracle']['median'], 2)}", "passes" if c["pass"] else "fails")
+    e = d["A1d"]; er, fl = e["error_rate"], e["rank_within_1_failure"]
+    bb = min((k for k in er if k != "model"), key=lambda k: er[k]); bf = min((k for k in fl if k != "model"), key=lambda k: fl[k])
+    row("A1d (alive state, rank)", same("agr.\\ $\\ge$0.90; rank $\\pm1$ $\\ge$0.90; error $\\le\\frac12$ best baseline"),
+        f"agr.\\ {f(1 - er['model'])}; rank $\\pm1$ {f(1 - fl['model'])}",
+        f"{BASE[bb]}: error {f(er[bb])}; rank $\\pm1$ {f(1 - fl[bf])}", "passes" if e["pass"] else "fails")
+
+A1 = J("e4/a1/a1_score.json")
+group(f"A1, held-out grid 1 (frozen v3; {A1['runs']} runs)", ["e4/a1/a1_score.json", "e4/a1_tolerance_v2.json"])
+a1_block(A1, "a1", True)
+
+H2 = J("e4/a1h2/a1h2_score.json")
+group(f"A1\\_v4 H2, held-out grid 2 (frozen v4; {H2['runs']} runs)", ["e4/a1h2/a1h2_score.json", "e4/prediction.json"])
+a1_block(H2, "h2", False)
+
+H3 = J("e4/a1h3/a1h3_score.json")
+un, se = H3["bins"]["unsettled_le_2.52"]["A1d"]["rank_within_1_failure"], H3["bins"]["settled_ge_12.6"]["A1d"]["rank_within_1_failure"]
+bu = min((k for k in un if k != "model"), key=lambda k: un[k]); bs = min((k for k in se if k != "model"), key=lambda k: se[k])
+nun, nse = H3["bins"]["unsettled_le_2.52"]["runs"], H3["bins"]["settled_ge_12.6"]["runs"]
+binding = un["model"] > 0.10 and un["model"] > 2 * se["model"]
+group(f"A1\\_v4 H3, scope of the settled law ($\\eta\\lambda T$ from 0.54 to 25.2; {H3['all']['runs']} runs)", ["e4/a1h3/a1h3_score.json", "e4/prediction.json"])
+row("H3 scope (A-iv$'$)", "binding iff unsettled-bin rank-$\\pm1$ failure $>$0.10 and $>2\\times$ the settled bin's",
+    f"failure: unsettled {f(un['model'])} ({nun} runs), settled {f(se['model'])} ({nse} runs)",
+    f"{BASE[bu]} failure {f(un[bu], 2)} / {f(se[bs], 2)}", "binding" if binding else "not binding for the count")
+
+# ---- A2, A2'
+A2 = J("e4/a2/a2_score.json")["all"]
+rk = A2["rank"]; bs2 = max((k for k in rk if k != "model"), key=lambda k: rk[k]["within1_strict"])
+bc2 = min((k for k in rk if k != "model"), key=lambda k: rk[k]["mae_converged"])
+group(f"A2, AdamW rank at $T_h$ (frozen v4; {A2['runs']} runs, {A2['runs'] - A2['nonconverged_finite']} converged)", ["e4/a2/a2_score.json", "e4/prediction.json"])
+row("A2, strict", "rank $\\pm1\\ge0.90-f_{\\rm floor}$ (non-converged = miss) and every baseline's MAE-difference CI $>0$",
+    f"rank $\\pm1$ {f(rk['model']['within1_strict'])}", f"{BASE[bs2]}: {f(rk[bs2]['within1_strict'])}", "fails" if not A2["pass"] else "passes")
+d2 = A2["model_vs_baseline"][bc2]
+row("A2, converged runs only", "registered secondary scoring; reported beside the failure, not a pass",
+    f"MAE {f(rk['model']['mae_converged'])} ($\\pm1$ {f(rk['model']['within1_converged'])}); {BASE[bc2]} $-$ model {f(d2['mae_diff_baseline_minus_model'], 2)} {ci(d2['ci95'])}",
+    f"{BASE[bc2]}: MAE {f(rk[bc2]['mae_converged'], 2)}", "not a pass")
+A2p = J("e4/a2p/a2p_score.json")["all"]
+rp = A2p["rank_at_T_h"]; bp = min((k for k in rp if k != "model"), key=lambda k: rp[k]["mae_finite"]); dp = A2p["model_vs_baseline"][bp]
+group(f"A2$'$, prospective test at $T_h$ (frozen v4; {A2p['runs']} runs)", ["e4/a2p/a2p_score.json", "e4/prediction.json"])
+row("A2$'$", "rank $\\pm1\\ge0.90-f_{\\rm floor}$ on all runs; every baseline's MAE-difference CI $>0$",
+    f"rank $\\pm1$ {f(rp['model']['within1'])}, MAE {f(rp['model']['mae_finite'])}; {BASE[bp]} $-$ model {f(dp['mae_diff_baseline_minus_model'], 2)} {ci(dp['ci95'])}",
+    f"{BASE[bp]}: MAE {f(rp[bp]['mae_finite'], 2)}; $\\pm1$ {f(rp[bp]['within1'], 2)}", A2p["reading"])
+
+# ---- A3s_mech
+A3 = J("e4/a3h/a3h_score.json")
+m = A3["model"]; sep = A3["separation"]
+gd = A3["baselines"]["gd_account"]
+group(f"A3s\\_mech, rotation and weight-decay signs ({A3['runs']['truth']} runs, {m['pairs']} paired cells)", ["e4/a3h/a3h_score.json", "e4/a3_tolerance.json"])
+row("A3s\\_mech", "sign precision $\\ge$0.80, opposite $\\le$0.05, right in $\\ge$0.80 of the pairs where the prediction differs from each baseline",
+    f"precision {f(m['precision'], 4)} ({m['n_pred_nonzero']} cells), opposite {f(m['opposite'], 2)}, recall {f(m['recall'], 2)}; right vs.\\ baselines {f(min(v['right'] for v in sep.values()), 2)}",
+    f"GD account: precision {f(gd['precision'], 2)}, opposite {f(gd['opposite'], 2)}", "passes" if A3["pass"] else "fails")
+
+# ---- E6 rung 1a
+E6 = J("e6/r1heldout/r1_heldout_score.json")
+group(f"E6 rung 1a, deep linear encoder, held-out ({E6['runs']} runs; tolerance v2)", ["e6/r1heldout/r1_heldout_score.json", "e6/r1_tolerance_v2.json"])
+c1 = E6["control_L1"]
+row("control $L{=}1$", "A1 equals the depth-1 race on every run (code check, not scored)",
+    f"equal on {c1['runs']}/{c1['runs']} runs" if c1["A1_equals_race_depth1"] else "differs", f"A1 MAE {f(c1['A1']['mae'])}", "holds")
+first6 = True
+for arm in ("aligned", "generic"):
+    for key, lab in (("L2", "$L{=}2$"), ("L3", "$L{=}3$"), ("L_ge2", "pooled")):
+        x = E6[arm][key]; bl = x["baselines"]; bb = min(bl, key=lambda k: bl[k]["mae"])
+        row(f"{arm}, {lab}", "as above" if not first6 else "within-1 $\\ge$0.90; A1 MAE below every baseline's; paired CI of (baseline $-$ A1) $>0$",
+            f"A1 MAE {f(x['A1']['mae'])} {ci(x['A1']['mae_ci'], 3)}, within-1 {f(x['A1']['within1'], 2)} ({x['runs']} runs)",
+            f"{BASE[bb]}: {f(bl[bb]['mae'])}; margin {f(bl[bb]['minus_A1'], 3)} {ci(bl[bb]['minus_A1_ci'], 3)}", "passes" if x["pass"] else "fails")
+        first6 = False
+
+# ---- E6 rung 1b
+NK = r"\texttt{n1g\_K}"
+R1B = J("e6/r1b_heldout/r1b_heldout_score.json"); J("e6/r1b_tolerance.json"); J("e6/prediction_r1b.json")
+group(f"E6 rung 1b, deep predictor with random factors, held-out ({R1B['base_runs']} runs; registered before the runs)",
+      ["e6/r1b_heldout/r1b_heldout_score.json", "e6/r1b_tolerance.json", "e6/prediction_r1b.json"])
+B1B = {"n1g_d1": "depth-1 rule", "race_id": "identity race", "static": "static bound", "early_50.0": "reading at $t{=}50$", "early_25.0": "reading at $t{=}25$", "window_P0": "window ($P_0$)"}
+def best_mu(x):
+    k = min((k for k in x["baselines"] if k.startswith("dvd")), key=lambda k: x["baselines"][k]["mae"]); return k, x["baselines"][k]
+def bname(k): return B1B.get(k, tt(k))
+def margin(b): return f"{f(b['mae'])}; margin {f(b['minus_primary'], 3)} {ci(b['minus_primary_ci'], 3)}"
+ARM1B = (("gauss", "Gaussian"), ("nearid", "perturbed identity"))
+x1, x2 = R1B["gauss_M1_control"], R1B["nearid_M1_control"]
+assert x1["baselines"]["n1g_d1"]["minus_primary"] == 0 == x2["baselines"]["n1g_d1"]["minus_primary"]
+row("control $M{=}1$", "\\texttt{n1g\\_K} equals the depth-1 rule by construction (all capture rules coincide at $M{=}1$); a control, not a verdict",
+    f"MAE {f(x1['n1g_K']['mae'])} Gaussian, {f(x2['n1g_K']['mae'])} perturbed identity ({x1['runs']} runs each)",
+    f"depth-1 rule: {f(x1['baselines']['n1g_d1']['mae'])} / {f(x2['baselines']['n1g_d1']['mae'])} (identical)", "control")
+first1b = True
+for arm, lab in ARM1B:
+    x = R1B[f"{arm}_M_ge2"]; bl = x["baselines"]; bb = min(bl, key=lambda k: bl[k]["mae"]); mk, mb = best_mu(x)
+    assert R1B["verdict"][f"{arm}_M_ge2"] == x["pass"] and bb == "n1g_d1"
+    row(f"{lab}, $M{{\\ge}}2$", "within-1 $\\ge$0.90; \\texttt{n1g\\_K} MAE below every baseline's; paired CI of (baseline $-$ \\texttt{n1g\\_K}) $>0$" if first1b else "as above",
+        f"{NK} MAE {f(x['n1g_K']['mae'])} {ci(x['n1g_K']['mae_ci'], 3)}, within-1 {f(x['n1g_K']['within1'], 2)} ({x['runs']} runs)",
+        f"{bname(bb)}: {margin(bl[bb])}", "passes" if x["pass"] else "fails")
+    row(f"\\quad other baselines", "same comparison",
+        f"identity race {margin(bl['race_id'])}; static bound {margin(bl['static'])}; reading at $t{{=}}50$ {margin(bl['early_50.0'])}",
+        f"best $\\mu$ variant ({tt(mk)}): {margin(mb)}", "all beaten")
+    first1b = False
+for arm, lab in ARM1B:
+    for M in (2, 3, 4):
+        x = R1B[f"{arm}_M{M}"]; bl = x["baselines"]; bb = min(bl, key=lambda k: bl[k]["mae"]); b1 = bl["n1g_d1"]
+        if bl[bb]["minus_primary_ci"][0] > 0: vtxt = "beats every baseline here"
+        else:
+            vtxt = ("not resolved from the depth-1 rule (margin CI includes 0)" if bb == "n1g_d1" else "not beaten by " + bname(bb)) + ("; ill-posed by the floor" if x["floor"]["ill_posed"] else "")
+        row(f"{lab}, $M{{=}}{M}$ (reported)", "same rule; reported per depth, not a verdict cell",
+            f"{NK} MAE {f(x['n1g_K']['mae'])} {ci(x['n1g_K']['mae_ci'], 3)}, within-1 {f(x['n1g_K']['within1'], 2)} ({x['runs']} runs)",
+            f"{bname(bb)}: {margin(bl[bb])}" + ("" if bb == "n1g_d1" else f"; depth-1 rule {f(b1['mae'])}, margin {f(b1['minus_primary'], 3)} {ci(b1['minus_primary_ci'], 3)}"), vtxt)
+for arm, lab in ARM1B:
+    x = R1B[f"{arm}_M_ge2"]; r = x["reported"]["early_f0.10"]
+    row(f"{lab}, $M{{\\ge}}2$, reading at 0.1\\,$T$", "not registered; reported beside the verdict",
+        f"MAE {f(r['mae'])}; (reading $-$ {NK}) {ci(r['minus_primary_ci'], 3)}", "--",
+        ("reading better than \\texttt{n1g\\_K}" if r["minus_primary_ci"][1] < 0 else "\\texttt{n1g\\_K} better than the reading" if r["minus_primary_ci"][0] > 0 else "unresolved"))
+
+# ---- E5
+E5 = J("e5/b1heldout/b1_heldout_score.json"); MU5 = J("e5/b1heldout/mu_baseline.json")["all"]; J("e5/b1_tolerance_v2.json")
+A5 = E5["all"]; V5 = E5["verdicts"]; B5 = A5["B1a_prime"]; TM = B5["truth_or_model"]; SC = E5["schedules"]
+def n(x): return f"{x:,}".replace(",", "{,}")
+group(f"E5, weight-decay schedules, held-out ({n(A5['runs'])} runs, frozen stage\\_model\\_qs)",
+      ["e5/b1heldout/b1_heldout_score.json", "e5/b1_tolerance_v2.json", "e5/b1heldout/mu_baseline.json"])
+cells5 = {k: c for k, c in V5["cells"].items() if c["pairs"] >= 100}
+bad = [k for k, c in cells5.items() if not c["B1a_ok"]]
+assert sorted(bad) == sorted(V5["B1a_prime"]["cells_failing"])
+CELLN = {"base": "base", "alpha0.5": "$\\alpha{=}0.5$", "ema0.2": "EMA 0.2"}
+ci_ = B5["baseline_minus_model_ci"]
+row("B1a$'$, overall", "agreement on schedule-affected pairs $\\ge$0.90 and the model beats every time-resolved baseline (paired CI of baseline $-$ model $>0$)",
+    f"{f(TM['agree']['model'])} ({n(TM['pairs'])} pairs); on all {n(B5['pairs'])} pairs where truth or any predictor changes: {f(B5['agree']['model'])}",
+    f"stage$_1$ (earlier model): {f(TM['agree']['stage_v1'])} (all pairs: {f(B5['agree']['stage_v1'])}, margin {ci(ci_['stage_v1'], 4)}); capture-static: {f(TM['agree']['capture_static'])}; static-now: {f(TM['agree']['static_now'])}",
+    "passes the overall bar" if V5["B1a_prime"]["overall_ok"] and V5["B1a_prime"]["beats_baselines"] else "fails")
+lo5 = min(c["agree"] for k, c in cells5.items() if k not in bad)
+row("B1a$'$, per cell", f"agreement $\\ge$0.80 in every kind$\\times$variant cell with $\\ge$100 such pairs ({len(cells5)} cells)",
+    f"{len(bad)} of {len(cells5)} cells below: " + "; ".join(f"short pulse, {CELLN[k.split('|')[1]]} {f(cells5[k]['agree'], 2)} ({n(cells5[k]['pairs'])})" for k in bad) + f"; lowest other cell {f(lo5, 2)}",
+    "--", "fails" if not V5["B1a_prime"]["pass_"] else "passes")
+b = A5["B1b_prime"]
+row("B1b$'$, post-knot events", "median $|\\ln$ ratio$|\\le$0.10, p90 $\\le$0.30, unmatched $\\le$5\\%, unmatched below capture-static's",
+    f"median {f(b['model']['median'])}, p90 {f(b['model']['p90'], 2)}, unmatched {100 * b['model']['unmatched_share']:.1f}\\% ({n(b['model']['events'])} events)",
+    f"capture-static: median {f(b['capture_static']['median'])}, p90 {f(b['capture_static']['p90'], 1)}, unmatched {100 * b['capture_static']['unmatched_share']:.1f}\\%",
+    "passes" if V5["B1b_prime"]["pass_"] else "fails")
+d5 = SC["B1d"]
+row("B1d (predictor after loss)", "median $|\\ln(|p|/p_{\\rm model})|\\le$0.5",
+    f"median {f(V5['B1d']['median_abs'], 2)} ({n(d5['pairs'])} post-loss pairs, {d5['runs']} runs)",
+    f"own decay: {f(d5['median_abs_vs_own_decay'], 2)}; slaved relation: {f(d5['median_abs_vs_slaved_truth_w'], 1)} (reported, not scored)", "passes" if V5["B1d"]["pass_"] else "fails")
+B2 = E5["B2"]; a = B2["B2a"]; gr = B2["B2a"]["groups_all_pred_negative"]
+row("B2a (warm-up sign)", "sign of final count (step-up $-$ constant high) agrees in $\\ge$0.90 of pairs; mean $D<0$ with CI below 0 where predicted negative on every seed",
+    f"sign agreement {f(a['sign_agree'], 3)} ({a['pairs']} pairs; $D<0$ in {a['meas_negative']}, all predicted); {len(gr)} such groups, mean $D$ = {f(min(g['mean_meas'] for g in gr.values()), 2)} {ci(gr[next(iter(gr))]['ci'], 2)}",
+    "--", "passes" if a["pass_"] else "fails")
+b2b = B2["B2b"]
+row("B2b (increasing-schedule bound)", "no run ends above the static count at the final $\\lambda$",
+    f"{b2b['violations']} violations in {n(b2b['runs'])} runs", "--", "passes" if b2b["pass_"] else "fails")
+c = B2["B2c"]
+row("B2c (late decrease)", "predicted $R$ = measured $R$ in $\\ge$0.90 of runs",
+    f"{f(c['agree'], 3)} ({n(c['runs'])} runs; non-fragile {f(c['agree_non_fragile'], 3)}); {100 * c['meas_R_zero']:.0f}\\% of runs revive nothing; runs with $R>0$ ({c['nonzero']['runs']}): {f(c['nonzero']['agree'], 2)}",
+    f"v1 claim ``nothing revives'': {f(c['meas_R_zero'], 2)}", "passes" if c["pass_"] else "fails")
+d = B2["B2d"]
+row("B2d (early decrease)", "final count within 1 of the constant-low run in $\\ge$0.90 of pairs",
+    f"within-1 share {f(d['within1'], 2)} ({d['pairs']} pairs)", f"the model itself: {f(d['model_within1'], 2)}", "passes" if d["pass_"] else "fails")
+F5 = A5["final"]; F5mu = MU5["final"]
+row("Final rank (not a registered test)", "reported, not scored",
+    f"MAE {f(F5['model']['mae'])}, within 1 {f(F5['model']['within1'], 2)} ({n(A5['runs'])} runs)",
+    f"capture-static {f(F5['capture_static']['mae'])}; static-now {f(F5['static_now']['mae'], 2)}; $\\mu$ count {f(F5mu['mu_dvd']['mae'], 2)} (true count above it in {100 * MU5['exceed']:.1f}\\%)", "context")
+row("$\\mu$ criterion (2610.02344), baseline added before scoring", "reported beside the model (E5 amendment 5), not scored",
+    f"B1a$'$ {f(MU5['B1a_prime_truth_or_model']['mu_dvd'])} vs.\\ {f(MU5['B1a_prime_truth_or_model']['model'])} (all-pairs margin {ci(MU5['B1a_prime_mu_minus_model_ci'], 3)}); B1b$'$ unmatched {100 * MU5['B1b_prime']['mu_dvd']['unmatched_share']:.1f}\\%",
+    "--", "context")
+
+# ---- E5 B3 (minibatch noise in the race)
+B3 = J("e5/b3_heldout/b3_heldout_score.json"); J("e5/prediction_b3.json")
+SPL = J("e5/b3_heldout/precision/split_p0_lam.json"); PRE = J("e5/b3_heldout/precision/precision_heldout_summary.json")
+AM = B3["amendment_1"]; VB3 = B3["verdict"]; NZ = B3["noisy"]
+nb3 = sum(B3[k]["runs"] for k in ("B2", "B8", "B32", "B0")); ndiv = len(B3["diverged"])
+assert nb3 == 159 and ndiv == 1 and NZ["runs"] == 119
+group(f"E5 B3, minibatch noise in the race, held-out ({nb3 + ndiv} runs, {ndiv} diverged; registration and amendment 1 before the run)",
+      ["e5/b3_heldout/b3_heldout_score.json", "e5/prediction_b3.json", "e5/b3_heldout/precision/split_p0_lam.json", "e5/b3_heldout/precision/precision_heldout_summary.json"])
+VW = {"pass": "passes", "fail": "fails", "undetermined": "undetermined"}
+s1 = AM["S1"]
+row("B3 S1, no reseeding (consistency check, amendment 1)", "share of noisy runs with a re-escape event $\\le$0.05; invariance excludes reseeding by construction in this linear copy-target model, so no outcome can favour a floor",
+    f"{s1['reescape_runs']} of {s1['runs']} noisy runs (sensitivity with the diverged run as an event: {f(s1['share_sensitivity'], 3)} $\\le$0.05)", "--", VW[s1["verdict"]])
+s2 = AM["S2"]["by_eta"]
+for eta in ("eta0.02", "eta0.05"):
+    e = s2[eta]["primary"]; lv = {b: e[b]["level_median"] for b in ("B2", "B32", "B0")}; pr = e["pairs"]
+    row(f"B3 S2, dead level, $\\eta{{=}}{eta[3:]}$", "median $\\log_{10}$(largest dead s.v.\\ / top) at $T$: $B{=}2<B{=}32<$ population (pairs read by amendment 1's round-off rule)",
+        f"$B{{=}}2$: {f(lv['B2'], 2)}; $B{{=}}32$: {f(lv['B32'], 2)}; population: {f(lv['B0'], 2)} ({e['B2']['runs_in_level']}, {e['B32']['runs_in_level']}, {e['B0']['runs_in_level']} runs); pairs $B{{=}}2<B{{=}}32$ {'holds' if pr[0] else 'fails'}, $B{{=}}32<$ pop.\\ {'holds' if pr[1] else 'fails'}",
+        "det: no $B$ dependence (no order predicted)", "holds" if e["holds"] else "fails")
+assert VB3["S2"] == "fail" and not s2["eta0.02"]["primary"]["holds"] and s2["eta0.05"]["primary"]["holds"]
+s3 = AM["S3"]
+row("B3 S3, rank (noisy runs)", "mean $|\\Delta$ vs population$|\\le$1.5 and shift-account MAE $\\le$1.5; no ordering among accounts registered",
+    f"{f(s3['mean_abs_delta'])} and {f(s3['shift_mae'])} ({s3['runs']} runs); {f(s3['mean_abs_delta_sensitivity'])} with the diverged run counted as a miss (above 1.5)",
+    f"reading at 0.1\\,$T$: {f(NZ['early']['mae'])} (difference to shift {ci(NZ['early']['minus_primary_ci'], 2)}); MC exponents: {f(NZ['mc']['mae'], 2)}; window and every $\\mu$ variant: {f(NZ['window']['mae'], 2)}; static: {f(NZ['static']['mae'], 2)}",
+    VW[s3["verdict"]])
+assert all(NZ[k]["mae"] == NZ["shift"]["mae"] for k in ("det", "lyap", "pop"))
+s4 = AM["S4"]
+row("B3 S4, sign of the noise effect follows $p_0$", "$\\Delta$ rank (noisy $-$ population) $\\le0$ at $p_0{=}0.7$ and $\\ge0$ at $p_0{=}1.5$ (a regularity, not a test of an account)",
+    f"$\\Delta$ = {f(s4['delta_low_p0'], 2)} at $p_0{{=}}0.7$, {f(s4['delta_high_p0'], 2)} at $p_0{{=}}1.5$ (with the diverged run counted as a miss: {f(s4['delta_low_p0_sensitivity'], 2)} / {f(s4['delta_high_p0_sensitivity'], 2)})",
+    "no account here predicts the sign or size", VW[s4["verdict"]])
+# post hoc split by p0 x lambda x eta (float64, delivered runs), identical at 80-bit state
+def cell(prec, p0, lam): return SPL[prec][f"p0{p0}_lam{lam}"]
+cells_h = {p0: [cell("delivered_f64", p0, lam)["S2"][e]["holds"] for lam in ("0.006", "0.012") for e in ("eta0.02", "eta0.05")] for p0 in ("0.7", "1.5")}
+assert all(cells_h["0.7"]) and not any(cells_h["1.5"])
+for p0 in ("0.7", "1.5"):
+    for lam in ("0.006", "0.012"):
+        c64, c80 = cell("f64", p0, lam), cell("f80", p0, lam)
+        assert c64["S4_delta"] == c80["S4_delta"] and [c64["S2"][e]["pairs"] for e in c64["S2"]] == [c80["S2"][e]["pairs"] for e in c80["S2"]]
+        assert all(abs(c64["S2"][e]["B0"]["level_median"] - c80["S2"][e]["B0"]["level_median"]) < 1e-6 for e in c64["S2"])
+d = {(p0, lam): cell("f80", p0, lam)["S4_delta"] for p0 in ("0.7", "1.5") for lam in ("0.006", "0.012")}
+row("B3 post hoc split (not registered)", "none; split of S2 and S4 by $p_0\\times\\lambda$ after the verdicts",
+    "S2 order holds in all four $\\lambda\\times\\eta$ cells at $p_0{=}0.7$ and fails in all four at $p_0{=}1.5$ ($B{=}32$ above the population run, whose initial whole-$W$ collapse sets its dead levels); "
+    f"S4 $\\Delta$ at $\\lambda{{=}}0.006$ / 0.012: {f(d[('0.7', '0.006')], 2)} / {f(d[('0.7', '0.012')], 2)} at $p_0{{=}}0.7$, {f(d[('1.5', '0.006')], 2)} / {f(d[('1.5', '0.012')], 2)} at $p_0{{=}}1.5$",
+    "S2 pair outcomes, population levels and $\\Delta$ identical in float64 and 80-bit state (the noisy round-off medians are not)", "context")
+pn = PRE["cells"]["p01.5_noisy"]["f80"]
+assert all(PRE["cells"][c]["f64"][k] == PRE["cells"][c]["f80"][k] for c in ("p01.5_noisy", "p01.5_pop") for k in ("roundoff_regrowth_indices", "final_rank_mean"))
+row("B3 regrowth indices at $p_0{=}1.5$", "amendment 1's exact check, reported beside S1: indices that reach $\\le10^{-13}\\times$ top and later exceed the threshold; expected 0 (amendment 1, reported beside S1)",
+    f"{pn['roundoff_regrowth_indices']} indices in {pn['runs_with_regrowth']} of {pn['runs']} noisy runs, {PRE['cells']['p01.5_pop']['f80']['roundoff_regrowth_indices']} in the population runs; same count and final ranks in float64 and 80-bit state",
+    "--", "exact dynamics, not round-off (post hoc precision check)")
+
+# ---- E8
+S8 = J("e8/grid/summary.json"); G8 = J("e8/grid/posthoc/grid_readings.json")
+group("E8, weight-decay switch in the ViT (5 seeds per row; $e\\in\\{2,5,10,20\\}$)", ["e8/grid/summary.json", "e8/grid/posthoc/grid_readings.json", "e8/prediction.json"])
+names = {"T_lo2hi": ("T lo$\\to$hi", "T", "lo2hi"), "T_hi2lo": ("T hi$\\to$lo", "T", "hi2lo"), "P_lo2hi": ("P lo$\\to$hi", "P", "lo2hi"), "P_hi2lo": ("P hi$\\to$lo", "P", "hi2lo")}
+for cell, (lab, arm, dr) in names.items():
+    pr = S8[cell]["prediction"]; v = S8["prediction_verdicts"][cell]
+    lr = G8["arms"][arm]["lr_share_left"]["20"]
+    row(f"E8 {lab}", "as above" if cell != "T_lo2hi" else "B: $D{=}{>}20$ and $f(20)\\ge0.5$; near-collapse premise: $D\\le5$",
+        f"$D$ = {str(pr['D_final']).replace('>', '$>$')} ({pr['reading']}); $f(20)$ = {f(pr['f20'][0])} {ci(pr['f20'][1:], 3)}; Fieller {ci(G8['arms'][arm][dr]['20']['f_fieller95'], 3)}",
+        f"lr share left {f(lr, 2)}; premise " + ("met" if isinstance(pr["D_final"], int) and pr["D_final"] <= 5 else "not met"),
+        v.split(":")[0])
+for arm, key in (("T", "T_lo2hi"), ("P", "P_lo2hi")):
+    b2 = S8[key]["B2_warmup"]; fs_ = [b2["f"][str(e)][0] for e in (2, 5, 10, 20)]
+    row(f"E8 warm-up, {arm}", "lo$\\to$hi: $f(e)\\ge0.5$ for all $e$",
+        "$f(e)$ = " + ", ".join(f(x, 2) for x in fs_) + f"", f"lr share left at $e{{=}}20$: {f(G8['arms'][arm]['lr_share_left']['20'], 2)}",
+        S8["prediction_verdicts"][f"B2_warmup_{arm}"].replace("e = [20]", "$e{=}20$"))
+E8R = J("e8/e8r/summary.json")["E8R"]["primary"]
+row("E8-R (P ramp)", "$f_{\\rm ramp}\\ge0.5$ (B); informative iff $\\Delta_R$ CI excludes 0 and $|\\Delta_R|\\ge5$",
+    f"$\\Delta_R$ = {f(E8R['gap'][0], 1)} {ci(E8R['gap'][1:], 1)}; $R(0.04)$ = {f(E8R['mean']['c004'], 1)}, $R(0.4)$ = {f(E8R['mean']['c04'], 1)}",
+    "width ceiling 127", "not informative" if not E8R["informative"] else "informative")
+
+INF = J("e6/r1heldout/posthoc/informative.json")["heldout"]; POST = J("e6/r1heldout/posthoc/post.json")["trajectory_heldout"]
+fstar = POST["aligned"]["L_ge2"]["earliest_frac_mae_le_A1"]
+NOTE = (r"Verdicts are those of the registration, not re-scored here. Rung 1a is read as: A1 gives at $t{=}0$ the count a measurement gives only from about " + f"{100 * fstar:.0f}" + r"\% of $T$ (post hoc trajectory), not ``A1 beats measurement''; "
+        + f"{f(INF['aligned']['zero']['all']['zero_share'], 2)} of aligned and {f(INF['generic']['zero']['all']['zero_share'], 2)} of generic runs have zero outcome, so results on the informative runs are post hoc. "
+        r"E8: $n{=}5$ seeds per row, hardware confounded with row; intervals are percentile bootstrap over seeds, Fieller ($df{=}4$) beside the $f(20)$; the lr share left is the dose reference, not a baseline. "
+        r"E5: ``schedule-affected pairs'' are the (direction, checkpoint) pairs after the first schedule knot at which the truth or a predictor changes alive state; the pair counts in B1a$'$ are for the truth-or-model subset, the paired CIs of the registration are over the larger all-predictor set, and the per-cell bar is applied to cells with at least 100 pairs (the other cell flags in the score file are floor flags, not verdicts); ``stage$_1$'' is the earlier delivered stage model, the other baselines are time-resolved static rules. B1a$'$ fails as registered through its per-cell bar alone. "
+        r"E5 B3: verdicts are amendment 1's (written before the held-out run); the first-registered reading is kept in the score file (S3 passes there on the primary scoring; S1 and S4 pass, S2 fails). Level medians below $10^{-13}$ of the top are at round-off. The regrowth indices at $p_0{=}1.5$ (amendment 1 registers an expected 0) are directions that the initial collapse takes below $10^{-13}$ of the top and that grow when their window opens (exact dynamics, the same in 80-bit state), not round-off. "
+        r"A2 converged-only is a secondary scoring and never a pass. A1\_v4 H3 reads ``binding'' only if the unsettled-bin failure exceeds 0.10 and twice the settled one.")
+
+CAPTION = (r"Registered extension tests: prediction (with its tolerance) against the measured value, the best baseline and the verdict as registered, one row per test in the order of the results. "
+           r"Intervals are 95\% percentile bootstrap over runs (E8: over seeds); each group names the score files it is read from. Pass/fail is the registration's, not re-scored.")
+
+def render():
+    W = ["0.72in", "1.38in", "1.46in", "0.94in", "0.64in"]
+    cols = "".join(r">{\raggedright\arraybackslash}p{" + w + "}" for w in W)
+    head = [r"\toprule", r"Test & Registered prediction (tolerance) & Measured [95\% CI] & Best baseline & Verdict as registered \\", r"\midrule"]
+    L = [r"{\scriptsize", r"\setlength{\tabcolsep}{2pt}", r"\renewcommand{\arraystretch}{1.08}", r"\begin{longtable}{@{}" + cols + r"@{}}",
+         r"\caption{" + CAPTION + r"}\label{tab:ext-tests}\\"] + head + [r"\endfirsthead"] + head + [r"\endhead", r"\bottomrule", r"\endfoot"]
+    first = True
+    for r in rows:
+        if r[0] == "group":
+            if not first: L.append(r"\midrule")
+            first = False
+            L.append(r"\multicolumn{5}{@{}p{5.4in}@{}}{\textbf{" + r[1] + r"} \quad {\tiny " + ", ".join(tt(x) for x in r[2]) + r"}} \\*[1pt]")
+        else:
+            L.append(" & ".join(r[1:]) + r" \\")
+    L += [r"\addlinespace[3pt]", r"\multicolumn{5}{@{}p{5.4in}@{}}{" + NOTE + r"} \\", r"\end{longtable}", r"}"]
+    return "\n".join(L) + "\n"
+
+def make(outdir, tabdir):
+    os.makedirs(tabdir, exist_ok=True)
+    open(os.path.join(tabdir, "tab_ext_tests.tex"), "w").write(render())
+    common.record_inputs(tabdir, "tab_ext_tests", sorted(set(USED)))
+
+if __name__ == "__main__":
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    make(None, sys.argv[1] if len(sys.argv) > 1 else os.path.join(root, "paper", "tables"))

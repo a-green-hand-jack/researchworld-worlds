@@ -1,0 +1,77 @@
+"""T2: accuracy of the race criterion, the exact reduced flow and the two static baselines per E1 grid (development set, rank at t=T),
+and of the pre-registered E1b arms (held-out, rank at convergence).
+Values and bootstrap 95% CIs are read from results/e1/summary.json and results/e1b/summary.json (experiment-repo's analysis scripts); run counts from e1_runs.csv."""
+import os, sys, json
+sys.path.insert(0, os.path.dirname(__file__))
+import common
+
+GRIDS = [("race/orthogonal/32", r"race, orthogonal init, $d{=}32$"), ("race/gaussian/32", r"race, Gaussian init, $d{=}32$"),
+         ("race/gaussian/128", r"race, Gaussian init, $d{=}128$"), ("ema/orthogonal/32", r"EMA, orthogonal init, $d{=}32$"),
+         ("depth/orthogonal/32", r"depth, orthogonal init, $d{=}32$")]
+CRIT = [("Race criterion", "rank_pred", "mode_acc_race"), ("Exact reduced flow", "rank_reduced", "mode_acc_reduced"),
+        ("Initial window", "rank_window", None), ("Static bound", "rank_bound", None)]
+
+# E1b arms: (summary key(s), label, criterion label, criterion key in the arm's summary)
+E1B = [("N1_aligned_all", r"aligned arms pooled", "", "rank_pred"),
+       ("grid", r"$p_0\times\lambda$ grid", "", "rank_pred"), ("ema_alpha", r"EMA$\times\alpha$", "", "rank_pred"),
+       ("depth", "depth", "", "rank_pred"), ("balanced", "balanced", " (basin)", "rank_cor3a"),
+       ("nosg+nopred", "no stop-grad./predictor", "", "rank_pred"),
+       ("randpred", "random predictor", " (general)", "rank_pred"), ("noncomm", "non-commuting", " (general)", "rank_pred"),
+       ("batch", r"finite batch", " (population)", "rank_pred"), ("adam", "AdamW", "", "rank_pred")]
+
+def e1b_rows():
+    S = json.load(open(os.path.join(common.results_dir(), "e1b", "summary.json")))
+    cell = lambda v, d: f"{v[0]:.{d}f} [{v[1]:.{d}f}, {v[2]:.{d}f}]"
+    out = []
+    for key, label, crit, ck in E1B:
+        if key == "nosg+nopred":
+            a, b = S["nosg"], S["nopred"]; n = a["runs"] + b["runs"]
+            assert a[ck]["exact"][0] == b[ck]["exact"][0] == 1.0 and a[ck]["mae"][0] == b[ck]["mae"][0] == 0.0
+            w = lambda f: (a["rank_bound"]["mae"][0] * a["runs"] + b["rank_bound"]["mae"][0] * b["runs"]) / n
+            acc = "1.000 (both)"; ex = f"1.00 ({n}/{n})"; ma = "0.00"; win = "--"; st = w(None); runs = n
+        else:
+            A = S[key]; runs = A["runs"]
+            acc = cell(A["mode_acc"], 3) if "mode_acc" in A else "--"
+            ex, ma = cell(A[ck]["exact"], 2), cell(A[ck]["mae"], 2)
+            win = f"{A['rank_window']['mae'][0]:.1f}" if "rank_window" in A else "--"; st = A["rank_bound"]["mae"][0]
+        m = float(ma.split()[0]); cands = [m, st] + ([float(win)] if win != "--" else [])
+        best = min(cands)
+        bf = lambda s_, v: (r"\textbf{" + s_ + "}") if v == best else s_
+        extra = r"$^{\dagger}$" if key == "adam" else ""
+        lab = f"{label}{crit}, {runs}{extra}"
+        out.append(f"{lab} & {acc} & {ex} & {bf(ma, m)} & {bf(win, float(win)) if win != '--' else win} & {bf(f'{st:.1f}', st)} \\\\")
+    out.append(r"\multicolumn{6}{@{}l}{\footnotesize $^{\dagger}$ " + f"only {S['adam']['converged'][0]*100:.1f}" + r"\% of the AdamW runs reach a stable rank. Window and static MAE are point estimates.} \\")
+    return out
+
+def make(outdir, tabdir):
+    rows, csvpath = common.load_e1()
+    sp = os.path.join(common.results_dir(), "e1", "summary.json")
+    S = json.load(open(sp))
+    L = [r"{\footnotesize", r"\setlength{\tabcolsep}{2pt}", r"\begin{tabular}{@{}lccccc@{}}", r"\toprule", r"Criterion & per-dir. acc. & exact rank & rank MAE & \shortstack{window\\MAE} & \shortstack{static\\MAE} \\", r"\midrule",
+         r"\multicolumn{6}{@{}l}{\textbf{E1, development set} (rank at $t=T$)} \\"]
+    cell = lambda v, d: f"{v[0]:.{d}f} [{v[1]:.{d}f}, {v[2]:.{d}f}]"
+    for gi, (key, label) in enumerate(GRIDS):
+        e, ex, ini, d = key.split("/")[0], key.split("/")[1], None, key.split("/")[2]
+        runs = S[key]["runs"]
+        best_ex = max(S[key][c[1]]["exact"][0] for c in CRIT if c[1] in S[key]); best_ma = min(S[key][c[1]]["mae"][0] for c in CRIT if c[1] in S[key])
+        first = True
+        for name, k, mk in CRIT:
+            if k not in S[key]:
+                continue
+            nr = sum(1 for r in rows if r["exp"] == e and r["init"] == ex and int(r["d"]) == int(d) and r[k] is not None)
+            if first:
+                L.append(r"\multicolumn{6}{@{}l}{\emph{" + f"{label}, {nr} runs" + r"}} \\")
+            if k == "rank_reduced" and nr < runs:
+                name = name + r" ($L{=}1$)"
+            b = lambda v, ok, dd: (r"\textbf{" + cell(v, dd) + "}") if ok else cell(v, dd)
+            pm = cell(S[key][mk], 3) if mk and mk in S[key] else "--"
+            L.append(f"{name} & {pm} & {b(S[key][k]['exact'], S[key][k]['exact'][0] == best_ex, 2)} & {b(S[key][k]['mae'], S[key][k]['mae'][0] == best_ma, 2)} & & \\\\")
+            first = False
+        if gi < len(GRIDS) - 1:
+            L.append(r"\midrule")
+    L += [r"\midrule", r"\multicolumn{6}{@{}l}{\textbf{E1b, held-out and pre-registered} (rank at convergence)} \\"]
+    L += e1b_rows()
+    L += [r"\bottomrule", r"\end{tabular}", r"}"]
+    os.makedirs(tabdir, exist_ok=True)
+    open(os.path.join(tabdir, "tab_accuracy.tex"), "w").write("\n".join(L) + "\n")
+    common.record_inputs(tabdir, "tab_accuracy", [csvpath, sp, os.path.join(common.results_dir(), "e1b", "summary.json")])

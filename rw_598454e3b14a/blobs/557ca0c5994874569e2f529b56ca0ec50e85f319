@@ -1,0 +1,570 @@
+{
+ "note": "M2 masking statistics for the E3 mask distributions (the pre-registered masking prediction of E3, P5).\nFor each E3 mask setting, the actual sampler of code/e3_ijepa.py (MultiBlockMask, 8x8 token grid) is drawn\nNM times to estimate G_ij = Pr(i, j in context) and F_ij = E[#target blocks containing i, j in context] / n_targets,\nand the measured fraction of tokens masked (1 - context tokens / 64) and in targets. With a scalar token field\nx_i = patch-mean luminance of CIFAR-10 train images (4x4 patches, standardised, covariance Sigma estimated over the\ntrain set), the linear masked JEPA of E2 has S11 = Sigma o G and S21 = Sigma o F (o: elementwise). The grid is not\na torus, so the statistics are not circulant: directions are the eigenvectors u_k of S11 (sigma_k = eigenvalue,\nc_k = u_k^T sym(S21) u_k), and the predicted rank is N1 per direction and N1-general on the full matrices\n(code/linjepa.py n1_general, identity predictor p0 I, orthogonal W0 = w0 I, E2's step and horizon rule), at\nseveral (lam, p0). This is a linear proxy: E3 registers only the ORDER of the mask settings by predicted rank, and\nonly where that order is the same at every (lam, p0) evaluated.",
+ "NM": 40000,
+ "W0": 0.001,
+ "ETA": 0.05,
+ "masks": {
+  "base": {
+   "cfg": {
+    "n_targets": 4,
+    "t_scale": [
+     0.15,
+     0.2
+    ],
+    "c_scale": [
+     0.85,
+     1.0
+    ]
+   },
+   "frac_masked": 0.7186504777070064,
+   "frac_in_targets": 0.49591958598726116,
+   "preds": [
+    {
+     "lam": 0.001,
+     "p0": 0.25,
+     "t_end": 4000.0,
+     "rank_N1": 1,
+     "rank_N1general": 2,
+     "rank_bound": 2,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.001,
+     "p0": 0.5,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 2,
+     "rank_bound": 2,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.001,
+     "p0": 1.0,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 2,
+     "rank_bound": 2,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.003,
+     "p0": 0.25,
+     "t_end": 4000.0,
+     "rank_N1": 1,
+     "rank_N1general": 1,
+     "rank_bound": 2,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.003,
+     "p0": 0.5,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 2,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.003,
+     "p0": 1.0,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 2,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.01,
+     "p0": 0.25,
+     "t_end": 1124.7313789018094,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 1,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.01,
+     "p0": 0.5,
+     "t_end": 1332.675533069793,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 1,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.01,
+     "p0": 1.0,
+     "t_end": 1540.6196872377766,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 1,
+     "rank_window": 0,
+     "n_cpos": 5
+    }
+   ]
+  },
+  "targets1": {
+   "cfg": {
+    "n_targets": 1,
+    "t_scale": [
+     0.15,
+     0.2
+    ],
+    "c_scale": [
+     0.85,
+     1.0
+    ]
+   },
+   "frac_masked": 0.2213375796178344,
+   "frac_in_targets": 0.17505971337579618,
+   "preds": [
+    {
+     "lam": 0.001,
+     "p0": 0.25,
+     "t_end": 4000.0,
+     "rank_N1": 1,
+     "rank_N1general": 3,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.001,
+     "p0": 0.5,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 3,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.001,
+     "p0": 1.0,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 3,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.003,
+     "p0": 0.25,
+     "t_end": 4000.0,
+     "rank_N1": 1,
+     "rank_N1general": 1,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.003,
+     "p0": 0.5,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.003,
+     "p0": 1.0,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.01,
+     "p0": 0.25,
+     "t_end": 1452.1325426179199,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.01,
+     "p0": 0.5,
+     "t_end": 1660.0766967859036,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 5
+    },
+    {
+     "lam": 0.01,
+     "p0": 1.0,
+     "t_end": 1868.020850953887,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 5
+    }
+   ]
+  },
+  "ctx0.4": {
+   "cfg": {
+    "n_targets": 4,
+    "t_scale": [
+     0.15,
+     0.2
+    ],
+    "c_scale": [
+     0.4,
+     0.5
+    ]
+   },
+   "frac_masked": 0.9341162420382165,
+   "frac_in_targets": 0.4945799226214172,
+   "preds": [
+    {
+     "lam": 0.001,
+     "p0": 0.25,
+     "t_end": 4000.0,
+     "rank_N1": 2,
+     "rank_N1general": 2,
+     "rank_bound": 3,
+     "rank_window": 2,
+     "n_cpos": 6
+    },
+    {
+     "lam": 0.001,
+     "p0": 0.5,
+     "t_end": 4000.0,
+     "rank_N1": 2,
+     "rank_N1general": 1,
+     "rank_bound": 3,
+     "rank_window": 2,
+     "n_cpos": 6
+    },
+    {
+     "lam": 0.001,
+     "p0": 1.0,
+     "t_end": 4000.0,
+     "rank_N1": 1,
+     "rank_N1general": 1,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 6
+    },
+    {
+     "lam": 0.003,
+     "p0": 0.25,
+     "t_end": 2669.183278089964,
+     "rank_N1": 1,
+     "rank_N1general": 1,
+     "rank_bound": 2,
+     "rank_window": 2,
+     "n_cpos": 6
+    },
+    {
+     "lam": 0.003,
+     "p0": 0.5,
+     "t_end": 3362.33045864991,
+     "rank_N1": 2,
+     "rank_N1general": 1,
+     "rank_bound": 2,
+     "rank_window": 1,
+     "n_cpos": 6
+    },
+    {
+     "lam": 0.003,
+     "p0": 1.0,
+     "t_end": 4000.0,
+     "rank_N1": 1,
+     "rank_N1general": 1,
+     "rank_bound": 2,
+     "rank_window": 0,
+     "n_cpos": 6
+    },
+    {
+     "lam": 0.01,
+     "p0": 0.25,
+     "t_end": 616.0901522066068,
+     "rank_N1": 0,
+     "rank_N1general": 0,
+     "rank_bound": 2,
+     "rank_window": 2,
+     "n_cpos": 6
+    },
+    {
+     "lam": 0.01,
+     "p0": 0.5,
+     "t_end": 824.0343063745903,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 2,
+     "rank_window": 1,
+     "n_cpos": 6
+    },
+    {
+     "lam": 0.01,
+     "p0": 1.0,
+     "t_end": 1031.9784605425739,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 2,
+     "rank_window": 0,
+     "n_cpos": 6
+    }
+   ]
+  },
+  "tscale_hi": {
+   "cfg": {
+    "n_targets": 4,
+    "t_scale": [
+     0.3,
+     0.4
+    ],
+    "c_scale": [
+     0.85,
+     1.0
+    ]
+   },
+   "frac_masked": 0.9340167197452229,
+   "frac_in_targets": 0.7035662414162023,
+   "preds": [
+    {
+     "lam": 0.001,
+     "p0": 0.25,
+     "t_end": 4000.0,
+     "rank_N1": 1,
+     "rank_N1general": 1,
+     "rank_bound": 2,
+     "rank_window": 1,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.001,
+     "p0": 0.5,
+     "t_end": 4000.0,
+     "rank_N1": 1,
+     "rank_N1general": 2,
+     "rank_bound": 2,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.001,
+     "p0": 1.0,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 2,
+     "rank_bound": 2,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.003,
+     "p0": 0.25,
+     "t_end": 3329.6617604946064,
+     "rank_N1": 1,
+     "rank_N1general": 1,
+     "rank_bound": 2,
+     "rank_window": 1,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.003,
+     "p0": 0.5,
+     "t_end": 4000.0,
+     "rank_N1": 1,
+     "rank_N1general": 1,
+     "rank_bound": 2,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.003,
+     "p0": 1.0,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 2,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.01,
+     "p0": 0.25,
+     "t_end": 827.9037418998362,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 1,
+     "rank_window": 1,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.01,
+     "p0": 0.5,
+     "t_end": 1035.8478960678199,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 1,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.01,
+     "p0": 1.0,
+     "t_end": 1243.7920502358033,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 1,
+     "rank_window": 0,
+     "n_cpos": 4
+    }
+   ]
+  },
+  "tscale_lo": {
+   "cfg": {
+    "n_targets": 4,
+    "t_scale": [
+     0.05,
+     0.1
+    ],
+    "c_scale": [
+     0.85,
+     1.0
+    ]
+   },
+   "frac_masked": 0.34504378980891715,
+   "frac_in_targets": 0.26318709258061307,
+   "preds": [
+    {
+     "lam": 0.001,
+     "p0": 0.25,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.001,
+     "p0": 0.5,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.001,
+     "p0": 1.0,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 0,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.003,
+     "p0": 0.25,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 1,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.003,
+     "p0": 0.5,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 0,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.003,
+     "p0": 1.0,
+     "t_end": 4000.0,
+     "rank_N1": 0,
+     "rank_N1general": 0,
+     "rank_bound": 3,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.01,
+     "p0": 0.25,
+     "t_end": 1153.115759490955,
+     "rank_N1": 0,
+     "rank_N1general": 0,
+     "rank_bound": 1,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.01,
+     "p0": 0.5,
+     "t_end": 1361.0599136589385,
+     "rank_N1": 0,
+     "rank_N1general": 0,
+     "rank_bound": 1,
+     "rank_window": 0,
+     "n_cpos": 4
+    },
+    {
+     "lam": 0.01,
+     "p0": 1.0,
+     "t_end": 1569.0040678269222,
+     "rank_N1": 0,
+     "rank_N1general": 0,
+     "rank_bound": 1,
+     "rank_window": 0,
+     "n_cpos": 4
+    }
+   ]
+  }
+ },
+ "sigma_top_eig": [
+  24.854407633867233,
+  9.60057176335902,
+  5.387312930417641,
+  3.111168063245274,
+  2.300997435605593,
+  2.1115788849300747,
+  1.7866579414250268,
+  1.4754334066256884
+ ],
+ "order_vs_base": {
+  "rank_N1general": {
+   "targets1": "undetermined",
+   "ctx0.4": "undetermined",
+   "tscale_hi": "undetermined",
+   "tscale_lo": "undetermined"
+  },
+  "rank_N1": {
+   "targets1": "equal",
+   "ctx0.4": "undetermined",
+   "tscale_hi": "undetermined",
+   "tscale_lo": "undetermined"
+  }
+ },
+ "command": "code/e3_mask_stats.py results/e3",
+ "numpy": "2.4.6",
+ "torch": "2.13.0+cpu"
+}

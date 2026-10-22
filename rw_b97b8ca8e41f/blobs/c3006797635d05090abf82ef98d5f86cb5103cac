@@ -1,0 +1,43 @@
+\section{Tiers B and C: interim results}
+\label{app:nonlinear}
+
+The values quoted here and in \cref{sec:experiments} are computed from the per-seed files in \texttt{results/raw/vit\_runs/} at experiment-repo commit \texttt{ae59eab} by \texttt{notes/tierB\_numbers.py} (output, with every per-seed value, per-cell mean and standard deviation, paired difference and interval, in \texttt{notes/tierB\_numbers.txt}); \cref{fig:nonlinear,fig:realdata} are drawn from the same commit.
+Committed so far: 46 of the 51 primary Tier~B runs (seeds 0--2 of all nine one-factor cells and of the scale-$0.5$ and $m=0.25$ strong-decay cells and the scale-$0.5$ zero-decay cell; two seeds of the other five decay cells) plus the fourth reference seed, and 7 of the 18 Tier~C runs (reference, 3 seeds; scale $0.5$ and $m=0.25$, seeds 0--1). The remaining runs are still in progress.
+The nonlinear summaries carry no $\Phi_j$, $\hat R$ or fixed-point count, so no linear-theory rank is drawn: the comparison with P3--P5 is of the direction of each change only, and P7 is not tested (\cref{app:details}).
+
+\emph{Trajectories.} In every committed run the rank falls to a few directions and rises again only after the early window. In the reference cell the numerical rank is 24--32 at initialization, 6--19 at step 250, 3--5 by step 1{,}000 and 70--107 at step 6{,}000 (4 seeds); with the slow target ($\tau=0.999$) the minimum is at step 50 or 100 and the late rank stays at 33--39.
+
+\emph{Late rank per cell} (seeds 0--2, in order; paired change against the same seed of the reference, 98, 107, 90).
+Predictor scale $0.5$: 112, 82, 95 ($+14$, $-25$, $+5$); scale 2: 69, 78, 28 ($-29$, $-29$, $-62$; 95\% interval of the mean $-87$ to $7$).
+Depth 1: 116, 67, 79 ($+18$, $-40$, $-11$); depth 3: 130, 100, 98 ($+32$, $-7$, $+8$).
+Mask ratio $0.25$: 82, 83, 114 ($-16$, $-24$, $+24$); $0.75$: 88, 73, 65 ($-10$, $-34$, $-25$; $-53$ to $7$).
+EMA $\tau=0.9$: 89, 113, 93 ($-9$, $+6$, $+3$); $\tau=0.999$: 39, 35, 33 ($-59$, $-72$, $-57$; $-83$ to $-42$).
+With $n=3$ only the slow-target interval excludes zero; we make no population-level claim for the others.
+
+\emph{AdamW decay pairing (coefficients $0$ / $10^{-4}$ / $5\times10^{-4}$; small-dose sensitivity, not P7).}
+Scale $0.5$: 112, 95, 93 / 112, 82, 95 / 111, 85, 92 (means 100.0, 96.3, 96.0).
+Scale 2, seeds 0 and 2: 70, 28 / 69, 28 / 66, 28.
+Mask ratio $0.25$: seeds 0, 2 at zero decay 84, 104; 82, 83, 114 / 81, 82, 101 at the reference and strong coefficients.
+Mask ratio $0.75$, seeds 0, 1: 88, 74 / 88, 73 / 87, 73.
+Strong minus zero is $-1$, $-10$, $-1$; $-4$, $0$; $-3$, $-3$; $-1$, $-1$ in the 9 complete seed pairs: never positive and at most 10 directions, against a seed-to-seed s.d.\ of 10--30 within these cells.
+With an isolated multiplier of $0.9991$ over a run (\cref{app:details}), this is the response to a small decay; it does not locate a threshold, and it does not show that the ViT's rank is insensitive to a decay of the size that moves the Tier~A boundary.
+
+\emph{Early statistic (P6).} The number of aligned directions with positive log-slope over steps 25--250 exceeds the late rank by $73.5\pm8.4$ in the reference (4 seeds), by 87 on average at scale $0.5$ and by 17--154 in the depth, mask and slow-target cells, but falls short of it at scale 2 ($-43$ on average) and $\tau=0.9$ ($-97$), where almost no direction grows during the window: it is 1--2 at $\tau=0.9$ (late rank 89--113) and 189--191 at $\tau=0.999$ (late rank 33--39), the opposite order to the late rank.
+This failure is not a test of \cref{prop:survival} in the ViT: in the reference only 11--30 of the counted directions exceed the rank threshold at step 25 and 7--24 of them stay aligned through the window, and when a direction must be resolved at step 25 (at least $10^{-2}$ of the largest eigenvalue) and keep an overlap of at least $0.8$, the median count over the three Tier~C reference seeds is 2 (\texttt{results/derived/vit\_transfer\_diagnostics.csv}); this filter is a sensitivity check, not a calibrated prediction.
+The window precedes the growth that sets the late rank.
+
+\emph{Tier~C.} Late rank 131, 149, 126 in the reference (early statistic 184--188), 154, 147 at mask ratio $0.25$ and 149, 156 at scale $0.5$. Probe accuracy after training and at the same seed's initialization: reference 44.4, 44.2, 45.2\% against 41.4, 42.0, 41.1\% (paired gain $3.1\pm1.0$ points, 95\% interval 0.7--5.5); $m=0.25$ 44.1, 44.0\% and scale $0.5$ 46.2, 44.4\% against 41.4, 42.0\% (gains $2.3$ and $3.6$ points, 2 seeds each). No Tier~C run collapses, and the probe does not separate the configurations.
+
+\begin{figure}[h]
+\centering
+\IfFileExists{figures/fig_nonlinear.pdf}{\includegraphics{figures/fig_nonlinear.pdf}}{\todo{figures/fig\_nonlinear.pdf from figtab-repo}}
+\caption{\textbf{Rank of a controlled nonlinear JEPA under each heuristic (Tier~B), interim.} ViT encoder (width 192, 6 blocks, 64 patches) with a transformer predictor (width 64, 2 blocks) on generated images, batch 256, 6{,}000 steps. Each column varies one factor from the reference (predictor scale 1, 2 predictor blocks, expected mask fraction 0.5, EMA $\tau=0.99$, encoder AdamW weight-decay coefficient $10^{-4}$ at learning rate $3\cdot10^{-4}$; it is not the $\lambda$ of \eqref{eq:wdot}). Each of the 64 patches is hidden independently with probability equal to the mask fraction, so the fraction is the expected hidden share, not a fixed count; the masks are not contiguous blocks, and no contiguous-block masking is tested. Rank: eigenvalues of the online encoder's embedding covariance (192 dimensions, 512 images, one fixed context mask per seed reused at every checkpoint) at least $10^{-3}$ of the largest. \emph{Top:} rank over training, per seed (thin) and seed mean (thick), at the reference decay; shaded: the early window (steps 25--250). \emph{Bottom:} rank at step 6{,}000 per seed (markers) and mean (bar); for predictor scale and masking, the low and high levels are paired with AdamW coefficients $0$ (open down-triangles) and $5\cdot10^{-4}$ (squares), thin grey lines joining the same seed across doses: a small-dose sensitivity contrast ($5\cdot10^{-4}$ shrinks the weights directly by under 0.1\% over training) with no Tier~A threshold drawn (\cref{app:details}). Planned: 3 seeds per cell (4 for the reference); numbers above markers give $n$ where fewer. Drawn from the 47 Tier~B runs committed at experiment-repo \texttt{ae59eab}, every cell with at least two seeds.}
+\label{fig:nonlinear}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\IfFileExists{figures/fig_realdata.pdf}{\includegraphics{figures/fig_realdata.pdf}}{\todo{figures/fig\_realdata.pdf from figtab-repo}}
+\caption{\textbf{Transfer to real images (P6), interim.} Tier~C model on CIFAR-10 (50,000 train / 10,000 test images, 50 epochs, 9{,}800 steps); masks hide each patch independently with the expected fraction $m$ (no contiguous blocks). Rank: eigenvalues of the online embedding covariance (192 dimensions) at least $10^{-3}$ of the largest. \textbf{(a)} Rank over training, per seed (thin) and mean (thick); shaded: the early window, steps 25--250. \textbf{(b)} Early statistic against late rank, one point per run (Tier~B grey, Tier~C colored): aligned directions with a positive log-eigenvalue slope over the window, among all 192 (open) or among those resolved at step 25 (filled); dashed: identity. Both are measured statistics, not theory predictions. \textbf{(c)} Test accuracy of a ridge classifier ($\alpha=1$) on the frozen, mean-pooled online encoder (full images, all train/test rows); filled: trained, per seed and mean (solid); open: the same probe on the same seed's encoder at initialization, per seed and mean (dashed), joined to its trained run; dotted: chance. Label: paired gain, trained minus initialization, mean over seeds in percentage points with its 95\% $t$-interval ($n$ given where below 3). Drawn from the 7 Tier~C runs and, in (b), the 47 Tier~B runs committed at experiment-repo \texttt{ae59eab}.}
+\label{fig:realdata}
+\end{figure}

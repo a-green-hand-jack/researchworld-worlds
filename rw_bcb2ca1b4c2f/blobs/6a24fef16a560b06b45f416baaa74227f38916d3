@@ -1,0 +1,25 @@
+"""Referee check: aligned scalar mode, alpha = 1, Wbar = W (tau = 0), sigma = 1, c_k = 0.9^k.
+Exact (from the imbalance identity, one mode per predictor direction):
+    w' = (p c - p^2 - lam) w,  p = sqrt(w^2 + exp(-2 lam t)(p0^2 - w0^2))
+Near-collapse approximation (setup eq. 6):  p = p0 exp(-lam t).
+Survival: exact flow, w(T) > 0.1 at T = 1600 (converged); near-collapse approximation, max_t w(t) > 0.1
+(its own criterion: reach O(1) before the predictor has decayed, as in race_closed_form.py).
+Pilot (P0 = p0 I, matrix flow, sv > 0.1 at T = 32000 steps, 3 seeds) from pilot_rank_threshold.json."""
+import json
+import numpy as np
+from scipy.integrate import solve_ivp
+c = 0.9 ** np.arange(32); w0 = 1e-3; T = 1600.0
+def final(lam, p0, exact):
+    def f(t, y):
+        w = np.exp(y)                                   # integrate log w for stiffness
+        p = np.sqrt(w**2 + np.exp(-2*lam*t)*(p0**2 - w0**2)) if exact else p0*np.exp(-lam*t)
+        return p*c - p**2 - lam
+    s = solve_ivp(f, (0, T), np.full(32, np.log(w0)), rtol=1e-8, atol=1e-10, method="LSODA")
+    return np.exp(s.y[:, -1]), np.exp(s.y.max(axis=1))
+meas = json.load(open("checks/pilot_rank_threshold.json"))
+for lam in (0.01, 0.03, 0.05):
+    for p0 in (0.2, 0.5, 1.0, 2.0):
+        we, _ = final(lam, p0, True); _, wn = final(lam, p0, False)
+        m = [r["gt0.1_T32000"] for r in meas if r["lam"] == lam and r["p0"] == p0]
+        print(f"lam={lam} p0={p0}: survivors exact {int((we > 0.1).sum()):2d}, near-collapse {int((wn > 0.1).sum()):2d},"
+              f" pilot {m}; Tian fixed point exists for {int((c**2 >= 4*lam).sum())} modes")

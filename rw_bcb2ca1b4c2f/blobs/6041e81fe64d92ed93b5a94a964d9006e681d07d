@@ -1,0 +1,353 @@
+# Review standard for the extended JEPA-collapse paper (objective #5)
+
+Owner: `internal-review-repo` (function: review). This is the standard the
+assembled delivery for the `Research objective` #5 is judged against before
+approval. Sources:
+- the objective #5, re-read at every verdict;
+- the delivered paper it extends: paper-repo `6e496ca374ba`, figtab-repo
+  `7aaa2941857`, experiment-repo `96ecc7db4e27`. I approved and released it
+  against the standard for objective #1 (this file at `e088115f6674`), and its
+  record is `reviews/release_review.md`;
+- the brief (`ht-role brief`), v4 for this objective at idea-repo `c08a49ede176`
+  (its requirements X1–X7; section X below maps each to the checks here);
+- the work assignment (`ht-role assignment`) at story-repo `bd1d00e9f1bd`: the
+  ICLR 2027 manuscript under `paper/` (paper-repo), figures and tables under
+  `paper/figures/` and `paper/tables/` and their scripts under `code/figures/`
+  (figtab-repo), and code and results under `code/` and `results/`
+  (experiment-repo);
+- the ICLR 2027 record of `venue-repo` at `ff2c2507eb14` (`VENUE.md`, the
+  official template copied from github.com/ICLR/Master-Template `46ed6f4c6cef`,
+  `tools/check_submission.py` and `venue-artifacts.json`).
+
+I will revise this standard, and record why, if the brief, the assignment or the
+venue record changes what the objective is read to require. It never prescribes
+a conclusion. A measured negative or partial result, reported as such, can pass.
+A missing analysis, an untested claim or an unsupported scope cannot.
+
+## X. The brief's requirements and where they are checked
+
+| Brief v4 | Requirement (condensed) | Checked under |
+|---|---|---|
+| X1 | Start from the delivered paper and do not redo it. Re-run an old experiment only when a new result needs it. | E1, R1 |
+| X2a–d | Begin from what it leaves open: limitations, predictions untested or failed, settings not reached, design implications. | E1 (O1–O6 = brief 4.1–4.4: L1–L5, F1–F5, U1, S1–S4, H1–H5) |
+| X3 | Choose the directions that most advance understanding, say why, and carry each to a new theoretical or empirical result. | E1–E4 |
+| X4 | Keep, revise, add. State the contributions relative to the delivered paper and to 2610.02344, and revise claims that 2610.02344 makes no longer novel. | R1–R3, E5 |
+| X5 | Ready to submit to ICLR 2027, to its submission requirements. | B1 |
+| X6 | LaTeX source in the ICLR 2027 template, the compiled PDF, and the code and results the claims rest on (scripts, configs, raw results, figure and table inputs). | B2, C, D |
+| X7 | Nothing first published after 18 Oct 2026, including code and library versions. | E5, B4, D4 |
+
+## E. What the extension must add
+
+E1. **It starts from what the delivered paper leaves open.** The open items are
+in its Sec. 7, its Table 1 and my release review:
+- **O1. The race outside linear models.** In the ViT only a step-0 rule was
+  tested, not the race.
+  - It misplaces the weight-decay transition 2.6x.
+  - It fails in the AdamW arm.
+  - The predictor, EMA and masking predictions did not transfer: four of four
+    mask settings lower the count where no change was registered, and none of
+    six interventions crosses the collapse line.
+- **O2. Nonlinear and deep encoders.**
+  - Under random masks a tanh encoder gains rank after the race.
+  - A two-layer encoder is mispredicted from its initial features.
+  - There is no theory for nonlinear encoders.
+- **O3. Far from the collapsed solution.**
+  - There is no post-capture stage and no noise floor; round-off re-seeds lost
+    directions.
+  - The analysis is valid only until the first directions reach order one.
+  - The rank fall at high masking ratio held in only some profiles.
+- **O4. Adaptive optimisers.** AdamW is at most partly supported in linear
+  models and fails in the ViT, yet practical JEPAs train with AdamW.
+- **O5. Assumptions and test status.**
+  - The closed form needs Assumption 1 (aligned statistics).
+  - The depth correction was made post hoc and re-tested only with
+    identity-initialised factors.
+  - One EMA sign comparison failed.
+  - E1 is a development set.
+- **O6. Design.** Table 1 states what the theory implies for designing or
+  choosing anti-collapse heuristics, but no prescription was tested
+  prospectively.
+
+The paper says which of these it takes up, and argues that they are the ones
+that most advance the understanding of when and why JEPAs collapse. It need not
+take up all of them. Those it leaves remain in its limitations. A direction
+counts only when it is carried through to a new theoretical or empirical result.
+A pilot, a demonstration, a plan or an untested conjecture is not a result.
+
+E2. **New theory, where it is claimed.**
+- Each statement is precise, with its assumptions.
+- Each proof is complete, in the appendix if needed. An approximation is
+  labelled as one.
+- The new theory reduces to the delivered linear race where that race's
+  assumptions hold, or the paper says why it does not.
+- For a nonlinear or deep encoder, the paper states what plays the role of the
+  per-direction drive and decay, and in which regime that holds (for example
+  scale of initialisation, width, training time).
+- The paper gives a numerical check of at least one closed-form prediction
+  against exact or simulated dynamics. I check one independently.
+
+E3. **New empirical results.**
+- A predictive claim is tested on predictions fixed before the measurement.
+  The pre-registration is committed before the runs and is byte-identical at
+  delivery. Any fitted constant is declared as fitted.
+- Each comparison has at least 3 seeds per configuration, more where runs are
+  cheap. Intervals are given with their method.
+- Sweeps cross each predicted threshold on both sides.
+- Rank metrics are defined, and the conclusions are checked for robustness to
+  the rank threshold.
+- Where rank stands for representation quality, a downstream measure (for
+  example a linear probe) ties the two together.
+- Baselines are included wherever they predict the same quantity:
+  - the static threshold;
+  - the delivered step-0 rule and the delivered race;
+  - the closest prior theory's criterion (E5).
+- Failures are shown and discussed, not dropped.
+- Claims about realistic data or architectures are scoped to the datasets,
+  architectures and optimisers actually measured. Transfer to a realistic
+  setting has to be measured in that setting, not inferred from linear models.
+  A headline claim of realistic transfer needs more than the delivered
+  CIFAR-10 ViT, or an explicit scope statement.
+
+E4. **Design implications, where they are claimed.**
+- A heuristic choice or design that the theory prescribes is tested against the
+  practice default and the relevant prior designs.
+- The test uses matched compute, seeds, rank and downstream accuracy.
+- A prescription that is not tested is labelled a hypothesis.
+
+E5. **Prior work and novelty under the new cutoff (18 October 2026).** The
+cutoff moved from 1 Sep 2026 (objective #1) to 18 Oct 2026. Work that the
+delivered paper had to exclude is now prior work, and an ICLR 2027 referee will
+read the paper against it.
+- **arXiv 2610.02344v1**, submitted 2026-10-01. De Melo Costa, Ahn, Popineau,
+  Rimmel and Doan, "Drive vs. Decay: On the Training Dynamics of
+  Joint-Embedding Predictive Architectures". Its arXiv comment says it was
+  accepted at NeurIPS 2026, and its code is at github.com/jose-melo/drive-vs-decay.
+  According to its abstract, it:
+  - linearises the JEPA gradient flow at the trivial fixed point into a driving
+    force γ and a decay σ;
+  - forms a per-mode stability ratio μ_i = γ_i/σ_i, which under approximate
+    spectral decoupling factorises into data-side and predictor-side terms;
+  - counts the unstable modes as tracking the rank;
+  - predicts a phase boundary that it confirms on more than 800 Tabular-JEPA
+    configurations;
+  - unifies predictor scaling, masking ratio and EMA as shifts of μ;
+  - introduces ResidualPred, an identity-biased attention predictor that
+    improves rank and accuracy in I-JEPA on CIFAR-10/100, STL-10 and ImageNet.
+
+  This is the closest prior work to both the delivered paper and the extension.
+  The paper must:
+  1. cite it;
+  2. state precisely what is new relative to it, and revise any novelty claim
+     of the retained paper that it pre-empts;
+  3. compare against its criterion as a baseline on the same runs, wherever
+     both predict the same quantity (rank, collapse boundary, the effect of a
+     heuristic);
+  4. if it claims a predictor design, compare against ResidualPred or justify
+     why not.
+
+  Novelty is judged after an actual reading of this work, by `idea-repo` for
+  the brief and by me for the review, not against its abstract alone.
+  If its code is used as a baseline, the commit is the one dated on or before
+  the cutoff (`3176215b2d16`, 2026-10-01, per the brief), pinned and recorded.
+- Other work from 1 Sep to 17 Oct 2026 that the brief (5.2) identifies. I checked
+  the arXiv metadata on 2026-10-17.
+  - **arXiv 2609.35288** (v1 2026-09-28, now at v2), "λ-JEPA: Spectral
+    anti-collapse regularization". It uses λ-balance between layer weights in a
+    two-layer linear network. It bears on the balance identity (Cor. α=1) and on
+    any deep-encoder result. The paper cites it and positions against it if it
+    claims a balance or deep-linear result.
+  - **arXiv 2610.07540** (v1 2026-10-06), on preserving unstable modes through
+    inverse dynamics in JEPA world models. It is tangential: cite it if the
+    paper discusses partial or task-relevant collapse.
+  - **arXiv 2608.27395** LeVJEPA (2026-08-27, already allowed) and LeJEPA. These
+    are the heuristic-free alternative that a design section (E4) should
+    mention.
+  - arXiv 2609.23881 (MotionJEPA) and 2609.09630 (JEPA Policy) are allowed but
+    less central.
+- The list of the standard for #1 (A7 at `e088115`) still applies:
+  - Tian, Chen & Ganguli 2021, credited for the per-mode system, the exact
+    integral and the basin view;
+  - PEIRA and Ponce et al. 2025, credited for the static threshold;
+  - DirectSet; Ziyin 2023; Littwin 2024; Simon 2023; Jing 2022; Wen & Li 2022;
+    Halvagal 2023; Richemond 2023; I-JEPA; V-JEPA; RankMe; LeJEPA.
+
+  Related work published between 1 Sep and 18 Oct 2026 that bears on the
+  extension's directions is identified by the brief and covered.
+- Prior work for the plan's directions A–C (brief v4.2 §5.3, idea-repo
+  `5f0fe3335b80`). Each new result is credited where this work already
+  establishes it, and is called new only where the brief lists it as open.
+  - **Direction A (Adam/AdamW).**
+    - Sign-descent and SDE limits: `malladi2022sdes`, `kunstner2023noise`,
+      `kunstner2024heavy`.
+    - Bounded-time growth from a small seed under sign descent, with ε
+      restoring exponential growth: `sabanayagam2026optimizer`, 2610.04249.
+    - Coupled L2 versus AdamW at small initialisation: `tang2025understanding`.
+    - Decoupled decay as an EMA, and the ℓ∞ KKT point: `wang2024set`,
+      `xie2024implicit`.
+    - Adam's lack of rotation invariance: `xie2024adam`.
+    - The I-JEPA target LayerNorm.
+    - A check of my own: the A-ii' mechanism (heavy-ball Adam losing
+      stability at η(1−β1)|h|/σ = 2(1+β1)) is the adaptive edge of stability
+      of Cohen et al. 2022 (arXiv 2207.14484). The paper credits it and does
+      not present the threshold as new.
+  - **Direction B (beyond the first escape).**
+    - Saddle-to-saddle staircases: `berthier2022incremental`,
+      `pesme2023saddle`, `jin2023understanding`, `zhang2025saddle`.
+    - AGF integrated-utility activation: `kunin2025alternating`, the closest
+      published form of the race, to be cited and distinguished.
+    - Noise narrowing windows: `chen2023stochastic`, `pillaudvivien2022label`,
+      `pesme2021implicit`.
+    - Revival only by additive reseeding: `ziyin2024remove`.
+    - The DINO weight-decay schedule ablation: `morningstar2024augmentations`.
+  - **Direction C (the ladder).** The deep-linear and ViT prior work that §5.3
+    lists.
+  - 2610.02344 is cited as accepted at NeurIPS 2026 (Main Track), per its
+    arXiv comment.
+- Nothing first published after 18 Oct 2026 is cited, read or used: no paper,
+  preprint, code release or library version.
+
+## R. Retained, revised and added content
+
+R1. **What still holds is kept and still supported.**
+- Retained theorems keep their proofs.
+- Retained numbers still come from delivered results files that reproduce.
+- A retained number that changes is explained.
+
+R2. **What the new results change is revised everywhere it appears:** abstract,
+contributions, theory, Table 1, experiments, limitations, conclusion and claim
+ledger. For example, if the race is measured in a ViT, then "in the ViT only a
+step-0 rule is tested" and the abstract's ViT sentence change. If E5 pre-empts a
+novelty claim, that claim is re-worded.
+
+R3. **What the extension adds is clear.**
+- The paper's contributions identify the new results.
+- A delivered change account, outside the anonymous PDF (for example the root
+  README or `paper/CHANGES.md`), maps each section and claim to retained,
+  revised or new, with its evidence (theorem, figure or table, results file).
+- The anonymous paper does not identify its authors through the earlier
+  version. That version is unpublished, so the PDF states the contributions
+  against published prior work (2610.02344, Tian et al. 2021 and the others in
+  E5). The account of what is retained, revised and new relative to the earlier
+  version belongs outside the PDF. ICLR's rule for related arXiv work by the
+  same authors, as `VENUE.md` row 5 records it, is to cite it in the third
+  person.
+
+## B. The paper (ICLR 2027 submission)
+
+B1. **Template and venue rules**, as `venue-repo` records them at `ff2c2507eb14`
+(rows 1–10 of `VENUE.md`).
+- **Style files.** `paper/iclr2027_conference.sty` and `.bst` are byte-identical
+  to the official kit (sty sha256 `797deef4…`, bst `2d67552d…`). The paper loads
+  them with `\usepackage{iclr2027_conference,times}`. It does not load geometry,
+  fullpage or savetrees, and does not change the text block or font sizes.
+- **Anonymous submission mode.** `\iclrfinalcopy` stays commented out, so the
+  page header reads "Under review", the author block is anonymous and the line
+  numbers show. The submission has no Acknowledgments, funding or
+  author-contributions section.
+- **Page limit.** The main text ends within 9 pages, a strict limit. References
+  and appendices follow without limit. The required and recommended statements
+  sit where the template and `VENUE.md` put them. I check the boundary on the
+  rendered pages, not by text extraction alone.
+- **AI use statement.** It is present, at most one page, with every template
+  placeholder replaced. It must be truthful about this work: the research ideas,
+  derivations, code, experiments, analysis and writing were done by AI agents.
+  An untrue or evasive statement is a defect, because ICLR treats a substantial
+  misrepresentation as a Code-of-Ethics violation. A reproducibility statement
+  that points to the proofs, code and results files is expected. An ethics
+  statement is optional.
+- **Citations and captions.** Citations use natbib author-year with the supplied
+  bst. Figure captions go below the figure, table captions above the table. The
+  figures read in black and white and at the 5.5 in text width.
+- **No NeurIPS remnants.** No NeurIPS style, checklist, `ack` environment or
+  NeurIPS wording remains, for example "NeurIPS" in the text or in captions.
+- **Required paths.** Every path in `venue-artifacts.json` is present and
+  nonempty in the assembled delivery.
+- **My checks.** I run `venue-repo`'s checker on the delivered PDF and source. I
+  also grep the PDF text and metadata, the source, the code and the results for
+  anything identifying: names, hostnames, usernames, institutional paths and
+  URLs to non-anonymous repositories.
+
+B2. **Build.** The delivered source compiles from the assembled delivery to the
+delivered PDF, which I recompile myself. There are no undefined references or
+citations and nothing runs outside the margins.
+
+B3. **Claims.**
+- Every claim in the abstract, introduction and conclusion is backed by a
+  theorem or experiment in the paper.
+- Every number in the text and tables matches a delivered results file.
+- The limitations reflect the extended study.
+
+B4. **Bibliography.** Entries are real, correctly attributed and first
+published on or before 18 Oct 2026.
+
+## C. Figures and tables
+
+I open every delivered figure and table, new and retained. Each must show what
+its caption and the text claim:
+- axes labelled with units and scales, and legends present;
+- readable at ICLR column width;
+- uncertainty shown where the claim is comparative;
+- theory and measurement overlaid where the claim is agreement.
+
+A blank, placeholder, unlabelled, unreadable or non-resolving figure is a
+defect. Figures and tables regenerate from the delivered results with the
+delivered scripts.
+
+## D. Code and results
+
+D1. **Code and provenance.**
+- Code produces every reported result, new and retained, with configs, seeds
+  and commands.
+- Per-seed raw results are delivered (in a release where they are large).
+- Provenance runs from inputs to results to figures.
+
+D2. **My re-runs.** I re-run at least one new theory-regime experiment, the new
+analysis of at least one realistic-setting result from its raw runs, and the
+figure and table generation, and check the outputs against what is reported.
+
+D3. **Anonymity.** ICLR desk-rejects a submission whose supplementary material
+reveals the authors (`VENUE.md` rows 5 and 10). Code and results are therefore
+anonymised consistently with the submission. They contain no names, no
+usernames and no non-anonymous repository URLs, and no host or cluster path
+that identifies an institution. My release review for #1 listed such tokens in
+the delivered code: the default data path `/hutian/data/cifar10`, `HUTIAN_WAKE`
+markers and position names. I recheck them against the stricter ICLR rule:
+`code/README.md` must run without the path, and cluster scripts must name no
+institution.
+
+D4. **Versions.** Library versions are pinned, each released on or before
+18 Oct 2026.
+
+## Process
+
+- **Early checks.** I check new theory (model, statements, proofs) and each
+  pre-registration when it is first pushed, before costly runs depend on it.
+  Findings go to the owning position as issues or `revise` decisions.
+- **Verdicts.** Each verdict judges the current assembled delivery. It either
+  approves, with a pushed review record of what was inspected at which
+  revisions, or sends every open actionable finding in one pass as a `revise`
+  to the position that owns it.
+
+Revision log:
+- 2026-10-17. Rewritten for objective #5, the extension. The standard for #1
+  (A–D) is at `e088115` and its verdict is in `reviews/release_review.md`.
+  Added: E1–E5 (open items O1–O6 taken from the delivered paper's Sec. 7 and
+  Table 1); E5, because the cutoff moved to 18 Oct 2026 and so made arXiv
+  2610.02344 prior work; R1–R3; B for ICLR 2027.
+- 2026-10-17, later. Mapped to brief v4 (idea-repo `c08a49ede176`), whose
+  requirements X1–X7 are now in section X. Sources updated to assignment
+  `bd1d00e9f1bd`, which names the ICLR 2027 template and the delivered paths,
+  and to the ICLR 2027 record of venue-repo at `ff2c2507eb14`.
+  - B1 now states the concrete rules: sty/bst hashes, anonymous mode, the
+    strict 9-page main text, a truthful AI use statement, natbib author-year,
+    caption placement, no NeurIPS remnants and the required paths.
+  - D3 is tightened for ICLR's rule on supplementary anonymity.
+  - E5 adds the 1 Sep–17 Oct 2026 work the brief identifies, with arXiv dates
+    verified on 2026-10-17: 2609.35288 λ-JEPA, 2610.07540, and LeVJEPA as a
+    heuristic-free alternative. It also adds the pinned 2610.02344 code commit.
+  - The substance of E1–E4, R1–R2 and C is unchanged.
+- 2026-10-18. Brief v4.2 (idea-repo `5f0fe3335b80`) adds §5.3, the prior work
+  for directions A–C, and records 2610.02344 as accepted at NeurIPS 2026. E5
+  now names that prior work, and adds Cohen et al. 2022 for the stability limit
+  that the A-ii' mechanism rests on. X1–X7 are unchanged; X4 now names
+  2610.02344 and NeurIPS 2026.

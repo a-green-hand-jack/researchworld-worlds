@@ -1,0 +1,109 @@
+"""Rung 4 development diagnostic (post hoc, development grid only): where does the decay-path N2 criterion break?
+
+The rung 4 dev grid (results/e6/r4_dev) shows W1 leaving its decay path at once under the LN target (delta at the
+first check 0.84, median) and the embedding rank rising over training on tanh, while every inputs-only row predicts
+3-5. This check retrains each dev run with W1 snapshots every STAT_EVERY steps and asks:
+  n2_meas_full   A4's N2 flow (e6_r4.n2_tv) fed with the run's own measured W1(t) at every STAT_EVERY steps, in the
+                 initial eigenbasis U0 (as n2_decay). If it fails too, the reduced flow itself (diagonal in U0, one
+                 a_k per direction) is the broken part, not only the decay-path statistics.
+  n2_meas_rot    the same flow with U re-diagonalised on the measured S11(t) at every update (rotation allowed).
+  n2_init        the N2 flow with W1 frozen at W1(0) (no decay): the LN-drive limit in which W1 neither decays nor learns.
+  ln_static_T    ln_static on the measured W1(T) statistics (eigenbasis of S11(T)): are the final counts LN fixed
+                 points of the final statistics?
+  w1_ratio       |W1(t)| / |W1(0)| at the NCHK checks, and hid_rank: #eig(S11(t) centred) > THR^2 at the checks.
+Development use only: the dev runs were already read. Seeds and values as e6_r4 GRIDS['dev'].
+Usage: python3 code/checks/e6_r4_diag.py OUTJSON [NPROC]"""
+import sys, os, json, time, gzip
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import e6_r2 as r2
+import e6_r4 as r4
+from e6_r2 import sample, phi, dphi, svals, n, H, d, N, THR, NCHK, STAT_EVERY
+
+
+def retrain(cfg, Xc, Xt):
+    W1, W2, P = r2.init(cfg); W10 = W1.copy(); lam, eta, T, act = cfg["lam"], cfg["eta"], cfg["T"], cfg["act"]
+    chk = set(np.linspace(0, T, NCHK + 1).astype(int)[1:].tolist())
+    snaps = {0: W1.copy()}; w1r, hid, ranks = [], [], []
+    for step in range(1, T + 1):
+        ac = Xc @ W1.T; hc = phi(ac, act); ht = phi(Xt @ W1.T, act)
+        zc = hc @ W2.T; tgt = r4.ln(ht @ W2.T)
+        E = zc @ P.T - tgt
+        gP = E.T @ zc / N; gz = E @ P; gW2 = gz.T @ hc / N
+        gW1 = ((gz @ W2) * dphi(ac, hc, act)).T @ Xc / N
+        W1 = W1 - eta * (gW1 + lam * W1); W2 = W2 - eta * (gW2 + lam * W2); P = P - eta * (gP + lam * P)
+        if step % 50 == 0 and not (np.isfinite(W1).all() and np.isfinite(W2).all() and np.abs(W2).max() < 1e8):
+            return None
+        if step % STAT_EVERY == 0:
+            snaps[step] = W1.copy()
+        if step in chk:
+            h = phi(Xc @ W1.T, act); hcen = h - h.mean(0)
+            w1r.append(float(np.linalg.norm(W1) / np.linalg.norm(W10)))
+            hid.append(int((np.linalg.eigvalsh(hcen.T @ hcen / N) > THR ** 2).sum()))
+            ranks.append(r4.emb_rank(h @ W2.T)[0])
+    return dict(snaps=snaps, w1_ratio=w1r, hid_rank=hid, ranks=ranks, rank=ranks[-1])
+
+
+def one(cfg):
+    t0 = time.process_time()
+    Xc, Xt = sample(cfg)
+    tr = retrain(cfg, Xc, Xt)
+    if tr is None:
+        return dict(cfg=cfg, diverged=True)
+    W1, W2, P0 = r2.init(cfg); lam, eta, T, act, p0, seed = cfg["lam"], cfg["eta"], cfg["T"], cfg["act"], cfg["p0"], cfg["seed"]
+    S11 = r2.feat_stats(W1, Xc, Xt, act)[0]
+    U = np.linalg.eigh(S11)[1]
+    a0 = np.linalg.norm(r4.PI @ W2 @ U, axis=0)
+    snaps = tr.pop("snaps"); ks = np.array(sorted(snaps))
+    near = lambda st: int(ks[ks <= st].max())
+    cache = {}
+    def meas(st):
+        k = near(st)
+        if k not in cache:
+            cache[k] = r4.proj_stats(snaps[k], Xc, Xt, act, U)
+        return cache[k]
+    cache_r = {}
+    def meas_rot(st):
+        k = near(st)
+        if k not in cache_r:
+            Uk = np.linalg.eigh(r2.feat_stats(snaps[k], Xc, Xt, act)[0])[1]
+            cache_r[k] = r4.proj_stats(snaps[k], Xc, Xt, act, Uk)
+        return cache_r[k]
+    s0 = r4.proj_stats(W1, Xc, Xt, act, U)
+    out = dict(cfg=cfg, diverged=False, truth=tr["rank"], ranks=tr["ranks"], w1_ratio=tr["w1_ratio"],
+               hid_rank=tr["hid_rank"])
+    out["n2_meas_full"] = r4.n2_tv(meas, a0, p0, lam, eta, T, seed)
+    out["n2_meas_rot"] = r4.n2_tv(meas_rot, a0, p0, lam, eta, T, seed)
+    out["n2_init"] = r4.n2_tv(lambda st: s0, a0, p0, lam, eta, T, seed)
+    WT = snaps[int(ks.max())]
+    UT = np.linalg.eigh(r2.feat_stats(WT, Xc, Xt, act)[0])[1]
+    out["ln_static_T"] = r4.ln_static_stats(*r4.proj_stats(WT, Xc, Xt, act, UT), lam, seed)
+    out["cpu"] = time.process_time() - t0
+    return out
+
+
+if __name__ == "__main__":
+    outp = sys.argv[1]; nproc = int(sys.argv[2]) if len(sys.argv) > 2 else 6
+    cf = r4.configs("dev"); t0 = time.time()
+    with Pool(nproc) as pool:
+        res = pool.map(one, sorted(cf, key=lambda c: -c["T"]), chunksize=1)
+    res.sort(key=lambda r: r["cfg"]["id"])
+    ok = [r for r in res if not r["diverged"]]
+    tru = np.array([r["truth"] for r in ok])
+    summ = {}
+    for k in ["n2_meas_full", "n2_meas_rot", "n2_init", "ln_static_T"]:
+        p = np.array([np.nan if r[k] is None else min(r[k], d - 1) for r in ok], float)
+        f = np.isfinite(p)
+        summ[k] = dict(mae=float(np.abs(p[f] - tru[f]).mean()), bias=float((p[f] - tru[f]).mean()), nonfinite=int((~f).sum()),
+                       by_act={a: float(np.abs(p[f] - tru[f])[np.array([r["cfg"]["act"] == a for r in ok])[f]].mean())
+                               for a in ("tanh", "relu")})
+    summ["w1_ratio_at_T"] = dict(median=float(np.median([r["w1_ratio"][-1] for r in ok])),
+                                 min=float(np.min([r["w1_ratio"][-1] for r in ok])), max=float(np.max([r["w1_ratio"][-1] for r in ok])))
+    summ["truth_vs_hid_rank_T"] = dict(corr=float(np.corrcoef(tru, [r["hid_rank"][-1] for r in ok])[0, 1]),
+                                       mean_hid=float(np.mean([r["hid_rank"][-1] for r in ok])))
+    json.dump(dict(note=__doc__.split("\n")[0], runs=len(res), diverged=[r["cfg"]["id"] for r in res if r["diverged"]],
+                   summary=summ, wall_s=time.time() - t0, cpu_h=sum(r.get("cpu", 0) for r in res) / 3600,
+                   rows=res), open(outp, "w"), indent=1)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "rung 4 dev diag:", json.dumps(summ)[:400], flush=True)

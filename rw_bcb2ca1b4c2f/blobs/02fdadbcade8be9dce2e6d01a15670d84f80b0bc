@@ -1,0 +1,86 @@
+"""E5/B1 development grid rescoring check (experiment 83e5918, code/checks/e5_b1_sched.py, results/e5/b1dev/posthoc/
+sched.json). Runs the delivered per-run scorer `one` on the raw dev runs (release asset e5__b1dev__b1_dev_runs.jsonl.gz,
+sha256 f0d7815c...) to reproduce sched.json, and adds, from the same per-run states:
+  (1) B1a' on the truth-or-model subset (pairs after the knot where the truth or the scored model changes state), for
+      stage and stage_qs, beside the delivered union subset (truth or any baseline) and the truth-only subset;
+  (2) B1d as the v2 tolerance and the held-out scorer define it, the POOLED median over post-loss (direction,
+      checkpoint) pairs (sched.json reports the median over runs of per-run medians), against stage_qs's p, the stage
+      model's slaved p (its own w), own decay, and the slaved relation evaluated on the TRUTH's w (the theory note's
+      'truth p far above w sqrt(lam_W/lam_P)'), signed and absolute.
+Usage: python3 checks/e5_b1_dev_v2_check.py EXPERIMENT_TREE RUNS.jsonl.gz OUT.json [NPROC]"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+EXP = sys.argv[1]
+sys.path.insert(0, os.path.join(EXP, "code")); sys.path.insert(0, os.path.join(EXP, "code", "checks"))
+import e5_b1 as B, e5_theory as th
+import e5_b1_sched as S
+
+_last = {}
+_orig = th.stage_model_qs
+def _memo(*a, **k):
+    r = _orig(*a, **k); _last["q"] = r; return r
+th.stage_model_qs = _memo
+S.th.stage_model_qs = _memo
+
+
+def one(line):
+    out = S.one(line)
+    rec = json.loads(line); cfg, tr, pr = rec["cfg"], rec["truth"], rec["pred"]
+    G = B.GRIDS[cfg["grid"]]; c, s = B.stats(G); n = c.size
+    t = np.array(tr["t"]); A = np.array(tr["a"], float); Pt = np.array(tr["p"], float); am = A > S.THR
+    dt = B.ETA; N = int(round(cfg["T"] / dt)); idx = np.clip(np.round(t / dt).astype(int), 0, N)
+    q = _last["q"]; qs = q["W"][idx] > S.THR; Pqs = q["P"][idx]; st = np.array(pr["W"], float) > S.THR
+    x = {}
+    if cfg["ts"] is not None:
+        i0 = int(np.argmin(np.abs(t - cfg["ts"])))
+        tch = np.zeros_like(am); tch[i0 + 1:] = am[i0 + 1:] != am[i0][None, :]
+        for nm, v in (("stage", st), ("stage_qs", qs)):
+            mch = np.zeros_like(am); mch[i0 + 1:] = v[i0 + 1:] != v[i0][None, :]
+            U = tch | mch
+            x[f"TM_{nm}"] = [int(U.sum()), int(((v == am) & U).sum()), int((mch & ~tch).sum())]
+    lW = th.lam_of(cfg["kW"], t); lP = th.lam_of(cfg["kP"], t)
+    was = np.maximum.accumulate(am, axis=0); dead = was & ~am
+    if dead.any():
+        rr = np.sqrt(lW / np.maximum(lP, 1e-300))[:, None]
+        LamP = np.concatenate([[0.0], np.cumsum(0.5 * (lP[1:] + lP[:-1]) * np.diff(t))]) + lP[0] * t[0]
+        own = np.full(Pt.shape, np.nan); la = np.full(n, -1)
+        for j in range(t.size):
+            la = np.where(am[j], j, la); ok = la >= 0
+            own[j, ok] = np.abs(Pt[la[ok], np.nonzero(ok)[0]]) * np.exp(-cfg["alpha"] * (LamP[j] - LamP[la[ok]]))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            lg = lambda v: np.log(np.abs(Pt[dead]) / np.maximum(v[dead], 1e-300))
+            x["pl"] = dict(qs=lg(np.abs(Pqs)).tolist(), stage_slaved=lg(rr * np.array(pr["W"], float)).tolist(),
+                           own=lg(own).tolist(), slaved_truth_w=lg(rr * np.abs(A)).tolist(),
+                           stage_alive=st[dead].astype(int).tolist(), rho=float(cfg.get("rho") or 1.0), alpha=float(cfg["alpha"]))
+    out["x"] = x
+    return out
+
+
+if __name__ == "__main__":
+    runs, outp = sys.argv[2], sys.argv[3]; nproc = int(sys.argv[4]) if len(sys.argv) > 4 else 8
+    t0 = time.time(); lines = list(gzip.open(runs, "rt")); rows = []
+    with Pool(nproc) as pool:
+        for i, r in enumerate(pool.imap_unordered(one, lines, chunksize=4)):
+            rows.append(r)
+            if (i + 1) % 300 == 0:
+                print(f"{i + 1}/{len(lines)} {time.time() - t0:.0f}s", flush=True)
+    rows.sort(key=lambda r: r["id"]); sch = [r for r in rows if r["ts"] is not None]
+    res = dict(source=f"{EXP} code/checks/e5_b1_sched.py one() + additions; runs {runs}", seconds=None)
+    res["reproduce_schedules"] = S.summ([{k: v for k, v in r.items() if k != "x"} for r in sch])
+    for nm in ("stage", "stage_qs"):
+        a = np.array([r["x"][f"TM_{nm}"] for r in sch])
+        res[f"B1a_TM_{nm}"] = dict(pairs=int(a[:, 0].sum()), agree=float(a[:, 1].sum() / a[:, 0].sum()), model_only_changed=int(a[:, 2].sum()))
+    PL = [r["x"]["pl"] for r in rows if "pl" in r["x"]]
+    cat = lambda k: np.array(sum((p[k] for p in PL), []), float)
+    res["B1d_pooled"] = dict(runs=len(PL), pairs=int(cat("qs").size))
+    for k in ("qs", "stage_slaved", "own", "slaved_truth_w"):
+        v = cat(k); res["B1d_pooled"][k] = dict(median_abs=float(np.nanmedian(np.abs(v))), median_signed=float(np.nanmedian(v)),
+                                                 share_truth_above=float(np.nanmean(v > 0)), nan=int(np.isnan(v).sum()))
+    sa = cat("stage_alive").astype(bool); v = cat("stage_slaved")
+    res["B1d_pooled"]["stage_slaved_split"] = dict(stage_alive_share=float(sa.mean()),
+        when_stage_alive=float(np.nanmedian(v[sa])) if sa.any() else None, when_stage_dead=float(np.nanmedian(v[~sa])) if (~sa).any() else None)
+    res["seconds"] = time.time() - t0
+    json.dump(res, open(outp, "w"), indent=1)
+    print("HUTIAN_WAKE: E5 dev v2 check done", flush=True)

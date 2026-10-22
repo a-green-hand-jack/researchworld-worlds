@@ -1,0 +1,133 @@
+{
+ "source": "results/e4/a1/a1_runs.jsonl.gz (028c9d4)",
+ "label": "post hoc, not part of the registered A1 scoring",
+ "a1a_runs": 48,
+ "A1a": {
+  "max_abs_offdiag_W_P_every_1000_steps_and_checkpoints": 0.0,
+  "by_b2": {
+   "0.995": {
+    "runs": 24,
+    "pairs": 23040,
+    "checkpoints": 720,
+    "pert_pairs_differ": 91,
+    "pert_rank_equal": 0.925,
+    "pert_rank_within1": 0.9888888888888889,
+    "pert_burst_differ": 0,
+    "pert_alive_from_differ": 153,
+    "f64_pairs_differ": 106,
+    "f64_rank_equal": 0.9277777777777778,
+    "matrix_vs_f64_pairs_differ": 99,
+    "matrix_vs_f64_rank_equal": 0.9166666666666666,
+    "max_abs_offdiag": 0.0,
+    "pert_state_agreement": 0.9960503472222222,
+    "f64_state_agreement": 0.9953993055555556,
+    "matrix_vs_f64_state_agreement": 0.995703125
+   },
+   "0.9995": {
+    "runs": 24,
+    "pairs": 23040,
+    "checkpoints": 720,
+    "pert_pairs_differ": 62,
+    "pert_rank_equal": 0.9597222222222223,
+    "pert_rank_within1": 0.9861111111111112,
+    "pert_burst_differ": 0,
+    "pert_alive_from_differ": 213,
+    "f64_pairs_differ": 314,
+    "f64_rank_equal": 0.8763888888888889,
+    "matrix_vs_f64_pairs_differ": 387,
+    "matrix_vs_f64_rank_equal": 0.8805555555555555,
+    "max_abs_offdiag": 0.0,
+    "pert_state_agreement": 0.9973090277777777,
+    "f64_state_agreement": 0.9863715277777778,
+    "matrix_vs_f64_state_agreement": 0.983203125
+   }
+  },
+  "all": {
+   "runs": 48,
+   "pairs": 46080,
+   "checkpoints": 1440,
+   "pert_pairs_differ": 153,
+   "pert_rank_equal": 0.9423611111111111,
+   "pert_rank_within1": 0.9875,
+   "pert_burst_differ": 0,
+   "pert_alive_from_differ": 366,
+   "f64_pairs_differ": 420,
+   "f64_rank_equal": 0.9020833333333333,
+   "matrix_vs_f64_pairs_differ": 486,
+   "matrix_vs_f64_rank_equal": 0.8986111111111111,
+   "pert_state_agreement": 0.9966796875,
+   "f64_state_agreement": 0.9908854166666666,
+   "matrix_vs_f64_state_agreement": 0.989453125
+  },
+  "seconds": 42.0,
+  "reading": "the float64 matrix run stays exactly diagonal, so A1a's matrix-vs-scalar gap is operation order; a relative 1e-15 change of a0 moves the 80-bit truth's rank as much, so rank equality >= 0.99 between two finite-precision runs was not attainable on this grid; the registered fail stands"
+ },
+ "A1b_mechanism_baselines": {
+  "model": {
+   "scored": 10398,
+   "median": 0.0014698165375770756,
+   "p90": 0.005564750850825949,
+   "misses": 9,
+   "miss_share": 0.0008655510675129833
+  },
+  "eps_exact": {
+   "scored": 10599,
+   "median": 1.9596188125914562,
+   "p90": 3.057793553115835,
+   "misses": 201,
+   "miss_share": 0.018964053212567222
+  },
+  "eps_frozen_bc": {
+   "scored": 10599,
+   "median": 1.9936068400336628,
+   "p90": 3.107475086789449,
+   "misses": 244,
+   "miss_share": 0.02302103972072837
+  },
+  "stab_exact": {
+   "scored": 10599,
+   "median": 0.5979397889757048,
+   "p90": 1.8729538735440106,
+   "misses": 201,
+   "miss_share": 0.018964053212567222
+  },
+  "stab_frozen_bc": {
+   "scored": 10599,
+   "median": 0.4578365278983111,
+   "p90": 1.473295971992606,
+   "misses": 201,
+   "miss_share": 0.018964053212567222
+  }
+ },
+ "second_collapse": {
+  "C_checkpoint": {
+   "directions": 409,
+   "total": 12288,
+   "wrong_pairs": 8163,
+   "wrong_explained": 2762,
+   "rankbad": 2214,
+   "rankbad_explained": 1461,
+   "rankbad_with_any_second": 1487,
+   "direction_share": 0.033284505208333336,
+   "wrong_share": 0.3383559965698885,
+   "rankbad_share": 0.6598915989159891
+  },
+  "S_step_first_crossing": {
+   "directions": 978,
+   "total": 12288,
+   "wrong_pairs": 8163,
+   "wrong_explained": 5527,
+   "rankbad": 2214,
+   "rankbad_explained": 1968,
+   "rankbad_with_any_second": 2008,
+   "direction_share": 0.07958984375,
+   "wrong_share": 0.6770795050839152,
+   "rankbad_share": 0.8888888888888888
+  },
+  "definitions": {
+   "C_checkpoint": "alive (|a| > 0.05) at a checkpoint and dead at a later checkpoint",
+   "S_step_first_crossing": "dead at a checkpoint at or after the per-step first crossing of 0.05 (alive_from; directions alive at K count from K)",
+   "explained": "wrong pairs that are second collapses; rank-error>1 checkpoints with at least one wrongly predicted pair that is a second collapse (rankbad_with_any_second: any second collapse at that checkpoint, wrong or not)"
+  }
+ }
+}

@@ -1,0 +1,67 @@
+"""E5 amendment 5 (results/e5/prediction.json): the 2610.02344 drive-vs-decay criterion as a baseline beside the
+frozen stage model, added after the registration and before the held-out score is read; computed from each run's
+inputs only (statistics c_k, s_k, initial predictor gain p0, the lam_W schedule), never from outcomes.
+
+Their criterion (code/baselines/dvd_mu.py) linearises the encoder at W = 0 with the predictor held at its initial
+value (their Lemma 3.4); weight decay is an additive floor and neither the EMA rate nor the predictor's own decay or
+learning-rate ratio moves the boundary. On the E5 model (aligned statistics, P0 = p0 I) every variant of
+dvd_mu.py ('dvd', 'dvd_signed', 'dvd_sorted', 'dvd_pq', 'dvd_pq_signed', 'dvd_exact') reduces to the same set,
+  unstable_k(t)  iff  p0 c_k - p0^2 s_k > lam_W(t),
+read here at the weight decay in force at time t (the adiabatic reading: the criterion has no time of its own, so a
+schedule enters only through the current lam_W). 'mu_dvd' = this set as the alive state at every checkpoint and its
+crossings as events. It is scored by the registered v2 scorer (code/e5_b1.py score_run_v2 / summ_v2) beside the
+frozen model and its registered baselines: state agreement (B1a', both pair sets), post-knot event timing and
+unmatched share (B1b'), final-count MAE; plus 'exceed', the share of runs whose true final count is above mu's (their
+r_tight is an upper bound). B1d (post-loss predictor) and B2 do not apply: the criterion has no predictor dynamics.
+usage: e5_mu_baseline.py GRID RUNS.jsonl.gz OUT.json"""
+import os, sys, json, gzip
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import e5_b1 as B
+import e5_theory as th
+
+NAME = "mu_dvd"
+
+
+def mu_pred(cfg, t_chk):
+    G = B.GRIDS[cfg["grid"]]; c, s = B.stats(G); n = c.size
+    N = int(round(cfg["T"] / B.ETA)); tf = np.arange(N + 1) * B.ETA
+    ich = np.clip(np.round(np.asarray(t_chk) / B.ETA).astype(int), 0, N)
+    iex = np.clip(np.round(np.asarray(cfg["t_extra"], float) / B.ETA).astype(int), 0, N) if cfg.get("t_extra") is not None else np.zeros(0, int)
+    p0 = cfg["p0"]
+    full = (p0 * c - p0 ** 2 * s)[None, :] > th.lam_of(cfg["kW"], tf)[:, None]
+    return dict(chk=[B.bits(x) for x in full[ich]], ext=[B.bits(x) for x in full[iex]], events=B.crossing_events(full, tf))
+
+
+def main(grid, runs, outp):
+    B.SCORED.append(NAME); B.BASELINES.append(NAME)
+    rows = []
+    with gzip.open(runs, "rt") as fh:
+        for line in fh:
+            rec = json.loads(line)
+            rec["pred"][NAME] = mu_pred(rec["cfg"], rec["truth"]["t"])
+            rows.append(B.score_run_v2(rec))
+    sch = [r for r in rows if r["kind"] not in ("const_lo", "const_hi")]
+    pick = ("model", "static_now", "capture_static", NAME)
+
+    def part(S):
+        if not S:
+            return dict(runs=0)
+        x = B.summ_v2(S); a = x.get("B1a_prime", {}); b = x.get("B1b_prime", {})
+        tru = np.array([r["final"]["truth"] for r in S])
+        return dict(runs=len(S),
+                    B1a_prime_truth_or_model={k: a["truth_or_model"]["agree"][k] for k in pick} if a else None,
+                    B1a_prime_union={k: a["agree"][k] for k in pick} if a else None,
+                    B1a_prime_mu_minus_model_ci=a["baseline_minus_model_ci"].get(NAME) if a else None,
+                    B1b_prime={k: {q: b[k][q] for q in ("median", "p90", "unmatched_share")} for k in pick} if b else None,
+                    final={k: x["final"][k] for k in pick},
+                    exceed=float((tru > np.array([r["final"][NAME] for r in S])).mean()))
+    res = dict(grid=grid, baseline=NAME, definition=__doc__.split("usage:")[0].strip(),
+               all=part(rows), schedules=part(sch),
+               by_variant={v: part([r for r in sch if r["variant"] == v]) for v in B.GRIDS[grid].get("variants", [])},
+               by_kind={k: part([r for r in rows if r["kind"] == k]) for k in B.GRIDS[grid].get("kinds", [])})
+    json.dump(res, open(outp, "w"), indent=1)
+
+
+if __name__ == "__main__":
+    main(*sys.argv[1:4])

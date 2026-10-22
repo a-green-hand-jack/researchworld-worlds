@@ -1,0 +1,253 @@
+"""A2 and A2' readings for the report (internal review points 2 and 4; post hoc, after both registered scores were read;
+nothing here changes a registered reading). From the delivered runs, plus a traced 80-bit re-simulation of the
+directions that are dead long after their first crossing.
+  1. Flicker by trajectory: every direction of c/s > 2 thr whose alive state differs across the checkpoints is
+     classified from its checkpoint sequence as late birth, late death, dies-and-returns or born-then-dies.
+  2. Settling measured from capture: dead (direction, checkpoint) pairs with eta lam (t - t_c) >= X, t_c = first step
+     after K with |a| > thr (alive_from); and a per-step trace of those directions (X = 3), continued to 10 T_h, that
+     records when p reaches c/s, |a| at T_h, and when |a| reaches 0.9 c/s (the A-iv' end state |a| = |p| = c/s).
+  3. Closed-form ablation: the settled law alone, #{c/s > thr} (A-iv'), against v4 and the truth at T_h.
+  4. GD and the delivered race: the race against the GD rank, the static bound against GD, and AdamW's truth against GD.
+  5. lambda split: truth at T_h, converged truth, closed form, static bound, race and GD per statistics set and lambda.
+Usage: python3 code/checks/e4_a2_readings.py   (writes results/e4/a2/readings.json, results/e4/a2p/readings.json)"""
+import sys, os, json, gzip
+from collections import Counter, defaultdict
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import e4_a1 as A
+import e4_a2 as A2
+import e4_a2p as A2P
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+THR = A.THR
+
+
+def load(path):
+    return [json.loads(l) for l in gzip.open(os.path.join(ROOT, path), "rt")]
+
+
+def true_at_Th(r):
+    ck = r["checkpoints"]; i = ck.index(r["T_h"]) if r["T_h"] in ck else len(ck) - 1
+    return int(np.sum(r["alive"][i]))
+
+
+def window(r):
+    """indices of the checkpoints in [T_h/2, T_h] (A2: all of them; A2': checks_half)"""
+    ck = r["checkpoints"]; ch = r.get("checks_half", ck)
+    return [ck.index(t) for t in ch]
+
+
+def kind(x):
+    d = np.diff(x.astype(int))
+    if (d >= 0).all():
+        return "late_birth"
+    if (d <= 0).all():
+        return "late_death"
+    return "dies_returns" if x[0] else "born_dies"
+
+
+def flicker(runs):
+    pat, after_half, dips, runs_by = Counter(), 0, [], Counter()
+    for r in runs:
+        if not r["finite"]:
+            continue
+        c, s = A.stats(r["stats"]); w = window(r); al = np.array(r["alive"], bool)[w]; ck = np.array(r["checkpoints"])[w]
+        if len(set(al.sum(1))) == 1:
+            continue
+        f = al.any(0) & ~al.all(0) & (c / s > 2 * THR)
+        ks = set()
+        for i in np.where(f)[0]:
+            k = kind(al[:, i]); pat[k] += 1; ks.add(k)
+            if k == "late_birth" and r["alive_from"][i] is not None and r["alive_from"][i] > r["T_h"] / 2:
+                after_half += 1
+                if r["min_log10_absa"][i] is not None:
+                    dips.append(r["min_log10_absa"][i])
+        runs_by["+".join(sorted(ks)) or "only c/s <= 2 thr"] += 1
+    return dict(what="directions of c/s > 2 thr whose alive state differs across the checkpoints in [T_h/2, T_h], "
+                     "in the runs whose true count is not constant there", directions=dict(pat), runs_by_pattern=dict(runs_by),
+                late_births_first_alive_after_Th_half=after_half,
+                their_min_log10_absa_q0_q25_q50_q75_q100=(np.quantile(dips, [0, .25, .5, .75, 1]).round(1).tolist() if dips else None))
+
+
+def after_capture(runs, X=(1, 2, 3)):
+    out, dead3 = {}, []
+    for x in X:
+        tot = dead = 0; cells = Counter()
+        for r in runs:
+            if not r["finite"]:
+                continue
+            c, s = A.stats(r["stats"]); cs = c / s; w = window(r)
+            al = np.array(r["alive"], bool)[w]; ck = np.array(r["checkpoints"])[w]
+            for i in range(c.size):
+                af = r["alive_from"][i]
+                if af is None or cs[i] <= THR:
+                    continue
+                m = r["eta"] * r["lam"] * (ck - af) >= x; v = m & ~al[:, i]
+                tot += int(m.sum()); dead += int(v.sum())
+                if v.any():
+                    cells[f"{r['stats']} lam={r['lam']} eta={r['eta']} b2={r['b2']}"] += 1
+                    if x == 3:
+                        dead3.append((r["id"], i))
+        out[f"eta_lam_(t-t_c)>={x}"] = dict(pairs=tot, dead_pairs=dead, dead_directions_by_cell=dict(cells))
+    return out, dead3
+
+
+def trace(cfg, ks, stats, ext=10):
+    """80-bit scalar AdamW exactly as code/e4_a1.py truth(), for directions ks: every crossing of thr in (K, T_h], and,
+    continued to ext x T_h, |a| and p at 40 log-spaced steps and the first step after T_h/2 ... with |a| >= 0.9 c/s."""
+    A.STATS = dict(stats)
+    c, s = A.stats(cfg["stats"]); L = np.longdouble
+    c, s = c.astype(L), s.astype(L); eta, lam, b1, b2, eps = L(cfg["eta"]), L(cfg["lam"]), L(cfg["b1"]), L(cfg["b2"]), L(1e-8)
+    a = A.init_a(cfg).astype(L); p = np.full(c.shape, L(cfg["p0"]))
+    ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c); dec = 1 - eta * lam
+    ks = list(ks); prev = None; ev = {k: [] for k in ks}; amax = {k: 0.0 for k in ks}; Th = cfg["T_h"]
+    samp = {int(x) for x in np.geomspace(A.K, ext * Th, 40)}; curve = {k: [] for k in ks}
+    cs = (c / s)[ks]; p_set = {k: None for k in ks}; a_set = {k: None for k in ks}; at_Th = {}
+    for t in range(1, ext * Th + 1):
+        r_ = c - p * s; ga = -a * p * r_; gp = -a * a * r_
+        ma = b1 * ma + (1 - b1) * ga; va = b2 * va + (1 - b2) * ga * ga
+        mp = b1 * mp + (1 - b1) * gp; vp = b2 * vp + (1 - b2) * gp * gp
+        bc1, bc2 = 1 - b1 ** t, 1 - b2 ** t
+        a = a * dec - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps)
+        p = p * dec - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+        if A.K < t <= Th:
+            al = np.abs(a) > THR
+            if prev is not None:
+                for k in ks:
+                    if al[k] != prev[k]:
+                        ev[k].append(dict(t=t, up=bool(al[k]), abs_a=float(abs(a[k])), p=float(p[k])))
+            prev = al
+            for k in ks:
+                amax[k] = max(amax[k], float(abs(a[k])))
+        if t == Th:
+            at_Th = {k: (float(abs(a[k])), float(p[k])) for k in ks}
+        if t > A.K:
+            for j, k in enumerate(ks):
+                if p_set[k] is None and abs(abs(p[k]) - cs[j]) <= 0.05 * cs[j]:
+                    p_set[k] = t
+                if a_set[k] is None and abs(a[k]) >= 0.9 * cs[j]:
+                    a_set[k] = t
+        if t in samp:
+            for k in ks:
+                curve[k].append([t, float(abs(a[k])), float(p[k])])
+    out = {}
+    el = float(eta * lam)
+    for j, k in enumerate(ks):
+        e = ev[k]; up = [x["t"] for x in e if x["up"]]; dn = [x["t"] for x in e if not x["up"]]
+        t_c = up[0] if up else None; t_d = min([x for x in dn if t_c and x > t_c], default=None)
+        aTh, pTh = at_Th[k]; alive_end = aTh > THR
+        plateau = bool(abs(pTh - float(cs[j])) <= 0.05 * float(cs[j]) and aTh < 0.5 * float(cs[j]))
+        if t_c is None:
+            cls = "never crossed"
+        elif plateau and a_set[k] is not None:
+            cls = "two-stage capture: p settled, |a| on a plateau at T_h, |a| = |p| = c/s later"
+        elif plateau:
+            cls = "p settled, |a| on a plateau, not settled by %d T_h" % ext
+        elif a_set[k] is not None and a_set[k] > Th and aTh < 0.9 * float(cs[j]):
+            cls = "late capture: |a| between thr and c/s at T_h, |a| = |p| = c/s later"
+        elif t_d is not None and el * (t_d - t_c) >= 1:
+            cls = "settled then dead"
+        else:
+            cls = "other"
+        out[k] = dict(direction=k, c_over_s=float(cs[j]), t_c=t_c, first_drop=t_d,
+                      eta_lam_alive_before_drop=(el * (t_d - t_c) if t_d else None), crossings_to_T_h=len(e),
+                      max_abs_a_to_T_h=amax[k], abs_a_T_h=aTh, p_T_h=pTh, alive_at_T_h=bool(alive_end),
+                      p_within_5pct_of_c_over_s_from=p_set[k], abs_a_reaches_0p9_c_over_s_at=a_set[k],
+                      eta_lam_from_t_c_to_a_settled=(el * (a_set[k] - t_c) if (a_set[k] and t_c) else None),
+                      a_settled_over_T_h=(a_set[k] / Th if a_set[k] else None),
+                      events_first_last=(e[:3] + e[-2:] if len(e) > 5 else e), curve_t_absa_p=curve[k], classification=cls)
+    return out
+
+
+def tables(runs):
+    rows = []
+    for r in runs:
+        if not r["finite"]:
+            continue
+        c, s = A.stats(r["stats"]); w = window(r); cnt = np.array(r["alive"], bool)[w].sum(1)
+        rows.append(dict(id=r["id"], stats=r["stats"], lam=r["lam"], conv=bool(len(set(cnt)) == 1), true=true_at_Th(r),
+                         model=r["pred_rank"]["model"], closed=int((c / s > THR).sum()),
+                         closed_in_scope=int(((c / s > THR) & (r["lam"] * c / s < 1)).sum()),
+                         static=r["pred_rank"]["static_bound"], race=r["pred_rank"]["delivered_race"], gd=r["gd_rank"]))
+    mae = lambda k, S: float(np.mean([abs(x[k] - x["true"]) for x in S])) if S else None
+    w1 = lambda k, S: float(np.mean([abs(x[k] - x["true"]) <= 1 for x in S])) if S else None
+    conv = [x for x in rows if x["conv"]]
+    cf = {}
+    for name, S in (("converged", conv), ("all_at_T_h", rows)):
+        cf[name] = dict(runs=len(S), closed_mae=mae("closed", S), closed_within1=w1("closed", S), model_mae=mae("model", S),
+                        model_within1=w1("model", S), closed_equals_model=float(np.mean([x["closed"] == x["model"] for x in S])),
+                        closed_differs_from_model=[dict(id=x["id"], closed=x["closed"], model=x["model"], true=x["true"])
+                                                   for x in S if x["closed"] != x["model"]][:20])
+    cf["scope_lam_c_over_s_lt_1_binding"] = any(x["closed_in_scope"] != x["closed"] for x in rows)
+    G = [x for x in rows if x["gd"] is not None]
+    gd = dict(runs=len(G), race_equals_gd=float(np.mean([x["race"] == x["gd"] for x in G])),
+              race_mae_on_gd=float(np.mean([abs(x["race"] - x["gd"]) for x in G])),
+              race_within1_on_gd=float(np.mean([abs(x["race"] - x["gd"]) <= 1 for x in G])),
+              static_mae_on_gd=float(np.mean([abs(x["static"] - x["gd"]) for x in G])),
+              adamw_truth_minus_gd_mean=float(np.mean([x["true"] - x["gd"] for x in G])),
+              adamw_truth_minus_gd_mean_converged=float(np.mean([x["true"] - x["gd"] for x in G if x["conv"]])),
+              by_stats={st: dict(truth=float(np.mean([x["true"] for x in G if x["stats"] == st])),
+                                 gd=float(np.mean([x["gd"] for x in G if x["stats"] == st])),
+                                 race=float(np.mean([x["race"] for x in G if x["stats"] == st])),
+                                 static=float(np.mean([x["static"] for x in G if x["stats"] == st])))
+                        for st in sorted({x["stats"] for x in G})})
+    lam = {}
+    for st in sorted({x["stats"] for x in rows}):
+        for l in sorted({x["lam"] for x in rows}):
+            S = [x for x in rows if x["stats"] == st and x["lam"] == l]; C = [x for x in S if x["conv"]]
+            lam[f"{st} lam={l}"] = dict(runs=len(S), converged=len(C), truth_at_T_h=float(np.mean([x["true"] for x in S])),
+                                        truth_converged=(float(np.mean([x["true"] for x in C])) if C else None),
+                                        converged_equal_closed=(f"{sum(x['true'] == x['closed'] for x in C)}/{len(C)}"),
+                                        closed=S[0]["closed"], static_bound=S[0]["static"],
+                                        race=float(np.mean([x["race"] for x in S])),
+                                        gd=float(np.mean([x["gd"] for x in S if x["gd"] is not None])),
+                                        model=float(np.mean([x["model"] for x in S])))
+    return cf, gd, lam
+
+
+def main():
+    out = {}
+    for name, path, stats, mod in (("A2", "results/e4/a2/a2_runs.jsonl.gz", A2.A2_STATS, A2),
+                                   ("A2p", "results/e4/a2p/a2p_runs.jsonl.gz", A2P.A2P_STATS, A2P)):
+        A.STATS = dict(stats); runs = load(path)
+        res = dict(flicker=flicker(runs))
+        res["settled_after_capture"], dead3 = after_capture(runs)
+        res["closed_form_ablation"], res["gd_and_race"], res["lambda_split"] = tables(runs)
+        if dead3:
+            byrun = defaultdict(list)
+            for i, k in dead3:
+                byrun[i].append(k)
+            rid = {r["id"]: r for r in runs}; tr = []
+            for i, ks in sorted(byrun.items()):
+                r = rid[i]; cfg = {k: r[k] for k in ("id", "stats", "p0", "lam", "a0", "eta", "b1", "b2", "seed", "T_h")}
+                for k, v in trace(cfg, ks, stats).items():
+                    ck = np.array(r["checkpoints"]); al = np.array(r["alive"], bool)[:, k]
+                    dead_ck = [int(t) for t, a_ in zip(ck, al) if not a_ and r["eta"] * r["lam"] * (t - r["alive_from"][k]) >= 3]
+                    tr.append(dict(run=i, stats=r["stats"], lam=r["lam"], eta=r["eta"], b2=r["b2"], p0=r["p0"], a0=r["a0"],
+                                   T_h=r["T_h"], alive_from=r["alive_from"][k], dead_checkpoints=dead_ck, **v))
+            res["dead_after_capture_traces"] = dict(
+                n=len(tr), classification=dict(Counter(x["classification"] for x in tr)),
+                abs_a_T_h_over_thr_range=[min(x["abs_a_T_h"] for x in tr) / THR, max(x["abs_a_T_h"] for x in tr) / THR],
+                max_abs_a_to_T_h_over_thr_range=[min(x["max_abs_a_to_T_h"] for x in tr) / THR, max(x["max_abs_a_to_T_h"] for x in tr) / THR],
+                eta_lam_t_c_to_a_settled_range=([min(x["eta_lam_from_t_c_to_a_settled"] for x in tr if x["eta_lam_from_t_c_to_a_settled"]),
+                                                 max(x["eta_lam_from_t_c_to_a_settled"] for x in tr if x["eta_lam_from_t_c_to_a_settled"])]
+                                                if any(x["eta_lam_from_t_c_to_a_settled"] for x in tr) else None),
+                a_settled_over_T_h_range=([min(x["a_settled_over_T_h"] for x in tr if x["a_settled_over_T_h"]),
+                                           max(x["a_settled_over_T_h"] for x in tr if x["a_settled_over_T_h"])]
+                                          if any(x["a_settled_over_T_h"] for x in tr) else None),
+                dead_at_T_h_abs_a_over_thr_range=([min(x["abs_a_T_h"] for x in tr if not x["alive_at_T_h"]) / THR,
+                                                   max(x["abs_a_T_h"] for x in tr if not x["alive_at_T_h"]) / THR]
+                                                  if any(not x["alive_at_T_h"] for x in tr) else None),
+                c_over_s_range=[min(x["c_over_s"] for x in tr), max(x["c_over_s"] for x in tr)],
+                p_T_h_over_c_over_s_range=[min(x["p_T_h"] / x["c_over_s"] for x in tr), max(x["p_T_h"] / x["c_over_s"] for x in tr)],
+                cells=dict(Counter(f"{x['stats']} lam={x['lam']} eta={x['eta']} b2={x['b2']}" for x in tr)),
+                directions=tr)
+        out[name] = res
+        d = os.path.join(ROOT, os.path.dirname(path))
+        json.dump(res, open(os.path.join(d, "readings.json"), "w"), indent=1)
+        print(name, json.dumps(dict(flicker=res["flicker"], settled=res["settled_after_capture"],
+                                    traces=res.get("dead_after_capture_traces", {}).get("classification")), indent=1))
+
+
+if __name__ == "__main__":
+    main()

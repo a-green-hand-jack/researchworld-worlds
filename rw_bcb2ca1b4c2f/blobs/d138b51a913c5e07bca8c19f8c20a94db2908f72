@@ -1,0 +1,39 @@
+"""Early check of experiment-repo 7029509 results/e8/prediction.json: what does the delivered linear account
+predict for the E8 switch rows? Per-mode reduced flow of experiment-repo code/linjepa.py reduced_flow (GD,
+stop-gradient, lam_W = lam_P = lam, alpha = 1) on the E1b spectrum (SIG = linspace(1.5, 0.5, 24),
+C = SIG * 0.92^k), with lam switched lo -> hi or hi -> lo at a fraction e/50 of the horizon, e in
+{0, 2, 5, 10, 20, never}. Rank = modes with a > 0.05 at the horizon. floor = 0 (no flush) and 1e-150
+(simulate's flush) are both run, since a lost mode can only return if it is not exactly zero.
+"""
+import json, sys
+import numpy as np
+n = 24
+SIG = np.linspace(1.5, 0.5, n); C = SIG * 0.92 ** np.arange(n)
+
+def flow(lams, a0=1e-3, p0=1.0, eta=0.05, floor=0.0):
+    a = np.full(n, a0); p = np.full(n, p0)
+    for lam in lams:
+        da = -p ** 2 * SIG * a + p * C * a - lam * a
+        dp = (C * a - p * SIG * a) * a - lam * p
+        a = a + eta * da; p = p + eta * dp
+        if floor > 0:
+            a[np.abs(a) < floor] = 0.0; p[np.abs(p) < floor] = 0.0
+    return a, p
+
+out = []
+for lo, hi, p0 in [(0.005, 0.05, 1.0), (0.002, 0.032, 1.0), (0.005, 0.05, 2.0)]:
+    static = dict(lo=int((C ** 2 >= 4 * lo * SIG).sum()), hi=int((C ** 2 >= 4 * hi * SIG).sum()))
+    for T in [20000, 100000]:
+        for floor in [0.0, 1e-150]:
+            row = dict(lo=lo, hi=hi, p0=p0, T=T, floor=floor, static_count=static)
+            for name, (start, end) in dict(lo2hi=(lo, hi), hi2lo=(hi, lo)).items():
+                ranks = {}
+                for e in [0, 2, 5, 10, 20, "never"]:
+                    ts = T if e == "never" else int(T * e / 50)
+                    lams = np.r_[np.full(ts, start), np.full(T - ts, end)]
+                    a, p = flow(lams, p0=p0, floor=floor)
+                    ranks[str(e)] = int((np.abs(a) > 0.05).sum())
+                row[name] = ranks
+            out.append(row); print(json.dumps(row), flush=True)
+json.dump(dict(source="reduced_flow of experiment-repo code/linjepa.py (eta 0.05, a0 1e-3), E1b spectrum", runs=out),
+          open(sys.argv[1], "w"), indent=1)

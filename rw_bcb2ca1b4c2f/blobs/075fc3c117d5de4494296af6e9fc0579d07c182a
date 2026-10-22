@@ -1,0 +1,129 @@
+"""Truth floor on every run of H2, H3, A2 and A2' (internal review point 3): the registered floors used id % 8 == 0,
+which aliases with the config loop order (the last factors a0 x eta x b2 [x b1] have 8 combinations), so every
+registered floor run sits in one cell of those factors. Here the 1e-15-perturbed truth (code/e4_a1h2.py
+perturbed_init, unchanged) is re-run on every run with the same horizon and checkpoints as the registered driver.
+Reported per experiment: the full floor, the registered-subset floor (recomputed, as a reproduction check), the
+subset's balance over the grid factors, and the floor by factor level.
+Usage: python3 code/checks/e4_truth_floor_full.py results/e4/floor [NPROC]"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import e4_a1 as A
+import e4_a1h2 as H2
+import e4_a1h3 as H3
+import e4_a2 as A2
+import e4_a2p as A2P
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+FACTORS = ["stats", "p0", "lam", "a0", "eta", "b1", "b2"]
+
+
+def setup(exp, cfg):
+    if exp == "H2":
+        A.STATS = dict(H2_STATS); A.T, A.CHECKS = H2_T, H2_CHECKS
+    elif exp == "H3":
+        A.STATS = dict(H3.H3_STATS); A.T, A.CHECKS = H2_T, H2_CHECKS
+    elif exp == "A2":
+        A.STATS = dict(A2.A2_STATS); A.T, A.CHECKS = cfg["T_h"], A2.checks(cfg["T_h"])
+    elif exp == "A2p":
+        A.STATS = dict(A2P.A2P_STATS); A.T, A.CHECKS = cfg["T_h"], A2P.checks_half(cfg["T_h"])
+
+
+def floor_one(job):
+    exp, cfg = job
+    setup(exp, cfg)
+    init = A.init_a
+    try:
+        A.init_a = H2.perturbed_init
+        fl = A.truth(cfg)
+    finally:
+        A.init_a = init
+    return exp, cfg["id"], dict(alive=np.asarray(fl["alive"], bool).tolist(), finite=bool(fl["finite"]))
+
+
+def load(path):
+    return {r["id"]: r for r in (json.loads(l) for l in gzip.open(os.path.join(ROOT, path), "rt"))}
+
+
+def metrics(exp, r, fl):
+    """rank-within-1 failure of the perturbed truth against the truth, at the registered reading point(s)."""
+    if not r["finite"] or not fl["finite"]:
+        return dict(fail=float(r["finite"] != fl["finite"]), state_error=None)
+    if exp in ("H2", "H3"):                       # every checkpoint, as H2.floor
+        T0, T1 = np.array(r["alive"], bool), np.array(fl["alive"], bool)
+        return dict(fail=float((np.abs(T0.sum(1) - T1.sum(1)) > 1).mean()), state_error=float((T0 != T1).mean()),
+                    fail_last=float(abs(int(T0[-1].sum()) - int(T1[-1].sum())) > 1))
+    if exp == "A2":                               # rank at T_h (last checkpoint), as A2.score
+        T0, T1 = np.array(r["alive"][-1], bool), np.array(fl["alive"][-1], bool)
+    else:                                         # A2': truth count at T_h from the long run
+        ck = r["checkpoints"]; T0 = np.array(r["alive"][ck.index(r["T_h"])], bool); T1 = np.array(fl["alive"][-1], bool)
+    return dict(fail=float(abs(int(T0.sum()) - int(T1.sum())) > 1), state_error=float((T0 != T1).mean()))
+
+
+def summarize(exp, runs, cfgs, fls):
+    per = {i: metrics(exp, runs[i], fls[i]) for i in fls}
+    reg = [i for i in per if i % 8 == 0]
+    out = dict(runs=len(per), floor_full=float(np.mean([per[i]["fail"] for i in per])),
+               floor_registered_subset=float(np.mean([per[i]["fail"] for i in reg])), registered_subset_runs=len(reg),
+               runs_with_any_failure=int(sum(per[i]["fail"] > 0 for i in per)))
+    if exp in ("H2", "H3"):
+        out["floor_full_at_last_checkpoint"] = float(np.mean([per[i]["fail_last"] for i in per if "fail_last" in per[i]]))
+    bal, by = {}, {}
+    for f in FACTORS:
+        lv = sorted({c[f] for c in cfgs.values()}, key=str)
+        if len(lv) < 2:
+            continue
+        bal[f] = {str(v): sum(cfgs[i][f] == v for i in reg) for v in lv}
+        by[f] = {str(v): float(np.mean([per[i]["fail"] for i in per if cfgs[i][f] == v])) for v in lv}
+    out["registered_subset_balance"] = bal
+    out["floor_full_by_level"] = by
+    if exp == "H3":
+        out["floor_full_by_bin"] = {b: float(np.mean([per[i]["fail"] for i in per if lo <= cfgs[i]["eta_lam_T"] < hi]))
+                                    for b, (lo, hi) in H3.BINS.items()}
+        out["registered_subset_by_bin"] = {b: sum(lo <= cfgs[i]["eta_lam_T"] < hi for i in reg) for b, (lo, hi) in H3.BINS.items()}
+    out["failing_runs"] = [dict(id=i, fail=per[i]["fail"], **{f: cfgs[i][f] for f in FACTORS}) for i in sorted(per) if per[i]["fail"] > 0]
+    return out, per
+
+
+if __name__ == "__main__":
+    outdir = sys.argv[1]; nproc = int(sys.argv[2]) if len(sys.argv) > 2 else 8
+    import importlib
+    a1 = importlib.reload(A)
+    H2_T, H2_CHECKS = a1.T, list(a1.CHECKS)                              # e4_a1h2 keeps e4_a1's T and CHECKS
+    H2_STATS = {"h2a": (np.linspace(2.2, 0.45, 32), 0.88), "h2b": (np.linspace(1.4, 0.6, 32), 0.95)}  # e4_a1h2.py l. 18
+    A.STATS = dict(H2_STATS); cf = {"H2": {c["id"]: c for c in H2.configs()}}
+    A.STATS = dict(H3.H3_STATS); cf["H3"] = {c["id"]: c for c in H3.configs()}
+    A.STATS = dict(A2.A2_STATS); cf["A2"] = {c["id"]: c for c in A2.configs()}
+    A.STATS = dict(A2P.A2P_STATS); cf["A2p"] = {c["id"]: c for c in A2P.configs()}
+    runs = {"H2": load("results/e4/a1h2/a1h2_runs.jsonl.gz"), "H3": load("results/e4/a1h3/a1h3_runs.jsonl.gz"),
+            "A2": load("results/e4/a2/a2_runs.jsonl.gz"), "A2p": load("results/e4/a2p/a2p_runs.jsonl.gz")}
+    for e in cf:
+        assert set(cf[e]) == set(runs[e]), e
+    jobs = [(e, c) for e in ("H2", "A2p", "A2", "H3") for c in cf[e].values()]
+    jobs.sort(key=lambda j: -(j[1].get("T_h", H2_T)))
+    t0 = time.time(); fls = {e: {} for e in cf}
+    with Pool(nproc, initializer=lambda: None) as pool:
+        for k, (e, i, fl) in enumerate(pool.imap_unordered(floor_one, jobs, chunksize=1), 1):
+            fls[e][i] = fl
+            if k % 64 == 0 or k == len(jobs):
+                print(f"{k}/{len(jobs)} {time.time() - t0:.0f}s", flush=True)
+    res, perall = {}, {}
+    for e in cf:
+        res[e], perall[e] = summarize(e, runs[e], cf[e], fls[e])
+        # reproduction check: registered floor arrays where they were stored
+        same = [fls[e][i]["alive"] == (runs[e][i].get("floor_alive") or runs[e][i].get("floor_alive_half"))
+                for i in fls[e] if (runs[e][i].get("floor_alive") or runs[e][i].get("floor_alive_half")) is not None]
+        res[e]["registered_floor_arrays_reproduced"] = f"{sum(same)}/{len(same)}"
+    res["seconds"] = time.time() - t0
+    res["command"] = "python3 code/checks/e4_truth_floor_full.py " + " ".join(sys.argv[1:])
+    os.makedirs(outdir, exist_ok=True)
+    json.dump(res, open(os.path.join(outdir, "truth_floor_full.json"), "w"), indent=1)
+    with gzip.open(os.path.join(outdir, "truth_floor_full_runs.jsonl.gz"), "wt") as f:
+        for e in fls:
+            for i in sorted(fls[e]):
+                f.write(json.dumps(dict(exp=e, id=i, **perall[e][i], floor_finite=fls[e][i]["finite"])) + "\n")
+    print(json.dumps({e: dict(full=res[e]["floor_full"], subset=res[e]["floor_registered_subset"],
+                              reproduced=res[e]["registered_floor_arrays_reproduced"]) for e in cf}, indent=1))
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "truth floor on every run of H2, H3, A2, A2' done")

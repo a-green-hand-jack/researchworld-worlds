@@ -1,0 +1,14 @@
+\section{Setup}
+\label{sec:setup}
+
+An input $x$ is split into a context $x_c\in\R^{D}$ and a target $x_t\in\R^{D}$ (for images, the visible and the masked patches).
+An online encoder $W\in\R^{d\times D}$ embeds the context, a predictor $P\in\R^{d\times d}$ maps the context embedding to a prediction of the target embedding, and a target encoder $\Wt$ embeds the target:
+\begin{equation}
+\mathcal{L}(W,P)=\tfrac12\,\E\big\|P W x_c-\sg(\Wt x_t)\big\|^2,\qquad \Wt\leftarrow \tau\Wt+(1-\tau)W,
+\label{eq:loss}
+\end{equation}
+trained by gradient descent with weight decay $\lambda$; $\sg$ is the stop-gradient.
+We write $\Ccc=\E[x_cx_c^\top]$ and $\Ctc=\E[x_tx_c^\top]$.
+The collapsed solution is $W=\Wt=0$.
+For a nonlinear encoder $f_\theta$ we use the same quantities for the embedding covariance $\E[f_\theta(x_c)f_\theta(x_c)^\top]$: its eigen-directions play the role of the directions $j$, and their early log-growth rates play the role of $2r_j$.
+This is exact only to the extent that early training is linear in the parameters around initialization, and a randomly initialized network is not near $W=0$; for the vision JEPA we therefore treat the predictions as a transfer hypothesis and test them (\cref{sec:experiments}), rather than derive them.

@@ -1,0 +1,7 @@
+Checks of experiment-repo's B3 precision check (cc25988) and split (56ee127).
+Input: results/e5/b3_heldout/precision/precision_heldout_runs.jsonl.gz at experiment 56ee127, copied as prec.jsonl.gz
+into the working directory. Scripts are run from that directory; output in out.txt.
+- first_check_levels.py: per (lam, eta, B) at p0 = 1.5, median log10(sv_k / sv_1) per sorted index at the first check, f64 vs f80.
+- s4_split.py: S4 (noisy final rank minus its population run's, paired by eta and seed) per p0 x lam x precision.
+- regrowth_depth.py: indices that reach <= 1e-13 of the top and later exceed THR; minimum level in f64 vs f80, crossing check.
+Also: code/checks/e5_b3_split.py re-run at 56ee127 gives a JSON identical to split_p0_lam.json.

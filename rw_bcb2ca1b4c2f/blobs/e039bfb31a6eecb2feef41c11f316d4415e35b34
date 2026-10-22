@@ -1,0 +1,189 @@
+"""Rung 2 theory check (theory/ext_C_ladder.md "Rung 2", review E6R2-T1), post hoc on the delivered r2_heldout base
+runs (already scored; this changes no score). Re-trains each base run with the frozen code/e6_r2.py operations in the
+same order (same sample, init, update, flushes), and records along the way what r_decay assumes:
+
+  W1(t) = (1 - eta lam)^t W1(0) + D(t), and dW1 = -eta (lam W1 + gW1), gW1 = ((gz W2) . phi'(W1 x_c))^T X_c / N with
+  gz = (Z_c P^T - Z_t) P linear in W2, so |gW1| <= C |P| (|P| + 1) |W2|^2 |W1| (C from the data and phi'; h is O(|W1|) for relu exactly and for tanh
+  near 0); D is driven by it.
+
+Every REC = 50 steps (= STAT_EVERY, the statistic refresh of r_decay):
+  delta     |W1(t) - dec^t W1(0)|_F / |dec^t W1(0)|_F           (relative departure from the decay path)
+  g_ratio   |gW1|_F / (|P|_2 |W2|_2^2 |W1|_F)                     (the O(|P||W2|^2) order of the gradient, per unit W1;
+                                                                   carries the bounded factor (|P| + 1))
+  stat_err  |S(W1(t)) - S(dec^t W1(0))|_F / |S(dec^t W1(0))|_F for S11 and S21 (what the race integrates)
+  w2_top    top singular value of W2; first escape = first record with w2_top > THR (= 0.05, the rank threshold)
+  w2_rank   #sv(W2) > THR; last escape = first record where w2_rank reaches the run's final embedding rank
+and the step at which r_decay's count first reaches its maximum (n1g_tv instrumented, same operations).
+Reproduction checks: the final embedding rank equals the delivered truth.emb_rank, and the instrumented r_decay equals
+the delivered pred.r_decay, on every finite run.
+Usage: python3 code/checks/e6_r2_w1path.py RUNS_JSONL_GZ OUT_JSON [NPROC]"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, ".."))
+import e6_r2 as R
+
+REC = 50
+
+
+def rel(a, b):
+    return float(np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-300))
+
+
+def train(cfg, Xc, Xt):
+    W1, W2, P = R.init(cfg); lam, eta, T, act = cfg["lam"], cfg["eta"], cfg["T"], cfg["act"]
+    W10 = W1.copy(); dec = 1 - eta * lam
+    rec = []
+    for step in range(1, T + 1):
+        ac = Xc @ W1.T; hc = R.phi(ac, act); ht = R.phi(Xt @ W1.T, act)
+        zc = hc @ W2.T; zt = ht @ W2.T
+        E = zc @ P.T - zt
+        gP = E.T @ zc / N
+        gz = E @ P
+        gW2 = gz.T @ hc / N
+        gW1 = ((gz @ W2) * R.dphi(ac, hc, act)).T @ Xc / N
+        if step % REC == 1 or REC == 1:          # gradient at the state of step-1, recorded on the next record
+            gnorm = (step - 1, float(np.linalg.norm(gW1)), float(np.linalg.norm(W1)),
+                     float(R.svals(P).max()), float(R.svals(W2).max()))
+        W1 = W1 - eta * (gW1 + lam * W1); W2 = W2 - eta * (gW2 + lam * W2); P = P - eta * (gP + lam * P)
+        if step % 50 == 0:
+            for M in (W1, W2, P):
+                M[np.abs(M) < 1e-150] = 0.0
+            if not (np.isfinite(W2).all() and np.abs(W2).max() < 1e8 and np.isfinite(W1).all()):
+                return dict(diverged=step, rec=rec)
+        if step % REC == 0:
+            path = W10 * dec ** step
+            S, Sp = R.feat_stats(W1, Xc, Xt, act), R.feat_stats(path, Xc, Xt, act)
+            s0, gn, wn, pn, w2n = gnorm
+            sv2 = R.svals(W2)
+            rec.append(dict(step=step, delta=rel(W1, path), w2_top=float(sv2.max()), w2_rank=int((sv2 > R.THR).sum()), p_top=float(R.svals(P).max()),
+                            stat_err11=rel(S[0], Sp[0]), stat_err21=rel(S[1], Sp[1]),
+                            g_step=s0, g_ratio=gn / max(pn * w2n ** 2 * wn, 1e-300), g_rel=gn / max(lam * wn, 1e-300)))
+    Z = R.phi(Xc @ W1.T, act) @ W2.T
+    emb = int((R.svals(Z - Z.mean(0)) / np.sqrt(N) > R.THR).sum())
+    return dict(emb_rank=emb, rec=rec)
+
+
+def n1g_tv_t(stat_at, W0, P0, lam, eta, T):
+    """R.n1g_tv with the same operations, returning (max count, first step reaching it)."""
+    W = W0.copy(); P = P0.copy(); dec = 1 - eta * lam
+    best = 0; tbest = 0; logscale = 0.0
+    S11, S21 = stat_at(0)
+    for step in range(T + 1):
+        if step % R.STAT_EVERY == 0 and step > 0:
+            S11, S21 = stat_at(step)
+        nrm = np.abs(W).max()
+        if nrm > 1e30 or (0 < nrm < 1e-30):
+            W = W / nrm; logscale += np.log(nrm)
+        if step % R.CHECK_EVERY == 0:
+            m = np.abs(W).max(); W[np.abs(W) < 1e-150 * m] = 0.0
+            U, sv, Vt = np.linalg.svd(W, full_matrices=False)
+            sv = sv * np.exp(min(logscale, 700.0))
+            PU = P @ U
+            p = np.einsum("ij,ij->j", U, PU); q = (PU ** 2).sum(0)
+            c = np.einsum("ij,jk,ik->i", Vt, S21, Vt); sg = np.einsum("ij,jk,ik->i", Vt, S11, Vt)
+            g = p * c - q * sg - lam; gap = c - p * sg
+            ok = (g > 0) & (gap > 0) & (sv ** 2 * np.maximum(gap, 1e-300) >= lam * np.abs(p))
+            if int(ok.sum()) > best:
+                best, tbest = int(ok.sum()), step
+        if step == T:
+            break
+        W = W + eta * (P.T @ W @ S21 - P.T @ P @ W @ S11 - lam * W)
+        P = P * dec
+    return best, tbest
+
+
+def one(r):
+    cfg = r["cfg"]; t0 = time.time()
+    Xc, Xt = R.sample(cfg)
+    tr = train(cfg, Xc, Xt)
+    out = dict(id=cfg["id"], cfg=cfg, delivered_emb_rank=r["truth"].get("emb_rank"),
+               delivered_r_decay=r["pred"].get("r_decay"), **tr)
+    if "diverged" not in tr:
+        W1, W2, P0 = R.init(cfg); dec = 1 - cfg["eta"] * cfg["lam"]
+        S0 = R.feat_stats(W1, Xc, Xt, cfg["act"])
+        if cfg["act"] == "relu":
+            st = lambda s: (S0[0] * dec ** (2 * s), S0[1] * dec ** (2 * s))
+        else:
+            st = lambda s: R.feat_stats(W1 * dec ** s, Xc, Xt, cfg["act"])
+        out["r_decay"], out["t_best"] = n1g_tv_t(st, W2, P0, cfg["lam"], cfg["eta"], cfg["T"])
+    out["seconds"] = time.time() - t0
+    print(f"run {cfg['id']} {cfg['data']}/{cfg['act']} emb {tr.get('emb_rank')} vs {out['delivered_emb_rank']} "
+          f"r_decay {out.get('r_decay')} vs {out['delivered_r_decay']} {out['seconds']:.0f}s", flush=True)
+    return out
+
+
+def at(rec, step):
+    """The record at the first REC multiple >= step (the race reads statistics refreshed every 50 steps)."""
+    for x in rec:
+        if x["step"] >= step:
+            return x
+    return rec[-1] if rec else None
+
+
+def summary(res):
+    fin = [x for x in res if "diverged" not in x]
+    rows = []
+    for x in fin:
+        rec = x["rec"]
+        esc = next((y for y in rec if y["w2_top"] > R.THR), None)
+        pre = [y for y in rec if esc is None or y["step"] < esc["step"]]
+        tb = at(rec, max(x["t_best"], REC))
+        last = next((y for y in rec if y["w2_rank"] >= x["emb_rank"]), None) if x["emb_rank"] > 0 else None
+        rows.append(dict(id=x["id"], act=x["cfg"]["act"], data=x["cfg"]["data"], lam=x["cfg"]["lam"],
+                         truth=x["emb_rank"], r_decay=x["r_decay"], t_best=x["t_best"], T=x["cfg"]["T"],
+                         t_escape=esc["step"] if esc else None,
+                         delta_at_escape=esc["delta"] if esc else None,
+                         delta_max_before_escape=max((y["delta"] for y in pre), default=None),
+                         stat_err_max_before_escape=max((max(y["stat_err11"], y["stat_err21"]) for y in pre), default=None),
+                         t_last_escape=last["step"] if last else None,
+                         delta_at_last_escape=last["delta"] if last else None,
+                         stat_err_at_last_escape=max(last["stat_err11"], last["stat_err21"]) if last else None,
+                         delta_at_t_best=tb["delta"], stat_err_at_t_best=max(tb["stat_err11"], tb["stat_err21"]),
+                         t_best_before_escape=(esc is None) or x["t_best"] <= esc["step"],
+                         g_ratio_max_before_escape=max((y["g_ratio"] for y in pre), default=None),
+                         delta_end=rec[-1]["delta"]))
+    q = lambda v: dict(n=len(v), median=float(np.median(v)), q90=float(np.quantile(v, 0.9)), max=float(np.max(v))) if v else None
+    esc = [r for r in rows if r["t_escape"] is not None]
+    s = dict(runs=len(res), finite=len(fin), diverged=[x["id"] for x in res if "diverged" in x],
+             reproduction=dict(emb_rank_equal=sum(x["emb_rank"] == x["delivered_emb_rank"] for x in fin),
+                               r_decay_equal=sum(x["r_decay"] == x["delivered_r_decay"] for x in fin), of=len(fin)),
+             escaped=len(esc),
+             t_best_before_escape=sum(r["t_best_before_escape"] for r in esc),
+             delta_at_escape=q([r["delta_at_escape"] for r in esc]),
+             delta_max_before_escape=q([r["delta_max_before_escape"] for r in rows if r["delta_max_before_escape"] is not None]),
+             stat_err_max_before_escape=q([r["stat_err_max_before_escape"] for r in rows if r["stat_err_max_before_escape"] is not None]),
+             stat_err_at_t_best=q([r["stat_err_at_t_best"] for r in rows]),
+             delta_at_t_best=q([r["delta_at_t_best"] for r in rows]),
+             stat_err_at_last_escape=q([r["stat_err_at_last_escape"] for r in rows if r["stat_err_at_last_escape"] is not None]),
+             delta_at_last_escape=q([r["delta_at_last_escape"] for r in rows if r["delta_at_last_escape"] is not None]),
+             t_best_over_T=q([r["t_best"] / r["T"] for r in rows if r["r_decay"] > 0]),
+             g_ratio_max_before_escape=q([r["g_ratio_max_before_escape"] for r in rows if r["g_ratio_max_before_escape"] is not None]),
+             delta_end_by_truth={str(k): q([r["delta_end"] for r in rows if r["truth"] == k]) for k in sorted({r["truth"] for r in rows})},
+             per_cell={f"{d}_{a}": dict(stat_err_at_t_best=q([r["stat_err_at_t_best"] for r in rows if r["data"] == d and r["act"] == a]),
+                                         delta_at_escape=q([r["delta_at_escape"] for r in esc if r["data"] == d and r["act"] == a]))
+                       for d in ("field", "latent") for a in ("tanh", "relu")})
+    return s, rows
+
+
+N = R.N
+if __name__ == "__main__":
+    src, outp = sys.argv[1], sys.argv[2]; nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    runs = [json.loads(l) for l in gzip.open(src, "rt")]
+    base = sorted([r for r in runs if "floor" not in r["cfg"]], key=lambda r: -r["cfg"]["T"])
+    if os.environ.get("W1PATH_IDS"):
+        keep = {int(i) for i in os.environ["W1PATH_IDS"].split(",")}; base = [r for r in base if r["cfg"]["id"] in keep]
+    t0 = time.time()
+    with Pool(nproc) as pool:
+        res = sorted(pool.map(one, base, chunksize=1), key=lambda x: x["id"])
+    s, rows = summary(res)
+    s.update(definition=__doc__, seconds=time.time() - t0, source=os.path.basename(src))
+    json.dump(dict(summary=s, rows=rows), open(outp, "w"), indent=1)
+    with gzip.open(outp.replace(".json", "_records.jsonl.gz"), "wt") as f:
+        for x in res:
+            f.write(json.dumps(x) + "\n")
+    print(json.dumps({k: s[k] for k in ("reproduction", "escaped", "t_best_before_escape", "delta_at_escape",
+                                        "stat_err_at_t_best", "stat_err_at_last_escape")}, indent=1))
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), f"rung 2 W1 decay-path check: {len(res)} runs in {time.time() - t0:.0f} s", flush=True)

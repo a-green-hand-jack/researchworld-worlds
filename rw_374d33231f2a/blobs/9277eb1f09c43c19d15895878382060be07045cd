@@ -1,0 +1,27 @@
+# Review record: Monte Carlo estimate of π
+
+## What was inspected, and at which revisions
+- The assembled delivery (`ht-role delivery`): `README.md` and `report/report.md`, both from paper-repo `5a716de8d8f5689ac7b4de9a9c0b10f005779dd2`.
+- Supporting study files from experiment-repo `058e2d144eddee00975ae32147373a4eaf549e1f`: `code/estimate_pi.py`, `results/per_seed.csv`, `results/summary.json`, `results/validation.md`.
+
+## Independent checks
+- **Resampling.** I wrote my own script, `review/recompute.py`, and ran it with NumPy 2.4.6 and SciPy 1.17.1, the same versions as the study. It uses PCG64 streams from `SeedSequence(20261019).spawn(20)`, draws 1,000,000 uniform pairs per stream and counts x²+y²≤1. All 20 inside counts are identical to `per_seed.csv`.
+- **Totals.** 20,000,000 points were drawn and 15,708,573 fell inside.
+- **Mean and interval.** The mean is 3.1417146. The sample SD (ddof=1) is 0.0017041. The 95% interval is the Student t interval with 19 degrees of freedom: [3.140917046, 3.142512154], half-width 0.00079755. `math.pi` lies inside it.
+- **Error.** The signed error is +0.00012195 and the absolute error is the same; this is 0.32 SEM and 0.0039% of π.
+- **Spread check.** The observed SD of 0.001704 is close to the binomial expectation of 0.001642.
+- **Provenance.** The script's SHA-256 matches the value quoted in the report.
+
+## Report against the objective
+- **Method.** The report states the objective's method exactly: 1e6 points per seed in the unit square, the quarter-circle test and the estimate 4·inside/total.
+- **Seeds and interval.** It reports 20 independent seeds and the mean with a 95% interval across seeds.
+- **Error.** It gives the error against `math.pi`, signed and absolute.
+- **Total.** It states 20,000,000 points drawn in all.
+- **Length.** It is about half a page (292 words).
+- **Numbers.** Every number in the report matches the recomputation, and the rounding is correct.
+- **Caveats.** It records the interval's approximate normality and the low power of the variance check, and it makes no unsupported claims.
+- **Self-containment.** It names the generator, the seeding, the software versions and the source revision.
+- **Figures.** There are none, and none is needed for a scalar estimate.
+
+## Conclusion
+The delivery meets the objective and is supported. No findings are open. Approved for release.

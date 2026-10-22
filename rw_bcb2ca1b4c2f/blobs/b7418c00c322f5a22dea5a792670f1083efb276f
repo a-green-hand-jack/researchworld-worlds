@@ -1,0 +1,601 @@
+{
+ "definition": "signed error = race (headroom_200) - measured; per-row MAE of headroom_200 and early_200 over the row's seeds; lam_c and ratios copied from score.json (transition, transition_thr)",
+ "signed_error_per_row": {
+  "0.0012|e20": {
+   "mean": -10.4,
+   "per_seed": {
+    "20": -12,
+    "21": -8,
+    "22": -11,
+    "23": -10,
+    "24": -11
+   },
+   "measured_mean": 33.6,
+   "init_mean": 26.8
+  },
+  "0.0012|e50": {
+   "mean": -11.4,
+   "per_seed": {
+    "20": -13,
+    "21": -14,
+    "22": -9,
+    "23": -10,
+    "24": -11
+   },
+   "measured_mean": 30.6,
+   "init_mean": 26.8
+  },
+  "0.0017|e20": {
+   "mean": -8.4,
+   "per_seed": {
+    "20": -10,
+    "21": -7,
+    "22": -8,
+    "23": -8,
+    "24": -9
+   },
+   "measured_mean": 30.0,
+   "init_mean": 26.8
+  },
+  "0.0017|e50": {
+   "mean": -7.2,
+   "per_seed": {
+    "20": -9,
+    "21": -4,
+    "22": -6,
+    "23": -8,
+    "24": -9
+   },
+   "measured_mean": 22.4,
+   "init_mean": 26.8
+  },
+  "0.0024|e20": {
+   "mean": -6.2,
+   "per_seed": {
+    "20": -7,
+    "21": -5,
+    "22": -7,
+    "23": -5,
+    "24": -7
+   },
+   "measured_mean": 26.6,
+   "init_mean": 26.8
+  },
+  "0.0024|e50": {
+   "mean": -1.0,
+   "per_seed": {
+    "20": -1,
+    "21": 0,
+    "22": 0,
+    "23": -2,
+    "24": -2
+   },
+   "measured_mean": 14.4,
+   "init_mean": 26.8
+  },
+  "0.0034|e20": {
+   "mean": -5.6,
+   "per_seed": {
+    "20": -6,
+    "21": -4,
+    "22": -4,
+    "23": -7,
+    "24": -7
+   },
+   "measured_mean": 23.4,
+   "init_mean": 26.8
+  },
+  "0.0034|e50": {
+   "mean": -3.0,
+   "per_seed": {
+    "20": -3,
+    "21": -2,
+    "22": -1,
+    "23": -5,
+    "24": -4
+   },
+   "measured_mean": 10.4,
+   "init_mean": 26.8
+  },
+  "0.0048|e20": {
+   "mean": -6.2,
+   "per_seed": {
+    "20": -6,
+    "21": -5,
+    "22": -4,
+    "23": -8,
+    "24": -8
+   },
+   "measured_mean": 20.8,
+   "init_mean": 26.8
+  },
+  "0.0048|e50": {
+   "mean": -5.8,
+   "per_seed": {
+    "20": -5,
+    "21": -6,
+    "22": -5,
+    "23": -5,
+    "24": -8
+   },
+   "measured_mean": 8.6,
+   "init_mean": 26.8
+  },
+  "0.0068|e20": {
+   "mean": -3.0,
+   "per_seed": {
+    "20": -2,
+    "21": -5,
+    "22": -1,
+    "23": -3,
+    "24": -4
+   },
+   "measured_mean": 15.2,
+   "init_mean": 26.8
+  },
+  "0.0068|e50": {
+   "mean": -5.6,
+   "per_seed": {
+    "20": -6,
+    "21": -5,
+    "22": -6,
+    "23": -5,
+    "24": -6
+   },
+   "measured_mean": 6.6,
+   "init_mean": 26.8
+  },
+  "0.0096|e20": {
+   "mean": -1.8,
+   "per_seed": {
+    "20": -1,
+    "21": -2,
+    "22": -2,
+    "23": -2,
+    "24": -2
+   },
+   "measured_mean": 8.8,
+   "init_mean": 26.8
+  },
+  "0.0096|e50": {
+   "mean": -5.6,
+   "per_seed": {
+    "20": -6,
+    "21": -3,
+    "22": -7,
+    "23": -6,
+    "24": -6
+   },
+   "measured_mean": 5.6,
+   "init_mean": 26.8
+  },
+  "0.0136|e20": {
+   "mean": -3.2,
+   "per_seed": {
+    "20": -3,
+    "21": -3,
+    "22": -3,
+    "23": -4,
+    "24": -3
+   },
+   "measured_mean": 5.6,
+   "init_mean": 26.8
+  },
+  "0.0136|e50": {
+   "mean": -1.0,
+   "per_seed": {
+    "20": -1,
+    "21": -1,
+    "22": -1,
+    "23": -1,
+    "24": -1
+   },
+   "measured_mean": 1.0,
+   "init_mean": 26.8
+  }
+ },
+ "signed_error_range": [
+  -11.4,
+  -1.0
+ ],
+ "race_below_measured_cells": 16,
+ "measured_above_init_cells": [
+  "0.0012|e20",
+  "0.0012|e50",
+  "0.0017|e20"
+ ],
+ "mae_per_row_race_vs_early": {
+  "0.0012|e20": {
+   "headroom_200": 10.4,
+   "early_200": 7.6,
+   "lower": "early_200"
+  },
+  "0.0012|e50": {
+   "headroom_200": 11.4,
+   "early_200": 4.6,
+   "lower": "early_200"
+  },
+  "0.0017|e20": {
+   "headroom_200": 8.4,
+   "early_200": 4.0,
+   "lower": "early_200"
+  },
+  "0.0017|e50": {
+   "headroom_200": 7.2,
+   "early_200": 3.6,
+   "lower": "early_200"
+  },
+  "0.0024|e20": {
+   "headroom_200": 6.2,
+   "early_200": 1.4,
+   "lower": "early_200"
+  },
+  "0.0024|e50": {
+   "headroom_200": 1.0,
+   "early_200": 11.6,
+   "lower": "headroom_200"
+  },
+  "0.0034|e20": {
+   "headroom_200": 5.6,
+   "early_200": 2.6,
+   "lower": "early_200"
+  },
+  "0.0034|e50": {
+   "headroom_200": 3.0,
+   "early_200": 15.6,
+   "lower": "headroom_200"
+  },
+  "0.0048|e20": {
+   "headroom_200": 6.2,
+   "early_200": 5.0,
+   "lower": "early_200"
+  },
+  "0.0048|e50": {
+   "headroom_200": 5.8,
+   "early_200": 17.2,
+   "lower": "headroom_200"
+  },
+  "0.0068|e20": {
+   "headroom_200": 3.0,
+   "early_200": 10.4,
+   "lower": "headroom_200"
+  },
+  "0.0068|e50": {
+   "headroom_200": 5.6,
+   "early_200": 19.0,
+   "lower": "headroom_200"
+  },
+  "0.0096|e20": {
+   "headroom_200": 1.8,
+   "early_200": 16.6,
+   "lower": "headroom_200"
+  },
+  "0.0096|e50": {
+   "headroom_200": 5.6,
+   "early_200": 19.8,
+   "lower": "headroom_200"
+  },
+  "0.0136|e20": {
+   "headroom_200": 3.2,
+   "early_200": 19.8,
+   "lower": "headroom_200"
+  },
+  "0.0136|e50": {
+   "headroom_200": 1.0,
+   "early_200": 24.4,
+   "lower": "headroom_200"
+  }
+ },
+ "early_lower_cells": [
+  "0.0012|e20",
+  "0.0012|e50",
+  "0.0017|e20",
+  "0.0017|e50",
+  "0.0024|e20",
+  "0.0034|e20",
+  "0.0048|e20"
+ ],
+ "threshold_rows": {
+  "1e-2": {
+   "lam_c": {
+    "e20": {
+     "measured": 0.008079603950689667,
+     "headroom_200": 0.003741791306023335
+    },
+    "e50": {
+     "measured": 0.002734869575966384,
+     "headroom_200": 0.0015313293934978295
+    }
+   },
+   "race_over_measured": {
+    "e20": 0.46311568349881055,
+    "e50": 0.5599277592448716
+   },
+   "within_x1_5": {
+    "e20": false,
+    "e50": false
+   },
+   "horizon_ratio": {
+    "measured": 0.3384905488755966,
+    "headroom_200": 0.4092503478301362
+   },
+   "horizon_ratio_below_1": {
+    "measured": true,
+    "headroom_200": true
+   }
+  },
+  "1e-3": {
+   "lam_c": {
+    "e20": {
+     "measured": 0.007492548542138642,
+     "headroom_200": 0.005713142742834278
+    },
+    "e50": {
+     "measured": 0.0026183527820752375,
+     "headroom_200": 0.0023999999999999994
+    }
+   },
+   "race_over_measured": {
+    "e20": 0.7625099404699408,
+    "e50": 0.9166068134248214
+   },
+   "within_x1_5": {
+    "e20": true,
+    "e50": true
+   },
+   "horizon_ratio": {
+    "measured": 0.3494609033694516,
+    "headroom_200": 0.420084025208403
+   },
+   "horizon_ratio_below_1": {
+    "measured": true,
+    "headroom_200": true
+   }
+  },
+  "1e-4": {
+   "lam_c": {
+    "e20": {
+     "measured": 0.007759608336653339,
+     "headroom_200": 0.006910811089482833
+    },
+    "e50": {
+     "measured": 0.002897472149428429,
+     "headroom_200": 0.002711158624793019
+    }
+   },
+   "race_over_measured": {
+    "e20": 0.8906133904773104,
+    "e50": 0.9356979066486754
+   },
+   "within_x1_5": {
+    "e20": true,
+    "e50": true
+   },
+   "horizon_ratio": {
+    "measured": 0.37340443276523505,
+    "headroom_200": 0.39230686379475427
+   },
+   "horizon_ratio_below_1": {
+    "measured": true,
+    "headroom_200": true
+   }
+  }
+ },
+ "crossing_rows_gpu": {
+  "e20": {
+   "lam_c": 0.007492548542138642,
+   "bracket": [
+    0.0068,
+    0.0096
+   ],
+   "gpu": {
+    "0.0068": {
+     "1080": 3,
+     "2080": 2
+    },
+    "0.0096": {
+     "V100": 5
+    }
+   }
+  },
+  "e50": {
+   "lam_c": 0.0026183527820752375,
+   "bracket": [
+    0.0024,
+    0.0034
+   ],
+   "gpu": {
+    "0.0024": {
+     "P100": 5
+    },
+    "0.0034": {
+     "P100": 5
+    }
+   }
+  }
+ },
+ "gpu_mix": {
+  "T_wd0.0012": {
+   "2080": 5
+  },
+  "T_wd0.0017": {
+   "P100": 5
+  },
+  "T_wd0.0024": {
+   "P100": 5
+  },
+  "T_wd0.0034": {
+   "P100": 5
+  },
+  "T_wd0.0048": {
+   "2080": 5
+  },
+  "T_wd0.0068": {
+   "1080": 3,
+   "2080": 2
+  },
+  "T_wd0.0096": {
+   "V100": 5
+  },
+  "T_wd0.0136": {
+   "V100": 5
+  },
+  "T_adamw": {
+   "V100": 3
+  },
+  "T_ema": {
+   "V100": 3
+  },
+  "T_tln": {
+   "V100": 3
+  },
+  "T_pln": {
+   "V100": 3
+  },
+  "T_nodn": {
+   "V100": 3
+  }
+ },
+ "toggles_e50": {
+  "T_adamw": {
+   "gpu": {
+    "V100": 3
+   },
+   "ref_gpu": {
+    "P100": 5
+   },
+   "per_seed": {
+    "20": {
+     "measured": 23,
+     "race": 40,
+     "ref_measured": 10,
+     "ref_race": 7
+    },
+    "21": {
+     "measured": 17,
+     "race": 43,
+     "ref_measured": 10,
+     "ref_race": 8
+    },
+    "22": {
+     "measured": 23,
+     "race": 38,
+     "ref_measured": 9,
+     "ref_race": 8
+    }
+   }
+  },
+  "T_ema": {
+   "gpu": {
+    "V100": 3
+   },
+   "ref_gpu": {
+    "P100": 5
+   },
+   "per_seed": {
+    "20": {
+     "measured": 13,
+     "race": 9,
+     "ref_measured": 10,
+     "ref_race": 7
+    },
+    "21": {
+     "measured": 13,
+     "race": 8,
+     "ref_measured": 10,
+     "ref_race": 8
+    },
+    "22": {
+     "measured": 13,
+     "race": 8,
+     "ref_measured": 9,
+     "ref_race": 8
+    }
+   }
+  },
+  "T_tln": {
+   "gpu": {
+    "V100": 3
+   },
+   "ref_gpu": {
+    "P100": 5
+   },
+   "per_seed": {
+    "20": {
+     "measured": 14,
+     "race": 7,
+     "ref_measured": 10,
+     "ref_race": 7
+    },
+    "21": {
+     "measured": 11,
+     "race": 8,
+     "ref_measured": 10,
+     "ref_race": 8
+    },
+    "22": {
+     "measured": 11,
+     "race": 7,
+     "ref_measured": 9,
+     "ref_race": 8
+    }
+   }
+  },
+  "T_pln": {
+   "gpu": {
+    "V100": 3
+   },
+   "ref_gpu": {
+    "P100": 5
+   },
+   "per_seed": {
+    "20": {
+     "measured": 17,
+     "race": 11,
+     "ref_measured": 10,
+     "ref_race": 7
+    },
+    "21": {
+     "measured": 14,
+     "race": 10,
+     "ref_measured": 10,
+     "ref_race": 8
+    },
+    "22": {
+     "measured": 16,
+     "race": 10,
+     "ref_measured": 9,
+     "ref_race": 8
+    }
+   }
+  },
+  "T_nodn": {
+   "gpu": {
+    "V100": 3
+   },
+   "ref_gpu": {
+    "P100": 5
+   },
+   "per_seed": {
+    "20": {
+     "measured": 25,
+     "race": 7,
+     "ref_measured": 10,
+     "ref_race": 7
+    },
+    "21": {
+     "measured": 20,
+     "race": 8,
+     "ref_measured": 10,
+     "ref_race": 8
+    },
+    "22": {
+     "measured": 26,
+     "race": 7,
+     "ref_measured": 9,
+     "ref_race": 8
+    }
+   }
+  }
+ }
+}

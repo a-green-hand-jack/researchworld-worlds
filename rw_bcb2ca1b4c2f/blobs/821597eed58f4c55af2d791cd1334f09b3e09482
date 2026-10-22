@@ -1,0 +1,71 @@
+"""Check of experiment 4b0039d's E6 rung 1a post hoc readings (results/README.md 'Generic arm with 5 seeds' and 'Where
+the generic miss lies'). Raw records: results/e6/r1heldout/r1_heldout_runs.jsonl.gz and
+results/e6/r1heldout_g45/r1_heldout_g45_runs.jsonl.gz of the experiment tree.
+(1) 5-seed generic arm re-scored with my scorer (checks/e6_r1_heldout_score.py summ, bootstrap default_rng(11)).
+(2) A1 escape margins from the experiment's margins() (code/checks/e6_r1_informative.py); validated by checking that the
+    number of directions with margin > 0 equals race_deep_A1 on every run; then, at generic a0 = 0.05, per miss the
+    margin closest to 0 and, on the runs A1 gets right, the share with any margin in the same window, so that the
+    comparison uses one window for both; and how many a0_k exceed thr.
+Usage: python3 checks/e6_r1_margin_check.py EXPERIMENT_TREE > checks/e6_r1_margin_check.json"""
+import sys, os, gzip, json
+import numpy as np
+EXP = sys.argv[1]
+sys.path.insert(0, os.path.join(EXP, "code")); sys.path.insert(0, os.path.join(EXP, "code", "checks"))
+import e6_r1 as E
+from e6_r1_informative import margins
+rd = lambda p: [json.loads(l) for l in gzip.open(os.path.join(EXP, p), "rt")]
+ho = rd("results/e6/r1heldout/r1_heldout_runs.jsonl.gz"); g45 = rd("results/e6/r1heldout_g45/r1_heldout_g45_runs.jsonl.gz")
+NAMES = ["race_depth1", "static1", "staticL", "window", "early_25", "early_50"]
+
+
+def val(r, nm):
+    if nm.startswith("early_"):
+        return r["truth"]["early"][str(float(nm.split("_")[1]))]
+    return r["pred"][nm]
+
+
+def summ(R, frag):
+    """as checks/e6_r1_heldout_score.py summ (paired bootstrap of baseline error - A1 error, default_rng(11))"""
+    ok = [r for r in R if r["truth"].get("counts")]
+    out = dict(runs=len(R), nonfinite=len(R) - len(ok))
+    y = np.array([r["truth"]["counts"][-1] for r in ok]); ea = np.abs(np.array([r["pred"]["race_deep_A1"] for r in ok]) - y)
+    rng = np.random.default_rng(11); idx = rng.integers(0, len(ok), size=(10000, len(ok)))
+    out["A1"] = dict(mae=float(ea.mean()), within1=float((ea <= 1).mean()))
+    for nm in NAMES:
+        e = np.abs(np.array([val(r, nm) for r in ok]) - y); d = e - ea; bs = d[idx].mean(1)
+        out[nm] = dict(mae=float(e.mean()), minus_A1=float(d.mean()), ci=[float(np.quantile(bs, .025)), float(np.quantile(bs, .975))])
+    out["fragile"] = int(sum(r["cfg"]["id"] in frag for r in ok))
+    return out
+
+
+out = {}
+for lab, rows in (("g45_only", g45), ("5_seeds", ho + g45)):
+    base = [r for r in rows if not r["cfg"].get("pert")]
+    fin = {r["cfg"]["id"]: (r["truth"].get("counts") or [None])[-1] for r in base}
+    frag = {r["cfg"]["floor_of"] for r in rows if r["cfg"].get("pert") and (r["truth"].get("counts") or [None])[-1] != fin[r["cfg"]["floor_of"]]}
+    G = [r for r in base if r["cfg"]["arm"] == "generic" and r["cfg"]["L"] >= 2]
+    out[lab] = dict(pooled=summ(G, frag), L2=summ([r for r in G if r["cfg"]["L"] == 2], frag), L3=summ([r for r in G if r["cfg"]["L"] == 3], frag),
+                    floor_reruns=sum(1 for r in rows if r["cfg"].get("pert")))
+base = [r for r in ho if not r["cfg"].get("pert") and r["cfg"]["L"] >= 2 and r["truth"].get("counts")]
+bad = 0; M = {}
+for r in base:
+    m = margins(r); M[r["cfg"]["id"]] = m
+    bad += int((m > 0).sum() != r["pred"]["race_deep_A1"])
+out["margin_vs_A1_count_mismatch_runs"] = bad; out["margin_runs_checked"] = len(base)
+S = [r for r in base if r["cfg"]["arm"] == "generic" and r["cfg"]["a0"] == 0.05]
+miss, hit = [], []
+for r in S:
+    m = M[r["cfg"]["id"]]; fm = m[np.isfinite(m)]; tru = r["truth"]["counts"][-1]; a1 = r["pred"]["race_deep_A1"]
+    a0k = np.asarray(r["a0"], float)
+    row = dict(id=r["cfg"]["id"], L=r["cfg"]["L"], p0=r["cfg"]["p0"], truth=tru, A1=a1,
+               closest_margin=float(fm[np.argmin(np.abs(fm))]) if fm.size else None,
+               n_within_0p15=int((np.abs(fm) < 0.15).sum()), n_in_m0p15_p0p05=int(((fm >= -0.15) & (fm <= 0.05)).sum()),
+               n_a0k_above_thr=int((a0k > E.THR).sum()), n_dirs=int(a0k.size))
+    (miss if a1 != tru else hit).append(row)
+out["generic_a0_0.05"] = dict(misses=miss, hits_n=len(hit),
+    hits_share_any_within_0p15=float(np.mean([h["n_within_0p15"] > 0 for h in hit])),
+    hits_share_any_in_m0p15_p0p05=float(np.mean([h["n_in_m0p15_p0p05"] > 0 for h in hit])),
+    hits_p07_share_any_in_m0p15_p0p05=float(np.mean([h["n_in_m0p15_p0p05"] > 0 for h in hit if h["p0"] == 0.7])),
+    hits_p07_n=sum(1 for h in hit if h["p0"] == 0.7),
+    a0k_above_thr_range_all=[min(x["n_a0k_above_thr"] for x in miss + hit), max(x["n_a0k_above_thr"] for x in miss + hit)])
+print(json.dumps(out, indent=1))

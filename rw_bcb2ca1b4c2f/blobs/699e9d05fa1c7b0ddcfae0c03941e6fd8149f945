@@ -1,0 +1,37 @@
+"""Review check (internal-review-repo): how often does an A4 truth change rank on a fresh cross-term sample?
+Re-runs e4_a4.truth (experiment 864427b, md5 4f2b3c85, unmodified) on the 96 dev configurations
+(results/e4/a4_dev/a4_dev_runs.jsonl.gz at 864427b) with sample seeds seed+9 (the registered floor seed) and seed+21,
+M_TRUTH = 4096 as registered, and compares with the stored dev truth (sample seed+7). Dev only: no held-out run.
+Usage: python3 dev_resample.py CODE_DIR DEV_RUNS OUT_JSON"""
+import sys, json, gzip, time
+from multiprocessing import Pool
+sys.path.insert(0, sys.argv[1] + "/code")
+import e4_a4 as E
+
+def one(r):
+    cfg = r["cfg"]; out = dict(id=cfg["id"], cfg=cfg, stored=r["truth"]["rank"], n2=r["pred"]["n2"])
+    for k in (9, 21):
+        t = E.truth(cfg, sample_seed=cfg["seed"] + k)
+        out[f"s{k}"] = t.get("rank"); out[f"s{k}_settled"] = t.get("settled"); out[f"s{k}_div"] = t.get("diverged")
+    print(json.dumps({k: out[k] for k in ("id", "stored", "s9", "s21", "n2")}), flush=True)
+    return out
+
+if __name__ == "__main__":
+    rows = [json.loads(l) for l in gzip.open(sys.argv[2], "rt")]
+    t0 = time.time()
+    with Pool(8) as p:
+        res = p.map(one, rows, chunksize=1)
+    ok = [x for x in res if x["s9"] is not None and x["s21"] is not None]
+    def share(f): return sum(f(x) for x in ok) / len(ok)
+    summ = dict(runs=len(res), finite=len(ok),
+                s9_differs=share(lambda x: x["s9"] != x["stored"]), s9_differs_gt1=share(lambda x: abs(x["s9"] - x["stored"]) > 1),
+                s21_differs=share(lambda x: x["s21"] != x["stored"]),
+                any_of_3_differs=share(lambda x: len({x["stored"], x["s9"], x["s21"]}) > 1),
+                n2_mae_stored=sum(abs(x["n2"] - x["stored"]) for x in ok) / len(ok),
+                n2_mae_s9=sum(abs(x["n2"] - x["s9"]) for x in ok) / len(ok),
+                n2_mae_s21=sum(abs(x["n2"] - x["s21"]) for x in ok) / len(ok),
+                n2_mae_vs_majority=sum(abs(x["n2"] - sorted([x["stored"], x["s9"], x["s21"]])[1]) for x in ok) / len(ok),
+                wall_s=time.time() - t0)
+    json.dump(dict(code="experiment 864427b code/e4_a4.py md5 4f2b3c8588364c20c38adbc68c8c7431", summary=summ, rows=res),
+              open(sys.argv[3], "w"), indent=1)
+    print("HUTIAN_WAKE: dev_resample done " + json.dumps(summ), flush=True)

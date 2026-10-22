@@ -1,0 +1,142 @@
+"""E7 development (exploratory, not registered): the headroom race in the ViT, on the delivered E3 force exports
+(results/e3/forces.jsonl, epoch-20 counts in results/e3/runs.csv) and the E8 instrumented runs (raw runs from the
+release asset of results/e8/grid; final epoch-50 counts).
+The decay part of the race is known exactly: weight decay is decoupled in code/vit_jepa.py (p <- p (1 - lr wd) per
+step, SGD and AdamW alike), so a decayed linear output map loses 2 lr(t) wd(t) per step in log variance. The
+headroom race reads the spectrum at a readout step t_r and lets every direction except the top lose that budget
+over the rest of the horizon, with no drive term after t_r and no fitted constant:
+    alive_k(T)  iff  log(e_k(t_r) / e_max(t_r)) - 2 sum_{t_r <= t < T} lr(t) wd(t)  >=  log 1e-3
+(the count rule of the measured counts; the top direction is held, as saturated by its drive). It is a race of
+log headroom against the integrated decay; the drive enters only through the spectrum it has built by t_r.
+Compared with reading the count at t_r ('early') and, on E3, the registered step-0 horizon rule.
+Arm-T weight-decay transition: lam_c(T) = the wd at which the seed-mean count crosses half the init count, by
+log-linear interpolation along wd; predicted from the spectra of a low-decay reference row at t_r
+(count_pred(lam) = #{log(e_k/e_max) - 2 lr lam (T - t_r) >= log 1e-3}), at T = 20 and 50 epochs.
+usage: e7_dev_headroom.py E8_RUNS_DIR OUT.json"""
+import os, sys, json, csv, glob
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.dirname(__file__))
+from e3_grid import grid, schedules, horizon_rule
+from e7_dev_e3_readouts import cfgof, T as T3
+
+HERE = os.path.join(os.path.dirname(__file__), "..", "..")
+TR = (200, 400, 800, 1560)
+THR = np.log(1e-3)
+
+
+def logrel(e):
+    e = np.maximum(np.asarray(e, float), 1e-300)
+    return np.log(e / e.max())
+
+
+def headroom(e, budget):
+    return int((logrel(e) - 2.0 * budget >= THR).sum())
+
+
+def lam_cross(lams, counts, half):
+    """wd at which the count first falls below half, log-linear between adjacent values; None if never."""
+    for i in range(1, len(lams)):
+        if counts[i] < half <= counts[i - 1]:
+            a, b = np.log(lams[i - 1]), np.log(lams[i])
+            return float(np.exp(a + (counts[i - 1] - half) / (counts[i - 1] - counts[i]) * (b - a)))
+    return None
+
+
+def e3_part():
+    G = grid()
+    F = [json.loads(l) for l in open(os.path.join(HERE, "results/e3/forces.jsonl"))]
+    R = {r["name"]: r for r in csv.DictReader(open(os.path.join(HERE, "results/e3/runs.csv")))}
+    by = {}
+    for f in F:
+        by.setdefault((f["name"], f["seed"]), {})[f["step"]] = f
+    rows = []
+    for (n, s), d in sorted(by.items()):
+        cfg = cfgof(G, n)
+        if None in cfg["wd"]:
+            cfg["wd"] = [5.5, 5.5]
+        lr, wd = schedules(cfg, T3)
+        row = dict(name=n, seed=s, arm=G[n][0], measured=int(R[n]["count_seeds"].split()[s]), step0=horizon_rule(cfg, d[0], T3)["count"])
+        for t in TR:
+            st = max(k for k in d if k <= t)
+            row[f"headroom_{t}"] = headroom(d[st]["eig"], float((lr[st:] * wd[st:]).sum()))
+            row[f"early_{t}"] = headroom(d[st]["eig"], 0.0)
+        rows.append(row)
+    keys = [k for k in rows[0] if k not in ("name", "seed", "arm", "measured")]
+    mae = {a: {k: float(np.mean([abs(r[k] - r["measured"]) for r in rows if r["arm"] == a])) for k in keys} for a in ("T", "P")}
+    tw = sorted([n for n in G if n.startswith("T_wd") and G[n][2] > 0], key=lambda n: G[n][2])
+    lams = [G[n][2] for n in tw]; half = 0.5 * float(R["T_wd0.001"]["count_init"])
+    mean = lambda n, k: float(np.mean([r[k] for r in rows if r["name"] == n]))
+    trans = {k: lam_cross(lams, [mean(n, k) for n in tw], half) for k in ["measured"] + keys}
+    series = {n: dict(wd=G[n][2], **{k: mean(n, k) for k in ["measured"] + keys}) for n in tw}
+    return dict(measured="online-token count at epoch 20 (runs.csv count_seeds)", horizon_steps=T3, runs=len(rows), mae=mae,
+                T_wd_series=series, half_init=half, transition_wd_interpolated=trans, rows=rows)
+
+
+def e8_part(rdir):
+    rows = []
+    for rd in sorted(glob.glob(os.path.join(rdir, "*", "s*", ""))):
+        row_name = rd.rstrip("/").split("/")[-2]; cfg = json.load(open(rd + "config.json"))
+        L = {x["step"]: x for x in map(json.loads, open(rd + "log.jsonl")) if "target_tok" in x}
+        T = cfg["total_steps"]
+        if T not in L:
+            continue
+        lr, wd = schedules(cfg, T)
+        if cfg["wd_switch_epoch"] >= 0:
+            wd = np.where(np.arange(T) >= int(round(cfg["wd_switch_epoch"] * cfg["steps_per_epoch"])), cfg["wd_after"], wd)
+        row = dict(row=row_name, seed=cfg["seed"], arm=row_name[0] if not row_name.startswith("PR") else "PR",
+                   measured=L[T]["target_tok"]["count_1e3"], init=L[0]["target_tok"]["count_1e3"])
+        for t in TR:
+            st = max(k for k in L if k <= t)
+            row[f"headroom_{t}"] = headroom(L[st]["target_tok"]["eig"], float((lr[st:] * wd[st:]).sum()))
+            row[f"early_{t}"] = headroom(L[st]["target_tok"]["eig"], 0.0)
+        rows.append(row)
+    keys = [k for k in rows[0] if k.startswith(("headroom", "early"))]
+    mae = {a: {k: float(np.mean([abs(r[k] - r["measured"]) for r in rows if r["arm"] == a])) for k in keys} for a in ("T", "P", "PR")}
+    per_row = {}
+    for r in rows:
+        per_row.setdefault(r["row"], []).append(r)
+    per_row = {n: dict(measured=float(np.mean([r["measured"] for r in v])), **{k: float(np.mean([r[k] for r in v])) for k in keys})
+               for n, v in sorted(per_row.items())}
+    return dict(measured="target-token count at the end of the 50-epoch run (log.jsonl count_1e3)", runs=len(rows), mae=mae,
+                per_row=per_row, rows=rows)
+
+
+def lam_c_prediction(rdir):
+    """lam_c at T = 20 and 50 epochs from low-decay reference spectra at t_r (Arm T, lr 0.05, const)."""
+    lams = np.exp(np.linspace(np.log(3e-4), np.log(0.1), 801)); lr = 0.05; out = {}
+    F = [json.loads(l) for l in open(os.path.join(HERE, "results/e3/forces.jsonl"))]
+    R = {r["name"]: r for r in csv.DictReader(open(os.path.join(HERE, "results/e3/runs.csv")))}
+    half3 = 0.5 * float(R["T_wd0.001"]["count_init"])
+    refs = {}
+    for n in ("T_wd0", "T_wd0.001"):
+        refs["E3 " + n] = (lambda n: lambda t: [f["eig"] for f in F if f["name"] == n and f["step"] == t])(n), half3
+    for n in ("T_lo",):
+        def sp(t, n=n):
+            out_ = []
+            for f in sorted(glob.glob(os.path.join(rdir, n, "s*", "log.jsonl"))):
+                L = {x["step"]: x for x in map(json.loads, open(f)) if "target_tok" in x}
+                out_.append(L[max(k for k in L if k <= t)]["target_tok"]["eig"])
+            return out_
+        h8 = 0.5 * float(np.mean([(np.asarray(e) >= 1e-3 * max(e)).sum() for e in sp(0)]))
+        refs["E8 " + n] = sp, h8
+    for name, (sp, half) in refs.items():
+        for t in (200, 400):
+            S = sp(t); res = {}
+            for ep, T in (("epoch20", 3900), ("epoch50", 9750)):
+                C = np.mean([[int((logrel(e) - 2 * lr * l * (T - t) >= THR).sum()) for l in lams] for e in S], 0)
+                i = int(np.argmax(C < half)); res[ep] = float(lams[i]) if C[i] < half else None
+            out[f"{name} t_r={t}"] = dict(half_init=half, **res)
+    return out
+
+
+if __name__ == "__main__":
+    rdir, outp = sys.argv[1], sys.argv[2]
+    res = dict(status="development, exploratory; not registered. E3 and E8 were each scored once against their own registrations; "
+                      "these readings are post hoc on delivered runs and inform the E7 registration",
+               definition=__doc__.split("usage:")[0].strip(), E3=e3_part(), E8=e8_part(rdir), lam_c_predicted=lam_c_prediction(rdir),
+               command="code/checks/e7_dev_headroom.py E8_RUNS_DIR OUT.json (E8_RUNS_DIR = the unpacked E8 grid asset)",
+               numpy=np.__version__)
+    json.dump(res, open(outp, "w"), indent=1, allow_nan=False)
+    print(json.dumps(dict(E3_mae=res["E3"]["mae"], E3_trans=res["E3"]["transition_wd_interpolated"], E8_mae=res["E8"]["mae"],
+                          lam_c=res["lam_c_predicted"]), indent=1))

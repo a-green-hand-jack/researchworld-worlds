@@ -1,0 +1,1282 @@
+{
+ "note": "wall time of each training run (final.json seconds, evaluation included) on one GPU of a SLURM cluster; 3 runs (the seeds of one config) shared one GPU at a time, so GPU-hours are lower than run-hours",
+ "runs_total": 135,
+ "run_hours_total": 24.51,
+ "by_gpu": {
+  "Tesla V100-SXM2-32GB": {
+   "runs": 111,
+   "run_hours": 16.88,
+   "configs": [
+    "F_P_base",
+    "F_T_wd0.01",
+    "F_T_wd0.03",
+    "I_P_copy_plr0.1",
+    "I_P_copy_wd0",
+    "I_T_wd0.001_pinit0.3",
+    "I_T_wd0.001_plr10",
+    "I_T_wd0.03_pinit3",
+    "I_T_wd0.03_plr0.1",
+    "I_T_wd0.1_pinit3",
+    "I_T_wd0.1_plr0.1",
+    "P_base",
+    "P_copy",
+    "P_ctx0.4",
+    "P_ema0.9",
+    "P_ema0.99",
+    "P_ema0.999",
+    "P_frozen",
+    "P_nosg",
+    "P_pdepth1",
+    "P_pdepth6",
+    "P_pinit0.1",
+    "P_pinit3",
+    "P_plr0.1",
+    "P_plr10",
+    "P_pwidth128",
+    "P_targets1",
+    "P_tscale_hi",
+    "P_tscale_lo",
+    "P_wd0",
+    "P_wd0.04",
+    "P_wdlarge",
+    "T_plr0.1",
+    "T_plr10",
+    "T_wd0.01",
+    "T_wd0.03",
+    "T_wd0.1"
+   ]
+  },
+  "NVIDIA GeForce GTX 1080 Ti": {
+   "runs": 24,
+   "run_hours": 7.63,
+   "configs": [
+    "T_ema0.99",
+    "T_frozen",
+    "T_nosg",
+    "T_pinit0.3",
+    "T_pinit3",
+    "T_wd0",
+    "T_wd0.001",
+    "T_wd0.003"
+   ]
+  }
+ },
+ "runs": [
+  {
+   "name": "F_P_base",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 9750,
+   "seconds": 1313.7
+  },
+  {
+   "name": "F_P_base",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 9750,
+   "seconds": 1324.5
+  },
+  {
+   "name": "F_P_base",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 9750,
+   "seconds": 1324.0
+  },
+  {
+   "name": "F_T_wd0.01",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 9750,
+   "seconds": 1086.9
+  },
+  {
+   "name": "F_T_wd0.01",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 9750,
+   "seconds": 1086.9
+  },
+  {
+   "name": "F_T_wd0.01",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 9750,
+   "seconds": 1086.7
+  },
+  {
+   "name": "F_T_wd0.03",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 9750,
+   "seconds": 1093.3
+  },
+  {
+   "name": "F_T_wd0.03",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 9750,
+   "seconds": 1093.3
+  },
+  {
+   "name": "F_T_wd0.03",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 9750,
+   "seconds": 1093.2
+  },
+  {
+   "name": "I_P_copy_plr0.1",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 469.2
+  },
+  {
+   "name": "I_P_copy_plr0.1",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 468.7
+  },
+  {
+   "name": "I_P_copy_plr0.1",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 464.7
+  },
+  {
+   "name": "I_P_copy_wd0",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 469.1
+  },
+  {
+   "name": "I_P_copy_wd0",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 468.7
+  },
+  {
+   "name": "I_P_copy_wd0",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 464.7
+  },
+  {
+   "name": "I_T_wd0.001_pinit0.3",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 514.0
+  },
+  {
+   "name": "I_T_wd0.001_pinit0.3",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 519.3
+  },
+  {
+   "name": "I_T_wd0.001_pinit0.3",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 518.5
+  },
+  {
+   "name": "I_T_wd0.001_plr10",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 421.9
+  },
+  {
+   "name": "I_T_wd0.001_plr10",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 421.9
+  },
+  {
+   "name": "I_T_wd0.001_plr10",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 421.7
+  },
+  {
+   "name": "I_T_wd0.03_pinit3",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 439.1
+  },
+  {
+   "name": "I_T_wd0.03_pinit3",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 436.6
+  },
+  {
+   "name": "I_T_wd0.03_pinit3",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 441.5
+  },
+  {
+   "name": "I_T_wd0.03_plr0.1",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 489.2
+  },
+  {
+   "name": "I_T_wd0.03_plr0.1",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 492.7
+  },
+  {
+   "name": "I_T_wd0.03_plr0.1",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 492.5
+  },
+  {
+   "name": "I_T_wd0.1_pinit3",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 423.5
+  },
+  {
+   "name": "I_T_wd0.1_pinit3",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 427.5
+  },
+  {
+   "name": "I_T_wd0.1_pinit3",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 427.1
+  },
+  {
+   "name": "I_T_wd0.1_plr0.1",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 489.1
+  },
+  {
+   "name": "I_T_wd0.1_plr0.1",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 492.6
+  },
+  {
+   "name": "I_T_wd0.1_plr0.1",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "bd947e1407b23e63e31313f2fb6be66364a1d81c",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 492.3
+  },
+  {
+   "name": "P_base",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 473.3
+  },
+  {
+   "name": "P_base",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 473.3
+  },
+  {
+   "name": "P_base",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 473.3
+  },
+  {
+   "name": "P_copy",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 509.2
+  },
+  {
+   "name": "P_copy",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 509.2
+  },
+  {
+   "name": "P_copy",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 502.5
+  },
+  {
+   "name": "P_ctx0.4",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 504.3
+  },
+  {
+   "name": "P_ctx0.4",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 496.5
+  },
+  {
+   "name": "P_ctx0.4",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 504.4
+  },
+  {
+   "name": "P_ema0.9",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 486.9
+  },
+  {
+   "name": "P_ema0.9",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 471.5
+  },
+  {
+   "name": "P_ema0.9",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 472.1
+  },
+  {
+   "name": "P_ema0.99",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 456.7
+  },
+  {
+   "name": "P_ema0.99",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 456.4
+  },
+  {
+   "name": "P_ema0.99",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 456.0
+  },
+  {
+   "name": "P_ema0.999",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 545.2
+  },
+  {
+   "name": "P_ema0.999",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 544.3
+  },
+  {
+   "name": "P_ema0.999",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 543.6
+  },
+  {
+   "name": "P_frozen",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 473.9
+  },
+  {
+   "name": "P_frozen",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 474.0
+  },
+  {
+   "name": "P_frozen",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 473.4
+  },
+  {
+   "name": "P_nosg",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 618.1
+  },
+  {
+   "name": "P_nosg",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 618.0
+  },
+  {
+   "name": "P_nosg",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 618.1
+  },
+  {
+   "name": "P_pdepth1",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 459.5
+  },
+  {
+   "name": "P_pdepth1",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 459.5
+  },
+  {
+   "name": "P_pdepth1",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 459.4
+  },
+  {
+   "name": "P_pdepth6",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 696.1
+  },
+  {
+   "name": "P_pdepth6",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 696.9
+  },
+  {
+   "name": "P_pdepth6",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 696.8
+  },
+  {
+   "name": "P_pinit0.1",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 489.6
+  },
+  {
+   "name": "P_pinit0.1",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 472.3
+  },
+  {
+   "name": "P_pinit0.1",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 467.6
+  },
+  {
+   "name": "P_pinit3",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 456.7
+  },
+  {
+   "name": "P_pinit3",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 455.9
+  },
+  {
+   "name": "P_pinit3",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 455.3
+  },
+  {
+   "name": "P_plr0.1",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 525.9
+  },
+  {
+   "name": "P_plr0.1",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 530.7
+  },
+  {
+   "name": "P_plr0.1",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 529.7
+  },
+  {
+   "name": "P_plr10",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 465.6
+  },
+  {
+   "name": "P_plr10",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 468.4
+  },
+  {
+   "name": "P_plr10",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 468.3
+  },
+  {
+   "name": "P_pwidth128",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 618.6
+  },
+  {
+   "name": "P_pwidth128",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 618.5
+  },
+  {
+   "name": "P_pwidth128",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 618.6
+  },
+  {
+   "name": "P_targets1",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 501.1
+  },
+  {
+   "name": "P_targets1",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 504.5
+  },
+  {
+   "name": "P_targets1",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 498.3
+  },
+  {
+   "name": "P_tscale_hi",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 432.5
+  },
+  {
+   "name": "P_tscale_hi",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 432.5
+  },
+  {
+   "name": "P_tscale_hi",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 432.6
+  },
+  {
+   "name": "P_tscale_lo",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 621.6
+  },
+  {
+   "name": "P_tscale_lo",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 622.9
+  },
+  {
+   "name": "P_tscale_lo",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 622.8
+  },
+  {
+   "name": "P_wd0",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 474.3
+  },
+  {
+   "name": "P_wd0",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 473.9
+  },
+  {
+   "name": "P_wd0",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 473.2
+  },
+  {
+   "name": "P_wd0.04",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 464.7
+  },
+  {
+   "name": "P_wd0.04",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 464.8
+  },
+  {
+   "name": "P_wd0.04",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 464.7
+  },
+  {
+   "name": "P_wdlarge",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 466.9
+  },
+  {
+   "name": "P_wdlarge",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 466.9
+  },
+  {
+   "name": "P_wdlarge",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 466.8
+  },
+  {
+   "name": "T_ema0.99",
+   "seed": 0,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1056.1
+  },
+  {
+   "name": "T_ema0.99",
+   "seed": 1,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1056.1
+  },
+  {
+   "name": "T_ema0.99",
+   "seed": 2,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1039.5
+  },
+  {
+   "name": "T_frozen",
+   "seed": 0,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1057.6
+  },
+  {
+   "name": "T_frozen",
+   "seed": 1,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1050.0
+  },
+  {
+   "name": "T_frozen",
+   "seed": 2,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1052.9
+  },
+  {
+   "name": "T_nosg",
+   "seed": 0,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1307.0
+  },
+  {
+   "name": "T_nosg",
+   "seed": 1,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1337.8
+  },
+  {
+   "name": "T_nosg",
+   "seed": 2,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1291.5
+  },
+  {
+   "name": "T_pinit0.3",
+   "seed": 0,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1040.6
+  },
+  {
+   "name": "T_pinit0.3",
+   "seed": 1,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1056.5
+  },
+  {
+   "name": "T_pinit0.3",
+   "seed": 2,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1051.5
+  },
+  {
+   "name": "T_pinit3",
+   "seed": 0,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1207.1
+  },
+  {
+   "name": "T_pinit3",
+   "seed": 1,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1189.2
+  },
+  {
+   "name": "T_pinit3",
+   "seed": 2,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1218.3
+  },
+  {
+   "name": "T_plr0.1",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 500.3
+  },
+  {
+   "name": "T_plr0.1",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 507.4
+  },
+  {
+   "name": "T_plr0.1",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 506.8
+  },
+  {
+   "name": "T_plr10",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 423.1
+  },
+  {
+   "name": "T_plr10",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 423.1
+  },
+  {
+   "name": "T_plr10",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 422.3
+  },
+  {
+   "name": "T_wd0",
+   "seed": 0,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1052.8
+  },
+  {
+   "name": "T_wd0",
+   "seed": 1,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1055.3
+  },
+  {
+   "name": "T_wd0",
+   "seed": 2,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1032.5
+  },
+  {
+   "name": "T_wd0.001",
+   "seed": 0,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1230.5
+  },
+  {
+   "name": "T_wd0.001",
+   "seed": 1,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1216.5
+  },
+  {
+   "name": "T_wd0.001",
+   "seed": 2,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1227.6
+  },
+  {
+   "name": "T_wd0.003",
+   "seed": 0,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1227.6
+  },
+  {
+   "name": "T_wd0.003",
+   "seed": 1,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1189.4
+  },
+  {
+   "name": "T_wd0.003",
+   "seed": 2,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 1223.7
+  },
+  {
+   "name": "T_wd0.01",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 442.6
+  },
+  {
+   "name": "T_wd0.01",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 441.8
+  },
+  {
+   "name": "T_wd0.01",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 441.3
+  },
+  {
+   "name": "T_wd0.03",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 434.7
+  },
+  {
+   "name": "T_wd0.03",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 434.8
+  },
+  {
+   "name": "T_wd0.03",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 434.8
+  },
+  {
+   "name": "T_wd0.1",
+   "seed": 0,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 503.5
+  },
+  {
+   "name": "T_wd0.1",
+   "seed": 1,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 509.3
+  },
+  {
+   "name": "T_wd0.1",
+   "seed": 2,
+   "gpu": "Tesla V100-SXM2-32GB",
+   "code_commit": "8668858b6b2e052b3f484d4fa967e44d5478d911",
+   "e3_ijepa_md5": "4386b0d60fad7fb0fd28205d0eeb3fee",
+   "steps": 3900,
+   "seconds": 508.8
+  }
+ ],
+ "command": "code/e3_grid.py compute /hutian/e3runs results/e3"
+}

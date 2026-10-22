@@ -1,0 +1,148 @@
+{
+ "experiment_repo_commit": "0d15f49b8fdf4d99a9c0e0ace2e4a124939af15e",
+ "their_commit": "3176215b2d1613fd56d7b7eb99f8126aad9bc9cb",
+ "exit_codes": {
+  "e10_retro": 0,
+  "indep": 0,
+  "diff": 0
+ },
+ "diff": {
+  "json_leaves_delivered": 1902,
+  "json_differing": 9,
+  "row_fields_compared": 21060,
+  "row_fields_differing": 0,
+  "json_differing_keys": [
+   "/provenance/openml_cache_files/openml/openml.org/api/v1/json/data/1592.gz",
+   "/provenance/openml_cache_files/openml/openml.org/api/v1/json/data/41168.gz",
+   "/provenance/openml_cache_files/openml/openml.org/api/v1/json/data/41169.gz",
+   "/provenance/openml_cache_files/openml/openml.org/api/v1/json/data/features/1592.gz",
+   "/provenance/openml_cache_files/openml/openml.org/api/v1/json/data/features/41168.gz",
+   "/provenance/openml_cache_files/openml/openml.org/api/v1/json/data/features/41169.gz",
+   "/provenance/openml_cache_files/openml/openml.org/api/v1/json/data/qualities/41168.gz",
+   "/provenance/openml_cache_files/openml/openml.org/api/v1/json/data/qualities/41169.gz",
+   "/runtime_s"
+  ]
+ },
+ "indep_mismatches_vs_delivered_rows": {
+  "window vs delivered window": 0,
+  "race vs delivered race": 0,
+  "window_lam0 vs delivered window_adamw": 0,
+  "dvd vs delivered dvd": 0,
+  "dvd_nowd vs delivered dvd_nowd": 0,
+  "theirs vs delivered dvd_final_theirs": 0
+ },
+ "indep_race_eq_window": 809,
+ "indep_scores_all": {
+  "race": {
+   "rho": 0.5446025602534764,
+   "mae": 7.947703504601383
+  },
+  "window": {
+   "rho": 0.5452466569394069,
+   "mae": 7.946468936700148
+  },
+  "window_lam0": {
+   "rho": 0.6604254436554328,
+   "mae": 12.833596922073706
+  },
+  "dvd": {
+   "rho": 0.6391499694215204,
+   "mae": 7.950242899477974
+  },
+  "dvd_nowd": {
+   "rho": 0.7780448945560109,
+   "mae": 12.189234582823149
+  },
+  "theirs": {
+   "rho": 0.7771089661816318,
+   "mae": 12.522689838865762
+  },
+  "window_lam_d2": {
+   "rho": 0.39158354300621834,
+   "mae": 9.483604070097599
+  },
+  "dvd_lam_d2": {
+   "rho": 0.2807820001761234,
+   "mae": 8.079385752918743
+  }
+ },
+ "indep_paired_all": {
+  "race-dvd": {
+   "rows": [
+    -0.09454740916804394,
+    -0.13356194702348279,
+    -0.05542108790557923
+   ],
+   "cells": [
+    -0.09454740916804394,
+    -0.13826944070998864,
+    -0.05165543785957938
+   ]
+  },
+  "race-dvd_nowd": {
+   "rows": [
+    -0.23344233430253447,
+    -0.27989078604386725,
+    -0.18959339385031973
+   ],
+   "cells": [
+    -0.23344233430253447,
+    -0.285147751832862,
+    -0.18397568530149802
+   ]
+  },
+  "window_lam0-dvd_nowd": {
+   "rows": [
+    -0.11761945090057813,
+    -0.14619062466880495,
+    -0.09015641305430783
+   ],
+   "cells": [
+    -0.11761945090057813,
+    -0.14722523146360797,
+    -0.09040860403371533
+   ]
+  },
+  "race-theirs": {
+   "rows": [
+    -0.2325064059281554,
+    -0.29139677462414904,
+    -0.16903395217513614
+   ],
+   "cells": [
+    -0.2325064059281554,
+    -0.3049541409758383,
+    -0.1663171866365639
+   ]
+  },
+  "window_lam0-theirs": {
+   "rows": [
+    -0.11668352252619907,
+    -0.16639993445109175,
+    -0.06744047800337688
+   ],
+   "cells": [
+    -0.11668352252619907,
+    -0.1724931844598695,
+    -0.06799515306359608
+   ]
+  },
+  "window_lam_d2-dvd_lam_d2": {
+   "rows": [
+    0.11080154283009491,
+    0.0569049288745091,
+    0.16660771192218854
+   ],
+   "cells": [
+    0.11080154283009491,
+    0.052325573135292035,
+    0.16534443604621915
+   ]
+  },
+  "abs_err race-dvd": [
+   -0.0025393948765904876,
+   -0.404762797973323,
+   0.4011691669512215
+  ]
+ }
+}

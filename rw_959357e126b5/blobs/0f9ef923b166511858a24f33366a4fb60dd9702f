@@ -1,0 +1,78 @@
+"""E7 post hoc (after the single production score; no verdict changes): per-row signed error of the race and the per-row
+comparison with the count at t_r, the transition at the two extra thresholds with the race/measured ratio and the horizon
+ratio at each threshold, the GPU family of the rows bracketing each measured crossing, and the toggles' measured counts
+against the reference row with GPU families. Reads results/e7/score_rows.json and score.json (values copied, not
+re-scored).
+Usage: python3 code/checks/e7_rows.py results/e7/score_rows.json results/e7/score.json OUT.json"""
+import sys, json
+import numpy as np
+
+rows_path, score_path, outp = sys.argv[1:4]
+runs = json.load(open(rows_path)); sc = json.load(open(score_path))
+grid = {k: v for k, v in runs.items() if k.startswith("T_wd")}
+wds = sorted(grid, key=lambda k: float(k[4:]))
+H = ("e20", "e50")
+out = dict(definition="signed error = race (headroom_200) - measured; per-row MAE of headroom_200 and early_200 over the "
+                      "row's seeds; lam_c and ratios copied from score.json (transition, transition_thr)")
+
+signed, permae = {}, {}
+for k in wds:
+    for h in H:
+        ok = [r for r in grid[k] if r.get(h)]
+        e = [r[h]["headroom_200"] - r[h]["measured"] for r in ok]
+        a = {c: float(np.mean([abs(r[h][c] - r[h]["measured"]) for r in ok])) for c in ("headroom_200", "early_200")}
+        cell = f"{k[4:]}|{h}"
+        signed[cell] = dict(mean=float(np.mean(e)), per_seed={str(r["seed"]): r[h]["headroom_200"] - r[h]["measured"]
+                                                              for r in ok},
+                            measured_mean=float(np.mean([r[h]["measured"] for r in ok])),
+                            init_mean=float(np.mean([r["init"] for r in ok])))
+        permae[cell] = dict(a, lower="headroom_200" if a["headroom_200"] < a["early_200"] else
+                            ("early_200" if a["early_200"] < a["headroom_200"] else "tie"))
+out["signed_error_per_row"] = signed
+out["signed_error_range"] = [min(v["mean"] for v in signed.values()), max(v["mean"] for v in signed.values())]
+out["race_below_measured_cells"] = sum(v["mean"] < 0 for v in signed.values())
+out["measured_above_init_cells"] = [c for c, v in signed.items() if v["measured_mean"] > v["init_mean"]]
+out["mae_per_row_race_vs_early"] = permae
+out["early_lower_cells"] = [c for c, v in permae.items() if v["lower"] == "early_200"]
+
+thr = {}
+for t in ("1e-2", "1e-3", "1e-4"):
+    lam = {}
+    for h in H:
+        src = sc[h]["transition"] if t == "1e-3" else sc[h]["transition_thr"][t]
+        lam[h] = {c: src[c]["lam_c"] for c in ("measured", "headroom_200")}
+    rr = {h: (lam[h]["headroom_200"] / lam[h]["measured"]) if lam[h]["measured"] and lam[h]["headroom_200"] else None
+          for h in H}
+    hz = {c: (lam["e50"][c] / lam["e20"][c]) if lam["e50"][c] and lam["e20"][c] else None
+          for c in ("measured", "headroom_200")}
+    thr[t] = dict(lam_c=lam, race_over_measured=rr, within_x1_5={h: (v is not None and 1 / 1.5 <= v <= 1.5)
+                                                                  for h, v in rr.items()},
+                  horizon_ratio=hz, horizon_ratio_below_1={c: (v is not None and v < 1) for c, v in hz.items()})
+out["threshold_rows"] = thr
+
+gm = sc["gpu_mix"]; cross = {}
+for h in H:
+    lc = sc[h]["transition"]["measured"]["lam_c"]
+    lo = max(float(k[4:]) for k in wds if float(k[4:]) <= lc); hi = min(float(k[4:]) for k in wds if float(k[4:]) >= lc)
+    cross[h] = dict(lam_c=lc, bracket=[lo, hi], gpu={str(w): gm[f"T_wd{w}"] for w in (lo, hi)})
+out["crossing_rows_gpu"] = cross
+out["gpu_mix"] = gm
+
+ref = {str(r["seed"]): r for r in grid["T_wd0.0034"]}
+tog = {}
+for k, v in runs.items():
+    if k.startswith("T_wd"):
+        continue
+    tog[k] = dict(gpu=sc["gpu_mix"][k], ref_gpu=sc["gpu_mix"]["T_wd0.0034"],
+                  per_seed={str(r["seed"]): dict(measured=r["e50"]["measured"], race=r["e50"]["headroom_200"],
+                                                 ref_measured=ref[str(r["seed"])]["e50"]["measured"],
+                                                 ref_race=ref[str(r["seed"])]["e50"]["headroom_200"])
+                            for r in v if r.get("e50")})
+out["toggles_e50"] = tog
+json.dump(out, open(outp, "w"), indent=1)
+print(json.dumps({k: out[k] for k in ("signed_error_range", "race_below_measured_cells", "measured_above_init_cells",
+                                      "early_lower_cells", "crossing_rows_gpu")}, indent=1))
+for t, v in thr.items():
+    print(t, v["race_over_measured"], v["horizon_ratio"])
+for k, v in tog.items():
+    print(k, v["gpu"], v["per_seed"])

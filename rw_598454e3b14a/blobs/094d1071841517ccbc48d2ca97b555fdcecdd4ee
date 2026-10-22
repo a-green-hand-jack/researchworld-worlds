@@ -1,0 +1,152 @@
+"""Direction B (plan v2.9 Sec. 3 B; theory/ext_B_stagewise.md): the stage-wise description of an aligned linear JEPA
+direction under time-varying hyperparameters (weight-decay schedules lam_W(t), lam_P(t)), and the baselines it is
+scored against. Gradient descent, copy (or EMA) target, aligned statistics (Prop. 3 of theory/derivations.md).
+
+Schedules are piecewise linear in t = eta * step: knots [(t0, lam0), (t1, lam1), ...], constant after the last knot.
+
+Stage model (`stage_model`), per direction k with (c, s) and initial amplitude w0:
+  1. race (near collapse, A1): the predictor decays under its own weight decay only, p_r(t) = p0 exp(-alpha Lam_P(t)),
+     Lam_P = int lam_P; log w(t) = log w0 + int_0^t g(p_r, lam_W) with g the delivered growth rate (EMA root if kappa);
+  2. capture: the first t with g > 0 and w^2 >= lam_P p_r / (c - p_r s) (the delivered capture nullcline, now with
+     the current lam_P(t));
+  3. post-capture: the predictor is slaved to the direction at the fixed-point relation p = w sqrt(lam_W / lam_P)
+     (balanced, p = w, for lam_W = lam_P), so dw/dt = (p c - p^2 s - lam_W(t)) w, started at the stable fixed point
+     p_+(lam_W(t_c)); a direction is lost when lam_W(t) passes the static threshold c^2 / (4 s) (saddle-node) and
+     regrows after a decrease only if its amplitude still exceeds the separatrix p_-(lam_W) / sqrt(lam_W / lam_P);
+  4. a direction that is never captured keeps its race amplitude (and can still be captured later if the window
+     reopens while p_r is in it).
+The model never simulates the (w, p) system; it integrates the near-collapse quadrature and one slaved 1D ODE."""
+import numpy as np
+from linjepa import growth_rate, window
+
+THR = 0.05
+
+
+def lam_of(knots, t):
+    """Piecewise-linear schedule value at times t (array)."""
+    ks = np.array([k[0] for k in knots], float); vs = np.array([k[1] for k in knots], float)
+    return np.interp(np.asarray(t, float), ks, vs, left=vs[0], right=vs[-1])
+
+
+def static_threshold(c, s):
+    """Largest lam_W at which direction (c, s) still has a non-collapsed fixed point (Prop. 4)."""
+    return np.where(c > 0, c * c / (4 * s), -np.inf)
+
+
+def stage_model(c, s, w0, p0, knotsW, knotsP, alpha=1.0, kappa=None, T=1000.0, dt=0.1, t_out=None):
+    """Stage-wise prediction for all directions. Returns dict with t_out, amplitude W (len(t_out) x n),
+    capture time per direction (nan if never), alive-crossing events [(k, 'gain'|'loss', t)]."""
+    c = np.asarray(c, float); s = np.asarray(s, float); n = c.size
+    w0 = np.broadcast_to(np.asarray(w0, float), c.shape)
+    N = int(round(T / dt)); t = np.arange(N + 1) * dt
+    lW = lam_of(knotsW, t); lP = lam_of(knotsP, t)
+    LamP = np.concatenate([[0.0], np.cumsum(0.5 * (lP[1:] + lP[:-1]) * dt)])
+    pr = p0 * np.exp(-alpha * LamP)
+    # 1-2: race quadrature and capture, vectorised over directions
+    g = growth_rate(pr[:, None], c[None, :], s[None, :], lW[:, None], kappa)
+    F = np.concatenate([np.zeros((1, n)), np.cumsum(0.5 * (g[1:] + g[:-1]) * dt, axis=0)])
+    logw = np.log(w0)[None, :] + F
+    gap = c[None, :] - pr[:, None] * s[None, :]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        cap = np.where(gap > 0, 0.5 * np.log(np.maximum(lP[:, None], 1e-300) * pr[:, None] / np.maximum(gap, 1e-300)),
+                       np.inf)
+    ok = (g > 0) & (logw >= cap)
+    has = ok.any(0)
+    ic = np.where(has, ok.argmax(0), N + 1)
+    tc = np.where(has, t[np.minimum(ic, N)], np.nan)
+    # 3: slaved post-capture ODE, vectorised; before capture the race amplitude
+    W = np.exp(np.minimum(logw, 50.0))
+    w = np.zeros(n); on = np.zeros(n, bool)
+    def f(w, lw, lp):
+        r = np.sqrt(lw / np.maximum(lp, 1e-300))           # p = r w on the slaved manifold
+        p = r * w
+        return (p * c - p * p * s - lw) * w
+    for j in range(N + 1):
+        start = (~on) & (ic == j)
+        if start.any():
+            r = np.sqrt(lW[j] / max(lP[j], 1e-300))
+            pm, pp = window(c[start], s[start], lW[j])
+            w[start] = np.where(np.isfinite(pp), pp, np.exp(cap[j, start])) / r
+            on |= start
+        if on.any():
+            W[j, on] = w[on]
+            if j < N:
+                k1 = f(w, lW[j], lP[j]); k2 = f(w + dt * k1, lW[j + 1], lP[j + 1])
+                w = np.where(on, np.maximum(w + 0.5 * dt * (k1 + k2), 0.0), w)
+    alive = W > THR
+    ev = []
+    ch = np.nonzero(alive[1:] != alive[:-1])
+    for j, k in zip(*ch):
+        ev.append((int(k), "gain" if alive[j + 1, k] else "loss", float(t[j + 1])))
+    if t_out is None:
+        t_out = t
+    idx = np.clip(np.round(np.asarray(t_out) / dt).astype(int), 0, N)
+    return dict(t=np.asarray(t_out, float), W=W[idx], tc=tc, events=ev)
+
+
+# ---------------------------------------------------------------------------------------------- baselines
+def baseline_counts(c, s, w0, p0, knotsW, knotsP, alpha, kappa, T, t_out, ts_ref):
+    """Per-checkpoint alive counts of the baselines (final count = last entry).
+    static_now   : #{c^2 >= 4 s lam_W(t)} (static bound at the current hyperparameters)
+    window_now   : #{g(p0, lam_W(t)) > 0} (fixed-predictor window at the current lam_W = signed mu-wd of 2610.02344)
+    race_frozen0 : the stage model with the schedule frozen at its initial values (the delivered race, schedule ignored)
+    race_frozenT : the same, frozen at the final values
+    race_mean    : the same, at the time-averaged lam over [0, T]
+    early        : the count of the stage model ... not used; the measured count at ts_ref is added by the driver"""
+    t_out = np.asarray(t_out, float)
+    lW = lam_of(knotsW, t_out)
+    out = {}
+    out["static_now"] = [int((static_threshold(c, s) >= x).sum()) for x in lW]
+    out["window_now"] = [int((growth_rate(p0, c, s, x, kappa) > 0).sum()) for x in lW]
+    tt = np.linspace(0, T, 4001)
+    for name, (vw, vp) in {"race_frozen0": (lam_of(knotsW, [0.0])[0], lam_of(knotsP, [0.0])[0]),
+                           "race_frozenT": (lam_of(knotsW, [T])[0], lam_of(knotsP, [T])[0]),
+                           "race_mean": (float(np.mean(lam_of(knotsW, tt))), float(np.mean(lam_of(knotsP, tt))))}.items():
+        r = stage_model(c, s, w0, p0, [(0.0, vw)], [(0.0, vp)], alpha, kappa, T, t_out=t_out)
+        out[name] = [int(x) for x in (r["W"] > THR).sum(1)]
+    return out
+
+
+# ------------------------------------------------------------------------- revision candidate (development)
+def stage_model_qs(c, s, w0, p0, knotsW, knotsP, alpha=1.0, kappa=None, T=1000.0, dt=0.1, t_out=None):
+    """Development revision of the stage model (review of the B1 registration: the A1 race misses the sub-capture
+    plateau near the saddle, and the predictor is not slaved after a loss). One 1D flow per direction:
+      d log w / dt = g(p, lam_W(t))   (the delivered growth rate; EMA root if kappa),
+      p(t + dt)    = max(p(t) exp(-alpha lam_P dt), p_nc(w)),  p_nc(w) = c w^2 / (lam_P + s w^2),
+    i.e. the predictor sits on its own nullcline (dp = 0 given w) when that is above it, and otherwise can fall no
+    faster than its own weight decay allows (dp >= -alpha lam_P p for p < c/s). The stages are not imposed but
+    follow: race (p_nc << p_r, A1), capture (p_nc overtakes p_r with g > 0), post-capture (p on the nullcline, which
+    meets the w-nullcline at the fixed points p_-, p_+), sub-capture plateau (the nullcline crossed at p near p_-,
+    w held near the saddle), loss (lam_W > c^2/(4s): w decays, p falls with it until its own decay limits it, so a
+    later decrease of lam_W can reopen the window around the surviving p). Same returns as stage_model."""
+    c = np.asarray(c, float); s = np.asarray(s, float); n = c.size
+    w0 = np.broadcast_to(np.asarray(w0, float), c.shape)
+    N = int(round(T / dt)); t = np.arange(N + 1) * dt
+    lW = lam_of(knotsW, t); lP = lam_of(knotsP, t)
+    logw = np.log(w0).copy(); p = np.full(n, float(p0))
+    W = np.empty((N + 1, n)); P = np.empty((N + 1, n)); tc = np.full(n, np.nan)
+
+    def pnc(lw, lp):
+        w2 = np.exp(2 * np.minimum(lw, 50.0))
+        return c * w2 / (lp + s * w2)
+    for j in range(N + 1):
+        W[j] = np.exp(np.minimum(logw, 50.0)); P[j] = p
+        if j == N:
+            break
+        g1 = growth_rate(p, c, s, lW[j], kappa)
+        pdec = p * np.exp(-alpha * 0.5 * (lP[j] + lP[j + 1]) * dt)
+        p1 = np.maximum(pdec, pnc(logw + dt * g1, lP[j + 1]))
+        g2 = growth_rate(p1, c, s, lW[j + 1], kappa)
+        logw = logw + 0.5 * dt * (g1 + g2)
+        pq = pnc(logw, lP[j + 1])
+        new = np.isnan(tc) & (pq > pdec) & (g2 > 0)
+        tc[new] = t[j + 1]
+        p = np.maximum(pdec, pq)
+    alive = W > THR
+    ev = []
+    for j, k in zip(*np.nonzero(alive[1:] != alive[:-1])):
+        ev.append((int(k), "gain" if alive[j + 1, k] else "loss", float(t[j + 1])))
+    if t_out is None:
+        t_out = t
+    idx = np.clip(np.round(np.asarray(t_out) / dt).astype(int), 0, N)
+    return dict(t=np.asarray(t_out, float), W=W[idx], P=P[idx], tc=tc, events=ev)

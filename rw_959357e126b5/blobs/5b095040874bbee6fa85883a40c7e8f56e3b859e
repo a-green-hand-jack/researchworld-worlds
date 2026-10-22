@@ -1,0 +1,29 @@
+"""Restore the raw-run files kept outside the tree (results/release_assets.json) to their paths.
+
+Usage: python3 code/fetch_release_assets.py SOURCE
+SOURCE is a local directory holding the asset files (the supplementary archive) or a base URL under which each asset
+is at <SOURCE>/<asset>. Every file is checked by sha256 against the manifest. For a URL ending in the manifest's
+top-level release name, an asset with its own "release" is fetched with that name in its place.
+"""
+import hashlib, json, os, shutil, subprocess, sys
+
+man = json.load(open("results/release_assets.json"))
+src = sys.argv[1].rstrip("/")
+for a in man["assets"]:
+    p = a["path"]
+    if os.path.exists(p) and hashlib.sha256(open(p, "rb").read()).hexdigest() == a["sha256"]:
+        print("ok (present)", p)
+        continue
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    if os.path.isdir(src):
+        shutil.copyfile(os.path.join(src, a["asset"]), p)
+    else:
+        base, rel = src, a.get("release", man["release"])
+        if rel != man["release"] and src.endswith("/" + man["release"]):
+            base = src[:-len(man["release"])] + rel
+        subprocess.run(["curl", "-fsSLo", p, "%s/%s" % (base, a["asset"])], check=True)
+    h = hashlib.sha256(open(p, "rb").read()).hexdigest()
+    if h != a["sha256"]:
+        os.remove(p)
+        sys.exit("sha256 mismatch for %s (got %s, manifest %s); file removed" % (p, h, a["sha256"]))
+    print("ok", p)

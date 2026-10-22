@@ -1,0 +1,23 @@
+{
+ "experiment": "E5 / B1 (plan v2.9 Sec. 3 B, Sec. 4 pre-registration requirements): the stage-wise description of code/e5_theory.py (theory/ext_B_stagewise.md) against the exact gradient-descent flow of the aligned linear JEPA under weight-decay schedules",
+ "status": "tolerances committed before any grid of code/e5_b1.py is run or looked at. Before this file: about ten single exploratory runs (E1b statistics, n = 24, constant / step / ramp schedules, p0 0.5-1.5) used to write the stage model, disclosed here; they are not B1 data and their statistics (sigma linspace(1.5, 0.5, 24), c/s = 0.92^k) are not used by the development or held-out grids. Two pilot runs of the development grid (ids 0 and 360) were timed (4.6 s and 5.2 s) without printing or keeping their outputs.",
+ "scope": "aligned statistics and an aligned orthogonal initialisation (Prop. 3 of theory/derivations.md), P0 = p0 I, full-batch gradient descent, eta = 0.1, copy target or EMA target; weight decay lam_W(t) on the encoder and lam_P(t) = rho lam_W(t) on the predictor, piecewise-linear schedules (constant, step up, step down, linear ramp up, ramp down, pulse low-high-low). Generic (Gaussian) initialisations and minibatch noise are outside B1 (noise is B3).",
+ "ground_truth": "exact per-direction gradient-descent maps in np.longdouble (80-bit). B1-0 checks the reduction: on one seed per (pair 0, p0 = 1, variant, schedule) the full matrix flow in float64 runs too",
+ "alive": "|w_k| > 0.05 (the delivered SV_THR); events are changes of the alive state that persist at least 10 time units (pairs of opposite changes of one direction closer than that are dropped, in truth and prediction alike)",
+ "statements": {
+  "B1_0": {"claim": "the matrix flow under any schedule equals the per-direction maps (Prop. 3 extended to lam(t))", "metric": "share of (direction, checkpoint) alive states and of checkpoint ranks equal between matrix flow and maps, 40 checkpoints", "tolerance": "both >= 0.99 on every checked run"},
+  "B1a": {"claim": "the alive/dead state of every direction over time follows the stage model (race with Lam(t), capture on the current nullcline, slaved post-capture ODE: loss when lam_W passes c^2/(4 s), regrowth only above the separatrix)", "metric": "share of (direction, checkpoint) pairs with the same alive state, 40 equally spaced checkpoints per run", "tolerance": ">= 0.97 over all runs, >= 0.95 over the non-constant schedules, and >= 0.93 in every (schedule kind x variant) cell"},
+  "B1b": {"claim": "which directions are gained, lost and regained, and when", "metric": "the i-th measured event of a type (gain, loss) on a direction is matched with the i-th predicted one; timing error |ln((t_pred - t_ref)/(t_meas - t_ref))| with t_ref the latest schedule knot at or before min(t_pred, t_meas) (0 if none), floored at one step; unmatched events = difference in event counts per direction and type", "tolerance": "median error <= 0.10, 90th percentile <= 0.30, unmatched events <= 5% of all events, over the non-constant schedules"},
+  "B1c": {"claim": "the final rank", "metric": "|predicted - measured| alive count at the horizon", "tolerance": "within-1 share >= 0.95 over all runs; on the non-constant schedules the stage model's MAE is lower than every baseline's with the paired bootstrap 95% CI of (baseline error - stage error) above 0"}
+ },
+ "baselines": {
+  "static_now": "#{c^2 >= 4 s lam_W(t)}: the static bound at the current hyperparameters",
+  "window_now": "#{g(p0, lam_W(t)) > 0}: the fixed-predictor window at the current weight decay (the signed mu criterion of 2610.02344 with its weight-decay floor)",
+  "race_frozen0": "the race with the schedule frozen at its initial values (the delivered criterion applied to the run's first hyperparameters)",
+  "race_frozenT": "the same frozen at the final values",
+  "race_mean": "the same at the time-averaged weight decay",
+  "early": "the measured count at the first schedule change (at 0.1 T for constant schedules), carried to the horizon"
+ },
+ "development_then_held_out": "the development grid (code/e5_b1.py GRIDS['dev']) may change the stage model; the held-out grid, its statistics, values and seeds disjoint from development, is registered in results/e5/prediction.json with the frozen model commit before it runs, and is scored once against these tolerances",
+ "exit": "if B1 fails on the held-out grid (losses not timed by the crossings), the post-capture claim is reported as failed and the design rules derived from B are dropped (plan Sec. 3 B)"
+}

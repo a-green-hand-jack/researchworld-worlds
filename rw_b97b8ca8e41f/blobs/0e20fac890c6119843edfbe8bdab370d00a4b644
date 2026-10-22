@@ -1,0 +1,29 @@
+{
+  "config": {
+    "batch_size": 256,
+    "config_id": "c_mask_low",
+    "ema_tau": 0.99,
+    "epochs": 50,
+    "hidden_dimension": 192,
+    "mask_fraction": 0.25,
+    "num_patches": 64,
+    "patch_size": 4,
+    "predictor_depth": 2,
+    "predictor_dimension": 64,
+    "predictor_lr_ratio": 1.0,
+    "predictor_scale": 1.0,
+    "predictor_weight_decay": 0.0001,
+    "steps": 0,
+    "tier": "C_real_cifar10",
+    "weight_decay": 0.0001
+  },
+  "protocol": {
+    "mask_fraction_semantics": "expected_masked_fraction; per-example masked count is Binomial(64, mask_fraction)",
+    "mask_geometry": "independent_per_patch_no_contiguous_blocks",
+    "mask_sampler": "independent_patch_bernoulli",
+    "rank_evaluation_mask_policy": "one fixed seeded Bernoulli context mask reused at every checkpoint",
+    "rank_evaluation_mask_sampler": "independent_patch_bernoulli",
+    "training_mask_policy": "independent Bernoulli patch visibility resampled for every training batch"
+  },
+  "seed": 0
+}

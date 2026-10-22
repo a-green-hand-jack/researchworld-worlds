@@ -1,0 +1,19 @@
+{\footnotesize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+Arm & runs & converged & exact rank & rank MAE & \shortstack{window\\MAE} & \shortstack{static\\MAE} \\
+\midrule
+population, Bernoulli & 216 & 94\% & 0.96 [0.93, 0.98] & \textbf{0.08 [0.04, 0.14]} & 2.19 & 4.33 \\
+population, block & 216 & 100\% & 0.99 [0.97, 1.00] & \textbf{0.01 [0.00, 0.03]} & 0.26 & 2.81 \\
+population, multiblock & 216 & 99\% & 1.00 [1.00, 1.00] & \textbf{0.00 [0.00, 0.00]} & 0.65 & 4.99 \\
+population, non-cyclic block (general) & 216 & 97\% & 0.86 [0.81, 0.91] & \textbf{0.19 [0.12, 0.25]} & 0.62 & 3.00 \\
+SGD, Bernoulli & 54 & 94\% & 0.67 [0.54, 0.78] & \textbf{0.78 [0.44, 1.19]} & 2.78 & 4.06 \\
+SGD, block & 54 & 100\% & 0.89 [0.80, 0.96] & \textbf{0.17 [0.06, 0.31]} & 0.50 & 2.00 \\
+tanh, Bernoulli & 54 & 52\% & 0.17 [0.07, 0.28] & 20.50 [15.50, 25.70] & 20.72 & \textbf{19.11} \\
+tanh, block & 54 & 94\% & 0.78 [0.67, 0.89] & \textbf{0.67 [0.31, 1.11]} & 1.00 & 2.06 \\
+two-layer tanh, Bernoulli (general) & 54 & 91\% & 0.07 [0.02, 0.15] & 4.63 [3.83, 5.52] & \textbf{3.83} & 5.26 \\
+two-layer tanh, block (general) & 54 & 98\% & 0.57 [0.44, 0.70] & 0.76 [0.50, 1.04] & \textbf{0.11} & 2.24 \\
+\bottomrule
+\end{tabular}
+}

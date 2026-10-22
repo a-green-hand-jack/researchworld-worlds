@@ -1,0 +1,17 @@
+# Toy check (paper-repo working note, not a study result): sign of the predictor-lr effect
+# on the surviving fraction of the mode ODE, under two weight-decay conventions:
+#  coupled: p' = alpha*(w^2(s-pc) - lp*p)      (decay coefficient lp fixed)
+#  fixed rate: p' = alpha*w^2(s-pc) - etaP*p    (absolute decay rate etaP fixed)
+import numpy as np
+rng=np.random.default_rng(4); n=400
+c=10**rng.uniform(-1.5,0.5,n); s=rng.uniform(0.1,1.0,n)*c
+lw=10**rng.uniform(-3,-1.3,n); p0=10**rng.uniform(-1,0.5,n); w0=10**rng.uniform(-4,-2,n)
+def run(alpha,coupled,T=4000,dt=0.01):
+    w=w0.copy(); p=p0.copy()
+    for _ in range(int(T/dt)):
+        g=w*w*(s-p*c)
+        dp=alpha*(g-lw*p) if coupled else alpha*g-lw*p
+        w=np.minimum(w+dt*w*(p*s-p*p*c-lw),10.0); p=p+dt*dp
+    return (w>1e-3).mean()
+for coupled in (True,False):
+    print('coupled' if coupled else 'fixed-rate', ' '.join(f"alpha={a}: {run(a,coupled):.3f}" for a in (0.3,1.0,3.0)))

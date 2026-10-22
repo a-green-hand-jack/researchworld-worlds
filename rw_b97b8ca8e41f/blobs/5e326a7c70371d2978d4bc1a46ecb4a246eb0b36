@@ -1,0 +1,85 @@
+"""P2 (C2): predicted against observed late rank, per run, for the early-gain count
+R-hat and the fixed-point count.
+
+Input: experiment-repo results/raw/rank_prediction.csv (commit in data.py), one row
+per run (8 seeds per configuration); checked against
+results/derived/rank_prediction_metrics.csv.
+x = observed_late_collapse_aware_rank; y = predicted_phi_rank (R-hat, left) or
+predicted_fixed_point_rank (right). Ranks are integers, so each (observed, predicted)
+cell is a disc with area proportional to its number of held-out runs (count beside it); the open ring
+is the calibration runs (all in one cell). Flagged, drawn apart from the discs:
+target_gradient_enabled (stop-gradient removed, outside Prop. survival; orange x left of its cell)
+and, for R-hat only, lambda_P = 0 (phi_prediction_regime == out_of_regime, R-hat = 16;
+arrow), which the derived metrics exclude from R-hat errors.
+"""
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import style, data
+
+style.apply()
+R = data.results()
+p = pd.read_csv(R / "raw" / "rank_prediction.csv")
+m = pd.read_csv(R / "derived" / "rank_prediction_metrics.csv")
+OBS = "observed_late_collapse_aware_rank"
+assert len(p) == 344 and (p[OBS] == p[OBS].round()).all()
+tg = p.config_id.eq("target_gradient_enabled")
+oor = p.phi_prediction_regime.eq("out_of_regime")
+ho = p.split.eq("held_out")
+
+PRED = [("predicted_phi_rank", "Phi", r"early-gain count $\hat R$", style.COLORS[2], ~oor),
+        ("predicted_fixed_point_rank", "fixed_point", r"fixed-point count", style.THEORY, ~oor | oor)]
+AREA = 1.6  # pt^2 per run
+YTOP = 5.8
+
+fig, axes = plt.subplots(1, 2, figsize=(style.TEXTWIDTH / 2, 1.75), sharex=True, sharey=True,
+                         gridspec_kw=dict(wspace=0.12))
+stats = {}
+for ax, (col, key, title, c, keep) in zip(axes, PRED):
+    err = (p[col] - p[OBS]).abs()
+    sel = ho & keep
+    mae = err[sel].mean()
+    ref = m[(m.split == "held_out") & (m.prediction == key) &
+            (m.observed_rank_definition == "collapse_aware")].mean_absolute_rank_error.item()
+    assert np.isclose(mae, ref), (key, mae, ref)
+    exact = (err[ho & ~oor] == 0).mean()  # same 248 in-regime held-out runs for both counts
+    stats[key] = dict(n=int(sel.sum()), mae=mae, exact=exact)
+    ax.plot([-0.5, 3.5], [-0.5, 3.5], color="#999999", lw=0.6, ls="--", zorder=1)
+    cal = p[~ho].groupby([OBS, col]).size()
+    for (o, y), n in p[ho & ~tg & keep].groupby([OBS, col]).size().items():
+        ax.scatter(o, y, s=AREA * n, color=c, alpha=0.75, lw=0, zorder=3)
+        rad = np.sqrt(AREA * max(n, cal.get((o, y), 0))) / 2  # clear of disc and ring
+        side = (o, y) in cal  # calibration cell: label right, above is crowded
+        ax.annotate(str(n), (o, y), xytext=(rad + 1, 0) if side else (0, rad + 0.5),
+                    textcoords="offset points", fontsize=6.5, ha="left" if side else "center",
+                    va="center" if side else "bottom", color="0.25")
+    for (o, y), n in p[~ho].groupby([OBS, col]).size().items():
+        ax.scatter(o, y, s=AREA * n, facecolors="none", edgecolors=c, lw=0.7, zorder=2)
+        ax.annotate(f"{n} cal.", (o, y), xytext=(0, -np.sqrt(AREA * n) / 2 - 1), textcoords="offset points",
+                    fontsize=6.5, ha="center", va="top", color="0.25")
+    for (o, y), n in p[tg].groupby([OBS, col]).size().items():
+        ax.scatter(o - 0.3, y, s=14, marker="x", color=style.COLORS[1], lw=0.8, zorder=4)
+    if key == "Phi":
+        for o, n in p[oor].groupby(OBS).size().items():
+            ax.annotate(rf"{p[oor][col].iloc[0]:g} ($\lambda_P{{=}}0$)", (o, YTOP - 0.05),
+                        xytext=(o, YTOP - 1.1), ha="center", va="top", fontsize=6.5, color=c,
+                        arrowprops=dict(arrowstyle="->", color=c, lw=0.7))
+    ax.text(0.97, 0.03, f"held-out MAE {mae:.2f}\nexact {100*exact:.0f}%", transform=ax.transAxes,
+            va="bottom", ha="right", fontsize=6.5)
+    ax.set_title(title, fontsize=7, color=c if key == "Phi" else "k")
+    ax.set_xlim(-0.55, 3.8); ax.set_ylim(-0.6, YTOP)
+    ax.set_xticks(range(4)); ax.set_yticks(range(6))
+    ax.set_xlabel("observed rank", fontsize=7)
+axes[0].set_ylabel("predicted rank")
+fig.legend([Line2D([], [], color="0.4", marker="o", ls="", ms=4, alpha=0.75),
+            Line2D([], [], color="0.4", marker="o", ls="", ms=5, mfc="none", mew=0.7),
+            Line2D([], [], color=style.COLORS[1], marker="x", ls="", ms=3.5, mew=0.8)],
+           ["held-out runs", "calibration runs", "stop-grad. removed"],
+           loc="lower center", bbox_to_anchor=(0.5, 0.97), ncol=3, fontsize=6.5, handletextpad=0.2,
+           columnspacing=0.8)
+style.save(fig, "fig_rank")
+d = (p.predicted_phi_rank - p[OBS]).abs() - (p.predicted_fixed_point_rank - p[OBS]).abs()
+d = d[ho & ~oor]
+print({k: {a: round(b, 4) for a, b in v.items()} for k, v in stats.items()},
+      "R-hat closer/tied/worse:", (d < 0).sum(), (d == 0).sum(), (d > 0).sum())

@@ -1,0 +1,49 @@
+"""E7 post hoc (after the single production score): the race's horizon ratio against the measured one, with one joint
+seed resample per draw (code/e7_score.seed_resample, the same draw for both quantities and both horizons), and the
+per-row seed means of measured, race (headroom at t_r = 200) and the count at t_r. A second resample draws runs within
+each row independently (the review's construction); both intervals are reported, each with the ratios' own intervals
+from the same draws and the number of draws where both ratios are defined (n_ok). Reads results/e7/score_rows.json and
+score.json's half_init; scorer functions imported unchanged.
+Usage: python3 code/checks/e7_ratio_gap.py results/e7/score_rows.json results/e7/score.json OUT.json"""
+import sys, os, json, math
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import e7_score as S
+
+rows_path, score_path, outp = sys.argv[1:4]
+runs = json.load(open(rows_path)); half = json.load(open(score_path))["half_init"]["1e-3"]
+rows = [r for k, v in runs.items() if k.startswith("T_wd") for r in v if r["e20"] and r["e50"]]
+wds = sorted({r["wd"] for r in rows}); by = {w: [r for r in rows if r["wd"] == w] for w in wds}
+
+
+def ratio(sel, key):
+    lam = lambda h: S.lam_cross(wds, [np.mean([r[h][key] for r in sel[w]]) for w in wds], half)
+    a, b = lam("e50"), lam("e20")
+    return a / b if a and b else None
+
+
+def boot(draw):
+    rng = np.random.default_rng(5); d, rm, rr = [], [], []
+    for _ in range(4000):
+        sel = draw(rng)
+        a, b = ratio(sel, "measured"), ratio(sel, "headroom_200")
+        if a and b:
+            d.append(b - a); rm.append(a); rr.append(b)
+    pc = lambda v: [float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5))]
+    return dict(ci=pc(d), measured_ratio_ci=pc(rm), race_ratio_ci=pc(rr), n_ok=len(d), draws=4000)
+
+
+tally = {}
+joint = boot(lambda rng: S.seed_resample(by, rng, tally))
+within = boot(lambda rng: {w: [by[w][i] for i in rng.integers(0, len(by[w]), len(by[w]))] for w in wds})
+m, rc = ratio(by, "measured"), ratio(by, "headroom_200")
+cells = {f"{w}|{h}": {k: float(np.mean([r[h][k] for r in by[w]])) for k in ("measured", "headroom_200", "early_200")}
+         for w in wds for h in ("e20", "e50")}
+out = dict(measured_ratio=m, race_ratio=rc, race_minus_measured=rc - m,
+           ci=joint["ci"], defined_draws=joint["n_ok"], joint_seed_resample=dict(joint, empty_row_share=S.empty_share(tally)),
+           within_row_resample=within,
+           empty_row_share=S.empty_share(tally), log_share=math.log(rc) / math.log(m),
+           race_below_measured_cells=sum(v["headroom_200"] < v["measured"] for v in cells.values()), cells_total=len(cells),
+           measured_above_count_at_tr=[k for k, v in cells.items() if v["measured"] > v["early_200"]], cells=cells)
+json.dump(out, open(outp, "w"), indent=1)
+print(json.dumps({k: v for k, v in out.items() if k != "cells"}, indent=1))

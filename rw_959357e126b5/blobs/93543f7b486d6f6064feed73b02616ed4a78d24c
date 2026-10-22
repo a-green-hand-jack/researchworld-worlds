@@ -1,0 +1,145 @@
+"""Independent recomputation of the E7 production verdict numbers from the raw run logs (release ext-runs-3
+e7__production__runs7.tar.gz), without importing experiment-repo code except for the step-0 rule and mu counts,
+which are taken from the delivered per-run rows (results/e7/score_rows.json).
+
+Recomputed here from log.jsonl / config.json only:
+  measured count at epoch 20 and at the end (eigenvalues >= 1e-3 * max of the logged target-token spectrum; checked
+  against the logged count_1e3), the early count at t_r = 200, the headroom race at t_r = 200 (log(e_k/e_max) minus
+  twice the decoupled decay budget sum lr*wd from the read step to the horizon, >= log 1e-3) with my own schedule
+  (linear warm-up then cosine to 0; constant wd), lam_c of the seed-mean counts (first fall below half the seed-mean
+  init count, log-linear between rows), the horizon ratio and H3 ratio with a seed bootstrap within rows, per-run MAE,
+  and H2 paired differences (seed-cluster bootstrap and t interval with 4 df on per-seed means).
+Usage: python3 indep.py RUNS_DIR SCORE_ROWS.json DELIVERED_SCORE.json OUT.json"""
+import os, sys, json, glob, math
+import numpy as np
+from scipy import stats
+RUNS, ROWS, SCORE, OUT = sys.argv[1:5]
+
+def sched(cfg, T):
+    tf = cfg["total_full"]; warm = int(round(cfg["warmup_frac"] * tf)); lr0 = cfg["lr"]
+    lr = np.empty(T)
+    for s in range(T):
+        if cfg["sched"] == "const":
+            lr[s] = lr0
+        elif s < warm:
+            lr[s] = lr0 * s / max(warm, 1)
+        else:
+            u = min(max((s - warm) / max(tf - warm, 1), 0.0), 1.0)
+            lr[s] = 0.5 * lr0 * (1 + math.cos(math.pi * u))
+    w0, w1 = cfg["wd"]
+    f = np.minimum(np.arange(T) / tf, 1.0)
+    wd = w1 + (w0 - w1) * 0.5 * (1 + np.cos(np.pi * f))
+    return lr, wd
+
+def cnt(e, thr=1e-3, budget=0.0):
+    e = np.asarray(e, float); m = e.max()
+    with np.errstate(divide="ignore"):
+        lr_ = np.log(np.maximum(e, 1e-300) / m)
+    return int((lr_ - 2 * budget >= math.log(thr)).sum())
+
+runs = {}
+issues = []
+for rd in sorted(glob.glob(os.path.join(RUNS, "*", "s*", ""))):
+    name = os.path.basename(os.path.dirname(rd[:-1])); cfg = json.load(open(os.path.join(rd, "config.json")))
+    L = [json.loads(l) for l in open(os.path.join(rd, "log.jsonl"))]
+    T = {x["step"]: x for x in L if "target_tok" in x}
+    spe = cfg["steps_per_epoch"]; H = {"e20": 20 * spe, "e50": cfg["total_full"]}
+    lr, wd = sched(cfg, cfg["total_full"])
+    r = dict(seed=cfg["seed"], wd=cfg["wd"][0], opt=cfg["opt"], init=cnt(T[0]["target_tok"]["eig"]))
+    if r["init"] != T[0]["target_tok"]["count_1e3"]:
+        issues.append(("init count", name, cfg["seed"], r["init"], T[0]["target_tok"]["count_1e3"]))
+    st = max(k for k in T if k <= 200); e = T[st]["target_tok"]["eig"]
+    for h, te in H.items():
+        if te not in T:
+            r[h] = None; issues.append(("missing horizon", name, cfg["seed"], h)); continue
+        m = cnt(T[te]["target_tok"]["eig"])
+        if m != T[te]["target_tok"]["count_1e3"]:
+            issues.append(("count", name, cfg["seed"], h, m, T[te]["target_tok"]["count_1e3"]))
+        bud = float((lr[st:te] * wd[st:te]).sum())
+        r[h] = dict(measured=m, early_200=cnt(e), headroom_200=cnt(e, budget=bud), budget=bud, read_step=st)
+    runs.setdefault(name, []).append(r)
+
+D = json.load(open(ROWS))
+cmp = {"rows_compared": 0, "mismatch": []}
+for n, v in runs.items():
+    dv = {x["seed"]: x for x in D[n]}
+    for r in v:
+        for h in ("e20", "e50"):
+            for k in ("measured", "early_200", "headroom_200"):
+                cmp["rows_compared"] += 1
+                if dv[r["seed"]][h][k] != r[h][k]:
+                    cmp["mismatch"].append((n, r["seed"], h, k, r[h][k], dv[r["seed"]][h][k]))
+        for h in ("e20", "e50"):   # bring the delivered step0 and mu predictors in (not recomputed here)
+            for k in ("step0", "mu_diag", "mu_wd", "mu_tight_run", "mu_k2", "trend_200"):
+                r[h][k] = dv[r["seed"]][h].get(k)
+
+c5 = [r for n, v in runs.items() if n.startswith("T_wd") for r in v]
+half = 0.5 * np.mean([r["init"] for r in c5])
+wds = sorted({r["wd"] for r in c5}); seeds = sorted({r["seed"] for r in c5})
+
+def lamc(rows_by_w, h, key):
+    cs = [np.mean([r[h][key] for r in rows_by_w[w]]) for w in wds]
+    for i in range(1, len(wds)):
+        if cs[i] < half <= cs[i - 1]:
+            a, b = math.log(wds[i - 1]), math.log(wds[i])
+            return math.exp(a + (cs[i - 1] - half) / (cs[i - 1] - cs[i]) * (b - a))
+    return None
+
+by = {w: [r for r in c5 if r["wd"] == w] for w in wds}
+rng = np.random.default_rng(2026)
+def boot(fn, nb=4000):
+    out = []
+    for _ in range(nb):
+        sel = {w: [by[w][i] for i in rng.integers(0, len(by[w]), len(by[w]))] for w in wds}
+        out.append(fn(sel))
+    ok = [x for x in out if x is not None]
+    return [float(np.percentile(ok, 2.5)), float(np.percentile(ok, 97.5))], 1 - len(ok) / nb
+
+res = {"half": half, "issues": issues, "row_comparison": {"compared": cmp["rows_compared"], "mismatches": cmp["mismatch"][:50], "n_mismatch": len(cmp["mismatch"])}}
+for h in ("e20", "e50"):
+    res[h] = {}
+    for k in ("measured", "headroom_200", "early_200", "step0", "mu_tight_run", "mu_wd"):
+        res[h]["lam_c_" + k] = lamc(by, h, k)
+    res[h]["lam_c_measured_ci"], res[h]["lam_c_measured_nocross"] = boot(lambda s: lamc(s, h, "measured"))
+    res[h]["seed_mean_measured_per_row"] = {str(w): float(np.mean([r[h]["measured"] for r in by[w]])) for w in wds}
+    res[h]["seed_mean_headroom_per_row"] = {str(w): float(np.mean([r[h]["headroom_200"] for r in by[w]])) for w in wds}
+    res[h]["mae"] = {k: float(np.mean([abs(r[h][k] - r[h]["measured"]) for r in c5 if r[h][k] is not None]))
+                     for k in ("headroom_200", "early_200", "step0", "mu_diag", "mu_wd", "mu_tight_run", "mu_k2", "trend_200")}
+    def h3(s):
+        a, b = lamc(s, h, "headroom_200"), lamc(s, h, "measured")
+        return a / b if a and b else None
+    res[h]["h3_ratio"] = h3(by); res[h]["h3_ci"], _ = boot(h3)
+    res[h]["H2"] = {}
+    for k in ("step0", "early_200", "mu_tight_run", "mu_k2", "mu_wd", "mu_diag", "trend_200"):
+        per = {s: [abs(r[h][k] - r[h]["measured"]) - abs(r[h]["headroom_200"] - r[h]["measured"]) for r in c5 if r["seed"] == s and r[h][k] is not None] for s in seeds}
+        pm = np.array([np.mean(per[s]) for s in seeds]); allv = np.concatenate([per[s] for s in seeds])
+        bs = []
+        for _ in range(4000):
+            pick = rng.choice(seeds, len(seeds)); bs.append(np.mean(np.concatenate([per[s] for s in pick])))
+        tci = stats.t.interval(0.95, len(seeds) - 1, loc=pm.mean(), scale=pm.std(ddof=1) / math.sqrt(len(seeds)))
+        res[h]["H2"][k] = dict(diff=float(allv.mean()), boot=[float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))],
+                               t=[float(tci[0]), float(tci[1])], per_seed=[float(x) for x in pm])
+def hr(s):
+    a, b = lamc(s, "e50", "measured"), lamc(s, "e20", "measured")
+    return a / b if a and b else None
+res["horizon_ratio"] = hr(by); res["horizon_ratio_ci"], res["horizon_ratio_undefined"] = boot(hr)
+def hrr(s):
+    a, b = lamc(s, "e50", "headroom_200"), lamc(s, "e20", "headroom_200")
+    return a / b if a and b else None
+res["horizon_ratio_headroom"] = hrr(by)
+# delivered values side by side
+S = json.load(open(SCORE))
+res["delivered"] = {h: dict(lam_c=S[h]["transition"]["measured"], mae={k: S[h]["mae"].get(k) for k in res[h]["mae"]},
+                            h3=S[h].get("h3_ratio"), cluster={k: S[h]["headroom200_vs_cluster"].get(k) for k in res[h]["H2"]})
+                    for h in ("e20", "e50")}
+res["delivered"]["horizon_ratio"] = S["horizon_ratio"]["measured"]
+# AdamW toggle: decay budget and counts
+res["toggles"] = {n: [dict(seed=r["seed"], measured=r["e50"]["measured"], headroom=r["e50"]["headroom_200"], early=r["e50"]["early_200"], budget=r["e50"]["budget"]) for r in v]
+                  for n, v in runs.items() if not n.startswith("T_wd")}
+json.dump(res, open(OUT, "w"), indent=1, default=float)
+print(json.dumps({k: res[k] for k in ("half", "horizon_ratio", "horizon_ratio_ci", "horizon_ratio_headroom")}, default=float))
+for h in ("e20", "e50"):
+    print(h, "lam_c", res[h]["lam_c_measured"], res[h]["lam_c_measured_ci"], "headroom", res[h]["lam_c_headroom_200"], "h3", res[h]["h3_ratio"], res[h]["h3_ci"])
+    print(" mae", {k: round(v, 2) for k, v in res[h]["mae"].items()})
+    print(" H2", {k: (round(v["diff"], 2), [round(x, 2) for x in v["boot"]], [round(x, 2) for x in v["t"]]) for k, v in res[h]["H2"].items()})
+print("issues", issues[:10], "row mismatches", len(cmp["mismatch"]), cmp["mismatch"][:5])

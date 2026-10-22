@@ -1,0 +1,22 @@
+% Notation shared by all sections.
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{assumption}{Assumption}
+\crefname{assumption}{Assumption}{Assumptions}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\sg}{\operatorname{sg}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\rank}{\operatorname{rank}}
+\newcommand{\Wc}{W}          % context (online) encoder
+\newcommand{\Wt}{\bar W}     % target encoder
+\newcommand{\Pred}{P}        % predictor
+% Draft marker; must not appear in the delivered PDF.
+\newcommand{\draft}[1]{\textcolor{red}{[#1]}}

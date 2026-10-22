@@ -1,0 +1,73 @@
+"""Summary numbers quoted in sections/experiments.tex (Tier A results).
+
+Reads experiment-repo results/ at the commit given as argv[2]; usage:
+  python notes/tierA_numbers.py /path/to/experiment-repo/results <commit>
+All quantities are computed from experiment-repo's committed CSVs; nothing is fitted here.
+"""
+import sys
+import numpy as np
+import pandas as pd
+
+R, commit = sys.argv[1], sys.argv[2]
+print(f"source: experiment-repo {commit} results/")
+pd.set_option("display.width", 220)
+
+o = pd.read_csv(f"{R}/raw/ode_vs_full.csv")
+print(f"ode_vs_full: {len(o)} rows, max traj rel err {o.max_trajectory_relative_error.max():.2e}, "
+      f"max |final rank diff| {o.final_rank_difference.abs().max()}")
+
+e = pd.read_csv(f"{R}/raw/early_rate_scatter.csv")
+e = e[~e.experiment.isin(["stop_gradient_ablation", "ode_vs_full"])]
+x, y = e.theory_covariance_growth_rate, e.log_eigenvalue_slope
+bott = e.config_id.str.startswith("design_bottleneck")
+agree = np.sign(x) == np.sign(y)
+print(f"P1: {len(e)} directions, {e.run_id.nunique()} runs, window steps "
+      f"{e.early_window_first_step.min()}-{e.early_window_last_step.max()}; r={np.corrcoef(x, y)[0, 1]:.4f}; "
+      f"median |resid| {(y - x).abs().median():.4f}; max |resid| {(y - x).abs().max():.4f}; "
+      f"sign agreement {agree.mean():.4f} ({(~agree).sum()} disagree, {(~agree & bott).sum()} bottleneck)")
+dis = e[~agree]
+print("P1 disagreements by config:\n" + dis.groupby("config_id").agg(
+    n=("seed", "size"), max_abs_pred=("theory_covariance_growth_rate", lambda v: v.abs().max()),
+    max_abs_meas=("log_eigenvalue_slope", lambda v: v.abs().max())).to_string())
+print(f"P1 |pred|>0.02: sign agreement {agree[x.abs() > 0.02].mean():.4f} of {(x.abs() > 0.02).sum()}")
+print(f"P1 bottleneck: n={bott.sum()}, r={np.corrcoef(x[bott], y[bott])[0, 1]:.4f}, "
+      f"max |resid| {(y - x)[bott].abs().max():.4f}, measured==0 exactly {(y[bott] == 0).sum()}")
+
+s = pd.read_csv(f"{R}/raw/run_summary.csv")
+s = s[s.experiment != "ode_vs_full"]
+g = s.groupby("config_id").agg(n=("seed", "size"), rel=("final_threshold_rank", "mean"),
+                               ca=("collapse_aware_rank", "mean"), ca_sd=("collapse_aware_rank", "std"),
+                               eff=("final_effective_rank", "mean"),
+                               collapsed=("collapsed", "mean"), trace=("final_representation_trace", "mean"),
+                               fp=("theory_fixed_point_rank", "mean"), phi=("theory_early_gain_rank", "mean"))
+print(g.to_string())
+
+d = pd.read_csv(f"{R}/raw/decay_calibration.csv")
+dd = d.groupby("weight_decay").agg(n=("seed", "size"), obs=("observed_log_amplitude_slope", "mean"),
+                                   pred=("predicted_mean_decay_rate", "mean"),
+                                   maxabs=("slope_minus_prediction", lambda v: v.abs().max()))
+print("P7:\n" + dd.to_string(float_format=lambda v: f"{v:.5f}"))
+
+m = pd.read_csv(f"{R}/derived/rank_prediction_metrics.csv")
+print("P2:\n" + m[["split", "prediction", "observed_rank_definition", "n_runs", "n_excluded_out_of_regime",
+                   "mean_absolute_rank_error", "mean_signed_rank_error"]].to_string())
+r = pd.read_csv(f"{R}/raw/rank_prediction.csv")
+ho = r[(r.split == "held_out") & (r.phi_prediction_regime == "in_regime")]
+print(f"P2 held-out in-regime runs {len(ho)}, configs {ho.config_id.nunique()}; exact Phi (collapse-aware) "
+      f"{(ho.phi_collapse_aware_absolute_rank_error == 0).mean():.3f}; exact fixed point "
+      f"{(ho.fixed_point_collapse_aware_absolute_rank_error == 0).mean():.3f}; Phi better/tie/worse per run "
+      f"{(ho.phi_collapse_aware_absolute_rank_error < ho.fixed_point_collapse_aware_absolute_rank_error).sum()}/"
+      f"{(ho.phi_collapse_aware_absolute_rank_error == ho.fixed_point_collapse_aware_absolute_rank_error).sum()}/"
+      f"{(ho.phi_collapse_aware_absolute_rank_error > ho.fixed_point_collapse_aware_absolute_rank_error).sum()}")
+print("P2 held-out per config (collapse-aware):\n" + ho.groupby("config_id").agg(
+    phi=("predicted_phi_rank", "mean"), fp=("predicted_fixed_point_rank", "mean"),
+    obs=("observed_late_collapse_aware_rank", "mean"),
+    phi_err=("phi_collapse_aware_absolute_rank_error", "mean"),
+    fp_err=("fixed_point_collapse_aware_absolute_rank_error", "mean")).to_string())
+print("calibration configs:", sorted(r[r.split == "calibration"].config_id.unique()))
+
+p = pd.read_csv(f"{R}/raw/prior_comparison.csv")
+print("prior comparison:")
+for _, row in p.iterrows():
+    print(f"  {row.prior_key} | {row.check_type} | prior: {row.prior_prediction} | ours: {row.ours_prediction} | "
+          f"measured: {row.measured_value} | {row.agreement}")

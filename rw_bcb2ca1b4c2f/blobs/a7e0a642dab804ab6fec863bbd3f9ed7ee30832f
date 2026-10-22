@@ -1,0 +1,3349 @@
+{
+ "status": "post hoc, beside the registered held-out verdict (results/e6/r1heldout/r1_heldout_score.json); not a verdict",
+ "thr": 0.05,
+ "heldout": {
+  "aligned": {
+   "zero": {
+    "all": {
+     "runs": 240,
+     "zero_share": 0.7791666666666667
+    },
+    "by_p0": {
+     "0.7": {
+      "runs": 120,
+      "zero_share": 0.5583333333333333
+     },
+     "1.5": {
+      "runs": 120,
+      "zero_share": 1.0
+     }
+    },
+    "by_a0": {
+     "0.02": {
+      "runs": 80,
+      "zero_share": 0.9375
+     },
+     "0.05": {
+      "runs": 80,
+      "zero_share": 0.8375
+     },
+     "0.2": {
+      "runs": 80,
+      "zero_share": 0.5625
+     }
+    },
+    "by_p0_a0": {
+     "0.7|0.02": {
+      "runs": 40,
+      "zero_share": 0.875
+     },
+     "0.7|0.05": {
+      "runs": 40,
+      "zero_share": 0.675
+     },
+     "0.7|0.2": {
+      "runs": 40,
+      "zero_share": 0.125
+     },
+     "1.5|0.02": {
+      "runs": 40,
+      "zero_share": 1.0
+     },
+     "1.5|0.05": {
+      "runs": 40,
+      "zero_share": 1.0
+     },
+     "1.5|0.2": {
+      "runs": 40,
+      "zero_share": 1.0
+     }
+    }
+   },
+   "all_runs": {
+    "runs": 240,
+    "A1": {
+     "mae": 0.041666666666666664,
+     "exact": 0.9583333333333334,
+     "within1": 1.0,
+     "misses": 10,
+     "signed_mean": 0.008333333333333333
+    },
+    "early_25": {
+     "mae": 1.0375,
+     "minus_A1": 0.9958333333333333,
+     "minus_A1_ci": [
+      0.6416666666666667,
+      1.3667708333333328
+     ]
+    },
+    "early_50": {
+     "mae": 0.20416666666666666,
+     "minus_A1": 0.1625,
+     "minus_A1_ci": [
+      0.09583333333333334,
+      0.22916666666666666
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.004166666666666667,
+     "minus_A1": -0.0375,
+     "minus_A1_ci": [
+      -0.06666666666666667,
+      -0.0125
+     ]
+    }
+   },
+   "informative": {
+    "runs": 53,
+    "A1": {
+     "mae": 0.18867924528301888,
+     "exact": 0.8113207547169812,
+     "within1": 1.0,
+     "misses": 10,
+     "signed_mean": 0.03773584905660377
+    },
+    "early_25": {
+     "mae": 4.69811320754717,
+     "minus_A1": 4.509433962264151,
+     "minus_A1_ci": [
+      3.2448113207547173,
+      5.811320754716981
+     ]
+    },
+    "early_50": {
+     "mae": 0.9245283018867925,
+     "minus_A1": 0.7358490566037735,
+     "minus_A1_ci": [
+      0.49056603773584906,
+      1.000471698113205
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.018867924528301886,
+     "minus_A1": -0.16981132075471697,
+     "minus_A1_ci": [
+      -0.2830188679245283,
+      -0.07547169811320754
+     ]
+    }
+   },
+   "informative_by_L": {
+    "L2": {
+     "runs": 35,
+     "A1": {
+      "mae": 0.11428571428571428,
+      "exact": 0.8857142857142857,
+      "within1": 1.0,
+      "misses": 4,
+      "signed_mean": -0.11428571428571428
+     },
+     "early_25": {
+      "mae": 3.914285714285714,
+      "minus_A1": 3.8,
+      "minus_A1_ci": [
+       2.3142857142857145,
+       5.514285714285714
+      ]
+     },
+     "early_50": {
+      "mae": 0.8285714285714286,
+      "minus_A1": 0.7142857142857143,
+      "minus_A1_ci": [
+       0.42857142857142855,
+       1.000714285714282
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.02857142857142857,
+      "minus_A1": -0.08571428571428572,
+      "minus_A1_ci": [
+       -0.2,
+       0.02857142857142857
+      ]
+     }
+    },
+    "L3": {
+     "runs": 18,
+     "A1": {
+      "mae": 0.3333333333333333,
+      "exact": 0.6666666666666666,
+      "within1": 1.0,
+      "misses": 6,
+      "signed_mean": 0.3333333333333333
+     },
+     "early_25": {
+      "mae": 6.222222222222222,
+      "minus_A1": 5.888888888888889,
+      "minus_A1_ci": [
+       3.5555555555555554,
+       8.166666666666666
+      ]
+     },
+     "early_50": {
+      "mae": 1.1111111111111112,
+      "minus_A1": 0.7777777777777778,
+      "minus_A1_ci": [
+       0.2777777777777778,
+       1.2777777777777777
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0,
+      "minus_A1": -0.3333333333333333,
+      "minus_A1_ci": [
+       -0.5555555555555556,
+       -0.1111111111111111
+      ]
+     }
+    }
+   },
+   "by_a0": {
+    "0.02": {
+     "runs": 80,
+     "A1": {
+      "mae": 0.0125,
+      "exact": 0.9875,
+      "within1": 1.0,
+      "misses": 1,
+      "signed_mean": -0.0125
+     },
+     "early_25": {
+      "mae": 0.0625,
+      "minus_A1": 0.05,
+      "minus_A1_ci": [
+       0.0125,
+       0.1
+      ]
+     },
+     "early_50": {
+      "mae": 0.0625,
+      "minus_A1": 0.05,
+      "minus_A1_ci": [
+       0.0125,
+       0.1
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0,
+      "minus_A1": -0.0125,
+      "minus_A1_ci": [
+       -0.0375,
+       0.0
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": 2.0,
+      "hit": 0.10126582278481013,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [
+       {
+        "id": 372,
+        "sign": "under",
+        "margin": -0.005693922693415843
+       }
+      ],
+      "hit_runs": 79,
+      "hit_any_within_0p15": 4,
+      "hit_any_in_m0p15_0p05": 1,
+      "miss_any_within_0p15": 1,
+      "miss_any_in_m0p15_0p05": 1,
+      "hit_none_within_0p5": 75,
+      "miss_none_within_0p5": 0,
+      "miss_max_abs_closest": 0.005693922693415843,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 78,
+      "of": 80,
+      "informative": 3,
+      "informative_of": 5
+     },
+     "A1_over": 0,
+     "A1_under": 1,
+     "misses_by_p0": {
+      "0.7": 1,
+      "1.5": 0
+     },
+     "misses_by_L": {
+      "L2": 1,
+      "L3": 0
+     },
+     "informative": {
+      "runs": 5,
+      "A1": {
+       "mae": 0.2,
+       "exact": 0.8,
+       "within1": 1.0,
+       "misses": 1,
+       "signed_mean": -0.2
+      },
+      "early_25": {
+       "mae": 1.0,
+       "minus_A1": 0.8,
+       "minus_A1_ci": [
+        0.4,
+        1.0
+       ]
+      },
+      "early_50": {
+       "mae": 1.0,
+       "minus_A1": 0.8,
+       "minus_A1_ci": [
+        0.4,
+        1.0
+       ]
+      },
+      "v1_early_10pct": {
+       "mae": 0.0,
+       "minus_A1": -0.2,
+       "minus_A1_ci": [
+        -0.6,
+        0.0
+       ]
+      }
+     }
+    },
+    "0.05": {
+     "runs": 80,
+     "A1": {
+      "mae": 0.0125,
+      "exact": 0.9875,
+      "within1": 1.0,
+      "misses": 1,
+      "signed_mean": -0.0125
+     },
+     "early_25": {
+      "mae": 0.0875,
+      "minus_A1": 0.075,
+      "minus_A1_ci": [
+       0.025,
+       0.1375
+      ]
+     },
+     "early_50": {
+      "mae": 0.0625,
+      "minus_A1": 0.05,
+      "minus_A1_ci": [
+       0.0125,
+       0.1
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0,
+      "minus_A1": -0.0125,
+      "minus_A1_ci": [
+       -0.0375,
+       0.0
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": 3.0,
+      "hit": 0.4177215189873418,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [
+       {
+        "id": 507,
+        "sign": "under",
+        "margin": -0.04051487334939541
+       }
+      ],
+      "hit_runs": 79,
+      "hit_any_within_0p15": 10,
+      "hit_any_in_m0p15_0p05": 7,
+      "miss_any_within_0p15": 1,
+      "miss_any_in_m0p15_0p05": 1,
+      "hit_none_within_0p5": 61,
+      "miss_none_within_0p5": 0,
+      "miss_max_abs_closest": 0.04051487334939541,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 78,
+      "of": 80,
+      "informative": 11,
+      "informative_of": 13
+     },
+     "A1_over": 0,
+     "A1_under": 1,
+     "misses_by_p0": {
+      "0.7": 1,
+      "1.5": 0
+     },
+     "misses_by_L": {
+      "L2": 1,
+      "L3": 0
+     },
+     "informative": {
+      "runs": 13,
+      "A1": {
+       "mae": 0.07692307692307693,
+       "exact": 0.9230769230769231,
+       "within1": 1.0,
+       "misses": 1,
+       "signed_mean": -0.07692307692307693
+      },
+      "early_25": {
+       "mae": 0.5384615384615384,
+       "minus_A1": 0.46153846153846156,
+       "minus_A1_ci": [
+        0.23076923076923078,
+        0.6923076923076923
+       ]
+      },
+      "early_50": {
+       "mae": 0.38461538461538464,
+       "minus_A1": 0.3076923076923077,
+       "minus_A1_ci": [
+        0.07692307692307693,
+        0.5384615384615384
+       ]
+      },
+      "v1_early_10pct": {
+       "mae": 0.0,
+       "minus_A1": -0.07692307692307693,
+       "minus_A1_ci": [
+        -0.23076923076923078,
+        0.0
+       ]
+      }
+     }
+    },
+    "0.2": {
+     "runs": 80,
+     "A1": {
+      "mae": 0.1,
+      "exact": 0.9,
+      "within1": 1.0,
+      "misses": 8,
+      "signed_mean": 0.05
+     },
+     "early_25": {
+      "mae": 2.9625,
+      "minus_A1": 2.8625,
+      "minus_A1_ci": [
+       1.9,
+       3.875
+      ]
+     },
+     "early_50": {
+      "mae": 0.4875,
+      "minus_A1": 0.3875,
+      "minus_A1_ci": [
+       0.2125,
+       0.575
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0125,
+      "minus_A1": -0.0875,
+      "minus_A1_ci": [
+       -0.1625,
+       -0.0125
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": 1.875,
+      "hit": 0.6666666666666666,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [
+       {
+        "id": 963,
+        "sign": "over",
+        "margin": 0.19424109364595354
+       },
+       {
+        "id": 978,
+        "sign": "over",
+        "margin": 0.11193360917819462
+       },
+       {
+        "id": 981,
+        "sign": "over",
+        "margin": 0.03778013943711933
+       },
+       {
+        "id": 996,
+        "sign": "over",
+        "margin": 0.021474110961797965
+       },
+       {
+        "id": 999,
+        "sign": "over",
+        "margin": 0.04928671160411069
+       },
+       {
+        "id": 1002,
+        "sign": "over",
+        "margin": 0.0656547113965309
+       },
+       {
+        "id": 654,
+        "sign": "under",
+        "margin": -0.025478936202017355
+       },
+       {
+        "id": 657,
+        "sign": "under",
+        "margin": -0.013202936357702422
+       }
+      ],
+      "hit_runs": 72,
+      "hit_any_within_0p15": 8,
+      "hit_any_in_m0p15_0p05": 7,
+      "miss_any_within_0p15": 7,
+      "miss_any_in_m0p15_0p05": 5,
+      "hit_none_within_0p5": 40,
+      "miss_none_within_0p5": 0,
+      "miss_max_abs_closest": 0.19424109364595354,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 58,
+      "of": 80,
+      "informative": 13,
+      "informative_of": 35
+     },
+     "A1_over": 6,
+     "A1_under": 2,
+     "misses_by_p0": {
+      "0.7": 8,
+      "1.5": 0
+     },
+     "misses_by_L": {
+      "L2": 2,
+      "L3": 6
+     },
+     "informative": {
+      "runs": 35,
+      "A1": {
+       "mae": 0.22857142857142856,
+       "exact": 0.7714285714285715,
+       "within1": 1.0,
+       "misses": 8,
+       "signed_mean": 0.11428571428571428
+      },
+      "early_25": {
+       "mae": 6.771428571428571,
+       "minus_A1": 6.542857142857143,
+       "minus_A1_ci": [
+        5.0,
+        8.142857142857142
+       ]
+      },
+      "early_50": {
+       "mae": 1.1142857142857143,
+       "minus_A1": 0.8857142857142857,
+       "minus_A1_ci": [
+        0.5421428571428571,
+        1.2571428571428571
+       ]
+      },
+      "v1_early_10pct": {
+       "mae": 0.02857142857142857,
+       "minus_A1": -0.2,
+       "minus_A1_ci": [
+        -0.37142857142857144,
+        -0.05714285714285714
+       ]
+      }
+     }
+    }
+   }
+  },
+  "generic": {
+   "zero": {
+    "all": {
+     "runs": 144,
+     "zero_share": 0.7152777777777778
+    },
+    "by_p0": {
+     "0.7": {
+      "runs": 72,
+      "zero_share": 0.4444444444444444
+     },
+     "1.5": {
+      "runs": 72,
+      "zero_share": 0.9861111111111112
+     }
+    },
+    "by_a0": {
+     "0.02": {
+      "runs": 48,
+      "zero_share": 0.9375
+     },
+     "0.05": {
+      "runs": 48,
+      "zero_share": 0.7291666666666666
+     },
+     "0.2": {
+      "runs": 48,
+      "zero_share": 0.4791666666666667
+     }
+    },
+    "by_p0_a0": {
+     "0.7|0.02": {
+      "runs": 24,
+      "zero_share": 0.875
+     },
+     "0.7|0.05": {
+      "runs": 24,
+      "zero_share": 0.4583333333333333
+     },
+     "0.7|0.2": {
+      "runs": 24,
+      "zero_share": 0.0
+     },
+     "1.5|0.02": {
+      "runs": 24,
+      "zero_share": 1.0
+     },
+     "1.5|0.05": {
+      "runs": 24,
+      "zero_share": 1.0
+     },
+     "1.5|0.2": {
+      "runs": 24,
+      "zero_share": 0.9583333333333334
+     }
+    }
+   },
+   "all_runs": {
+    "runs": 144,
+    "A1": {
+     "mae": 0.09027777777777778,
+     "exact": 0.9097222222222222,
+     "within1": 1.0,
+     "misses": 13,
+     "signed_mean": -0.034722222222222224
+    },
+    "early_25": {
+     "mae": 0.2916666666666667,
+     "minus_A1": 0.2013888888888889,
+     "minus_A1_ci": [
+      0.09722222222222222,
+      0.3194444444444444
+     ]
+    },
+    "early_50": {
+     "mae": 0.0763888888888889,
+     "minus_A1": -0.013888888888888888,
+     "minus_A1_ci": [
+      -0.06944444444444445,
+      0.041666666666666664
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.027777777777777776,
+     "minus_A1": -0.0625,
+     "minus_A1_ci": [
+      -0.1111111111111111,
+      -0.013888888888888888
+     ]
+    }
+   },
+   "informative": {
+    "runs": 41,
+    "A1": {
+     "mae": 0.3170731707317073,
+     "exact": 0.6829268292682927,
+     "within1": 1.0,
+     "misses": 13,
+     "signed_mean": -0.12195121951219512
+    },
+    "early_25": {
+     "mae": 1.0,
+     "minus_A1": 0.6829268292682927,
+     "minus_A1_ci": [
+      0.34146341463414637,
+      1.024390243902439
+     ]
+    },
+    "early_50": {
+     "mae": 0.24390243902439024,
+     "minus_A1": -0.07317073170731707,
+     "minus_A1_ci": [
+      -0.2682926829268293,
+      0.0975609756097561
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.07317073170731707,
+     "minus_A1": -0.24390243902439024,
+     "minus_A1_ci": [
+      -0.3902439024390244,
+      -0.0975609756097561
+     ]
+    }
+   },
+   "informative_by_L": {
+    "L2": {
+     "runs": 24,
+     "A1": {
+      "mae": 0.3333333333333333,
+      "exact": 0.6666666666666666,
+      "within1": 1.0,
+      "misses": 8,
+      "signed_mean": -0.08333333333333333
+     },
+     "early_25": {
+      "mae": 1.125,
+      "minus_A1": 0.7916666666666666,
+      "minus_A1_ci": [
+       0.3739583333333334,
+       1.2083333333333333
+      ]
+     },
+     "early_50": {
+      "mae": 0.2916666666666667,
+      "minus_A1": -0.041666666666666664,
+      "minus_A1_ci": [
+       -0.2916666666666667,
+       0.20833333333333334
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.125,
+      "minus_A1": -0.20833333333333334,
+      "minus_A1_ci": [
+       -0.4166666666666667,
+       0.0
+      ]
+     }
+    },
+    "L3": {
+     "runs": 17,
+     "A1": {
+      "mae": 0.29411764705882354,
+      "exact": 0.7058823529411765,
+      "within1": 1.0,
+      "misses": 5,
+      "signed_mean": -0.17647058823529413
+     },
+     "early_25": {
+      "mae": 0.8235294117647058,
+      "minus_A1": 0.5294117647058824,
+      "minus_A1_ci": [
+       0.0,
+       1.0588235294117647
+      ]
+     },
+     "early_50": {
+      "mae": 0.17647058823529413,
+      "minus_A1": -0.11764705882352941,
+      "minus_A1_ci": [
+       -0.4117647058823529,
+       0.17647058823529413
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0,
+      "minus_A1": -0.29411764705882354,
+      "minus_A1_ci": [
+       -0.5294117647058824,
+       -0.11764705882352941
+      ]
+     }
+    }
+   },
+   "by_a0": {
+    "0.02": {
+     "runs": 48,
+     "A1": {
+      "mae": 0.0,
+      "exact": 1.0,
+      "within1": 1.0,
+      "misses": 0,
+      "signed_mean": 0.0
+     },
+     "early_25": {
+      "mae": 0.0625,
+      "minus_A1": 0.0625,
+      "minus_A1_ci": [
+       0.0,
+       0.14583333333333334
+      ]
+     },
+     "early_50": {
+      "mae": 0.0,
+      "minus_A1": 0.0,
+      "minus_A1_ci": [
+       0.0,
+       0.0
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0,
+      "minus_A1": 0.0,
+      "minus_A1_ci": [
+       0.0,
+       0.0
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": null,
+      "hit": 0.1875,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [],
+      "hit_runs": 48,
+      "hit_any_within_0p15": 1,
+      "hit_any_in_m0p15_0p05": 1,
+      "miss_any_within_0p15": 0,
+      "miss_any_in_m0p15_0p05": 0,
+      "hit_none_within_0p5": 42,
+      "miss_none_within_0p5": 0,
+      "miss_max_abs_closest": null,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 48,
+      "of": 48,
+      "informative": 3,
+      "informative_of": 3
+     },
+     "A1_over": 0,
+     "A1_under": 0,
+     "misses_by_p0": {
+      "0.7": 0,
+      "1.5": 0
+     },
+     "misses_by_L": {
+      "L2": 0,
+      "L3": 0
+     },
+     "informative": {
+      "runs": 3,
+      "A1": {
+       "mae": 0.0,
+       "exact": 1.0,
+       "within1": 1.0,
+       "misses": 0,
+       "signed_mean": 0.0
+      },
+      "early_25": {
+       "mae": 1.0,
+       "minus_A1": 1.0,
+       "minus_A1_ci": [
+        1.0,
+        1.0
+       ]
+      },
+      "early_50": {
+       "mae": 0.0,
+       "minus_A1": 0.0,
+       "minus_A1_ci": [
+        0.0,
+        0.0
+       ]
+      },
+      "v1_early_10pct": {
+       "mae": 0.0,
+       "minus_A1": 0.0,
+       "minus_A1_ci": [
+        0.0,
+        0.0
+       ]
+      }
+     }
+    },
+    "0.05": {
+     "runs": 48,
+     "A1": {
+      "mae": 0.14583333333333334,
+      "exact": 0.8541666666666666,
+      "within1": 1.0,
+      "misses": 7,
+      "signed_mean": -0.10416666666666667
+     },
+     "early_25": {
+      "mae": 0.10416666666666667,
+      "minus_A1": -0.041666666666666664,
+      "minus_A1_ci": [
+       -0.16666666666666666,
+       0.08333333333333333
+      ]
+     },
+     "early_50": {
+      "mae": 0.041666666666666664,
+      "minus_A1": -0.10416666666666667,
+      "minus_A1_ci": [
+       -0.22916666666666666,
+       0.0
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.020833333333333332,
+      "minus_A1": -0.125,
+      "minus_A1_ci": [
+       -0.22916666666666666,
+       -0.020833333333333332
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": 1.4285714285714286,
+      "hit": 0.2926829268292683,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [
+       {
+        "id": 1371,
+        "sign": "under",
+        "margin": 0.04263307816820383
+       },
+       {
+        "id": 1158,
+        "sign": "over",
+        "margin": 0.050522534719574796
+       },
+       {
+        "id": 1377,
+        "sign": "under",
+        "margin": -0.08376394735449466
+       },
+       {
+        "id": 1383,
+        "sign": "under",
+        "margin": -0.022858511120158465
+       },
+       {
+        "id": 1167,
+        "sign": "under",
+        "margin": -0.06390201004243368
+       },
+       {
+        "id": 1170,
+        "sign": "under",
+        "margin": -0.010915903702581442
+       },
+       {
+        "id": 1176,
+        "sign": "under",
+        "margin": -0.1535057213521669
+       }
+      ],
+      "hit_runs": 41,
+      "hit_any_within_0p15": 2,
+      "hit_any_in_m0p15_0p05": 0,
+      "miss_any_within_0p15": 6,
+      "miss_any_in_m0p15_0p05": 5,
+      "hit_none_within_0p5": 34,
+      "miss_none_within_0p5": 0,
+      "miss_max_abs_closest": 0.1535057213521669,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 46,
+      "of": 48,
+      "informative": 12,
+      "informative_of": 13
+     },
+     "A1_over": 1,
+     "A1_under": 6,
+     "misses_by_p0": {
+      "0.7": 7,
+      "1.5": 0
+     },
+     "misses_by_L": {
+      "L2": 4,
+      "L3": 3
+     },
+     "informative": {
+      "runs": 13,
+      "A1": {
+       "mae": 0.5384615384615384,
+       "exact": 0.46153846153846156,
+       "within1": 1.0,
+       "misses": 7,
+       "signed_mean": -0.38461538461538464
+      },
+      "early_25": {
+       "mae": 0.3076923076923077,
+       "minus_A1": -0.23076923076923078,
+       "minus_A1_ci": [
+        -0.6153846153846154,
+        0.23076923076923078
+       ]
+      },
+      "early_50": {
+       "mae": 0.07692307692307693,
+       "minus_A1": -0.46153846153846156,
+       "minus_A1_ci": [
+        -0.7692307692307693,
+        -0.15384615384615385
+       ]
+      },
+      "v1_early_10pct": {
+       "mae": 0.0,
+       "minus_A1": -0.5384615384615384,
+       "minus_A1_ci": [
+        -0.7711538461538461,
+        -0.3076923076923077
+       ]
+      }
+     }
+    },
+    "0.2": {
+     "runs": 48,
+     "A1": {
+      "mae": 0.125,
+      "exact": 0.875,
+      "within1": 1.0,
+      "misses": 6,
+      "signed_mean": 0.0
+     },
+     "early_25": {
+      "mae": 0.7083333333333334,
+      "minus_A1": 0.5833333333333334,
+      "minus_A1_ci": [
+       0.3333333333333333,
+       0.8541666666666666
+      ]
+     },
+     "early_50": {
+      "mae": 0.1875,
+      "minus_A1": 0.0625,
+      "minus_A1_ci": [
+       -0.041666666666666664,
+       0.16666666666666666
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0625,
+      "minus_A1": -0.0625,
+      "minus_A1_ci": [
+       -0.16666666666666666,
+       0.020833333333333332
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": 1.3333333333333333,
+      "hit": 0.5476190476190477,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [
+       {
+        "id": 1440,
+        "sign": "over",
+        "margin": 0.3032799616398205
+       },
+       {
+        "id": 1263,
+        "sign": "under",
+        "margin": null
+       },
+       {
+        "id": 1245,
+        "sign": "over",
+        "margin": 0.08969051782960791
+       },
+       {
+        "id": 1248,
+        "sign": "over",
+        "margin": 0.010500845337271247
+       },
+       {
+        "id": 1470,
+        "sign": "under",
+        "margin": -0.22623331952923298
+       },
+       {
+        "id": 1257,
+        "sign": "under",
+        "margin": -0.03659007305074091
+       }
+      ],
+      "hit_runs": 42,
+      "hit_any_within_0p15": 4,
+      "hit_any_in_m0p15_0p05": 2,
+      "miss_any_within_0p15": 3,
+      "miss_any_in_m0p15_0p05": 2,
+      "hit_none_within_0p5": 26,
+      "miss_none_within_0p5": 1,
+      "miss_max_abs_closest": 0.3032799616398205,
+      "miss_no_finite_margin": 1,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 40,
+      "of": 48,
+      "informative": 17,
+      "informative_of": 25
+     },
+     "A1_over": 3,
+     "A1_under": 3,
+     "misses_by_p0": {
+      "0.7": 5,
+      "1.5": 1
+     },
+     "misses_by_L": {
+      "L2": 4,
+      "L3": 2
+     },
+     "informative": {
+      "runs": 25,
+      "A1": {
+       "mae": 0.24,
+       "exact": 0.76,
+       "within1": 1.0,
+       "misses": 6,
+       "signed_mean": 0.0
+      },
+      "early_25": {
+       "mae": 1.36,
+       "minus_A1": 1.12,
+       "minus_A1_ci": [
+        0.72,
+        1.52
+       ]
+      },
+      "early_50": {
+       "mae": 0.36,
+       "minus_A1": 0.12,
+       "minus_A1_ci": [
+        -0.08,
+        0.32
+       ]
+      },
+      "v1_early_10pct": {
+       "mae": 0.12,
+       "minus_A1": -0.12,
+       "minus_A1_ci": [
+        -0.28,
+        0.04
+       ]
+      }
+     }
+    }
+   }
+  }
+ },
+ "heldout_generic_5_seeds": {
+  "zero": {
+   "all": {
+    "runs": 240,
+    "zero_share": 0.725
+   },
+   "by_p0": {
+    "0.7": {
+     "runs": 120,
+     "zero_share": 0.4666666666666667
+    },
+    "1.5": {
+     "runs": 120,
+     "zero_share": 0.9833333333333333
+    }
+   },
+   "by_a0": {
+    "0.02": {
+     "runs": 80,
+     "zero_share": 0.9375
+    },
+    "0.05": {
+     "runs": 80,
+     "zero_share": 0.7625
+    },
+    "0.2": {
+     "runs": 80,
+     "zero_share": 0.475
+    }
+   },
+   "by_p0_a0": {
+    "0.7|0.02": {
+     "runs": 40,
+     "zero_share": 0.875
+    },
+    "0.7|0.05": {
+     "runs": 40,
+     "zero_share": 0.525
+    },
+    "0.7|0.2": {
+     "runs": 40,
+     "zero_share": 0.0
+    },
+    "1.5|0.02": {
+     "runs": 40,
+     "zero_share": 1.0
+    },
+    "1.5|0.05": {
+     "runs": 40,
+     "zero_share": 1.0
+    },
+    "1.5|0.2": {
+     "runs": 40,
+     "zero_share": 0.95
+    }
+   }
+  },
+  "all_runs": {
+   "runs": 240,
+   "A1": {
+    "mae": 0.09583333333333334,
+    "exact": 0.9041666666666667,
+    "within1": 1.0,
+    "misses": 23,
+    "signed_mean": -0.004166666666666667
+   },
+   "early_25": {
+    "mae": 0.30416666666666664,
+    "minus_A1": 0.20833333333333334,
+    "minus_A1_ci": [
+     0.12916666666666668,
+     0.2916666666666667
+    ]
+   },
+   "early_50": {
+    "mae": 0.1,
+    "minus_A1": 0.004166666666666667,
+    "minus_A1_ci": [
+     -0.0375,
+     0.05
+    ]
+   },
+   "v1_early_10pct": {
+    "mae": 0.020833333333333332,
+    "minus_A1": -0.075,
+    "minus_A1_ci": [
+     -0.1125,
+     -0.0375
+    ]
+   }
+  },
+  "informative": {
+   "runs": 66,
+   "A1": {
+    "mae": 0.3484848484848485,
+    "exact": 0.6515151515151515,
+    "within1": 1.0,
+    "misses": 23,
+    "signed_mean": -0.015151515151515152
+   },
+   "early_25": {
+    "mae": 1.0303030303030303,
+    "minus_A1": 0.6818181818181818,
+    "minus_A1_ci": [
+     0.42424242424242425,
+     0.9545454545454546
+    ]
+   },
+   "early_50": {
+    "mae": 0.3181818181818182,
+    "minus_A1": -0.030303030303030304,
+    "minus_A1_ci": [
+     -0.18181818181818182,
+     0.12121212121212122
+    ]
+   },
+   "v1_early_10pct": {
+    "mae": 0.06060606060606061,
+    "minus_A1": -0.2878787878787879,
+    "minus_A1_ci": [
+     -0.4090909090909091,
+     -0.16666666666666666
+    ]
+   }
+  },
+  "informative_by_L": {
+   "L2": {
+    "runs": 39,
+    "A1": {
+     "mae": 0.3076923076923077,
+     "exact": 0.6923076923076923,
+     "within1": 1.0,
+     "misses": 12,
+     "signed_mean": 0.0
+    },
+    "early_25": {
+     "mae": 1.1025641025641026,
+     "minus_A1": 0.7948717948717948,
+     "minus_A1_ci": [
+      0.46153846153846156,
+      1.1282051282051282
+     ]
+    },
+    "early_50": {
+     "mae": 0.358974358974359,
+     "minus_A1": 0.05128205128205128,
+     "minus_A1_ci": [
+      -0.15384615384615385,
+      0.23076923076923078
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.10256410256410256,
+     "minus_A1": -0.20512820512820512,
+     "minus_A1_ci": [
+      -0.358974358974359,
+      -0.05128205128205128
+     ]
+    }
+   },
+   "L3": {
+    "runs": 27,
+    "A1": {
+     "mae": 0.4074074074074074,
+     "exact": 0.5925925925925926,
+     "within1": 1.0,
+     "misses": 11,
+     "signed_mean": -0.037037037037037035
+    },
+    "early_25": {
+     "mae": 0.9259259259259259,
+     "minus_A1": 0.5185185185185185,
+     "minus_A1_ci": [
+      0.1111111111111111,
+      0.9629629629629629
+     ]
+    },
+    "early_50": {
+     "mae": 0.25925925925925924,
+     "minus_A1": -0.14814814814814814,
+     "minus_A1_ci": [
+      -0.37037037037037035,
+      0.07407407407407407
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.0,
+     "minus_A1": -0.4074074074074074,
+     "minus_A1_ci": [
+      -0.5925925925925926,
+      -0.2222222222222222
+     ]
+    }
+   }
+  },
+  "by_a0": {
+   "0.02": {
+    "runs": 80,
+    "A1": {
+     "mae": 0.0,
+     "exact": 1.0,
+     "within1": 1.0,
+     "misses": 0,
+     "signed_mean": 0.0
+    },
+    "early_25": {
+     "mae": 0.0625,
+     "minus_A1": 0.0625,
+     "minus_A1_ci": [
+      0.0125,
+      0.1125
+     ]
+    },
+    "early_50": {
+     "mae": 0.0125,
+     "minus_A1": 0.0125,
+     "minus_A1_ci": [
+      0.0,
+      0.0375
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.0,
+     "minus_A1": 0.0,
+     "minus_A1_ci": [
+      0.0,
+      0.0
+     ]
+    },
+    "near_boundary_dirs_mean": {
+     "miss": null,
+     "hit": 0.15,
+     "note": "directions with |A1 escape margin| < 0.5 per run"
+    },
+    "closest_margin": {
+     "misses": [],
+     "hit_runs": 80,
+     "hit_any_within_0p15": 3,
+     "hit_any_in_m0p15_0p05": 2,
+     "miss_any_within_0p15": 0,
+     "miss_any_in_m0p15_0p05": 0,
+     "hit_none_within_0p5": 72,
+     "miss_none_within_0p5": 0,
+     "miss_max_abs_closest": null,
+     "miss_no_finite_margin": 0,
+     "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+    },
+    "truth_count_fixed_from_first_checkpoint": {
+     "note": "every checkpoint count (the first at 5% of T) equals the final count",
+     "runs": 80,
+     "of": 80,
+     "informative": 5,
+     "informative_of": 5
+    },
+    "A1_over": 0,
+    "A1_under": 0,
+    "misses_by_p0": {
+     "0.7": 0,
+     "1.5": 0
+    },
+    "misses_by_L": {
+     "L2": 0,
+     "L3": 0
+    },
+    "informative": {
+     "runs": 5,
+     "A1": {
+      "mae": 0.0,
+      "exact": 1.0,
+      "within1": 1.0,
+      "misses": 0,
+      "signed_mean": 0.0
+     },
+     "early_25": {
+      "mae": 1.0,
+      "minus_A1": 1.0,
+      "minus_A1_ci": [
+       1.0,
+       1.0
+      ]
+     },
+     "early_50": {
+      "mae": 0.2,
+      "minus_A1": 0.2,
+      "minus_A1_ci": [
+       0.0,
+       0.6
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0,
+      "minus_A1": 0.0,
+      "minus_A1_ci": [
+       0.0,
+       0.0
+      ]
+     }
+    }
+   },
+   "0.05": {
+    "runs": 80,
+    "A1": {
+     "mae": 0.1125,
+     "exact": 0.8875,
+     "within1": 1.0,
+     "misses": 9,
+     "signed_mean": -0.0375
+    },
+    "early_25": {
+     "mae": 0.1375,
+     "minus_A1": 0.025,
+     "minus_A1_ci": [
+      -0.075,
+      0.125
+     ]
+    },
+    "early_50": {
+     "mae": 0.075,
+     "minus_A1": -0.0375,
+     "minus_A1_ci": [
+      -0.125,
+      0.05
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.0125,
+     "minus_A1": -0.1,
+     "minus_A1_ci": [
+      -0.175,
+      -0.037187500000001705
+     ]
+    },
+    "near_boundary_dirs_mean": {
+     "miss": 1.7777777777777777,
+     "hit": 0.29577464788732394,
+     "note": "directions with |A1 escape margin| < 0.5 per run"
+    },
+    "closest_margin": {
+     "misses": [
+      {
+       "id": 1371,
+       "sign": "under",
+       "margin": 0.04263307816820383
+      },
+      {
+       "id": 1158,
+       "sign": "over",
+       "margin": 0.050522534719574796
+      },
+      {
+       "id": 1377,
+       "sign": "under",
+       "margin": -0.08376394735449466
+      },
+      {
+       "id": 1383,
+       "sign": "under",
+       "margin": -0.022858511120158465
+      },
+      {
+       "id": 1167,
+       "sign": "under",
+       "margin": -0.06390201004243368
+      },
+      {
+       "id": 1170,
+       "sign": "under",
+       "margin": -0.010915903702581442
+      },
+      {
+       "id": 1176,
+       "sign": "under",
+       "margin": -0.1535057213521669
+      },
+      {
+       "id": 48,
+       "sign": "over",
+       "margin": 0.003199124410445453
+      },
+      {
+       "id": 57,
+       "sign": "over",
+       "margin": 0.06343542577445538
+      }
+     ],
+     "hit_runs": 71,
+     "hit_any_within_0p15": 4,
+     "hit_any_in_m0p15_0p05": 1,
+     "miss_any_within_0p15": 8,
+     "miss_any_in_m0p15_0p05": 6,
+     "hit_none_within_0p5": 58,
+     "miss_none_within_0p5": 0,
+     "miss_max_abs_closest": 0.1535057213521669,
+     "miss_no_finite_margin": 0,
+     "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+    },
+    "truth_count_fixed_from_first_checkpoint": {
+     "note": "every checkpoint count (the first at 5% of T) equals the final count",
+     "runs": 75,
+     "of": 80,
+     "informative": 17,
+     "informative_of": 19
+    },
+    "A1_over": 3,
+    "A1_under": 6,
+    "misses_by_p0": {
+     "0.7": 9,
+     "1.5": 0
+    },
+    "misses_by_L": {
+     "L2": 6,
+     "L3": 3
+    },
+    "informative": {
+     "runs": 19,
+     "A1": {
+      "mae": 0.47368421052631576,
+      "exact": 0.5263157894736842,
+      "within1": 1.0,
+      "misses": 9,
+      "signed_mean": -0.15789473684210525
+     },
+     "early_25": {
+      "mae": 0.3157894736842105,
+      "minus_A1": -0.15789473684210525,
+      "minus_A1_ci": [
+       -0.47368421052631576,
+       0.15789473684210525
+      ]
+     },
+     "early_50": {
+      "mae": 0.15789473684210525,
+      "minus_A1": -0.3157894736842105,
+      "minus_A1_ci": [
+       -0.631578947368421,
+       0.0
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0,
+      "minus_A1": -0.47368421052631576,
+      "minus_A1_ci": [
+       -0.6842105263157895,
+       -0.2631578947368421
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "runs": 80,
+    "A1": {
+     "mae": 0.175,
+     "exact": 0.825,
+     "within1": 1.0,
+     "misses": 14,
+     "signed_mean": 0.025
+    },
+    "early_25": {
+     "mae": 0.7125,
+     "minus_A1": 0.5375,
+     "minus_A1_ci": [
+      0.325,
+      0.75
+     ]
+    },
+    "early_50": {
+     "mae": 0.2125,
+     "minus_A1": 0.0375,
+     "minus_A1_ci": [
+      -0.0625,
+      0.1375
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.05,
+     "minus_A1": -0.125,
+     "minus_A1_ci": [
+      -0.2125,
+      -0.0375
+     ]
+    },
+    "near_boundary_dirs_mean": {
+     "miss": 1.2857142857142858,
+     "hit": 0.5757575757575758,
+     "note": "directions with |A1 escape margin| < 0.5 per run"
+    },
+    "closest_margin": {
+     "misses": [
+      {
+       "id": 1440,
+       "sign": "over",
+       "margin": 0.3032799616398205
+      },
+      {
+       "id": 1263,
+       "sign": "under",
+       "margin": null
+      },
+      {
+       "id": 1245,
+       "sign": "over",
+       "margin": 0.08969051782960791
+      },
+      {
+       "id": 1248,
+       "sign": "over",
+       "margin": 0.010500845337271247
+      },
+      {
+       "id": 1470,
+       "sign": "under",
+       "margin": -0.22623331952923298
+      },
+      {
+       "id": 1257,
+       "sign": "under",
+       "margin": -0.03659007305074091
+      },
+      {
+       "id": 240,
+       "sign": "over",
+       "margin": 0.11370889583831101
+      },
+      {
+       "id": 243,
+       "sign": "over",
+       "margin": 0.49915312792584965
+      },
+      {
+       "id": 123,
+       "sign": "under",
+       "margin": null
+      },
+      {
+       "id": 246,
+       "sign": "over",
+       "margin": -0.23104064067843977
+      },
+      {
+       "id": 249,
+       "sign": "over",
+       "margin": 0.5438243509384177
+      },
+      {
+       "id": 258,
+       "sign": "under",
+       "margin": -0.17886023791500394
+      },
+      {
+       "id": 261,
+       "sign": "under",
+       "margin": -0.24105777015119934
+      },
+      {
+       "id": 117,
+       "sign": "over",
+       "margin": 0.09074736276614837
+      }
+     ],
+     "hit_runs": 66,
+     "hit_any_within_0p15": 6,
+     "hit_any_in_m0p15_0p05": 4,
+     "miss_any_within_0p15": 5,
+     "miss_any_in_m0p15_0p05": 2,
+     "hit_none_within_0p5": 41,
+     "miss_none_within_0p5": 3,
+     "miss_max_abs_closest": 0.5438243509384177,
+     "miss_no_finite_margin": 2,
+     "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+    },
+    "truth_count_fixed_from_first_checkpoint": {
+     "note": "every checkpoint count (the first at 5% of T) equals the final count",
+     "runs": 64,
+     "of": 80,
+     "informative": 26,
+     "informative_of": 42
+    },
+    "A1_over": 8,
+    "A1_under": 6,
+    "misses_by_p0": {
+     "0.7": 12,
+     "1.5": 2
+    },
+    "misses_by_L": {
+     "L2": 6,
+     "L3": 8
+    },
+    "informative": {
+     "runs": 42,
+     "A1": {
+      "mae": 0.3333333333333333,
+      "exact": 0.6666666666666666,
+      "within1": 1.0,
+      "misses": 14,
+      "signed_mean": 0.047619047619047616
+     },
+     "early_25": {
+      "mae": 1.3571428571428572,
+      "minus_A1": 1.0238095238095237,
+      "minus_A1_ci": [
+       0.7142857142857143,
+       1.3571428571428572
+      ]
+     },
+     "early_50": {
+      "mae": 0.40476190476190477,
+      "minus_A1": 0.07142857142857142,
+      "minus_A1_ci": [
+       -0.09523809523809523,
+       0.23809523809523808
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.09523809523809523,
+      "minus_A1": -0.23809523809523808,
+      "minus_A1_ci": [
+       -0.40476190476190477,
+       -0.07142857142857142
+      ]
+     }
+    }
+   }
+  }
+ },
+ "dev": {
+  "aligned": {
+   "zero": {
+    "all": {
+     "runs": 480,
+     "zero_share": 0.7083333333333334
+    },
+    "by_p0": {
+     "0.5": {
+      "runs": 160,
+      "zero_share": 0.51875
+     },
+     "1.0": {
+      "runs": 160,
+      "zero_share": 0.60625
+     },
+     "2.0": {
+      "runs": 160,
+      "zero_share": 1.0
+     }
+    },
+    "by_a0": {
+     "0.01": {
+      "runs": 120,
+      "zero_share": 1.0
+     },
+     "0.03": {
+      "runs": 120,
+      "zero_share": 0.8916666666666667
+     },
+     "0.1": {
+      "runs": 120,
+      "zero_share": 0.575
+     },
+     "0.3": {
+      "runs": 120,
+      "zero_share": 0.36666666666666664
+     }
+    },
+    "by_p0_a0": {
+     "0.5|0.01": {
+      "runs": 40,
+      "zero_share": 1.0
+     },
+     "0.5|0.03": {
+      "runs": 40,
+      "zero_share": 0.8
+     },
+     "0.5|0.1": {
+      "runs": 40,
+      "zero_share": 0.275
+     },
+     "0.5|0.3": {
+      "runs": 40,
+      "zero_share": 0.0
+     },
+     "1.0|0.01": {
+      "runs": 40,
+      "zero_share": 1.0
+     },
+     "1.0|0.03": {
+      "runs": 40,
+      "zero_share": 0.875
+     },
+     "1.0|0.1": {
+      "runs": 40,
+      "zero_share": 0.45
+     },
+     "1.0|0.3": {
+      "runs": 40,
+      "zero_share": 0.1
+     },
+     "2.0|0.01": {
+      "runs": 40,
+      "zero_share": 1.0
+     },
+     "2.0|0.03": {
+      "runs": 40,
+      "zero_share": 1.0
+     },
+     "2.0|0.1": {
+      "runs": 40,
+      "zero_share": 1.0
+     },
+     "2.0|0.3": {
+      "runs": 40,
+      "zero_share": 1.0
+     }
+    }
+   },
+   "all_runs": {
+    "runs": 480,
+    "A1": {
+     "mae": 0.05416666666666667,
+     "exact": 0.9458333333333333,
+     "within1": 1.0,
+     "misses": 26,
+     "signed_mean": -0.041666666666666664
+    },
+    "early_25": {
+     "mae": 1.4208333333333334,
+     "minus_A1": 1.3666666666666667,
+     "minus_A1_ci": [
+      1.0958333333333334,
+      1.6521354166666664
+     ]
+    },
+    "early_50": {
+     "mae": 0.6416666666666667,
+     "minus_A1": 0.5875,
+     "minus_A1_ci": [
+      0.41875,
+      0.76875
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.09583333333333334,
+     "minus_A1": 0.041666666666666664,
+     "minus_A1_ci": [
+      0.00625,
+      0.07708333333333334
+     ]
+    }
+   },
+   "informative": {
+    "runs": 140,
+    "A1": {
+     "mae": 0.17142857142857143,
+     "exact": 0.8285714285714286,
+     "within1": 1.0,
+     "misses": 24,
+     "signed_mean": -0.15714285714285714
+    },
+    "early_25": {
+     "mae": 4.792857142857143,
+     "minus_A1": 4.621428571428571,
+     "minus_A1_ci": [
+      3.8998214285714283,
+      5.3428571428571425
+     ]
+    },
+    "early_50": {
+     "mae": 2.1785714285714284,
+     "minus_A1": 2.007142857142857,
+     "minus_A1_ci": [
+      1.4783928571428573,
+      2.5428571428571427
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.32142857142857145,
+     "minus_A1": 0.15,
+     "minus_A1_ci": [
+      0.03571428571428571,
+      0.2714285714285714
+     ]
+    }
+   },
+   "informative_by_L": {
+    "L2": {
+     "runs": 85,
+     "A1": {
+      "mae": 0.2235294117647059,
+      "exact": 0.7764705882352941,
+      "within1": 1.0,
+      "misses": 19,
+      "signed_mean": -0.2235294117647059
+     },
+     "early_25": {
+      "mae": 3.8941176470588235,
+      "minus_A1": 3.6705882352941175,
+      "minus_A1_ci": [
+       2.8941176470588235,
+       4.470588235294118
+      ]
+     },
+     "early_50": {
+      "mae": 1.9411764705882353,
+      "minus_A1": 1.7176470588235293,
+      "minus_A1_ci": [
+       1.1294117647058823,
+       2.3176470588235296
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.3411764705882353,
+      "minus_A1": 0.11764705882352941,
+      "minus_A1_ci": [
+       -0.03558823529411763,
+       0.2823529411764706
+      ]
+     }
+    },
+    "L3": {
+     "runs": 55,
+     "A1": {
+      "mae": 0.09090909090909091,
+      "exact": 0.9090909090909091,
+      "within1": 1.0,
+      "misses": 5,
+      "signed_mean": -0.05454545454545454
+     },
+     "early_25": {
+      "mae": 6.181818181818182,
+      "minus_A1": 6.090909090909091,
+      "minus_A1_ci": [
+       4.945454545454545,
+       7.3090909090909095
+      ]
+     },
+     "early_50": {
+      "mae": 2.5454545454545454,
+      "minus_A1": 2.4545454545454546,
+      "minus_A1_ci": [
+       1.5272727272727273,
+       3.418181818181818
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.2909090909090909,
+      "minus_A1": 0.2,
+      "minus_A1_ci": [
+       0.03636363636363636,
+       0.36363636363636365
+      ]
+     }
+    }
+   },
+   "by_a0": {
+    "0.01": {
+     "runs": 120,
+     "A1": {
+      "mae": 0.0,
+      "exact": 1.0,
+      "within1": 1.0,
+      "misses": 0,
+      "signed_mean": 0.0
+     },
+     "early_25": {
+      "mae": 0.0,
+      "minus_A1": 0.0,
+      "minus_A1_ci": [
+       0.0,
+       0.0
+      ]
+     },
+     "early_50": {
+      "mae": 0.0,
+      "minus_A1": 0.0,
+      "minus_A1_ci": [
+       0.0,
+       0.0
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0,
+      "minus_A1": 0.0,
+      "minus_A1_ci": [
+       0.0,
+       0.0
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": null,
+      "hit": 0.025,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [],
+      "hit_runs": 120,
+      "hit_any_within_0p15": 0,
+      "hit_any_in_m0p15_0p05": 0,
+      "miss_any_within_0p15": 0,
+      "miss_any_in_m0p15_0p05": 0,
+      "hit_none_within_0p5": 117,
+      "miss_none_within_0p5": 0,
+      "miss_max_abs_closest": null,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 120,
+      "of": 120,
+      "informative": 0,
+      "informative_of": 0
+     },
+     "A1_over": 0,
+     "A1_under": 0,
+     "misses_by_p0": {
+      "0.5": 0,
+      "1.0": 0,
+      "2.0": 0
+     },
+     "misses_by_L": {
+      "L2": 0,
+      "L3": 0
+     },
+     "informative": {
+      "runs": 0
+     }
+    },
+    "0.03": {
+     "runs": 120,
+     "A1": {
+      "mae": 0.016666666666666666,
+      "exact": 0.9833333333333333,
+      "within1": 1.0,
+      "misses": 2,
+      "signed_mean": -0.016666666666666666
+     },
+     "early_25": {
+      "mae": 0.175,
+      "minus_A1": 0.15833333333333333,
+      "minus_A1_ci": [
+       0.06666666666666667,
+       0.26666666666666666
+      ]
+     },
+     "early_50": {
+      "mae": 0.125,
+      "minus_A1": 0.10833333333333334,
+      "minus_A1_ci": [
+       0.041666666666666664,
+       0.19166666666666668
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0,
+      "minus_A1": -0.016666666666666666,
+      "minus_A1_ci": [
+       -0.041666666666666664,
+       0.0
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": 3.5,
+      "hit": 0.3559322033898305,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [
+       {
+        "id": 304,
+        "sign": "under",
+        "margin": -0.020595845891312692
+       },
+       {
+        "id": 309,
+        "sign": "under",
+        "margin": -0.039541177361904545
+       }
+      ],
+      "hit_runs": 118,
+      "hit_any_within_0p15": 7,
+      "hit_any_in_m0p15_0p05": 6,
+      "miss_any_within_0p15": 2,
+      "miss_any_in_m0p15_0p05": 2,
+      "hit_none_within_0p5": 96,
+      "miss_none_within_0p5": 0,
+      "miss_max_abs_closest": 0.039541177361904545,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 118,
+      "of": 120,
+      "informative": 11,
+      "informative_of": 13
+     },
+     "A1_over": 0,
+     "A1_under": 2,
+     "misses_by_p0": {
+      "0.5": 2,
+      "1.0": 0,
+      "2.0": 0
+     },
+     "misses_by_L": {
+      "L2": 2,
+      "L3": 0
+     },
+     "informative": {
+      "runs": 13,
+      "A1": {
+       "mae": 0.15384615384615385,
+       "exact": 0.8461538461538461,
+       "within1": 1.0,
+       "misses": 2,
+       "signed_mean": -0.15384615384615385
+      },
+      "early_25": {
+       "mae": 1.6153846153846154,
+       "minus_A1": 1.4615384615384615,
+       "minus_A1_ci": [
+        0.9230769230769231,
+        2.0
+       ]
+      },
+      "early_50": {
+       "mae": 1.1538461538461537,
+       "minus_A1": 1.0,
+       "minus_A1_ci": [
+        0.5384615384615384,
+        1.5384615384615385
+       ]
+      },
+      "v1_early_10pct": {
+       "mae": 0.0,
+       "minus_A1": -0.15384615384615385,
+       "minus_A1_ci": [
+        -0.38461538461538464,
+        0.0
+       ]
+      }
+     }
+    },
+    "0.1": {
+     "runs": 120,
+     "A1": {
+      "mae": 0.06666666666666667,
+      "exact": 0.9333333333333333,
+      "within1": 1.0,
+      "misses": 8,
+      "signed_mean": -0.05
+     },
+     "early_25": {
+      "mae": 1.6166666666666667,
+      "minus_A1": 1.55,
+      "minus_A1_ci": [
+       1.0247916666666665,
+       2.1585416666666655
+      ]
+     },
+     "early_50": {
+      "mae": 0.44166666666666665,
+      "minus_A1": 0.375,
+      "minus_A1_ci": [
+       0.21666666666666667,
+       0.5583333333333333
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.016666666666666666,
+      "minus_A1": -0.05,
+      "minus_A1_ci": [
+       -0.1,
+       -0.008333333333333333
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": 1.25,
+      "hit": 0.9732142857142857,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [
+       {
+        "id": 380,
+        "sign": "under",
+        "margin": -0.01648379711070813
+       },
+       {
+        "id": 382,
+        "sign": "under",
+        "margin": -0.07448425489111887
+       },
+       {
+        "id": 604,
+        "sign": "over",
+        "margin": 0.061170026917087394
+       },
+       {
+        "id": 367,
+        "sign": "under",
+        "margin": -0.00918298697199127
+       },
+       {
+        "id": 611,
+        "sign": "under",
+        "margin": -0.01971090397201758
+       },
+       {
+        "id": 612,
+        "sign": "under",
+        "margin": -0.035342482040911616
+       },
+       {
+        "id": 376,
+        "sign": "under",
+        "margin": -0.12295712232531075
+       },
+       {
+        "id": 377,
+        "sign": "under",
+        "margin": -0.1346808058769815
+       }
+      ],
+      "hit_runs": 112,
+      "hit_any_within_0p15": 21,
+      "hit_any_in_m0p15_0p05": 10,
+      "miss_any_within_0p15": 8,
+      "miss_any_in_m0p15_0p05": 7,
+      "hit_none_within_0p5": 58,
+      "miss_none_within_0p5": 0,
+      "miss_max_abs_closest": 0.1346808058769815,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 106,
+      "of": 120,
+      "informative": 39,
+      "informative_of": 51
+     },
+     "A1_over": 1,
+     "A1_under": 7,
+     "misses_by_p0": {
+      "0.5": 6,
+      "1.0": 2,
+      "2.0": 0
+     },
+     "misses_by_L": {
+      "L2": 5,
+      "L3": 3
+     },
+     "informative": {
+      "runs": 51,
+      "A1": {
+       "mae": 0.1568627450980392,
+       "exact": 0.8431372549019608,
+       "within1": 1.0,
+       "misses": 8,
+       "signed_mean": -0.11764705882352941
+      },
+      "early_25": {
+       "mae": 3.6470588235294117,
+       "minus_A1": 3.4901960784313726,
+       "minus_A1_ci": [
+        2.4112745098039214,
+        4.588725490196075
+       ]
+      },
+      "early_50": {
+       "mae": 1.0,
+       "minus_A1": 0.8431372549019608,
+       "minus_A1_ci": [
+        0.5098039215686274,
+        1.2156862745098038
+       ]
+      },
+      "v1_early_10pct": {
+       "mae": 0.0392156862745098,
+       "minus_A1": -0.11764705882352941,
+       "minus_A1_ci": [
+        -0.23529411764705882,
+        -0.0196078431372549
+       ]
+      }
+     }
+    },
+    "0.3": {
+     "runs": 120,
+     "A1": {
+      "mae": 0.13333333333333333,
+      "exact": 0.8666666666666667,
+      "within1": 1.0,
+      "misses": 16,
+      "signed_mean": -0.1
+     },
+     "early_25": {
+      "mae": 3.8916666666666666,
+      "minus_A1": 3.7583333333333333,
+      "minus_A1_ci": [
+       2.999791666666667,
+       4.566874999999999
+      ]
+     },
+     "early_50": {
+      "mae": 2.0,
+      "minus_A1": 1.8666666666666667,
+      "minus_A1_ci": [
+       1.2747916666666665,
+       2.4916666666666667
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.36666666666666664,
+      "minus_A1": 0.23333333333333334,
+      "minus_A1_ci": [
+       0.10833333333333334,
+       0.35833333333333334
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": 0.4375,
+      "hit": 0.33653846153846156,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [
+       {
+        "id": 440,
+        "sign": "under",
+        "margin": 1.0821284915574014
+       },
+       {
+        "id": 441,
+        "sign": "under",
+        "margin": 0.9255207588312644
+       },
+       {
+        "id": 442,
+        "sign": "under",
+        "margin": 1.0241280337769907
+       },
+       {
+        "id": 443,
+        "sign": "under",
+        "margin": 1.2269587642006266
+       },
+       {
+        "id": 444,
+        "sign": "under",
+        "margin": 1.3571905107800122
+       },
+       {
+        "id": 683,
+        "sign": "under",
+        "margin": 1.0128182236206693
+       },
+       {
+        "id": 684,
+        "sign": "under",
+        "margin": 1.0816521535782682
+       },
+       {
+        "id": 448,
+        "sign": "under",
+        "margin": 0.5338111935525518
+       },
+       {
+        "id": 449,
+        "sign": "under",
+        "margin": 0.6640429401319374
+       },
+       {
+        "id": 450,
+        "sign": "under",
+        "margin": -0.30416639469529816
+       },
+       {
+        "id": 453,
+        "sign": "under",
+        "margin": -0.15933612205207304
+       },
+       {
+        "id": 454,
+        "sign": "under",
+        "margin": -0.029104375472687405
+       },
+       {
+        "id": 455,
+        "sign": "under",
+        "margin": -0.032841906006885635
+       },
+       {
+        "id": 458,
+        "sign": "under",
+        "margin": -0.025029925362937355
+       },
+       {
+        "id": 697,
+        "sign": "over",
+        "margin": 0.17670987010465278
+       },
+       {
+        "id": 699,
+        "sign": "over",
+        "margin": 0.060467360066148945
+       }
+      ],
+      "hit_runs": 104,
+      "hit_any_within_0p15": 6,
+      "hit_any_in_m0p15_0p05": 5,
+      "miss_any_within_0p15": 4,
+      "miss_any_in_m0p15_0p05": 3,
+      "hit_none_within_0p5": 71,
+      "miss_none_within_0p5": 9,
+      "miss_max_abs_closest": 1.3571905107800122,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 71,
+      "of": 120,
+      "informative": 29,
+      "informative_of": 76
+     },
+     "A1_over": 2,
+     "A1_under": 14,
+     "misses_by_p0": {
+      "0.5": 0,
+      "1.0": 16,
+      "2.0": 0
+     },
+     "misses_by_L": {
+      "L2": 12,
+      "L3": 4
+     },
+     "informative": {
+      "runs": 76,
+      "A1": {
+       "mae": 0.18421052631578946,
+       "exact": 0.8157894736842105,
+       "within1": 1.0,
+       "misses": 14,
+       "signed_mean": -0.18421052631578946
+      },
+      "early_25": {
+       "mae": 6.105263157894737,
+       "minus_A1": 5.921052631578948,
+       "minus_A1_ci": [
+        4.9868421052631575,
+        6.881578947368421
+       ]
+      },
+      "early_50": {
+       "mae": 3.1447368421052633,
+       "minus_A1": 2.960526315789474,
+       "minus_A1_ci": [
+        2.1052631578947367,
+        3.8815789473684212
+       ]
+      },
+      "v1_early_10pct": {
+       "mae": 0.5657894736842105,
+       "minus_A1": 0.3815789473684211,
+       "minus_A1_ci": [
+        0.19736842105263158,
+        0.5661184210526298
+       ]
+      }
+     }
+    }
+   }
+  },
+  "generic": {
+   "zero": {
+    "all": {
+     "runs": 288,
+     "zero_share": 0.6909722222222222
+    },
+    "by_p0": {
+     "0.5": {
+      "runs": 96,
+      "zero_share": 0.4479166666666667
+     },
+     "1.0": {
+      "runs": 96,
+      "zero_share": 0.625
+     },
+     "2.0": {
+      "runs": 96,
+      "zero_share": 1.0
+     }
+    },
+    "by_a0": {
+     "0.01": {
+      "runs": 72,
+      "zero_share": 1.0
+     },
+     "0.03": {
+      "runs": 72,
+      "zero_share": 0.8472222222222222
+     },
+     "0.1": {
+      "runs": 72,
+      "zero_share": 0.5555555555555556
+     },
+     "0.3": {
+      "runs": 72,
+      "zero_share": 0.3611111111111111
+     }
+    },
+    "by_p0_a0": {
+     "0.5|0.01": {
+      "runs": 24,
+      "zero_share": 1.0
+     },
+     "0.5|0.03": {
+      "runs": 24,
+      "zero_share": 0.6666666666666666
+     },
+     "0.5|0.1": {
+      "runs": 24,
+      "zero_share": 0.125
+     },
+     "0.5|0.3": {
+      "runs": 24,
+      "zero_share": 0.0
+     },
+     "1.0|0.01": {
+      "runs": 24,
+      "zero_share": 1.0
+     },
+     "1.0|0.03": {
+      "runs": 24,
+      "zero_share": 0.875
+     },
+     "1.0|0.1": {
+      "runs": 24,
+      "zero_share": 0.5416666666666666
+     },
+     "1.0|0.3": {
+      "runs": 24,
+      "zero_share": 0.08333333333333333
+     },
+     "2.0|0.01": {
+      "runs": 24,
+      "zero_share": 1.0
+     },
+     "2.0|0.03": {
+      "runs": 24,
+      "zero_share": 1.0
+     },
+     "2.0|0.1": {
+      "runs": 24,
+      "zero_share": 1.0
+     },
+     "2.0|0.3": {
+      "runs": 24,
+      "zero_share": 1.0
+     }
+    }
+   },
+   "all_runs": {
+    "runs": 288,
+    "A1": {
+     "mae": 0.1597222222222222,
+     "exact": 0.8541666666666666,
+     "within1": 0.9861111111111112,
+     "misses": 42,
+     "signed_mean": -0.08333333333333333
+    },
+    "early_25": {
+     "mae": 0.5486111111111112,
+     "minus_A1": 0.3888888888888889,
+     "minus_A1_ci": [
+      0.2534722222222222,
+      0.5277777777777778
+     ]
+    },
+    "early_50": {
+     "mae": 0.2673611111111111,
+     "minus_A1": 0.1076388888888889,
+     "minus_A1_ci": [
+      0.024305555555555556,
+      0.1875
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.04861111111111111,
+     "minus_A1": -0.1111111111111111,
+     "minus_A1_ci": [
+      -0.1597222222222222,
+      -0.059027777777777776
+     ]
+    }
+   },
+   "informative": {
+    "runs": 89,
+    "A1": {
+     "mae": 0.5168539325842697,
+     "exact": 0.5280898876404494,
+     "within1": 0.9550561797752809,
+     "misses": 42,
+     "signed_mean": -0.2696629213483146
+    },
+    "early_25": {
+     "mae": 1.6853932584269662,
+     "minus_A1": 1.1685393258426966,
+     "minus_A1_ci": [
+      0.7974719101123595,
+      1.5842696629213484
+     ]
+    },
+    "early_50": {
+     "mae": 0.8426966292134831,
+     "minus_A1": 0.3258426966292135,
+     "minus_A1_ci": [
+      0.06741573033707865,
+      0.6179775280898876
+     ]
+    },
+    "v1_early_10pct": {
+     "mae": 0.15730337078651685,
+     "minus_A1": -0.3595505617977528,
+     "minus_A1_ci": [
+      -0.5168539325842697,
+      -0.20224719101123595
+     ]
+    }
+   },
+   "informative_by_L": {
+    "L2": {
+     "runs": 53,
+     "A1": {
+      "mae": 0.5283018867924528,
+      "exact": 0.5094339622641509,
+      "within1": 0.9622641509433962,
+      "misses": 26,
+      "signed_mean": -0.2641509433962264
+     },
+     "early_25": {
+      "mae": 1.6037735849056605,
+      "minus_A1": 1.0754716981132075,
+      "minus_A1_ci": [
+       0.5849056603773585,
+       1.5660377358490567
+      ]
+     },
+     "early_50": {
+      "mae": 0.8113207547169812,
+      "minus_A1": 0.2830188679245283,
+      "minus_A1_ci": [
+       -0.018867924528301886,
+       0.6037735849056604
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.11320754716981132,
+      "minus_A1": -0.41509433962264153,
+      "minus_A1_ci": [
+       -0.5849056603773585,
+       -0.22641509433962265
+      ]
+     }
+    },
+    "L3": {
+     "runs": 36,
+     "A1": {
+      "mae": 0.5,
+      "exact": 0.5555555555555556,
+      "within1": 0.9444444444444444,
+      "misses": 16,
+      "signed_mean": -0.2777777777777778
+     },
+     "early_25": {
+      "mae": 1.8055555555555556,
+      "minus_A1": 1.3055555555555556,
+      "minus_A1_ci": [
+       0.6944444444444444,
+       1.9722222222222223
+      ]
+     },
+     "early_50": {
+      "mae": 0.8888888888888888,
+      "minus_A1": 0.3888888888888889,
+      "minus_A1_ci": [
+       -0.08333333333333333,
+       0.8611111111111112
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.2222222222222222,
+      "minus_A1": -0.2777777777777778,
+      "minus_A1_ci": [
+       -0.5555555555555556,
+       0.0
+      ]
+     }
+    }
+   },
+   "by_a0": {
+    "0.01": {
+     "runs": 72,
+     "A1": {
+      "mae": 0.0,
+      "exact": 1.0,
+      "within1": 1.0,
+      "misses": 0,
+      "signed_mean": 0.0
+     },
+     "early_25": {
+      "mae": 0.0,
+      "minus_A1": 0.0,
+      "minus_A1_ci": [
+       0.0,
+       0.0
+      ]
+     },
+     "early_50": {
+      "mae": 0.0,
+      "minus_A1": 0.0,
+      "minus_A1_ci": [
+       0.0,
+       0.0
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0,
+      "minus_A1": 0.0,
+      "minus_A1_ci": [
+       0.0,
+       0.0
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": null,
+      "hit": 0.0,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [],
+      "hit_runs": 72,
+      "hit_any_within_0p15": 0,
+      "hit_any_in_m0p15_0p05": 0,
+      "miss_any_within_0p15": 0,
+      "miss_any_in_m0p15_0p05": 0,
+      "hit_none_within_0p5": 72,
+      "miss_none_within_0p5": 0,
+      "miss_max_abs_closest": null,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 72,
+      "of": 72,
+      "informative": 0,
+      "informative_of": 0
+     },
+     "A1_over": 0,
+     "A1_under": 0,
+     "misses_by_p0": {
+      "0.5": 0,
+      "1.0": 0,
+      "2.0": 0
+     },
+     "misses_by_L": {
+      "L2": 0,
+      "L3": 0
+     },
+     "informative": {
+      "runs": 0
+     }
+    },
+    "0.03": {
+     "runs": 72,
+     "A1": {
+      "mae": 0.125,
+      "exact": 0.875,
+      "within1": 1.0,
+      "misses": 9,
+      "signed_mean": -0.06944444444444445
+     },
+     "early_25": {
+      "mae": 0.1388888888888889,
+      "minus_A1": 0.013888888888888888,
+      "minus_A1_ci": [
+       -0.08333333333333333,
+       0.1111111111111111
+      ]
+     },
+     "early_50": {
+      "mae": 0.08333333333333333,
+      "minus_A1": -0.041666666666666664,
+      "minus_A1_ci": [
+       -0.1111111111111111,
+       0.027777777777777776
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.0,
+      "minus_A1": -0.125,
+      "minus_A1_ci": [
+       -0.20833333333333334,
+       -0.05555555555555555
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": 2.0,
+      "hit": 0.1111111111111111,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [
+       {
+        "id": 900,
+        "sign": "under",
+        "margin": -0.11532198190356491
+       },
+       {
+        "id": 902,
+        "sign": "under",
+        "margin": -0.4665113804120842
+       },
+       {
+        "id": 756,
+        "sign": "over",
+        "margin": 0.0011274231980782368
+       },
+       {
+        "id": 758,
+        "sign": "over",
+        "margin": 0.054699699560829096
+       },
+       {
+        "id": 769,
+        "sign": "under",
+        "margin": -0.03825891904632561
+       },
+       {
+        "id": 770,
+        "sign": "under",
+        "margin": -0.01404578968433734
+       },
+       {
+        "id": 759,
+        "sign": "under",
+        "margin": -0.10089933993805289
+       },
+       {
+        "id": 760,
+        "sign": "under",
+        "margin": -0.17178995497498706
+       },
+       {
+        "id": 761,
+        "sign": "under",
+        "margin": -0.14757682561299879
+       }
+      ],
+      "hit_runs": 63,
+      "hit_any_within_0p15": 2,
+      "hit_any_in_m0p15_0p05": 2,
+      "miss_any_within_0p15": 7,
+      "miss_any_in_m0p15_0p05": 6,
+      "hit_none_within_0p5": 60,
+      "miss_none_within_0p5": 0,
+      "miss_max_abs_closest": 0.4665113804120842,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 69,
+      "of": 72,
+      "informative": 8,
+      "informative_of": 11
+     },
+     "A1_over": 2,
+     "A1_under": 7,
+     "misses_by_p0": {
+      "0.5": 7,
+      "1.0": 2,
+      "2.0": 0
+     },
+     "misses_by_L": {
+      "L2": 7,
+      "L3": 2
+     },
+     "informative": {
+      "runs": 11,
+      "A1": {
+       "mae": 0.8181818181818182,
+       "exact": 0.18181818181818182,
+       "within1": 1.0,
+       "misses": 9,
+       "signed_mean": -0.45454545454545453
+      },
+      "early_25": {
+       "mae": 0.7272727272727273,
+       "minus_A1": -0.09090909090909091,
+       "minus_A1_ci": [
+        -0.6363636363636364,
+        0.5454545454545454
+       ]
+      },
+      "early_50": {
+       "mae": 0.5454545454545454,
+       "minus_A1": -0.2727272727272727,
+       "minus_A1_ci": [
+        -0.7272727272727273,
+        0.18181818181818182
+       ]
+      },
+      "v1_early_10pct": {
+       "mae": 0.0,
+       "minus_A1": -0.8181818181818182,
+       "minus_A1_ci": [
+        -1.0,
+        -0.5454545454545454
+       ]
+      }
+     }
+    },
+    "0.1": {
+     "runs": 72,
+     "A1": {
+      "mae": 0.3194444444444444,
+      "exact": 0.7222222222222222,
+      "within1": 0.9583333333333334,
+      "misses": 20,
+      "signed_mean": -0.09722222222222222
+     },
+     "early_25": {
+      "mae": 0.6388888888888888,
+      "minus_A1": 0.3194444444444444,
+      "minus_A1_ci": [
+       0.125,
+       0.5138888888888888
+      ]
+     },
+     "early_50": {
+      "mae": 0.2777777777777778,
+      "minus_A1": -0.041666666666666664,
+      "minus_A1_ci": [
+       -0.18090277777777775,
+       0.09722222222222222
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.013888888888888888,
+      "minus_A1": -0.3055555555555556,
+      "minus_A1_ci": [
+       -0.4444444444444444,
+       -0.18055555555555555
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": 2.3,
+      "hit": 0.5,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [
+       {
+        "id": 936,
+        "sign": "over",
+        "margin": 0.19500324547503256
+       },
+       {
+        "id": 948,
+        "sign": "under",
+        "margin": -0.01183634679793677
+       },
+       {
+        "id": 938,
+        "sign": "over",
+        "margin": 0.23036683307996864
+       },
+       {
+        "id": 949,
+        "sign": "under",
+        "margin": -0.09382830481109172
+       },
+       {
+        "id": 792,
+        "sign": "over",
+        "margin": 0.23150067020243048
+       },
+       {
+        "id": 793,
+        "sign": "over",
+        "margin": 0.0335873319304576
+       },
+       {
+        "id": 804,
+        "sign": "under",
+        "margin": -0.08275501545702024
+       },
+       {
+        "id": 940,
+        "sign": "under",
+        "margin": -0.19633022079557527
+       },
+       {
+        "id": 941,
+        "sign": "over",
+        "margin": 0.2119187643736824
+       },
+       {
+        "id": 796,
+        "sign": "over",
+        "margin": -0.17380786413594373
+       },
+       {
+        "id": 943,
+        "sign": "under",
+        "margin": -0.19226683116088905
+       },
+       {
+        "id": 944,
+        "sign": "under",
+        "margin": -0.24750862283661457
+       },
+       {
+        "id": 810,
+        "sign": "under",
+        "margin": -0.14969003473254117
+       },
+       {
+        "id": 812,
+        "sign": "under",
+        "margin": -0.19636752040748706
+       },
+       {
+        "id": 798,
+        "sign": "under",
+        "margin": -0.0698140837475485
+       },
+       {
+        "id": 799,
+        "sign": "under",
+        "margin": -0.07344837811807947
+       },
+       {
+        "id": 800,
+        "sign": "over",
+        "margin": 0.012106885204017814
+       },
+       {
+        "id": 801,
+        "sign": "under",
+        "margin": -0.2832208586070111
+       },
+       {
+        "id": 802,
+        "sign": "under",
+        "margin": -0.35411147364394524
+       },
+       {
+        "id": 803,
+        "sign": "under",
+        "margin": -0.32989834428195697
+       }
+      ],
+      "hit_runs": 52,
+      "hit_any_within_0p15": 7,
+      "hit_any_in_m0p15_0p05": 5,
+      "miss_any_within_0p15": 8,
+      "miss_any_in_m0p15_0p05": 8,
+      "hit_none_within_0p5": 37,
+      "miss_none_within_0p5": 0,
+      "miss_max_abs_closest": 0.35411147364394524,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 64,
+      "of": 72,
+      "informative": 25,
+      "informative_of": 32
+     },
+     "A1_over": 7,
+     "A1_under": 13,
+     "misses_by_p0": {
+      "0.5": 15,
+      "1.0": 5,
+      "2.0": 0
+     },
+     "misses_by_L": {
+      "L2": 12,
+      "L3": 8
+     },
+     "informative": {
+      "runs": 32,
+      "A1": {
+       "mae": 0.71875,
+       "exact": 0.375,
+       "within1": 0.90625,
+       "misses": 20,
+       "signed_mean": -0.21875
+      },
+      "early_25": {
+       "mae": 1.3125,
+       "minus_A1": 0.59375,
+       "minus_A1_ci": [
+        0.1875,
+        1.03125
+       ]
+      },
+      "early_50": {
+       "mae": 0.5625,
+       "minus_A1": -0.15625,
+       "minus_A1_ci": [
+        -0.46875,
+        0.15625
+       ]
+      },
+      "v1_early_10pct": {
+       "mae": 0.03125,
+       "minus_A1": -0.6875,
+       "minus_A1_ci": [
+        -0.90625,
+        -0.46875
+       ]
+      }
+     }
+    },
+    "0.3": {
+     "runs": 72,
+     "A1": {
+      "mae": 0.19444444444444445,
+      "exact": 0.8194444444444444,
+      "within1": 0.9861111111111112,
+      "misses": 13,
+      "signed_mean": -0.16666666666666666
+     },
+     "early_25": {
+      "mae": 1.4166666666666667,
+      "minus_A1": 1.2222222222222223,
+      "minus_A1_ci": [
+       0.7916666666666666,
+       1.6805555555555556
+      ]
+     },
+     "early_50": {
+      "mae": 0.7083333333333334,
+      "minus_A1": 0.5138888888888888,
+      "minus_A1_ci": [
+       0.25,
+       0.7916666666666666
+      ]
+     },
+     "v1_early_10pct": {
+      "mae": 0.18055555555555555,
+      "minus_A1": -0.013888888888888888,
+      "minus_A1_ci": [
+       -0.1527777777777778,
+       0.1111111111111111
+      ]
+     },
+     "near_boundary_dirs_mean": {
+      "miss": 0.7692307692307693,
+      "hit": 0.3728813559322034,
+      "note": "directions with |A1 escape margin| < 0.5 per run"
+     },
+     "closest_margin": {
+      "misses": [
+       {
+        "id": 984,
+        "sign": "under",
+        "margin": 1.4529800380928766
+       },
+       {
+        "id": 830,
+        "sign": "over",
+        "margin": 0.5488072084410034
+       },
+       {
+        "id": 840,
+        "sign": "under",
+        "margin": 1.0158572732110895
+       },
+       {
+        "id": 841,
+        "sign": "under",
+        "margin": 1.123603019847927
+       },
+       {
+        "id": 842,
+        "sign": "under",
+        "margin": 1.244436042080908
+       },
+       {
+        "id": 991,
+        "sign": "under",
+        "margin": -0.01530703361925334
+       },
+       {
+        "id": 992,
+        "sign": "under",
+        "margin": -0.07054882529497908
+       },
+       {
+        "id": 846,
+        "sign": "under",
+        "margin": -0.37043761304161005
+       },
+       {
+        "id": 847,
+        "sign": "under",
+        "margin": -0.2626918664047726
+       },
+       {
+        "id": 848,
+        "sign": "under",
+        "margin": -0.14185884417179162
+       },
+       {
+        "id": 993,
+        "sign": "under",
+        "margin": -0.41250758234828266
+       },
+       {
+        "id": 981,
+        "sign": "under",
+        "margin": -0.06684497780342546
+       },
+       {
+        "id": 982,
+        "sign": "under",
+        "margin": -0.39550343712284697
+       }
+      ],
+      "hit_runs": 59,
+      "hit_any_within_0p15": 3,
+      "hit_any_in_m0p15_0p05": 1,
+      "miss_any_within_0p15": 4,
+      "miss_any_in_m0p15_0p05": 4,
+      "hit_none_within_0p5": 44,
+      "miss_none_within_0p5": 5,
+      "miss_max_abs_closest": 1.4529800380928766,
+      "miss_no_finite_margin": 0,
+      "note": "signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin"
+     },
+     "truth_count_fixed_from_first_checkpoint": {
+      "note": "every checkpoint count (the first at 5% of T) equals the final count",
+      "runs": 43,
+      "of": 72,
+      "informative": 18,
+      "informative_of": 46
+     },
+     "A1_over": 1,
+     "A1_under": 12,
+     "misses_by_p0": {
+      "0.5": 3,
+      "1.0": 10,
+      "2.0": 0
+     },
+     "misses_by_L": {
+      "L2": 7,
+      "L3": 6
+     },
+     "informative": {
+      "runs": 46,
+      "A1": {
+       "mae": 0.30434782608695654,
+       "exact": 0.717391304347826,
+       "within1": 0.9782608695652174,
+       "misses": 13,
+       "signed_mean": -0.2608695652173913
+      },
+      "early_25": {
+       "mae": 2.1739130434782608,
+       "minus_A1": 1.8695652173913044,
+       "minus_A1_ci": [
+        1.3043478260869565,
+        2.4788043478260837
+       ]
+      },
+      "early_50": {
+       "mae": 1.108695652173913,
+       "minus_A1": 0.8043478260869565,
+       "minus_A1_ci": [
+        0.43478260869565216,
+        1.2173913043478262
+       ]
+      },
+      "v1_early_10pct": {
+       "mae": 0.2826086956521739,
+       "minus_A1": -0.021739130434782608,
+       "minus_A1_ci": [
+        -0.2391304347826087,
+        0.17391304347826086
+       ]
+      }
+     }
+    }
+   }
+  }
+ },
+ "seconds": 34.691359996795654,
+ "numpy": "2.4.6",
+ "command": "code/checks/e6_r1_informative.py results/e6/r1heldout/posthoc/informative.json 8",
+ "md5": {
+  "e6_r1.py": "5298396a286e9b1a01200d15bd0af3b2",
+  "linjepa.py": "e7d569d4a3537aa3883ddfe847b3df66"
+ }
+}

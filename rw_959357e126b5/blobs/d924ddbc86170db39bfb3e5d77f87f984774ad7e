@@ -1,0 +1,107 @@
+"""Referee check of the E1b results (experiment-repo 4b0cd29, results/e1b/e1b_runs.jsonl) on the aligned arms
+(grid, ema_alpha, depth, balanced), where the per-mode reduction is exact.  Same reduced flow as
+checks/e1b_horizon.py (Euler eta = 0.1, update order of code/linjepa.py simulate(), same initial column norms), run
+twice: (F) with simulate()'s flush of |x| < 1e-150 to 0 every 50 steps, (X) in log-amplitude with no floor (the
+flow the theory describes; the Euler map is integrated exactly: log a' = log a + log(1 + eta * da/a)).
+Reports
+  1. validation: (F) at each run's t_end against the measured per-mode labels `surv`;
+  2. finality: measured rank vs rank at T_LONG under (F) and (X); the pre-registered N1 rank against each;
+  3. depth: the pre-registered N1 (depth-1 capture nullcline a^2 = lam p/(c - p s)) against the depth-L nullcline
+     of identity factors, a^2 = lam p^(2/L - 1)/(c - p s) (from dp/dt = alpha L [p^(2-2/L)(c abar - p s a) a - lam p]),
+     both scored against the measured labels.
+Usage: python3 checks/e1b_results.py PREDICTION_JSON RUNS_JSONL LINJEPA_PY
+"""
+import sys, json, importlib.util, collections
+import numpy as np
+
+pred_path, runs_path, lin_path = sys.argv[1:4]
+spec = importlib.util.spec_from_file_location("linjepa", lin_path); lin = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(lin)
+D = json.load(open(pred_path)); M = {r["id"]: r for r in map(json.loads, open(runs_path))}
+n = d = 24; SIG = np.linspace(1.5, 0.5, n); C = SIG * 0.92 ** np.arange(n); ETA = 0.1; THR = 0.05; T_LONG = 40000.0
+R = [r for r in D["runs"] if r["exp"] in ("grid", "ema_alpha", "depth", "balanced")]
+assert all(M[r["id"]]["diverged"] is None for r in R)
+
+def init_norms(r):
+    rng = np.random.default_rng(r["seed"]); rng.standard_normal((d, n))
+    return r["w0"] * np.exp(r["jitter"] * rng.standard_normal(n))
+
+A0 = np.array([init_norms(r) for r in R]); N = len(R)
+col = lambda k, f=float: np.array([f(r[k]) for r in R])[:, None]
+lam, alpha, L = col("lam"), col("alpha"), col("depth")
+kap = np.array([0.0 if r["kappa"] is None else r["kappa"] for r in R])[:, None]
+ema = np.array([r["kappa"] is not None for r in R])[:, None]
+T_end = np.array([int(round(M[r["id"]]["t_end"] / ETA)) for r in R])
+q0 = np.broadcast_to(np.array([r["p0"] ** (1.0 / r["depth"]) for r in R])[:, None], A0.shape)
+# (F) flushed, as simulate(); (X) log-amplitude, no floor
+a = A0.copy(); ab = A0.copy(); q = q0.copy()
+la = np.log(A0); lab = np.log(A0); qx = q0.copy()
+endF = np.zeros_like(a); endX = np.zeros_like(a); minX = la.copy()
+by_end = collections.defaultdict(list)
+for j, T in enumerate(T_end):
+    by_end[T].append(j)
+for i in range(1, int(T_LONG / ETA) + 1):
+    p = q ** L; tb = np.where(ema, ab, a)
+    da = -p * p * SIG * a + p * C * tb - lam * a
+    dq = alpha * (q ** (L - 1) * (C * tb - p * SIG * a) * a - lam * q)
+    a = a + ETA * da; q = q + ETA * dq; ab = np.where(ema, ab + ETA * kap * (a - ab), a)
+    if i % 50 == 0:
+        a[np.abs(a) < 1e-150] = 0.0; ab[np.abs(ab) < 1e-150] = 0.0; q[np.abs(q) < 1e-150] = 0.0
+    px = qx ** L; ax = np.where(la > -300.0, np.exp(np.maximum(la, -300.0)), 0.0)   # a^2 < 1e-260: no effect on dq, avoids subnormals
+    ratio = np.where(ema, np.exp(np.clip(lab - la, -700.0, 700.0)), 1.0)
+    gx = -px * px * SIG + px * C * ratio - lam
+    dqx = alpha * (qx ** (L - 1) * (C * ax * ratio - px * SIG * ax) * ax - lam * qx)
+    la_new = la + np.log1p(ETA * gx); qx = qx + ETA * dqx
+    lab = np.where(ema, lab + np.log1p(ETA * kap * (np.exp(np.clip(la_new - lab, -700.0, 700.0)) - 1.0)), la_new); la = la_new
+    minX = np.minimum(minX, la)
+    for j in by_end.get(i, []):
+        endF[j] = a[j]; endX[j] = la[j]
+SF_end = np.abs(endF) > THR; SF = np.abs(a) > THR; SX_end = endX > np.log(THR); SX = la > np.log(THR)
+meas = np.array([M[r["id"]]["surv"] for r in R], bool); pred = np.array([r["pred"] for r in R], bool)
+ex = np.array([r["exp"] for r in R])
+out = dict(source="experiment-repo 4b0cd29 results/e1b/{prediction.json,e1b_runs.jsonl}, code/linjepa.py", T_long=T_LONG,
+           validation_flushed_flow_vs_measured_at_t_end=dict(modes=int(meas.size), agree=int((SF_end == meas).sum()),
+                                                             runs_rank_agree=int((SF_end.sum(1) == meas.sum(1)).sum()), runs=N),
+           no_floor_vs_flushed_at_t_end_mode_disagree=int((SX_end != SF_end).sum()),
+           modes_dipping_below_1em150_in_no_floor_flow=int((minX < np.log(1e-150)).sum()), arms={})
+def stats(P, S):
+    e = P.sum(1) - S.sum(1)
+    return dict(mode_acc=round(float((P == S).mean()), 4), rank_exact=round(float((e == 0).mean()), 3),
+                rank_mae=round(float(np.abs(e).mean()), 3), false_pos=int((P & ~S).sum()), false_neg=int((~P & S).sum()))
+arms = collections.OrderedDict([("grid lam=0", (ex == "grid") & (lam[:, 0] == 0)), ("grid lam>0", (ex == "grid") & (lam[:, 0] > 0)),
+                                ("ema_alpha", ex == "ema_alpha"), ("depth", ex == "depth"), ("balanced", ex == "balanced"),
+                                ("aligned N1 arms (grid, ema_alpha, depth)", ex != "balanced")])
+for nm, g in arms.items():
+    out["arms"][nm] = dict(runs=int(g.sum()),
+                           measured_rank_vs_T_long_flushed_differs=int((meas[g].sum(1) != SF[g].sum(1)).sum()),
+                           measured_rank_vs_T_long_no_floor_differs=int((meas[g].sum(1) != SX[g].sum(1)).sum()),
+                           N1_vs_measured=stats(pred[g], meas[g]), N1_vs_T_long_flushed=stats(pred[g], SF[g]),
+                           N1_vs_T_long_no_floor=stats(pred[g], SX[g]))
+# depth: depth-L capture nullcline in the pre-registered race (same p(t), F, horizon as escape_score)
+def score_depthL(c, s, lam_, alph, p0, logw0, L_, t_end, ngrid=6000):
+    pm, _ = lin.window(np.asarray(c, float), np.asarray(s, float), lam_)
+    if not np.isfinite(pm) or pm >= p0:
+        return -np.inf
+    rate = L_ * alph * lam_
+    logp = np.linspace(np.log(p0), np.log(pm), ngrid); dt = (logp[0] - logp[1]) / rate; p = np.exp(logp)
+    t = np.arange(ngrid) * dt; g = lin.growth_rate(p, c, s, lam_, None)
+    F = np.concatenate([[0.0], np.cumsum(0.5 * (g[1:] + g[:-1]) * dt)]); gap = c - p * s
+    thr = np.where(gap > 0, 0.5 * np.log(lam_ * p ** (2.0 / L_ - 1.0) / np.maximum(gap, 1e-300)), np.inf)
+    v = (logw0 + F - thr)[t <= t_end]
+    return float(v.max()) if v.size else -np.inf
+gd = ex == "depth"; idx = np.where(gd)[0]
+predL = np.array([[score_depthL(C[k], SIG[k], R[j]["lam"], R[j]["alpha"], R[j]["p0"], np.log(A0[j, k]), R[j]["depth"],
+                                M[R[j]["id"]]["t_end"]) >= 0 for k in range(n)] for j in idx], bool)
+pre1 = np.array([[lin.escape_score(C[k], SIG[k], R[j]["lam"], R[j]["lam"], R[j]["alpha"], R[j]["p0"], np.log(A0[j, k]),
+                                   t_end=M[R[j]["id"]]["t_end"], depth=R[j]["depth"]) >= 0 for k in range(n)] for j in idx], bool)
+dep = {}
+for Lv in (1, 2, 3):
+    h = L[idx, 0] == Lv
+    dep[f"L={Lv}"] = dict(runs=int(h.sum()), measured_mean_rank=float(meas[idx][h].sum(1).mean()),
+                          N1_preregistered=stats(pred[idx][h], meas[idx][h]),
+                          escape_score_recomputed=stats(pre1[h], meas[idx][h]),
+                          depthL_nullcline=stats(predL[h], meas[idx][h]))
+dep["all"] = dict(N1_preregistered=stats(pred[idx], meas[idx]), depthL_nullcline=stats(predL, meas[idx]))
+out["depth_capture"] = dep
+print(json.dumps(out, indent=1))
+json.dump(out, open("checks/e1b_results.json", "w"), indent=1)

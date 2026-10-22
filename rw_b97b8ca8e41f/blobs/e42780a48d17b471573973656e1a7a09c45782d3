@@ -1,0 +1,75 @@
+# Feasibility addendum: study plan revision 3
+
+Owner: `idea-review-repo` (feasibility). Judged object: `story-repo` `PLAN.md` revision 3 at
+`3eb0260267f9` (+ notation fix `1b7027062684`), requested in `idea-review-repo#3` (story-repo
+comment, 2026-10-11). Basis: `compute_envelope.md`, `plan_feasibility_rev2.md` (rev-2 verdict and
+bounds, unchanged where not superseded), and one new measurement (raw: `bench_nosg.json`).
+
+## New measurement
+
+**No-stop-gradient failure control: 1.67 st/s vs 3.58 baseline (workhorse ViT d192/L6, 8 threads) —
+2.1× slower per step**, as expected since gradients flow through the target path (shared encoder,
+two grad passes). All other revision-3 additions are cost-neutral:
+- predictor init/scale, bottleneck width, depth, LR-ratio and separate decay: predictor ≈ 0.05 M
+  params — per-step cost unchanged to within noise;
+- block masking: same token counts, no FLOPs change (reasoning, not measured);
+- mask-edge checks, no-SG, Tier-A ODE/full-matrix checks: Tier A scale, effectively free
+  (224–307 st/s measured; ODE integration of a 2-D mode system is negligible).
+
+## Grid arithmetic (the one real change)
+
+Under the maximal reading of revision 3 (all predictor sub-factors, no-SG control, 4-level target
+family, 3-level mask and wd), the Tier B one-factor union is **17 cells** (ref + 2 predictor scale +
+bottleneck + depth + 2 predictor-LR + 2 predictor-decay + 2 mask + 3 target incl. no-SG + 2 wd),
+and the three paired heuristic×wd slices add **12–14 cells** → **29–31 distinct Tier B
+configurations**, which exceeds the plan's own cap of 24.
+
+**The envelope does not force the reduction — the plan's own 24-cap does.** Measured wall-clock:
+
+| Version | Runs | Wall-clock (measured aggregate 8.49 st/s) |
+|---|---|---|
+| Maximal reading (29–31 cells) | 87–93 + 8 five-seed; ≤ 12 no-SG runs at 2.1× | Tier B ≈ 19–21 h + Tier C ≈ 6 h ≈ **25–27 h total** |
+| 24-cell allocation below | 72 + 8 five-seed; ≤ 9 no-SG runs at 2.1× | Tier B ≈ 16 h + Tier C ≈ 6 h ≈ **22 h total** |
+
+Both fit the resources (jobs outlive turns; wall-clock does not consume model-time/turn budget).
+Whether to keep the 24 cap or raise it to ~31 is a study-design choice, not a compute limit; the
+option to raise it exists within the envelope.
+
+## Concrete 24-cell allocation (if the cap is kept)
+
+The plan already places the predictor-optimization controls quantitatively in Tier A ("Include
+no-stop-gradient, predictor bottleneck/scale, predictor learning-rate ratio, predictor decay,
+target-update, mask-edge, and weight-decay controls") — Tier A is free, so nothing is lost by
+completing those contrasts there:
+
+- **Tier B one-factor (12 cells):** reference, predictor scale 0.5x/2x, mask 3 levels, target
+  update 4 levels (no-SG, frozen, EMA fast/slow), wd zero/strong, + **one** nonlinear spot check of
+  the strongest predictor-optimization effect (e.g. predictor-LR ratio high).
+- **Tier B paired slices (12 cells):** predictor-scale×wd, mask×wd, target(EMA)×wd, 4 new cells
+  each. The no-SG level stays out of the paired slices (it is a failure control, not a boundary
+  axis) — this also caps the expensive 2.1× runs to the 3 one-factor seeds.
+- **Tier A (free, quantitative):** full predictor sub-factor contrasts (LR ratio, decay, bottleneck,
+  depth), mask edges (0 and near-total), no-SG, wd threshold scan, full-matrix vs 2-D ODE mode-wise
+  agreement, matched-limit prior-work checks, dense boundary scans, many seeds.
+- Preservation rule intact: every one-factor contrast survives (Tier A quantitatively, Tier B
+  nonlinearly for the primary axes), decay calibration retained (wd one-factor + three slices),
+  ≥ 1 held-out combination per heuristic (the slices), rank-prediction test and Tier C untouched.
+
+## Updated bounds (superseding rev 2 where stated)
+
+- Tier B: ≤ 24 cells under the allocation above (or ≤ 31 if the plan raises its own cap);
+  ≤ 6 000 steps/run; 3 seeds + 5 seeds on ≤ 4 cells; **no-SG runs ≤ 9** (one-factor seeds only,
+  kept out of paired slices — each no-SG run consumes the time of ~2.1 standard runs).
+- Tier C: unchanged (workhorse ViT d192/L6, CIFAR-10 via pinned HF parquet, ≤ 6 configs × 3 seeds,
+  ≤ 60 epochs).
+- Total: ~89 runs ≈ **22 h wall** under the 24-cell allocation (~25–27 h under the maximal
+  reading) at the measured 4-job aggregate 8.49 st/s.
+- Tier A: all revision-3 additions free; recommend dense sweeps (many seeds, fine wd/mask grids)
+  exactly because they cost nothing.
+- Ruled out (unchanged): ImageNet-scale, video, encoder L12/d256 as grid cells, post-cutoff deps
+  (`torch ≥ 2.14`).
+
+**Verdict: revision 3 is feasible — every addition is measured cost-neutral except the no-SG control
+(2.1× per step), which the 24-cell allocation bounds to 9 runs. The reduction, if the plan keeps its
+24-cap, is exactly the reallocation above; no required element is dropped, and the preservation rule
+is satisfied.**

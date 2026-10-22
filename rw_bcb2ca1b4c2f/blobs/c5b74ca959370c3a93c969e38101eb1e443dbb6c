@@ -1,0 +1,595 @@
+{
+ "definition": "E7-G (E7 registration amendment 6, results/e7/prediction.json): a same-GPU-family reference for E7's toggles.\nThe production toggles ran on V100 and their reference row (Arm T, wd 0.0034, seeds 20-22) on P100. E7-G reruns that\nreference row unchanged (code/e7_grid.py row T_wd0.0034, frozen vit_jepa.py, 50 epochs, seeds 20-22, three runs packed\non one GPU as the toggles were) on a V100, and scores it with the frozen per-run scorer (code/e7_score.py score_run).\nReading (fixed before the run):\n  gpu_check   per seed and seed-mean, the V100 reference's measured count at the last horizon minus the P100 one (and at\n              epoch 20). |seed-mean difference| <= 2 sd (3.16, the registered toggle threshold: 2 x the C5 reference\n              row's seed sd of the race's error, score.json toggles.*.sd_ref_headroom_error) -> 'no GPU-family difference\n              beyond 2 sd detectable at 3 seeds' (amendment 7: wording only; low power, not 'same count'); otherwise\n              'GPU-family sensitivity' and the toggles are read against the V100 row. Amendment 7 also reports the\n              paired per-seed differences with their mean, sd and t interval (2 df) at both horizons.\n  toggles_v100  the registered toggle statistic (e7_score.toggles: mean over seeds of toggle error - reference error,\n              headroom_200 and early_200, last horizon) recomputed with the V100 rows as the reference, read with the\n              registered threshold 3.16 and the registered directions; reported beside the registered (P100) reading.\nScope: the comparison is hardware plus packing and run-to-run nondeterminism, on shared seeds 20-22 (the P100 runs were\npacked with other rows' runs, the V100 runs with each other). Per run: GPU name, memory, driver, node (as an md5 prefix; names are redacted), torch, the pip\nfreeze hash and its agreement with results/e3/cluster_env.json, code commit and seed.\nNo registered verdict is re-scored.\nUsage: python3 code/e7g.py sbatch DIR COMMIT | score RUNS_DIR DATA_DIR PROD_ROWS.json PROD_SCORE.json OUT.json",
+ "gpu_env": [
+  "index, name, memory.total [MiB], driver_version",
+  "0, Tesla V100-SXM2-32GB, 32768 MiB, 570.86.15",
+  "node_md5,f67f47bb"
+ ],
+ "scope": "hardware plus packing and run-to-run nondeterminism, shared seeds 20-22",
+ "rows": [
+  {
+   "seed": 20,
+   "wd": 0.0034,
+   "init": 27,
+   "steps": 9750,
+   "init_thr": {
+    "1e-2": 13,
+    "1e-4": 48
+   },
+   "mu_native": 1101,
+   "mu_modes": 8192,
+   "context_ratio": 0.3053125,
+   "k2_positive_drive": 61,
+   "diverged": false,
+   "final": true,
+   "provenance": {
+    "gpu": "Tesla V100-SXM2-32GB",
+    "gpu_family": "V100",
+    "torch": "2.5.1+cu124",
+    "commit": "0c8adecb731602197a37b878ee59b19e0808554d",
+    "vit_jepa_md5": "e503bee96237aef3216cac61a95ceea6",
+    "env_hash": "bcdf95e96b1b",
+    "seed": 20,
+    "node_md5": "f67f47bb",
+    "slurm_job": "53970632",
+    "cluster_env_mismatch": {}
+   },
+   "status": {
+    "e20": "ok",
+    "e50": "ok"
+   },
+   "e20": {
+    "measured": 23,
+    "measured_online": 23,
+    "headroom_200": 17,
+    "early_200": 25,
+    "headroom_400": 20,
+    "early_400": 30,
+    "trend_200": 53,
+    "trend_200_logt": 34,
+    "step0": 25,
+    "mu_diag": 21,
+    "mu_wd": 18,
+    "mu_tight": 33,
+    "mu_tight_run": 9,
+    "mu_tight_vitmu": 20,
+    "mu_k2": 1,
+    "mu_tight_run_wd": null,
+    "mu_k2_wd": null,
+    "mu_k2_sched": null,
+    "thr": {
+     "1e-2": {
+      "measured": 11,
+      "early_200": 13,
+      "headroom_200": 7
+     },
+     "1e-4": {
+      "measured": 38,
+      "early_200": 47,
+      "headroom_200": 35
+     }
+    }
+   },
+   "e50": {
+    "measured": 10,
+    "measured_online": 10,
+    "headroom_200": 7,
+    "early_200": 25,
+    "headroom_400": 11,
+    "early_400": 30,
+    "trend_200": 78,
+    "trend_200_logt": 35,
+    "step0": 26,
+    "mu_diag": 21,
+    "mu_wd": 18,
+    "mu_tight": 33,
+    "mu_tight_run": 9,
+    "mu_tight_vitmu": 20,
+    "mu_k2": 1,
+    "mu_tight_run_wd": null,
+    "mu_k2_wd": null,
+    "mu_k2_sched": null,
+    "thr": {
+     "1e-2": {
+      "measured": 6,
+      "early_200": 13,
+      "headroom_200": 1
+     },
+     "1e-4": {
+      "measured": 18,
+      "early_200": 47,
+      "headroom_200": 19
+     }
+    }
+   }
+  },
+  {
+   "seed": 21,
+   "wd": 0.0034,
+   "init": 26,
+   "steps": 9750,
+   "init_thr": {
+    "1e-2": 13,
+    "1e-4": 50
+   },
+   "mu_native": 1111,
+   "mu_modes": 8192,
+   "context_ratio": 0.3053125,
+   "k2_positive_drive": 68,
+   "diverged": false,
+   "final": true,
+   "provenance": {
+    "gpu": "Tesla V100-SXM2-32GB",
+    "gpu_family": "V100",
+    "torch": "2.5.1+cu124",
+    "commit": "0c8adecb731602197a37b878ee59b19e0808554d",
+    "vit_jepa_md5": "e503bee96237aef3216cac61a95ceea6",
+    "env_hash": "bcdf95e96b1b",
+    "seed": 21,
+    "node_md5": "f67f47bb",
+    "slurm_job": "53970632",
+    "cluster_env_mismatch": {}
+   },
+   "status": {
+    "e20": "ok",
+    "e50": "ok"
+   },
+   "e20": {
+    "measured": 22,
+    "measured_online": 22,
+    "headroom_200": 18,
+    "early_200": 27,
+    "headroom_400": 19,
+    "early_400": 27,
+    "trend_200": 127,
+    "trend_200_logt": 41,
+    "step0": 25,
+    "mu_diag": 21,
+    "mu_wd": 19,
+    "mu_tight": 33,
+    "mu_tight_run": 8,
+    "mu_tight_vitmu": 20,
+    "mu_k2": 1,
+    "mu_tight_run_wd": null,
+    "mu_k2_wd": null,
+    "mu_k2_sched": null,
+    "thr": {
+     "1e-2": {
+      "measured": 10,
+      "early_200": 14,
+      "headroom_200": 7
+     },
+     "1e-4": {
+      "measured": 37,
+      "early_200": 53,
+      "headroom_200": 36
+     }
+    }
+   },
+   "e50": {
+    "measured": 10,
+    "measured_online": 10,
+    "headroom_200": 8,
+    "early_200": 27,
+    "headroom_400": 9,
+    "early_400": 27,
+    "trend_200": 127,
+    "trend_200_logt": 44,
+    "step0": 15,
+    "mu_diag": 21,
+    "mu_wd": 19,
+    "mu_tight": 33,
+    "mu_tight_run": 8,
+    "mu_tight_vitmu": 20,
+    "mu_k2": 1,
+    "mu_tight_run_wd": null,
+    "mu_k2_wd": null,
+    "mu_k2_sched": null,
+    "thr": {
+     "1e-2": {
+      "measured": 6,
+      "early_200": 14,
+      "headroom_200": 2
+     },
+     "1e-4": {
+      "measured": 19,
+      "early_200": 53,
+      "headroom_200": 21
+     }
+    }
+   }
+  },
+  {
+   "seed": 22,
+   "wd": 0.0034,
+   "init": 27,
+   "steps": 9750,
+   "init_thr": {
+    "1e-2": 13,
+    "1e-4": 47
+   },
+   "mu_native": 1129,
+   "mu_modes": 8192,
+   "context_ratio": 0.3053125,
+   "k2_positive_drive": 65,
+   "diverged": false,
+   "final": true,
+   "provenance": {
+    "gpu": "Tesla V100-SXM2-32GB",
+    "gpu_family": "V100",
+    "torch": "2.5.1+cu124",
+    "commit": "0c8adecb731602197a37b878ee59b19e0808554d",
+    "vit_jepa_md5": "e503bee96237aef3216cac61a95ceea6",
+    "env_hash": "bcdf95e96b1b",
+    "seed": 22,
+    "node_md5": "f67f47bb",
+    "slurm_job": "53970632",
+    "cluster_env_mismatch": {}
+   },
+   "status": {
+    "e20": "ok",
+    "e50": "ok"
+   },
+   "e20": {
+    "measured": 24,
+    "measured_online": 24,
+    "headroom_200": 20,
+    "early_200": 27,
+    "headroom_400": 17,
+    "early_400": 25,
+    "trend_200": 126,
+    "trend_200_logt": 43,
+    "step0": 19,
+    "mu_diag": 21,
+    "mu_wd": 19,
+    "mu_tight": 32,
+    "mu_tight_run": 9,
+    "mu_tight_vitmu": 20,
+    "mu_k2": 1,
+    "mu_tight_run_wd": null,
+    "mu_k2_wd": null,
+    "mu_k2_sched": null,
+    "thr": {
+     "1e-2": {
+      "measured": 12,
+      "early_200": 14,
+      "headroom_200": 7
+     },
+     "1e-4": {
+      "measured": 38,
+      "early_200": 50,
+      "headroom_200": 35
+     }
+    }
+   },
+   "e50": {
+    "measured": 9,
+    "measured_online": 9,
+    "headroom_200": 8,
+    "early_200": 27,
+    "headroom_400": 8,
+    "early_400": 25,
+    "trend_200": 127,
+    "trend_200_logt": 46,
+    "step0": 1,
+    "mu_diag": 21,
+    "mu_wd": 19,
+    "mu_tight": 32,
+    "mu_tight_run": 9,
+    "mu_tight_vitmu": 20,
+    "mu_k2": 1,
+    "mu_tight_run_wd": null,
+    "mu_k2_wd": null,
+    "mu_k2_sched": null,
+    "thr": {
+     "1e-2": {
+      "measured": 6,
+      "early_200": 14,
+      "headroom_200": 2
+     },
+     "1e-4": {
+      "measured": 19,
+      "early_200": 50,
+      "headroom_200": 21
+     }
+    }
+   }
+  }
+ ],
+ "gpu": [
+  "V100"
+ ],
+ "status": {
+  "20": {
+   "e20": "ok",
+   "e50": "ok"
+  },
+  "21": {
+   "e20": "ok",
+   "e50": "ok"
+  },
+  "22": {
+   "e20": "ok",
+   "e50": "ok"
+  }
+ },
+ "gpu_check": {
+  "e20": {
+   "per_seed": {
+    "20": 0,
+    "21": 0,
+    "22": 0
+   },
+   "mean": 0.0,
+   "v100": {
+    "20": 23,
+    "21": 22,
+    "22": 24
+   },
+   "p100": {
+    "20": 23,
+    "21": 22,
+    "22": 24
+   },
+   "sd": 0.0,
+   "n_seeds": 3,
+   "t_interval": [
+    0.0,
+    0.0
+   ]
+  },
+  "e50": {
+   "per_seed": {
+    "20": 0,
+    "21": 0,
+    "22": 0
+   },
+   "mean": 0.0,
+   "v100": {
+    "20": 10,
+    "21": 10,
+    "22": 9
+   },
+   "p100": {
+    "20": 10,
+    "21": 10,
+    "22": 9
+   },
+   "sd": 0.0,
+   "n_seeds": 3,
+   "t_interval": [
+    0.0,
+    0.0
+   ]
+  },
+  "reading": "no GPU-family difference beyond 2 sd detectable at 3 seeds"
+ },
+ "toggles_v100": {
+  "T_adamw": {
+   "per_seed": {
+    "20": {
+     "headroom_200": 14,
+     "early_200": 2
+    },
+    "21": {
+     "headroom_200": 24,
+     "early_200": 9
+    },
+    "22": {
+     "headroom_200": 14,
+     "early_200": -3
+    }
+   },
+   "gpu_families": [
+    "V100"
+   ],
+   "ref_gpu_families": [
+    "V100"
+   ],
+   "gpu_family_differs_from_reference": false,
+   "mean_error_diff_headroom_200": 17.333333333333332,
+   "mean_error_diff_early_200": 2.6666666666666665,
+   "measured": {
+    "20": 23,
+    "21": 17,
+    "22": 23
+   },
+   "reference_measured": {
+    "20": 10,
+    "21": 10,
+    "22": 9
+   },
+   "hypothesis_registered_threshold": "no direction registered",
+   "registered_p100_reading": {
+    "mean_error_diff_headroom_200": 17.333333333333332,
+    "hypothesis": "no direction registered"
+   },
+   "hypothesis_3seed_sd_posthoc": "no direction registered",
+   "hypothesis_rule_3seed_sd_posthoc": "predicted 'None'; 2 sd = 2.0",
+   "sd_ref_headroom_error_3seed_posthoc": 1.0
+  },
+  "T_ema": {
+   "per_seed": {
+    "20": {
+     "headroom_200": 1,
+     "early_200": -2
+    },
+    "21": {
+     "headroom_200": 3,
+     "early_200": -4
+    },
+    "22": {
+     "headroom_200": 4,
+     "early_200": -4
+    }
+   },
+   "gpu_families": [
+    "V100"
+   ],
+   "ref_gpu_families": [
+    "V100"
+   ],
+   "gpu_family_differs_from_reference": false,
+   "mean_error_diff_headroom_200": 2.6666666666666665,
+   "mean_error_diff_early_200": -3.3333333333333335,
+   "measured": {
+    "20": 13,
+    "21": 13,
+    "22": 13
+   },
+   "reference_measured": {
+    "20": 10,
+    "21": 10,
+    "22": 9
+   },
+   "hypothesis_registered_threshold": "borne out",
+   "registered_p100_reading": {
+    "mean_error_diff_headroom_200": 2.6666666666666665,
+    "hypothesis": "borne out"
+   },
+   "hypothesis_3seed_sd_posthoc": "not borne out",
+   "hypothesis_rule_3seed_sd_posthoc": "predicted 'holds'; 2 sd = 2.0",
+   "sd_ref_headroom_error_3seed_posthoc": 1.0
+  },
+  "T_tln": {
+   "per_seed": {
+    "20": {
+     "headroom_200": 4,
+     "early_200": -3
+    },
+    "21": {
+     "headroom_200": 1,
+     "early_200": -1
+    },
+    "22": {
+     "headroom_200": 3,
+     "early_200": -3
+    }
+   },
+   "gpu_families": [
+    "V100"
+   ],
+   "ref_gpu_families": [
+    "V100"
+   ],
+   "gpu_family_differs_from_reference": false,
+   "mean_error_diff_headroom_200": 2.6666666666666665,
+   "mean_error_diff_early_200": -2.3333333333333335,
+   "measured": {
+    "20": 14,
+    "21": 11,
+    "22": 11
+   },
+   "reference_measured": {
+    "20": 10,
+    "21": 10,
+    "22": 9
+   },
+   "hypothesis_registered_threshold": "borne out",
+   "registered_p100_reading": {
+    "mean_error_diff_headroom_200": 2.6666666666666665,
+    "hypothesis": "borne out"
+   },
+   "hypothesis_3seed_sd_posthoc": "not borne out",
+   "hypothesis_rule_3seed_sd_posthoc": "predicted 'holds'; 2 sd = 2.0",
+   "sd_ref_headroom_error_3seed_posthoc": 1.0
+  },
+  "T_pln": {
+   "per_seed": {
+    "20": {
+     "headroom_200": 3,
+     "early_200": -2
+    },
+    "21": {
+     "headroom_200": 2,
+     "early_200": 0
+    },
+    "22": {
+     "headroom_200": 5,
+     "early_200": -5
+    }
+   },
+   "gpu_families": [
+    "V100"
+   ],
+   "ref_gpu_families": [
+    "V100"
+   ],
+   "gpu_family_differs_from_reference": false,
+   "mean_error_diff_headroom_200": 3.3333333333333335,
+   "mean_error_diff_early_200": -2.3333333333333335,
+   "measured": {
+    "20": 17,
+    "21": 14,
+    "22": 16
+   },
+   "reference_measured": {
+    "20": 10,
+    "21": 10,
+    "22": 9
+   },
+   "hypothesis_registered_threshold": "not borne out",
+   "registered_p100_reading": {
+    "mean_error_diff_headroom_200": 3.3333333333333335,
+    "hypothesis": "not borne out"
+   },
+   "hypothesis_3seed_sd_posthoc": "not borne out",
+   "hypothesis_rule_3seed_sd_posthoc": "predicted 'holds'; 2 sd = 2.0",
+   "sd_ref_headroom_error_3seed_posthoc": 1.0
+  },
+  "T_nodn": {
+   "per_seed": {
+    "20": {
+     "headroom_200": 15,
+     "early_200": -14
+    },
+    "21": {
+     "headroom_200": 10,
+     "early_200": -10
+    },
+    "22": {
+     "headroom_200": 18,
+     "early_200": -18
+    }
+   },
+   "gpu_families": [
+    "V100"
+   ],
+   "ref_gpu_families": [
+    "V100"
+   ],
+   "gpu_family_differs_from_reference": false,
+   "mean_error_diff_headroom_200": 14.333333333333334,
+   "mean_error_diff_early_200": -14.0,
+   "measured": {
+    "20": 25,
+    "21": 20,
+    "22": 26
+   },
+   "reference_measured": {
+    "20": 10,
+    "21": 10,
+    "22": 9
+   },
+   "hypothesis_registered_threshold": "borne out",
+   "registered_p100_reading": {
+    "mean_error_diff_headroom_200": 14.333333333333334,
+    "hypothesis": "borne out"
+   },
+   "hypothesis_3seed_sd_posthoc": "borne out",
+   "hypothesis_rule_3seed_sd_posthoc": "predicted 'breaks'; 2 sd = 2.0",
+   "sd_ref_headroom_error_3seed_posthoc": 1.0
+  },
+  "scope": "exploratory, 3 seeds; a toggle that breaks shows the change is sufficient to break the readout, not the cause; untested reverse toggles (e.g. removing decay on the norm gains from a row that otherwise keeps T_nodn's other settings, an EMA row without decay on the gains) are a limitation"
+ },
+ "toggles_v100_note": "post hoc relabel (code/checks/e7g_label.py): *_3seed_posthoc fields use the sd of the three V100 reference seeds (sd_ref_headroom_error_3seed_posthoc 1.0, threshold 2 sd = 2.0) and are not the registered reading; the registered reading (amendment 6) is hypothesis_registered_threshold (threshold 3.16 = 2 x the five-seed sd of the reference row, seeds 20-24). The two thresholds differ by seed count, not GPU family (P100 and V100 give identical values on seeds 20-22).",
+ "relabel": {
+  "script": "code/checks/e7g_label.py",
+  "scorer_output_md5": "d8f948f368e84bbc060765db5ca43fd0",
+  "renamed": {
+   "hypothesis": "hypothesis_3seed_sd_posthoc",
+   "hypothesis_rule": "hypothesis_rule_3seed_sd_posthoc",
+   "sd_ref_headroom_error": "sd_ref_headroom_error_3seed_posthoc"
+  }
+ }
+}

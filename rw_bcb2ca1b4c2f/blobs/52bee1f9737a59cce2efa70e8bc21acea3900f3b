@@ -1,0 +1,43 @@
+"""Post-hoc diagnosis of the A1 held-out result (results/e4/a1/a1_score.json); not part of the registered scoring.
+Classifies A1d errors (second collapse after a first crossing, model early, model late) and compares the A1a
+shortfall with the float64-vs-longdouble disagreement of the same scalar map. Output: results/e4/a1/diagnosis.txt"""
+import json, gzip, numpy as np, sys
+sys.path.insert(0, 'code'); import e4_a1 as a
+runs = [json.loads(l) for l in gzip.open('results/e4/a1/a1_runs.jsonl.gz', 'rt')]
+CK = np.array(a.CHECKS); cls = dict(second_collapse=0, model_late=0, model_early=0, other=0); tot = 0
+rank_bad = dict(n=0, with_second=0)
+for r in runs:
+    A = np.array(r['alive'], bool); P = np.array(r['pred_alive'], bool)
+    tm = np.array([np.inf if x is None else x for x in r['alive_from']]); tp = np.array([np.inf if x is None else x for x in r['pred_alive_from']])
+    aK = np.abs(np.array(r['state_K']['a'])); tm[aK > a.THR] = a.K
+    W = A != P; tot += W.sum()
+    sec = np.zeros_like(W)
+    for i, t in enumerate(CK):
+        for k in np.where(W[i])[0]:
+            if P[i, k] and not A[i, k] and tm[k] <= t: cls['second_collapse'] += 1; sec[i, k] = True
+            elif P[i, k] and not A[i, k]: cls['model_early'] += 1
+            elif A[i, k] and not P[i, k]: cls['model_late'] += 1
+            else: cls['other'] += 1
+    bad = np.abs(A.sum(1) - P.sum(1)) > 1
+    rank_bad['n'] += bad.sum(); rank_bad['with_second'] += (bad & sec.any(1)).sum()
+print('wrong pairs', tot, cls); print('rank>1 checkpoints', rank_bad)
+# A1a: float64 scalar vs longdouble truth, vs matrix
+s1 = s2 = s3 = n = 0
+for r in runs:
+    if 'a1a_matrix_absa' not in r: continue
+    M = np.array(r['a1a_matrix_absa']) > a.THR; S = np.array(r['a1a_scalar_absa']) > a.THR; L = np.array(r['alive'], bool)
+    s1 += (M == S).mean(); s2 += (S == L).mean(); s3 += (M == L).mean(); n += 1
+print('A1a subset: matrix64 vs scalar64 %.4f, scalar64 vs longdouble %.4f, matrix64 vs longdouble %.4f' % (s1/n, s2/n, s3/n))
+re_ = 0; nd = 0; by = {}
+for r in runs:
+    A = np.array(r['alive'], bool)
+    rec = (A.cumsum(0) > 0) & ~A
+    x = rec.any(0); re_ += x.sum(); nd += x.size
+    key = (r['stats'], r['b2']); by.setdefault(key, [0, 0]); by[key][0] += x.sum(); by[key][1] += x.size
+print('directions that are dead at a checkpoint after being alive at an earlier one: %d / %d' % (re_, nd), {str(k): round(v[0]/v[1], 3) for k, v in by.items()})
+r1 = n = 0
+for r in runs:
+    if 'a1a_matrix_absa' not in r: continue
+    S = np.array(r['a1a_scalar_absa']) > a.THR; L = np.array(r['alive'], bool)
+    r1 += (S.sum(1) == L.sum(1)).mean(); n += 1
+print('rank equality scalar64 vs longdouble on A1a subset %.4f' % (r1 / n))

@@ -1,0 +1,29 @@
+import json, gzip, numpy as np, collections
+R=[json.loads(l) for l in gzip.open('prec.jsonl.gz')]
+by={}
+for r in R:
+    c=r['cfg']; by[(c['id'],r['prec'])]=r
+ids=sorted({c for c,_ in by})
+def S(r):
+    return None if r['truth'].get('counts') is None else np.array(r['truth']['sv'],dtype=float)
+out=collections.defaultdict(list)
+for i in ids:
+    r64=by[(i,'f64')]; r80=by[(i,'f80')]; c=r64['cfg']
+    if c['p0']!=1.5: continue
+    a,b=S(r64),S(r80)
+    if a is None or b is None: continue
+    key=(c['lam'],c['eta'],c['B'])
+    # relative levels at first check
+    la=np.log10(np.maximum(a[0]/a[0,0],1e-300)); lb=np.log10(np.maximum(b[0]/b[0,0],1e-300))
+    fin=(a[-1]>0.05).sum()
+    # min over checks of relative level per index
+    ma=np.log10(np.maximum((a/a[:,:1]).min(0),1e-300)); mb=np.log10(np.maximum((b/b[:,:1]).min(0),1e-300))
+    out[key].append(dict(top0=np.log10(a[0,0]), rank=fin, rank80=(b[-1]>0.05).sum(),
+        first_rel_64=la, first_rel_80=lb, min64=ma, min80=mb))
+for key in sorted(out):
+    L=out[key]
+    print(key, 'n',len(L),'rank64',np.mean([x['rank'] for x in L]),'rank80',np.mean([x['rank80'] for x in L]),'top0 log10',np.round(np.median([x['top0'] for x in L]),1))
+    # per index (sorted) median of first-check relative level f64 vs f80
+    f64=np.median([x['first_rel_64'] for x in L],0); f80=np.median([x['first_rel_80'] for x in L],0)
+    print('   first-check rel log10 f64', np.round(f64,1))
+    print('   first-check rel log10 f80', np.round(f80,1))

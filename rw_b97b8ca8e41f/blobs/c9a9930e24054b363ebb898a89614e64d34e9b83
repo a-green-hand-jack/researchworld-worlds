@@ -1,0 +1,78 @@
+\section{Experimental details}
+\label{app:details}
+
+\paragraph{Design and run budget.}
+The design was fixed before the final runs from a measured CPU throughput envelope.
+Tier~B was planned with 21 configurations: the reference, two levels of each of predictor scale, predictor depth, mask ratio and target update (9 one-factor cells), and slices pairing predictor scale, mask ratio and target update with zero and ``strong'' encoder weight decay (4 new cells each; the AdamW coefficients of Tier~B are small, see below); 3 seeds each and 5 on at most four cells, for at most 71 runs.
+Tier~C was planned with at most 6 configurations with 3 seeds (18 runs), at most 60 epochs each.
+A reduction rule was fixed in advance, to be invoked only if the measured wall-clock of the final runs exceeded the budget: first reduce the 5-seed cells to 3 seeds, then shorten Tier~C from 60 to 50 and then 30 epochs, then drop the target-update slice of the weight-decay pairing before any one-factor contrast. The linear check, the one-factor contrasts, the weight-decay calibration, a held-out condition for each heuristic, the rank-prediction test and the real-data check with its probe are never dropped.
+\emph{The rule was invoked.} The first 10 final Tier~B runs took 8{,}846--11{,}089\,s each (mean 10{,}427\,s) and the first Tier~C run 14{,}827\,s, against the planning estimate (below), which put the full grid at about 70 rather than 20 hours.
+We therefore run every cell with 3 seeds, Tier~C at 50 epochs (not 30: the online rank of the first Tier~C run was still rising, 110, 115 and 131 at epochs 30, 40 and 50), and drop the four target-update$\times$decay cells; the 17 Tier~B configurations are listed in \cref{tab:tierBgrid}.
+A fourth seed of the reference cell, completed before the reduction, is kept and reported as such.
+Tier~C runs the reference, both predictor scales, both mask ratios and the slow EMA target.
+
+\paragraph{Masking protocol in Tiers B and C.}
+The runner hides each of the 64 patches of an example independently with probability $m$ (the context is the image with hidden patches set to zero, and the loss is taken over the hidden patches), so $m$ is the expected masked fraction, not an exact count.
+This departs from the study plan fixed before the final runs. Its claim C4, up to plan revision~5 (commit \texttt{5f2b309ea120cb56330e7c9c88581274d5889f0c}), read: ``[the plan] then checks whether block masking in a nonlinear JEPA follows the same qualitative rule'' (earlier revisions, before the grid was pinned at commit \texttt{e7a64fe}, also listed ``a block-mask condition if feasible'' in Tier~B).
+The runner never implemented block masks; the discrepancy was found in an audit after 10 Tier~B runs and one Tier~C run had finished.
+Plan revision~6 (commit \texttt{3e6355da3e4d038661f9853c1ea01ed96d359d76}) then replaced the C4 wording by ``checks whether independently sampled patch masks in a nonlinear JEPA show the same qualitative mask-ratio dependence. No result from this study tests a contiguous block-mask prediction'', and kept the implemented sampler, with unchanged mask fractions, grid, seeds and steps, for all runs rather than switch it mid-grid or relabel completed runs.
+This is a correction made after results were seen, not a prospective choice; it does not change the question the study asks (how the \emph{amount} of masking affects rank), but no result here tests contiguous block masking as in I-JEPA \citep{assran2023ijepa}.
+Independent patch masks of an image are not the i.i.d.\ coordinate masks of a stationary signal assumed by \cref{prop:masking}, so we compare Tier~A and the ViT only qualitatively over mask ratio.
+Rank is evaluated on one context mask per run drawn from a seeded generator (seed $90{,}000+$run seed) and reused at every checkpoint.
+
+\paragraph{Encoder weight decay in Tiers B and C.}
+The decay threshold of \cref{prop:window} and P7 concerns the direct L2 decay $\lambda$ of the gradient flow \eqref{eq:wdot}--\eqref{eq:pdot}, which Tier~A integrates by expected-gradient descent; its zero/reference/strong scan ($\lambda=0$, $0.005$, $0.02$) is the only calibration of that threshold in this study.
+The ViT runner instead applies decoupled AdamW to the encoder at a constant learning rate of $3\times10^{-4}$ with coefficients $0$, $10^{-4}$ (reference) and $5\times10^{-4}$; the last was labelled ``strong'' in the plan only relative to the other two.
+Apart from the gradient, this decay multiplies the encoder weights by $(1-3\times10^{-4}\cdot5\times10^{-4})^{6000}=0.9991004$ over a run ($0.9998200$ at the reference). This is not a measured net shrinkage under the adaptive gradient steps, and an AdamW coefficient has no fixed relation to the $\lambda$ of \eqref{eq:wdot}, so the Tier-A threshold cannot be placed on the Tier~B axis.
+The Tier~B decay pairing therefore measures only the sensitivity of rank to a small decay at fixed predictor scale or mask ratio. Its outcome (\cref{sec:experiments,app:nonlinear}) neither calibrates nor tests the threshold, and a small effect at this dose is not evidence that collapse in the ViT is insensitive to weight decay. Whether the threshold has a nonlinear counterpart is open in Tiers B and C; Tier~C uses the reference coefficient only.
+This scope was set after the first complete decay contrast (predictor scale $0.5$, seeds 0--2) had been seen, in plan revision~7 (commit \texttt{4c6ee7bd3c7c961b13a30ee43cd97634148a5963}), from the runner at experiment-repo commit \texttt{ae59eab281902647a55001cda1218c14d38aaaaa}. It is a correction of the interpretation made after results were seen, not a prediction made beforehand. It leaves the 17-cell Tier~B and 6-cell Tier~C grids, the Tier~A result and the predictions P1--P8 unchanged, and no decay cell was added.
+
+In Tier~A the thresholds (the numerical-rank cut-off, the eigenvalue floor) are fixed on calibration configurations and applied unchanged to held-out ones; which configurations are which is recorded in \texttt{results/}.
+\emph{Tier~A.} Data and embedding dimension 16; Gaussian context and target views with the covariances of \cref{prop:masking} in the Fourier basis, for a stationary signal with powers $S_k$ geometrically spaced from $3$ to $0.05$ over the 16 directions and coordinate-visibility probability $q=1-m$: $c_k=q(qS_k+(1-q)\bar S)$, target variance $(1-q)(qS_k+(1-q)\bar S)$ and $s_k=q(1-q)(S_k-\bar S)$; the no-signal control sets $s_k=0$ (\texttt{results/README.md}).
+Expected-gradient descent with step size $0.01$ for $30{,}000$ steps, $\lambda=\lambda_P=0.005$, $\alpha=1$, predictor initial gain $p_0=0.5$, mask fraction $0.65$, no EMA ($\tau=0$) and a one-layer diagonal predictor unless the sweep varies them; encoder amplitudes are initialized at $10^{-3}$ times log-normal noise (log-s.d.\ $0.15$).
+Seeds $0$--$7$ (8 per configuration; $0$--$4$ for the 40 full-matrix validation runs), with checkpoints at steps 0, 10, 50, 100, 200, 500, 1k, 2k, 5k, 10k, 20k and 30k; the early window is steps 10--500.
+Numerical rank counts covariance eigenvalues at least $10^{-2}$ of the largest; the collapse-aware rank counts those that also exceed their initial value; a run is \emph{collapsed}, and its rank 0, when the largest eigenvalue is below $10^{-12}$. The early slopes are least-squares fits of the log at steps 10, 50, 100, 200 and 500.
+The 11 calibration configurations are the reference point of each sweep and the three fixed-decay-rate $\alpha$ cells; the other 32 are held out.
+The full grid is \texttt{results/configs/experiment\_grid.json}, run by \texttt{code/run\_experiments.py} in 156\,s of wall-clock on 8 cores (Python 3.11.2, NumPy 2.4.6).
+
+\emph{Tier~B.} Data: 12{,}288 generated $32\times32$ images, each a Gaussian combination of 8 fixed separable sinusoidal patterns $\sin(k\pi x)\cos((k+1)\pi y)$, $k=1,\dots,8$, copied to 3 channels, plus Gaussian noise of standard deviation $0.1$, scaled to maximum absolute value at most 1; the first 10{,}240 are used for training (\texttt{code/run\_vit\_experiments.py}, generator seed 0).
+Model: ViT encoder with 64 patches of $4\times4$, width 192, 6 blocks; transformer predictor with input and output projections between widths 192 and 64, 4 heads, depth $1$, $2$ or $3$, its output multiplied by the predictor scale; the target encoder is an EMA copy of the online encoder, fed the full image.
+Optimization: AdamW, learning rate $3\times10^{-4}$ for encoder and predictor (ratio $\alpha=1$), decoupled encoder weight-decay coefficient $0$, $10^{-4}$ (reference) or $5\times10^{-4}$, predictor coefficient $10^{-4}$, constant learning rate (no schedule), gradient-norm clipping at 1, batch 256, $6{,}000$ steps, seeds 0--2.
+Checkpoints at steps 0, 25, 50, 100, 250, 500, 1k, 2k, 4k and 6k; the early window is steps 25--250.
+The rank is that of the covariance of the mean-pooled online embeddings of the first 512 training images under the fixed context mask (the target encoder's, on full images, is recorded too). At each checkpoint its eigenvectors are matched to those of the previous checkpoint by greedy maximum overlap; the early statistic counts matched directions with positive log-slope over the window.
+Numerical rank counts eigenvalues at least $10^{-3}$ of the largest; this threshold, the window and the statistic were fixed in the runner before the final runs and are not tuned per configuration.
+\Cref{tab:tierBgrid} lists the configurations.
+
+\begin{table}[h]
+\centering\small
+\caption{Tier~B configurations (reference: predictor scale 1, depth 2, mask ratio $m=0.5$, EMA $\tau=0.99$, encoder AdamW decay coefficient $10^{-4}$). Each is run with seeds 0--2; the reference also with seed 3.}
+\label{tab:tierBgrid}
+\begin{tabular}{ll}
+\toprule
+varied & values \\
+\midrule
+predictor scale & $0.5$, $2$ \\
+predictor depth & $1$, $3$ \\
+mask ratio $m$ & $0.25$, $0.75$ \\
+EMA rate $\tau$ & $0.9$, $0.999$ \\
+scale $\times$ encoder decay & $\{0.5,2\}\times\{0,\,5\times10^{-4}\}$ \\
+mask ratio $\times$ encoder decay & $\{0.25,0.75\}\times\{0,\,5\times10^{-4}\}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Data.}
+Tier~A and Tier~B use generated data (\texttt{code/}).
+Tier~C uses the CIFAR-10 training set \citep{krizhevsky2009cifar} (50{,}000 images) from the public Hugging Face parquet copy \texttt{uoft-cs/cifar10} (119{,}705{,}255 bytes; columns \texttt{img}, PNG bytes, and \texttt{label}).
+The copy is pinned to dataset revision \texttt{0b27149}; train (50{,}000) and test (10{,}000) files are hashed in \texttt{results/raw/vit\_runs/c\_*/data\_provenance.json}. Images are normalized per channel with training-set statistics; 50 epochs are 9{,}800 updates.
+Probe: the final online encoder is frozen, the mean-pooled embeddings of full (unmasked) images are computed, and a ridge classifier (scikit-learn \texttt{RidgeClassifier}, $\alpha=1$) is fitted on all training labels and evaluated on the whole test set.
+
+\paragraph{Software and compute.}
+Python 3.11.2, PyTorch 2.13.0 (CPU build), NumPy 2.4.6, PyArrow and Pillow; all runs use CPUs only, in a container with 8 CPU cores and 32\,GB of memory, at most 4 jobs at a time.
+Before the final runs we measured an aggregate throughput of 8.49 training steps per second for the Tier~B model with 4 concurrent jobs, and 224--307 steps per second for the linear models; at that rate the roughly 89 nonlinear runs would have taken about 20 hours of wall-clock time.
+These were measurements and estimates made for planning, not results of the study; the final runs were slower (see Design and run budget).
+Each final ViT run uses 4 CPU threads; per-run wall-clock is recorded in each run's \texttt{summary\_seed*.csv}. The reduced grid (52 Tier~B and 18 Tier~C runs) was projected at about 56 hours with 4 concurrent jobs.
+The 17 nonlinear runs committed so far took 8{,}846--11{,}089\,s each in Tier~B and 14{,}174--17{,}013\,s each in Tier~C, 53.3 hours of run time in total (sum of the per-run wall-clocks, \texttt{notes/tierB\_numbers.txt}); the totals of the final grid will be taken from the merged summaries.
+
+\paragraph{Use of language models.}
+The derivations, the experiment code, the analyses and the text of this paper were produced by a team of LLM-based agents, with each claim checked against a derivation, a numerical check or a committed result file; the methods studied do not use language models.

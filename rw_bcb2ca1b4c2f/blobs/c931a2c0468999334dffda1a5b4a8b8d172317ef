@@ -1,0 +1,228 @@
+"""Referee check of the E2 pre-registration (experiment-repo db2a53b, results/e2/prediction.json, code/e2.py),
+made before its results exist.  E2: linear JEPA on a cyclic Gaussian field (n = d = 64, Sigma_ij = 0.7^dist) with
+zeroing patch masks (Bernoulli, cyclic block, 4-block union, non-cyclic block), identity predictor p0 I, copy target,
+orthogonal W0 = 1e-3 Q, population GD with Euler step 0.05, horizon t_end = min(3 t_race + 300, 4000).
+  1. spectra: (sigma_k, c_k) of Sigma o G, Sigma o F in the real Fourier basis, from my own G, F (Bernoulli closed
+     form; single-block placements enumerated and, for the 4-block union, raised to the 4th power by independence),
+     against prediction.json `spectra`;
+  2. recomputation: my own race score (window roots, g = p c - p^2 s - lam, F by the trapezoid rule on the decaying
+     gain p0 exp(-lam t), capture nullcline a^2 = lam p/(c - p s), max over t <= t_end while p >= p_-), against the
+     pre-registered per-mode `pred` of the cyclic pop/sgd/tanh runs;
+  3. forecast: W0 = w0 Q and P0 = p0 I with circulant statistics give W(t) = V diag(a(t)) U^T and P(t) = V diag(p(t)) V^T
+     exactly (V = Q U), so each Fourier column follows the scalar Euler map of simulate() (same update order); run to
+     t_end, 2 t_end and T_LONG = 40000, with the 1e-150 flush applied to the amplitudes and without it.  The forecast is
+     my reduced flow, not E2's measurement; E2's measured cyclic pop labels can be checked against it.  The
+     pre-registered "pop cyclic (N1)" and "pop peak" criteria are evaluated on it.
+  4. nopred: the arm is linear (W' = W (S21 - S11 - lam I)), so its measured sign is g_k by construction; reports the
+     amplitude growth factor exp(g_max t_end) the growing directions reach.
+Usage: python3 checks/e2_prereg.py PREDICTION_JSON
+"""
+import sys, json, itertools
+import numpy as np
+
+D = json.load(open(sys.argv[1])); R = D["runs"]
+n = 64; RHO = 0.7; ETA = 0.05; W0 = 1e-3; THR = 0.05; T_CAP = 4000.0; T_LONG = 40000.0; NB = 4
+idx = np.arange(n)
+DIST = np.minimum(np.abs(idx[:, None] - idx[None]), n - np.abs(idx[:, None] - idx[None]))
+SIGMA = RHO ** DIST
+
+# real orthonormal Fourier basis, my own construction: frequency f column(s)
+cols, freq = [], []
+for f in range(n // 2 + 1):
+    cvec = np.cos(2 * np.pi * f * idx / n); cols.append(cvec / np.linalg.norm(cvec)); freq.append(f)
+    if 0 < f < n // 2:
+        svec = np.sin(2 * np.pi * f * idx / n); cols.append(svec / np.linalg.norm(svec)); freq.append(f)
+U = np.array(cols).T; FREQ = np.array(freq)
+assert np.allclose(U.T @ U, np.eye(n))
+SIG_HAT = np.einsum("ik,ij,jk->k", U, SIGMA, U)
+
+
+def block_masks(L, cyclic=True):
+    starts = range(n) if cyclic else range(n - L + 1)
+    return np.array([((idx - s) % n < L).astype(float) if cyclic else ((idx >= s) & (idx < s + L)).astype(float)
+                     for s in starts])
+
+
+def GF(fam, r):
+    if fam == "bern":
+        q = 1 - r
+        G = q * q + (q - q * q) * np.eye(n); F = r * q * (1 - np.eye(n))
+        return G, F
+    if fam == "block":
+        T = block_masks(int(round(r * n)))
+        C = 1 - T
+        return C.T @ C / len(T), T.T @ C / len(T)
+    if fam == "multiblock":
+        T = block_masks(int(r))                      # one block, all placements
+        miss = (1 - T).T @ (1 - T) / len(T)            # Pr(block misses i and j)
+        miss_i = 1 - T.mean(0)                         # Pr(block misses j)
+        G = miss ** NB
+        F = miss_i[None, :] ** NB - G                  # Pr(i in U, j not in U)
+        return G, F
+    raise ValueError(fam)
+
+
+def spectra(fam, r):
+    G, F = GF(fam, r)
+    return np.einsum("ik,ij,jk->k", U, SIGMA * G, U), np.einsum("ik,ij,jk->k", U, SIGMA * F, U)
+
+
+# 1. spectra against prediction.json (their basis orders columns the same way: f = 0, then cos/sin pairs, then n/2)
+spec_dev = {}
+for key, v in D["spectra"].items():
+    fam, r = key.split("/"); r = float(r)
+    s, c = spectra(fam, r)
+    spec_dev[key] = max(np.abs(s - np.array(v["sigma"])).max(), np.abs(c - np.array(v["c"])).max())
+bern_closed = max(np.abs(spectra("bern", r)[1] - (1 - r) * r * (SIG_HAT - 1)).max() for r in [0.1, 0.5, 0.9])
+
+
+# 2. my race score
+def score(c, s, lam, p0, t_end, logw0=np.log(W0), ngrid=8000):
+    disc = c * c - 4 * lam * s
+    if c <= 0 or disc < 0:
+        return -np.inf
+    pm = (c - np.sqrt(disc)) / (2 * s)
+    if pm >= p0:
+        return -np.inf
+    logp = np.linspace(np.log(p0), np.log(pm), ngrid); p = np.exp(logp)
+    t = (np.log(p0) - logp) / lam
+    g = p * c - p * p * s - lam
+    F = np.concatenate([[0.0], np.cumsum(0.5 * (g[1:] + g[:-1]) * np.diff(t))])
+    gap = c - p * s
+    thr = np.where(gap > 0, 0.5 * np.log(lam * p / np.maximum(gap, 1e-300)), np.inf)
+    v = (logw0 + F - thr)[t <= t_end]
+    return float(v.max()) if v.size else -np.inf
+
+
+def t_race(c, s, lam, p0):
+    disc = c * c - 4 * lam * s
+    ok = (c > 0) & (disc >= 0)
+    pm = np.where(ok, (c - np.sqrt(np.where(ok, disc, 0))) / (2 * s), np.nan)
+    pm = pm[np.isfinite(pm) & (pm > 0) & (pm < p0)]
+    return float(np.log(p0 / pm.min()) / lam) if pm.size else 0.0
+
+
+cyc = [x for x in R if x["exp"] in ("pop", "sgd", "tanh") and x["fam"] != "block_nc"]
+keys = sorted({(x["fam"], x["r"], x["lam"], x["p0"]) for x in cyc})
+SPEC = {(f, r): spectra(f, r) for f, r in {(k[0], k[1]) for k in keys}}
+mine, tend = {}, {}
+for k in keys:
+    f, r, lam, p0 = k
+    s, c = SPEC[(f, r)]
+    tend[k] = min(3 * t_race(c, s, lam, p0) + 300.0, T_CAP)
+    mine[k] = np.array([score(c[j], s[j], lam, p0, tend[k]) >= 0 for j in range(n)])
+pred_dis = sum(int((np.array(x["pred"], bool) != mine[(x["fam"], x["r"], x["lam"], x["p0"])]).sum()) for x in cyc)
+tend_dev = max(abs(x["t_end"] - tend[(x["fam"], x["r"], x["lam"], x["p0"])]) for x in cyc)
+rank_dis_runs = sum(int(x["rank_pred"] != mine[(x["fam"], x["r"], x["lam"], x["p0"])].sum()) for x in cyc)
+
+# 3. exact reduced flow for the distinct cyclic configs (seed-independent: no jitter, orthonormal columns)
+K = len(keys)
+Sm = np.array([SPEC[(k[0], k[1])][0] for k in keys]); Cm = np.array([SPEC[(k[0], k[1])][1] for k in keys])
+lam = np.array([k[2] for k in keys])[:, None]; p0 = np.array([k[3] for k in keys])[:, None]
+Tend = np.array([int(tend[k] / ETA) for k in keys])
+marks = {"t_end": Tend, "2t_end": 2 * Tend, "T_long": np.full(K, int(T_LONG / ETA))}
+snap = {(m, fl): np.zeros((K, n)) for m in marks for fl in ("flush", "noflush")}
+state = {"flush": [np.full((K, n), W0), np.broadcast_to(p0, (K, n)).copy()],
+         "noflush": [np.full((K, n), W0), np.broadcast_to(p0, (K, n)).copy()]}
+for t in range(int(T_LONG / ETA)):
+    for fl, (a, p) in state.items():
+        da = -(p * p * Sm * a - p * Cm * a) - lam * a
+        dp = -((p * Sm * a - Cm * a) * a) - lam * p
+        a += ETA * da; p += ETA * dp
+        if fl == "flush" and t % 50 == 0:
+            a[np.abs(a) < 1e-150] = 0.0; p[np.abs(p) < 1e-150] = 0.0
+    for m, Tm in marks.items():
+        hit = Tm == t + 1
+        if hit.any():
+            for fl, (a, p) in state.items():
+                snap[(m, fl)][hit] = a[hit]
+surv = {mk: np.abs(v) > THR for mk, v in snap.items()}
+kpos = {k: i for i, k in enumerate(keys)}
+
+
+def evaluate(fl, mark):
+    S = surv[(mark, fl)]
+    pop = [x for x in R if x["exp"] == "pop" and x["fam"] != "block_nc"]
+    rp = np.array([x["rank_pred"] for x in pop]); rb = np.array([x["rank_bound"] for x in pop])
+    rw = np.array([x["rank_window"] for x in pop]); rm = np.array([S[kpos[(x["fam"], x["r"], x["lam"], x["p0"])]].sum()
+                                                                  for x in pop])
+    # per-frequency multiplicity accuracy
+    acc = []
+    for x in pop:
+        sv = S[kpos[(x["fam"], x["r"], x["lam"], x["p0"])]]; pv = np.array(x["pred"], bool)
+        acc += [int(sv[FREQ == f].sum() == pv[FREQ == f].sum()) for f in range(n // 2 + 1)]
+    out = dict(runs=len(pop), freq_acc=float(np.mean(acc)), mae=float(np.abs(rp - rm).mean()),
+               exact=float((rp == rm).mean()), over=int((rp > rm).sum()), under=int((rp < rm).sum()),
+               bound_mae=float(np.abs(rb - rm).mean()), window_mae=float(np.abs(rw - rm).mean()))
+    out["criterion_pass"] = bool(out["freq_acc"] >= 0.95 and out["mae"] <= 1.0 and out["mae"] < out["bound_mae"]
+                                 and out["mae"] < out["window_mae"])
+    out["by_family"] = {}
+    for fam in ("bern", "block", "multiblock"):
+        sel = np.array([x["fam"] == fam for x in pop])
+        out["by_family"][fam] = dict(mae=float(np.abs(rp - rm)[sel].mean()), exact=float((rp == rm)[sel].mean()),
+                                     bound_mae=float(np.abs(rb - rm)[sel].mean()))
+    out["by_lam"] = {str(l): dict(mae=float(np.abs(rp - rm)[sel].mean()), exact=float((rp == rm)[sel].mean()),
+                                  bound_mae=float(np.abs(rb - rm)[sel].mean()))
+                     for l in sorted({x["lam"] for x in pop}) for sel in [np.array([x["lam"] == l for x in pop])]}
+    # peak criterion over (fam, lam, p0) profiles on the run grid
+    prof = {}
+    for x in pop:
+        if x["seed"] != 0:
+            continue
+        prof.setdefault((x["fam"], x["lam"], x["p0"]), []).append((x["r"], x["rank_pred"],
+                                                                    int(S[kpos[(x["fam"], x["r"], x["lam"], x["p0"])]].sum())))
+    n_elig = n_ok = n_nm = n_nm_ok = 0; fails = []
+    for pk, rows in sorted(prof.items()):
+        rows.sort(); pr = np.array([z[1] for z in rows]); mr = np.array([z[2] for z in rows])
+        if pr.max() >= 2:
+            n_elig += 1
+            P = set(np.flatnonzero(pr == pr.max())); M = set(np.flatnonzero(mr == mr.max()))
+            ok = bool(P & M) or min(abs(i - j) for i in P for j in M) <= 1
+            n_ok += ok
+            if not ok:
+                fails.append(dict(profile=list(pk), pred=pr.tolist(), forecast=mr.tolist()))
+        if pr.max() - pr[0] >= 2 and pr.max() - pr[-1] >= 2:
+            n_nm += 1; n_nm_ok += bool(mr.max() - mr[0] >= 2 and mr.max() - mr[-1] >= 2)
+    out["peak"] = dict(eligible=n_elig, ok=n_ok, frac=n_ok / max(n_elig, 1), pred_nonmonotone=n_nm,
+                       forecast_nonmonotone_of_those=n_nm_ok, pass_=bool(n_ok >= 0.8 * n_elig and n_nm_ok == n_nm),
+                       misses=fails)
+    return out
+
+
+res = dict(source="experiment-repo db2a53b results/e2/prediction.json (unchanged at 3e31766), code/e2.py",
+           spectra=dict(entries=len(spec_dev), max_abs_dev=float(max(spec_dev.values())),
+                        bern_closed_form_max_dev=float(bern_closed)),
+           recompute=dict(cyclic_runs=len(cyc), modes=len(cyc) * n, per_mode_disagree=pred_dis,
+                          rank_pred_disagree_runs=rank_dis_runs, t_end_max_abs_dev=float(tend_dev)),
+           horizon=dict(pop_cyclic_configs=K, capped_at_T_CAP=int(sum(tend[k] >= T_CAP for k in keys)),
+                        capped_by_lam={str(l): int(sum(tend[k] >= T_CAP for k in keys if k[2] == l))
+                                       for l in sorted({k[2] for k in keys})}))
+fin = {}
+for fl in ("flush", "noflush"):
+    base = surv[("t_end", fl)].sum(1)
+    fin[fl] = {m: dict(configs_rank_changed=int((surv[(m, fl)].sum(1) != base).sum()),
+                       gained=int((surv[(m, fl)].sum(1) > base).sum()), lost=int((surv[(m, fl)].sum(1) < base).sum()),
+                       by_lam={str(l): int(((surv[(m, fl)].sum(1) != base) & (lam[:, 0] == l)).sum())
+                               for l in sorted(set(lam[:, 0]))})
+               for m in ("2t_end", "T_long")}
+res["forecast_finality"] = fin
+res["flush_effect_t_end_configs"] = int((surv[("t_end", "flush")].sum(1) != surv[("t_end", "noflush")].sum(1)).sum())
+res["forecast_vs_pred"] = {f"{m}/{fl}": evaluate(fl, m) for m in ("t_end", "T_long") for fl in ("flush", "noflush")}
+# per-config forecast (seed-independent), for checking E2's measured cyclic pop labels when they land
+res["forecast_configs"] = [dict(fam=k[0], r=k[1], lam=k[2], p0=k[3], t_end=tend[k], rank_pred=int(mine[k].sum()),
+                                **{f"rank_{m}": int(surv[(m, "flush")][i].sum()) for m in marks},
+                                labels_t_end="".join("1" if v else "0" for v in surv[("t_end", "flush")][i]))
+                           for i, k in enumerate(keys)]
+# 4. nopred
+NP = [x for x in R if x["exp"] == "nopred"]
+np_dis = 0; growth = []
+for x in NP:
+    s, c = spectra(x["fam"], x["r"]); g = c - s - x["lam"]
+    np_dis += int(int((g > 0).sum()) != x["rank_pred"])
+    if (g > 0).any():
+        growth.append(float(g.max() * x["t_end"]))
+res["nopred"] = dict(runs=len(NP), rank_pred_disagree=np_dis, runs_with_growth=len(growth),
+                     log_growth_at_t_end=[min(growth), max(growth)] if growth else None,
+                     note="P = I fixed: W(t) = W0 expm(t (S21 - S11 - lam)); the per-frequency sign equals sign(g_k) by "
+                          "construction, so this arm checks the statistics, not a dynamical prediction")
+print(json.dumps(res, indent=1))

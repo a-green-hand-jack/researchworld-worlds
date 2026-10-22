@@ -1,0 +1,157 @@
+# Review standard for the writing revision of the released paper (objective #6)
+
+Owner: `internal-review-repo` (function: review). The assembled delivery for the
+`Research objective` #6 is judged against this standard before approval. The
+standard for objective #5 (the extension, released at paper `771f5a90e56b`) is
+kept as history in `REVIEW_STANDARD_obj5.md`.
+
+## Sources
+
+- **Objective #6, re-read at every verdict.** It asks for the writing of the
+  released paper and only the writing. It names the structure and order of the
+  argument, how each claim is stated and supported, the wording, how figures
+  and tables are introduced and interpreted, the captions, and whether each
+  citation sits in a sentence about the cited work. Where the text claims more
+  or less than the evidence in the repositories shows, the text changes to match
+  the evidence. There are no new experiments, no changed results or conclusions,
+  and no new research directions. Figures and tables may be redrawn or laid out
+  again for readability, from existing results only. The delivery is the LaTeX
+  source in the ICLR 2027 template and the compiled PDF, within the submission
+  requirements and the main-text page limit, with the appendices kept as
+  supplementary material. A record of what was changed and why sits next to the
+  paper. Nothing first published after 18 Oct 2026 is used.
+- **The baseline: the released delivery.** It consists of paper-repo `771f5a90e56b`,
+  figtab-repo `924ea5af4d20` and experiment-repo `4207193fc02e`. I approved it
+  for objective #5; see `reviews/release_review.md` and `reviews/log.md`. Its
+  numbers, registered verdicts and conclusions are the fixed reference for the
+  invariance checks (I below).
+- **The brief** (`ht-role brief`): v5.0 at idea-repo `dcecc0510060`, written for the writing objective.
+  - Its requirements W1–W7, K1–K7 and D1–D5 map onto W, I and B below.
+  - Its diagnosis (§4, items 1–15) and its claim-versus-evidence candidates (§5, items 1–8) are checked one by one at each verdict, together with experiment-repo's evidence check in paper-repo#16 (items 1–9).
+  - Its citation audit (`refs/citation_audit.md`, promised as v5.1) is checked against my own sample once it is pushed.
+- **The work assignment** at story-repo `84409bbd`:
+  - paper-repo owns `paper/`;
+  - figtab-repo owns `paper/figures/`, `paper/tables/` and `code/figures/`;
+  - experiment-repo owns `code/` and `results/`.
+- **venue-repo's ICLR 2027 record** at `1f0048accdba`. Its section "Objective venue-repo#10" covers this revision: `VENUE.md`,
+  `template/`, `tools/check_submission.py` and `venue-artifacts.json`.
+  - Main text: at most 9 pages. References do not count.
+  - Appendices go after the references, are unlimited, and are optional reading.
+    The paper must stand alone without them.
+  - The submission is anonymous, with no acknowledgments.
+  - An AI use statement is required. Reproducibility and ethics statements are
+    recommended.
+  - `paper/CHANGES.md` and `paper/CLAIMS.md` are required paths.
+    - CHANGES.md carries a section for this revision.
+    - CLAIMS.md stays consistent with the text.
+
+This standard never prescribes a conclusion or a wording. I will revise it,
+and record why, if the brief, the assignment or the venue record changes what
+#6 is read to require.
+
+## W. Writing: what a demanding referee checks
+
+- **W1. Argument and order.**
+  - The abstract states the problem, why it is hard, the idea, the headline
+    results and their scope, and the significance.
+  - The introduction motivates with the concrete gap. It states the idea and
+    lists contributions that are each verifiable in the paper, with their scope
+    (linear model, ViT).
+  - The order of sections follows the argument: setup, theory, predictions,
+    tests, extensions, limits.
+  - The premise ("collapse is decided early") and the evidence against it in the
+    ViT are framed consistently from the abstract to the conclusion. A reader
+    must not meet a premise in the introduction that the abstract or Section 7
+    contradicts without warning.
+- **W2. Claims stated and supported.**
+  - Every claim in the abstract, the contributions and the conclusion maps to a
+    section, figure or table and to a results file, with its scope and its
+    verdict (pass, fail, post hoc, retrospective, undetermined).
+  - No claim is stronger than its evidence, for example generalising beyond the
+    linear model, or treating "not separated" as "better".
+  - No claim is weaker than its evidence, for example burying a passed held-out
+    test.
+  - Each registered failure stays stated.
+- **W3. Wording.**
+  - Every term the main text uses is defined in the main text at first use.
+  - Internal process labels (rung n, v3/v4, A2′, B1′, N2, A1, E-numbers, "the
+    word", "truth ill-posed", "sample-robust") either get a plain-language
+    definition or are replaced by a description. The appendix may keep the
+    labels if it maps them.
+  - Sentences carry one claim each where possible. There are no unexplained
+    numbers or symbols, no filler, and no paragraph repeated across sections.
+- **W4. Figures and tables.**
+  - Each one is referenced in the text, introduced before it is needed, and
+    interpreted: the text says what to see and what it means.
+  - Each caption stands alone. It states what is plotted, n, seeds, the
+    statistic and the interval, and the claim the item supports.
+  - Labels and legends are legible at ICLR text width in print, about 6 pt or
+    more, with no internal jargon in panel titles.
+  - Colour use is consistent and colourblind-safe.
+  - A figure the main-text argument depends on is in the main text, or the text
+    says it is in the appendix and the claim can be read without it.
+  - No figure or table is blank, a placeholder, or unlabeled.
+- **W5. Citations.**
+  - Each `\cite` sits in a sentence about what the cited work does, and the
+    claim is true of the work (I check it against the title or abstract).
+  - No bundle of more than 4 keys, unless every key supports the sentence.
+  - No key dumps or citation-only sentences.
+  - Relevant entries are not left uncited.
+  - Every key resolves, and nothing first published after 18 Oct 2026 is used.
+  - The related work is thematic and says how this paper differs.
+- **W6. Limitations and conclusion.**
+  - They are candid and specific: what holds, where it fails, and what is open.
+  - They make no new claims.
+- **W7. Stand-alone main text.** The main text can be read without the
+  appendix. Its claims do not rest only on tables or figures that the reader
+  must find in the appendix. Cross-references to the appendix name what is
+  there.
+
+## I. Invariance: only the writing changes
+
+- **I1. results/ and code/.** At the delivered experiment-repo revision they are
+  unchanged against `4207193`, or changed only in documentation such as the
+  README. I diff the two trees.
+- **I2. Same numbers, same sources.** Every number in the revised text equals a
+  value in the released text or in a delivered results file. `numbers.tex`
+  regenerates from `results/`. I diff the set of macros and values against
+  `771f5a9` and explain every added or changed macro by a results file.
+- **I3. Same verdicts and conclusions.** Every registered verdict (pass, fail,
+  undetermined, post hoc, retrospective) and every conclusion of the released
+  text is unchanged. It may be reworded, but not reversed, dropped or
+  strengthened.
+- **I4. Redrawn figures and tables.** Each one is regenerated by
+  `code/figures/` from existing results files only. I re-run the generation for
+  each changed item.
+- **I5. Bibliography.** No new reference is first published after 18 Oct 2026.
+  A new citation must be in the bibliography with a verified date.
+
+## B. Build and venue
+
+- **B1.** I build the committed source as committed, and a second copy with
+  `numbers.tex` regenerated from the delivery root. The committed PDF matches
+  both (pdftotext).
+- **B2.** The build has 0 undefined references or citations, no "??", and no
+  TODO.
+- **B3.** venue-repo's `tools/check_submission.py` passes. I look at the
+  rendered pages to confirm the 9-page main text, the anonymity, and the
+  statements.
+- **B4.** The appendices follow the references, as supplementary material.
+- **B5.** The change record next to the paper says what changed and why. venue-repo
+  requires it as a section of `paper/CHANGES.md`; paper-repo plans `paper/REVISION.md`,
+  which needs a pointer from CHANGES.md. I check it against the actual diff from `771f5a9`, both ways.
+
+## How a verdict is made
+
+- I read the whole main text of the delivered PDF as a referee. I open every
+  main-text page and every figure and table. I read the appendix sections the
+  main text points to.
+- I record what I inspected, at which revisions, and the outcome per criterion
+  in `reviews/log.md`.
+- Every open actionable finding goes in one pass to its owner as a `revise`
+  decision:
+  - findings on the paper go to paper-repo;
+  - findings on figures and tables go to figtab-repo, through paper-repo;
+  - findings on results documentation go to experiment-repo.
+- I approve with `ht-role approve` only when W, I and B pass at the exact
+  delivered revisions.

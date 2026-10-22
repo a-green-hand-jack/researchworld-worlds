@@ -1,0 +1,68 @@
+"""E4 / A1 development grid (aligned basis; the scalar maps are exact there, A1a). Builds and corrects the phase model
+of code/e4_theory.py; not scored against results/e4/a1_tolerance.json (the held-out grid is).
+Grid (committed with this file, before it runs): two data-statistics sets x p0 x lam x a0 x eta x beta2, b1 = 0.9,
+eps = 1e-8, T = 40000 steps. Per run and direction it stores the exact state at K = 300 (the phase model's input),
+|a| at 20 checkpoints, the first step after K with |a| > 1e-3 (burst) and > 0.05 (alive), on a 10-step grid.
+Usage: python3 code/e4_dev.py run results/e4/dev [NPROC]"""
+import sys, os, json, time, itertools
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+from e4_theory import scalar_adamw
+
+K, T, EVERY, THR, BURST = 300, 40000, 10, 0.05, 1e-3
+STATS = {
+    "e1b": (np.linspace(1.5, 0.5, 24), 0.92),      # the delivered E1b statistics: s_k, c_k/s_k = 0.92^k
+    "dev2": (np.linspace(2.0, 0.4, 24), 0.94),     # a second development set
+}
+
+
+def stats(name):
+    s, r = STATS[name]
+    return s * r ** np.arange(s.size), s
+
+
+def configs():
+    out = []
+    for st, p0, lam, a0, eta, b2 in itertools.product(STATS, [0.5, 1.0, 2.0, 3.0], [0.002, 0.005, 0.01, 0.02, 0.05],
+                                                       [1e-4, 1e-2], [0.01, 0.02, 0.05], [0.999, 0.99]):
+        out.append(dict(id=len(out), stats=st, p0=p0, lam=lam, a0=a0, eta=eta, b1=0.9, b2=b2))
+    return out
+
+
+def run_one(cfg):
+    c, s = stats(cfg["stats"])
+    checks = list(range(K, T + 1, EVERY))
+    hist, st = scalar_adamw(c, s, cfg["a0"], cfg["p0"], cfg["lam"], cfg["eta"], T, cfg["b1"], cfg["b2"], checks=checks, keep=[K])
+    A = np.array([hist[t][0] for t in checks]); P = np.array([hist[t][1] for t in checks])
+    ck = np.array(checks)
+    def first(mask):
+        return [int(x) if np.isfinite(x) else None for x in np.where(mask.any(0), ck[np.argmax(mask, 0)], np.inf)]
+    after = ck[:, None] > K
+    cp = np.linspace(0, T, 21).astype(int)[1:]
+    idx = [checks.index(t) for t in cp]
+    return dict(cfg, finite=bool(np.isfinite(A).all() and np.isfinite(P).all()),
+                state_K={k: v.tolist() for k, v in st[K].items()},
+                checkpoints=cp.tolist(), absa=A[idx].tolist(), p=P[idx].tolist(),
+                burst=first((A > BURST) & after), alive=first((A > THR) & after),
+                alive_K=(np.abs(st[K]["a"]) > THR).tolist())
+
+
+if __name__ == "__main__":
+    cmd, outdir = sys.argv[1], sys.argv[2]
+    nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    os.makedirs(outdir, exist_ok=True)
+    cfgs = configs()
+    if cmd == "pilot":
+        t0 = time.time(); run_one(cfgs[0]); print(f"one run {time.time()-t0:.1f}s, {len(cfgs)} runs", flush=True)
+        sys.exit()
+    t0 = time.time(); done = 0
+    with Pool(nproc) as pool, open(os.path.join(outdir, "dev_runs.jsonl"), "w") as f:
+        for r in pool.imap(run_one, cfgs):
+            f.write(json.dumps(r) + "\n"); done += 1
+            if done % 60 == 0:
+                print(f"{done}/{len(cfgs)} {time.time()-t0:.0f}s", flush=True)
+    json.dump(dict(runs=len(cfgs), seconds=time.time() - t0, numpy=np.__version__, K=K, T=T, every=EVERY, thr=THR,
+                   burst=BURST, command=" ".join(sys.argv)), open(os.path.join(outdir, "dev_meta.json"), "w"), indent=1)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "e4 dev grid done", flush=True)

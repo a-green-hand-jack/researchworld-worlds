@@ -1,0 +1,25 @@
+#!/bin/bash
+#SBATCH --job-name=jepa-e8pilotP
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=6
+#SBATCH --mem=40G
+#SBATCH --time=00:40:00
+#SBATCH --output=%x_%j.out
+cd "$SLURM_SUBMIT_DIR"
+nvidia-smi --query-gpu=name --format=csv
+prov() { venv/bin/python - "$1" <<'PY'
+import json, sys, subprocess, hashlib, os, socket
+json.dump(dict(code_commit=os.environ.get('CODE_COMMIT'), vit_jepa_md5=hashlib.md5(open('vit_jepa.py','rb').read()).hexdigest(),
+               pip_freeze=subprocess.run([sys.executable, '-m', 'pip', 'freeze'], capture_output=True, text=True).stdout.split(),
+               node=socket.gethostname(), gpu=os.environ.get('GPU'), slurm_job=os.environ.get('SLURM_JOB_ID'),
+               array=os.environ.get('SLURM_ARRAY_JOB_ID'), task=os.environ.get('SLURM_ARRAY_TASK_ID')),
+          open(os.path.join(sys.argv[1], 'provenance.json'), 'w'), indent=1)
+PY
+}
+GPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1); export GPU
+export CODE_COMMIT=fabd62c106709b2c357829647f091a938aa55573
+mkdir -p pilot8/P_lo/s0; prov pilot8/P_lo/s0; venv/bin/python -u vit_jepa.py --out pilot8/P_lo/s0 --data data --seed 0 --epochs 5 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 0.04 0.04 > pilot8/P_lo/s0.log 2>&1 &
+mkdir -p pilot8/P_hi/s0; prov pilot8/P_hi/s0; venv/bin/python -u vit_jepa.py --out pilot8/P_hi/s0 --data data --seed 0 --epochs 5 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 5.5 5.5 > pilot8/P_hi/s0.log 2>&1 &
+mkdir -p pilot8/P_lo2hi_e2/s0; prov pilot8/P_lo2hi_e2/s0; venv/bin/python -u vit_jepa.py --out pilot8/P_lo2hi_e2/s0 --data data --seed 0 --epochs 5 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 0.04 0.04 --wd-switch-epoch 2 --wd-after 5.5 > pilot8/P_lo2hi_e2/s0.log 2>&1 &
+wait
+echo ${JOB_DONE_PREFIX:-done:} e8pilotP done

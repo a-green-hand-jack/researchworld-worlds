@@ -1,0 +1,177 @@
+"""E6 / rungs 2-3, amendment 1 to the registration (results/e6/prediction_r23.json -> amendment_1), written before any
+held-out run. code/e6_r23.py and code/e6_r2.py are imported unchanged; this file adds the plan's rung 2/3 requirements:
+
+  inform GRID OUTFILE [NPROC]  the criteria's predictions on the grid's base runs from inputs alone (no training run):
+                               static, r_lin, r_decay, r_init, window and the mu variants (e6_r2.predict with no truth);
+                               a run is informative for comparison 2 against the static bound if |r_decay - static| >= 2,
+                               against r_lin if |r_decay - r_lin| >= 2. Committed before the held-out run.
+  score GRID OUTDIR INFOFILE   runs e6_r23.py's registered scoring unchanged, then adds:
+    C1 (gd)  r_decay against r_init by the configuration-cluster paired CI of mean(|r_init - t| - |r_decay - t|):
+             'located' (CI above 0 and r_decay inside its tolerance), 'better than r_init, outside tolerance' (CI above 0,
+             tolerance crossed), otherwise 'not shown'.
+    C2       r_decay against the static bound and r_lin, each on its informative runs (the word) and pooled (reported),
+             and against the early count pooled (the early count is a training measurement, so no input-only
+             informative set): 'race better' (CI above 0), 'not separated' (CI spans 0), 'baseline better' (CI below 0).
+             Fewer than MIN_INF informative base runs: 'too few informative runs'; none: 'no informative runs' (the reading
+             is then "in the MLP model the race and the static bound agree wherever training is stable").
+             The window and every mu variant are reported beside each comparison, on the same runs.
+    C3       e6_r23.py's registered verdict (tolerance and must-beat rows), unchanged.
+    Sensitivities: every word is computed on all finite base runs (primary; unsettled runs scored at the registered
+    horizon), on the settled subset and on the not-fragile subset; a word that differs between the primary and either
+    subset is 'undetermined' (a subset with fewer than MIN_SUB base runs is reported and not used).
+    Late gain (L2's tanh/random-mask item) per data x act cell: rank at T minus r_decay (the largest count over the race's
+    checks; gd) and rank at T minus the early count (the measured rise after EARLY_F of T; both arms).
+Usage: python3 code/e6_r23_a1.py inform GRID OUTFILE [NPROC] | score GRID OUTDIR INFOFILE"""
+import sys, os, json, gzip, itertools, time
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+import e6_r23 as Q
+R = Q.R
+
+INF_GAP = 2
+MIN_INF = 10
+MIN_SUB = 10
+C2_BASE = dict(gd=["static", "r_lin", "early"], adamw=["r_lin", "early"])
+
+
+def _inputs_only(cfg):
+    t0 = time.time()
+    Xc, Xt = R.sample(cfg)
+    pr = R.predict(cfg, Xc, Xt, {})
+    return dict(id=cfg["id"], cfg=cfg, pred=pr, seconds=time.time() - t0)
+
+
+def cmd_inform(grid, outfile, nproc=8):
+    base = [c for c in Q.configs(grid) if "floor" not in c]
+    t0 = time.time()
+    with Pool(int(nproc)) as pool:
+        rows = sorted(pool.map(_inputs_only, sorted(base, key=lambda c: -c["T"]), chunksize=1), key=lambda r: r["id"])
+    prim = {r["id"]: Q.PRIMARY[r["cfg"]["opt"]] for r in rows}
+    inf = {b: [r["id"] for r in rows if prim[r["id"]] != b and abs(r["pred"][prim[r["id"]]] - r["pred"][b]) >= INF_GAP]
+           for b in ("static", "r_lin")}
+    if all(Q.PRIMARY[r["cfg"]["opt"]] == "static" for r in rows):
+        inf.pop("static")
+    cells = {}
+    for data, act in itertools.product(Q.GRIDS[grid]["data"], Q.GRIDS[grid]["act"]):
+        S = [r for r in rows if r["cfg"]["data"] == data and r["cfg"]["act"] == act]
+        cells[f"{data}_{act}"] = {b: sum(1 for r in S if r["id"] in set(v)) for b, v in inf.items()} | dict(runs=len(S))
+    out = dict(grid=grid, what="criteria predictions from inputs alone (no training run), before the held-out run",
+               primary=sorted(set(prim.values())), gap=INF_GAP, informative=inf, counts={b: len(v) for b, v in inf.items()}, cells=cells,
+               base_runs=len(rows), seconds=time.time() - t0,
+               md5={p: Q.md5(os.path.join(os.path.dirname(os.path.abspath(__file__)), p))
+                    for p in ["e6_r23_a1.py", "e6_r23.py", "e6_r2.py", "linjepa.py", "baselines/dvd_mu.py"]},
+               runs=[dict(id=r["id"], pred=r["pred"]) for r in rows])
+    json.dump(out, open(outfile, "w"), indent=1)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), f"E6 {grid} inputs-only: {len(rows)} runs in {time.time() - t0:.0f} s;",
+          "informative", out["counts"], flush=True)
+
+
+def word(ci):
+    return "race better" if ci[0] > 0 else ("baseline better" if ci[1] < 0 else "not separated")
+
+
+def compare(rows, prim, b, beside):
+    if not rows:
+        return dict(runs=0)
+    t = np.array([Q.truth_of(r) for r in rows])
+    e = lambda k: np.abs(np.array([Q.value(r, k) for r in rows], float) - t)
+    ep = e(prim)
+    out = dict(runs=len(rows), configurations=len({Q.cluster_key(r) for r in rows}), mae_primary=float(ep.mean()),
+               mae_baseline=float(e(b).mean()), ci=Q.cluster_ci(rows, e(b), ep))
+    out["word"] = word(out["ci"])
+    out["beside"] = {k: dict(mae=float(e(k).mean()), minus_primary_ci_cluster=Q.cluster_ci(rows, e(k), ep))
+                     for k in beside if k in rows[0]["pred"]}
+    return out
+
+
+def c1(rows, opt):
+    if not rows:
+        return dict(runs=0)
+    s = Q.summarize(rows, opt)
+    ci = s["rows"]["r_init"]["minus_primary_ci_cluster"]; tol = s["verdict"]["within1_pass"] and s["verdict"]["mae_pass"]
+    w = "located" if ci[0] > 0 and tol else ("better than r_init, outside tolerance" if ci[0] > 0 else "not shown")
+    return dict(runs=len(rows), ci=ci, mae_r_decay=s["rows"]["r_decay"]["mae"], mae_r_init=s["rows"]["r_init"]["mae"],
+                tolerance_pass=bool(tol), word=w)
+
+
+def with_sens(fn, F, settled, notfrag):
+    """fn(rows) -> dict with 'word' (or runs=0); primary on F, sensitivities on the settled and not-fragile subsets."""
+    p = fn(F); s = fn(settled); n = fn(notfrag)
+    used = [x for x, rr in ((s, settled), (n, notfrag)) if len(rr) >= MIN_SUB and "word" in x]
+    w = p.get("word")
+    final = w if all(x["word"] == w for x in used) else "undetermined"
+    return dict(word=final, primary=p, settled=s, not_fragile=n, sensitivity_used=[k for k, rr in
+                (("settled", settled), ("not_fragile", notfrag)) if len(rr) >= MIN_SUB])
+
+
+def cmd_score(grid, outdir, infofile):
+    reg = Q.cmd_score(grid, outdir)          # the registered scoring, unchanged (writes r23_GRID_score.json)
+    info = json.load(open(infofile))
+    allr = [json.loads(l) for l in gzip.open(os.path.join(outdir, f"r23_{grid}_runs.jsonl.gz"), "rt")]
+    base = sorted([r for r in allr if "floor" not in r["cfg"]], key=lambda r: r["cfg"]["id"])
+    frag = set(reg["fragile"])
+    # the run's own predictions must equal the committed inputs-only ones (same code, same inputs)
+    ip = {r["id"]: r["pred"] for r in info["runs"]}
+    mism = [r["cfg"]["id"] for r in base if Q.finite(r) and
+            any(r["pred"].get(k) != v for k, v in ip[r["cfg"]["id"]].items())]
+    out = dict(grid=grid, scorer="code/e6_r23_a1.py (amendment 1)", registered_verdict_word={o: reg[o]["verdict_word"]
+               for o in ("gd", "adamw") if o in reg}, prediction_mismatch=mism,
+               md5={p: Q.md5(os.path.join(os.path.dirname(os.path.abspath(__file__)), p))
+                    for p in ["e6_r23_a1.py", "e6_r23.py", "e6_r2.py"]})
+    for opt in sorted({r["cfg"]["opt"] for r in base}):
+        prim = Q.PRIMARY[opt]
+        F = [r for r in base if r["cfg"]["opt"] == opt and Q.finite(r)]
+        sub = lambda rows: ([r for r in rows if Q.klass(r) == "settled"], [r for r in rows if r["cfg"]["id"] not in frag])
+        res = dict(registered=dict(word=reg[opt]["verdict_word"], verdict=reg[opt]["all"].get("verdict")))
+        beside = ["window"] + R.MU
+        if opt == "gd":
+            res["C1_r_init"] = with_sens(lambda rr: c1(rr, opt), F, *sub(F))
+        res["C2"] = {}
+        for b in C2_BASE[opt]:
+            pooled = with_sens(lambda rr: compare(rr, prim, b, beside), F, *sub(F))
+            if b in info["informative"]:
+                ids = set(info["informative"][b]); I = [r for r in F if r["cfg"]["id"] in ids]
+                if len(ids) == 0:
+                    inf = dict(word="no informative runs", runs=0)
+                elif len(I) < MIN_INF:
+                    inf = dict(word="too few informative runs", runs=len(I))
+                else:
+                    inf = with_sens(lambda rr: compare(rr, prim, b, beside), I, *sub(I))
+                res["C2"][b] = dict(word=inf["word"], informative=inf, pooled=pooled, informative_ids=len(ids))
+            else:
+                res["C2"][b] = dict(word=pooled["word"], pooled=pooled)
+        # registered verdict with the settled sensitivity added (plan: unsettled runs excluded in a sensitivity)
+        st = reg[opt]["settled"].get("verdict", {}).get("pass_")
+        rw = reg[opt]["verdict_word"]
+        nst = reg[opt]["settled"].get("runs", 0)
+        res["verdict_word"] = rw if (nst < MIN_SUB or st is None or ("pass" if st else "fail") == rw) else "undetermined"
+        lg = {}
+        for data, act in itertools.product(Q.GRIDS[grid]["data"], Q.GRIDS[grid]["act"]):
+            S = [r for r in F if r["cfg"]["data"] == data and r["cfg"]["act"] == act]
+            if not S:
+                continue
+            rT = np.array([r["truth"]["emb_rank"] for r in S], float)
+            rise = rT - np.array([r["truth"]["early"] for r in S], float)
+            d = dict(runs=len(S), rise_after_early_mean=float(rise.mean()), rise_after_early_share_gt1=float((rise > 1).mean()),
+                     classes={c: sum(1 for r in S if Q.klass(r) == c) for c in ("settled", "cycling", "drifting")})
+            if opt == "gd":
+                g = rT - np.array([r["pred"]["r_decay"] for r in S], float)
+                d.update(rank_T_minus_r_decay_mean=float(g.mean()), rank_T_minus_r_decay_share_gt1=float((g > 1).mean()),
+                         rank_T_minus_r_decay_ci=R.boot_ci(g))
+            lg[f"{data}_{act}"] = d
+        res["late_gain"] = lg
+        out[opt] = res
+    json.dump(out, open(os.path.join(outdir, f"r23_{grid}_score_a1.json"), "w"), indent=1, allow_nan=False)
+    return out
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "inform":
+        cmd_inform(sys.argv[2], sys.argv[3], *(sys.argv[4:5] or [8]))
+    elif cmd == "score":
+        o = cmd_score(*sys.argv[2:5])
+        print(json.dumps({k: ({kk: (vv.get("word") if isinstance(vv, dict) else vv) for kk, vv in v.items()}
+                              if k in ("gd", "adamw") else v) for k, v in o.items() if k != "md5"}, indent=1, default=str))

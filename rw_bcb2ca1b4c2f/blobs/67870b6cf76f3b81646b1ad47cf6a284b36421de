@@ -1,0 +1,52 @@
+"""Early check of direction C rung 1a (experiment d23f8d9) on a seeded sample of the E6 dev grid, before its score.
+Uses the registered driver's own init, truth and predictors (code/e6_r1.py). Reports, per arm and per L, the
+registered within-1 share and MAE of every predictor, and the paired (baseline - primary) error, so that the
+per-arm pooled tolerance can be compared with the per-L reading. Also checks the exact reduction on the aligned arm.
+Usage: python3 checks/e6_r1_early.py EXPERIMENT_CHECKOUT NPER > checks/e6_r1_early.json"""
+import sys, os, json
+import numpy as np
+from multiprocessing import Pool
+EXP = sys.argv[1]; NPER = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e6_r1 as E
+
+
+def one(cfg):
+    r = E.run_one(cfg)
+    return dict(id=cfg["id"], arm=cfg["arm"], L=cfg["L"], a0=cfg["a0"], p0=cfg["p0"], lam=cfg["lam"], seed=cfg["seed"],
+                T=cfg["T"], truth=(r["truth"]["counts"][-1] if r["truth"].get("counts") else None),
+                early=(r["truth"]["counts"][1] if r["truth"].get("counts") else None), pred=r["pred"])
+
+
+def summ(R):
+    R = [r for r in R if r["truth"] is not None]
+    if not R:
+        return dict(runs=0)
+    tru = np.array([r["truth"] for r in R]); out = dict(runs=len(R))
+    names = list(R[0]["pred"]) + ["early"]
+    err = {nm: np.abs(np.array([r["early"] if nm == "early" else r["pred"][nm] for r in R]) - tru) for nm in names}
+    for nm in names:
+        d = dict(mae=float(err[nm].mean()), within1=float((err[nm] <= 1).mean()))
+        if nm != "race_deep_A1":
+            d["minus_primary"] = float((err[nm] - err["race_deep_A1"]).mean())
+        out[nm] = d
+    return out
+
+
+if __name__ == "__main__":
+    cfgs = E.configs("dev"); rng = np.random.default_rng(20261018); cells = {}
+    for c in cfgs:
+        cells.setdefault((c["arm"], c["L"], c["a0"]), []).append(c)
+    pick = []
+    for key in sorted(cells):
+        L = cells[key]; n = NPER if key[0] == "aligned" else max(1, NPER // 2)
+        pick += [L[i] for i in sorted(rng.choice(len(L), size=min(n, len(L)), replace=False))]
+    with Pool(8) as pool:
+        rows = pool.map(one, pick, chunksize=1)
+    res = dict(sample=dict(rule=f"{NPER} aligned / {max(1, NPER // 2)} generic configs per (arm, L, a0), default_rng(20261018)", ids=[c["id"] for c in pick]),
+               runs_in_dev_grid={f"{a}_L{L}": sum(1 for c in cfgs if c["arm"] == a and c["L"] == L) for a in ("aligned", "generic") for L in (1, 2, 3)},
+               by_arm={a: summ([r for r in rows if r["arm"] == a]) for a in ("aligned", "generic")},
+               by_arm_L={f"{a}_L{L}": summ([r for r in rows if r["arm"] == a and r["L"] == L]) for a in ("aligned", "generic") for L in (1, 2, 3)},
+               aligned_Lge2=summ([r for r in rows if r["arm"] == "aligned" and r["L"] >= 2]),
+               rows=rows)
+    print(json.dumps(res, indent=1))

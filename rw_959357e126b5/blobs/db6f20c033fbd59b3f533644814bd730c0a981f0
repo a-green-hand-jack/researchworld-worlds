@@ -1,0 +1,73 @@
+"""Independent re-simulation of the 25 'two-stage capture' directions of A2 (experiment-repo 4faa7a0
+results/e4/a2/readings.json dead_after_capture_traces): my own 80-bit scalar AdamW loop (as checks/e4_a1h2_check.py sim),
+run to 10 T_h on the 8 runs that hold them; per direction |a| and p at T_h, the step where |a| first reaches 0.9 c/s,
+the number of thr crossings to T_h, and the |a| level over [t_c, T_h] (median, and its ratio to thr and c/s).
+Usage: python3 checks/e4_a2_twostage.py EXPERIMENT_CHECKOUT > checks/e4_a2_twostage.json"""
+import sys, os, json
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+EXP = sys.argv[1]
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e4_a1 as A
+import e4_a2 as A2
+A.STATS = dict(A2.A2_STATS)
+TR = json.load(open(os.path.join(EXP, "results/e4/a2/readings.json")))["dead_after_capture_traces"]["directions"]
+
+
+def run(args):
+    cfg, ks = args
+    A.STATS = dict(A2.A2_STATS)
+    c, s = A.stats(cfg["stats"]); D = np.longdouble; one = D(1)
+    c = c.astype(D); s = s.astype(D)
+    b1, b2, eta, lam = (D(cfg[k]) for k in ("b1", "b2", "eta", "lam")); eps = D(1e-8)
+    a = A.init_a(cfg).astype(D); p = np.full(c.shape, D(cfg["p0"]))
+    ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c)
+    Th = cfg["T_h"]; ks = np.array(ks)
+    hist = np.zeros((10 * Th, ks.size)); ph = np.zeros((10 * Th, ks.size))
+    for t in range(1, 10 * Th + 1):
+        r = c - p * s
+        ga = -a * p * r; gp = -a * a * r
+        ma = b1 * ma + (one - b1) * ga; va = b2 * va + (one - b2) * ga * ga
+        mp = b1 * mp + (one - b1) * gp; vp = b2 * vp + (one - b2) * gp * gp
+        bc1 = one - b1 ** t; bc2 = one - b2 ** t
+        a = a * (one - eta * lam) - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps)
+        p = p * (one - eta * lam) - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+        hist[t - 1] = np.abs(a[ks]).astype(float); ph[t - 1] = p[ks].astype(float)
+    out = []
+    cs = (c / s).astype(float)
+    for j, k in enumerate(ks):
+        h = hist[:, j]; al = h > A.THR
+        tc = int(np.argmax(al[A.K:]) + A.K + 1)
+        cross = int((np.diff(al[A.K:Th].astype(int)) != 0).sum())
+        reach = np.where(h >= 0.9 * cs[k])[0]
+        seg = h[tc - 1:Th]
+        out.append(dict(run=cfg["id"], direction=int(k), c_over_s=float(cs[k]), t_c=tc, abs_a_T_h=float(h[Th - 1]),
+                        p_T_h=float(ph[Th - 1, j]), crossings_K_to_T_h=cross,
+                        abs_a_reaches_0p9_c_over_s_at=int(reach[0] + 1) if reach.size else None,
+                        median_abs_a_tc_to_T_h=float(np.median(seg)), median_over_thr=float(np.median(seg) / A.THR),
+                        median_over_c_over_s=float(np.median(seg) / cs[k]),
+                        abs_a_at=[float(h[int(f * Th) - 1]) for f in (0.5, 1, 1.5, 2, 2.5, 3)]))
+    return out
+
+
+if __name__ == "__main__":
+    cf = {c["id"]: c for c in A2.configs()}
+    by = {}
+    for d in TR:
+        by.setdefault(d["run"], []).append(d["direction"])
+    with Pool(8) as pool:
+        res = [x for o in pool.map(run, [(cf[r], ks) for r, ks in sorted(by.items())]) for x in o]
+    ref = {(d["run"], d["direction"]): d for d in TR}
+    cmp = []
+    for x in res:
+        d = ref[(x["run"], x["direction"])]
+        cmp.append(dict(run=x["run"], k=x["direction"], abs_a_T_h_rel=abs(x["abs_a_T_h"] / d["abs_a_T_h"] - 1),
+                        p_T_h_rel=abs(x["p_T_h"] / d["p_T_h"] - 1), t_c_equal=x["t_c"] == d["t_c"],
+                        reach_equal=x["abs_a_reaches_0p9_c_over_s_at"] == d["abs_a_reaches_0p9_c_over_s_at"]))
+    print(json.dumps(dict(directions=len(res),
+                          max_rel_abs_a_T_h=max(c["abs_a_T_h_rel"] for c in cmp), max_rel_p_T_h=max(c["p_T_h_rel"] for c in cmp),
+                          t_c_equal=sum(c["t_c_equal"] for c in cmp), reach_equal=sum(c["reach_equal"] for c in cmp),
+                          median_level_over_thr_range=[min(x["median_over_thr"] for x in res), max(x["median_over_thr"] for x in res)],
+                          median_level_over_c_over_s_range=[min(x["median_over_c_over_s"] for x in res), max(x["median_over_c_over_s"] for x in res)],
+                          rows=res, compare=cmp, numpy=np.__version__), indent=1))

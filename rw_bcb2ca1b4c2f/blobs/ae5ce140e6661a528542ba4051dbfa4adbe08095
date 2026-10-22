@@ -1,0 +1,40 @@
+"""Review check (internal-review-repo): re-run a stratified subset of E6 rung 3 held-out units (experiment 43d3a8f,
+frozen e6_r23_a2 / e6_r23 / e6_r2, md5s as registered) with the registered per-run function, and compare every
+non-timing field with the delivered runs. Units at lam 0.04 (T = 100000): per (data, act) cell one fragile and one
+not-fragile base run where both exist, plus each base run's W2 floor re-run."""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+H = os.path.dirname(os.path.abspath(__file__)); os.chdir(H); sys.path.insert(0, "code")
+from multiprocessing import Pool
+import numpy as np
+import e6_r23_a2 as A
+
+def one(cfg):
+    t = time.time(); r = A.Q.run_one(cfg)
+    print(f"run {cfg['id']} done {time.time() - t:.0f}s", flush=True); return r
+
+if __name__ == "__main__":
+    sub = json.load(open("subset.json")); ids = set(sub["base"]) | set(sub["floor"])
+    cf = [c for c in A.Q.configs("r3_heldout") if c["id"] in ids]
+    t0 = time.time()
+    with Pool(8) as p:
+        res = p.map(one, cf, chunksize=1)
+    D = {r["cfg"]["id"]: r for r in map(json.loads, gzip.open("delivered/r23_r3_heldout_runs.jsonl.gz", "rt"))}
+    def leaves(d, pth=()):
+        if isinstance(d, dict):
+            for k, v in d.items(): yield from leaves(v, pth + (k,))
+        elif isinstance(d, list):
+            for i, v in enumerate(d): yield from leaves(v, pth + (i,))
+        else: yield pth, d
+    out = {}
+    for r in res:
+        i = r["cfg"]["id"]; a = {k: v for k, v in D[i].items() if not k.startswith("seconds") and k != "accounting"}
+        b = {k: v for k, v in r.items() if not k.startswith("seconds") and k != "accounting"}
+        la, lb = dict(leaves(a)), dict(leaves(b))
+        diff = [str(k) for k in set(la) | set(lb) if repr(la.get(k, "MISSING")) != repr(lb.get(k, "MISSING"))]
+        out[i] = dict(n_leaves=len(la), n_diff=len(diff), diff=diff[:10], truth_delivered=D[i]["truth"].get("emb_counts"),
+                      truth_rerun=r["truth"].get("emb_counts"))
+    summ = dict(runs=len(res), runs_with_diff=sum(1 for v in out.values() if v["n_diff"]), numpy=np.__version__,
+                wall_s=time.time() - t0)
+    json.dump(dict(summary=summ, subset=sub, runs=out), open("rerun_subset.json", "w"), indent=1)
+    print("HUTIAN_WAKE: r3 subset rerun done " + json.dumps(summ), flush=True)

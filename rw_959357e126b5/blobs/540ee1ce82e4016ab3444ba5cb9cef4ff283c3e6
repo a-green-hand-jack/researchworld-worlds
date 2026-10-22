@@ -1,0 +1,98 @@
+{
+ "experiment": "E4 / A4 (N2): final rank of the linear JEPA under a layer-normalised target (I-JEPA's F.layer_norm, no affine), gradient descent (plan Sec. 3 A (b), A4). Theory theory/ext_A_lntarget.md",
+ "status": "registered before any held-out truth run; frozen code = the commit adding this version (md5s below). Revision 2, also before any held-out truth: it replaces the version pushed at 9b183c0 (code md5 3bd20272) to follow the plan's A4 list (plan v2.31 Sec. 3 A items 1-9): per-comparison verdict words, must-beat set = static bound, delivered race and the mu variants, informative-run shares from inputs, settled-only scoring, an orthogonal-init arm, and the static-bound-zero share. Nothing was run on held-out truths in between. Revision 3, also before any held-out truth, after the review's check (A4-R1): a run is fragile if its floor truth differs at all (not by more than 1), every held-out run gets a floor re-run (not only replicate 710), and the verdict word under an ill-posed truth is fixed (see model_and_truth.floor); the orthogonal-init arm stays on replicate 710; N2-ii.3 qualified for eps > 0 (rank >= 1 for starts outside the eps-node basin, every grid has p0 >= 0.8)",
+ "md5": {
+  "code/e4_a4.py": "a7e50edf15bea8d8310f8bee938041b4",
+  "code/linjepa.py": "e7d569d4a3537aa3883ddfe847b3df66",
+  "code/baselines/dvd_mu.py": "88ed281a7bea8dc0b312f88221ff5f4d"
+ },
+ "scope": "gradient descent only; AdamW with a layer-normalised target is not covered (plan v2.31, story-repo#21). The optional exploratory AdamW x LN row is not added",
+ "model_and_truth": {
+  "model": "W (d x 8), P (d x d, P0 = p0 I), L = 1/2 E|P W x1 - sg LN(W x2)|^2 + lam/2(|W|^2+|P|^2), LN(y) = Pi y / sqrt(|Pi y|^2/d + 1e-5); x2 ~ N(0, diag tau), x1 = rho x2 + noise; population quadratic term, cross term on a fixed seeded sample of 4096 draws of x2; W0 = w0 N(0,1)/sqrt(8) (Gaussian init); eta = 0.05; T = max(4000, ceil(8/(eta lam)))",
+  "truth": "rank of Pi W(T): #sv > 0.05 (the constant direction carries no target, theory N2-ii.1; |1^T W(T)| recorded); settled = same rank over the last 4 of 20 checks (reported; the verdict is on all runs)",
+  "floor": "every held-out run (480, all five replicates) is re-run on a fresh x2 sample (seed + 9). A run is fragile if the two truths differ at all, or either diverged (revision 3; revision 2 required a difference above 1, which misses the +-1 cross-term sample flips the review measured: smoke rank 6 on 5 of 8 samples and 7 on 3 of 8 at M = 4096). Reported: the fragile share and the shares differing by exactly 1, by more than 1 and diverged. The verdict is also computed on the sample-robust runs (fragile runs dropped). Word: if at most 5% of runs are fragile, the word comes from all runs, and is 'undetermined' if the sample-robust verdict differs. If more than 5% are fragile (ill-posed truth), the word comes from the sample-robust runs and reads 'pass / fail on sample-robust runs', with the all-run verdict beside it. If at most half the runs are sample-robust, the word is 'undetermined (truth ill-posed)'",
+  "nonfinite": "a diverged run has no truth: a miss in within-1, left out of the MAE and the paired intervals (none diverged on dev)",
+  "orth_arm": "every run of seed replicate 710 (96 configurations) is also run with an orthogonal init (columns of W0 orthonormal and orthogonal to 1, norms w0 exp(0.1 xi); theory N2-iii exact there): N2's error per d and init is reported (plan item 2); not in the verdict",
+  "settled": "settled = the same rank over the last 4 of 20 checks; the full verdict is also computed on settled runs only, beside the primary scoring on all runs (plan item 8)"
+ },
+ "grid": {
+  "heldout": "families flat_h (tau 1, rho 0.85..0.1, sig2 0.55) and decay_h (tau 2.6 x 0.08^(i/7), rho 0.6, sig2 0.25 tau); d in {10, 20}; p0 in {0.8, 1.6, 2.6}; lam in {0.01, 0.04, 0.15, 0.4}; w0 in {2e-3, 1e-2}; 5 seed replicates 710-714 (seed = rep x 1000 + id): 96 configurations x 5 = 480 runs + 480 floor re-runs",
+  "disjoint": "dev used families flat/decay, d 12/32, p0 0.6/1.2/2.0, lam 0.004/0.015/0.06/0.25, w0 1e-3/3e-2, replicate 700; smoke seed 799; theory checks 79xxx. Every held-out value and seed differs",
+  "command": "python3 code/e4_a4.py run heldout results/e4/a4_heldout 8; python3 code/e4_a4.py score heldout results/e4/a4_heldout; python3 code/e4_a4.py verdict heldout results/e4/a4_heldout -> a4_heldout_verdict.json",
+  "cost": "480 runs + 480 floor re-runs + 96 orthogonal-init runs: projected 3-5 CPU-h (dev: 32 CPU-s per run at d up to 32, T up to 40000; held-out d <= 20, T <= 16000; smoke with floor and orthogonal arm 19.5 CPU-s). Below 10 CPU-h: the standing CPU gate (plan Sec. 4)",
+  "mechanisms": "lam spans 0.01 to 0.4 (dev 0.004 to 0.25), covering both sides of N2-iv. Development showed ln_static's error largest at large lam (theory note corrected), and the held-out inputs show the flow differing from ln_static at every lam (below)"
+ },
+ "criterion": {
+  "n2": "N2-iii reduced mean-field flow from the run's own column norms of Pi W0 (theory N2-iii: exact for an orthogonal init, an approximation for the Gaussian init used here), same Euler step and horizon; count = #{a_i(T) > 0.05}. Inputs only"
+ },
+ "signs": {
+  "what": "on the held-out truths, adjacent pairs differing in one factor within a seed replicate (code/e4_a4.py sign_checks), scored as A3 was: each statement confirmed or contradicted on its own",
+  "lam_nonincreasing": "rank increases with lam in <= 5% of pairs (dev: 0 of 72)",
+  "d_nondecreasing": "rank decreases with d in <= 5% of pairs (dev: 0 of 48)",
+  "w0_weak": "|change| > 1 between w0 values in <= 10% of pairs (dev: 0 of 48)",
+  "rank_ge1": "no run has rank 0 (N2-ii.3, which holds for eps > 0 for starts outside the eps-node basin; every held-out grid point starts outside it, p0 >= 0.8), reported with the share of runs where the plain static bound predicts 0 (held-out inputs: 0.375)",
+  "p0": "not registered: development did not confirm the candidate 'non-increasing in p0' (13 increases, 6 decreases in 64 pairs); the held-out pairs are reported"
+ },
+ "reported": [
+  "MAE, within-1, bias of every row pooled and by fam, d, p0, lam, w0 (score)",
+  "N2's error at d = 10 vs 20 (the Gaussian-init overlap grows as d falls)",
+  "truth histogram, settled count, max |1^T W(T)|/sqrt d"
+ ],
+ "exit": "Scored once, not iterated. Pass: A4's claim is that the N2 flow predicts the final rank under a layer-normalised target on held-out configurations, better than the static bound, the delivered race and the mu counts (plain and LN-gain), with the words against ln_static, step-0, dev median and the early reading as they come out. Fail: reported with the same prominence (which condition, which cells by d / fam / lam); the A4 claim reduces to the exact statements N2-i and N2-ii and the flow's exactness for an orthogonal init. Rung 4 then follows the plan's exit: ln_static on rung 2's decaying-W1 statistics as its criterion, with the N2 flow as an extra row; if A4 passes, rung 4's criterion is the N2 flow on those statistics",
+ "development_disclosed": [
+  "results/e4/a4_dev (96 runs): the tolerance, the mu_ln rows, the p0 decision and the correction of N2-iv's mechanism statement were made after reading it",
+  "code/checks/e4_a4_theory.py -> results/e4/a4_theory_checks.json (seeds 79xxx)",
+  "smoke grid (seed 799, d 12) and a run_one test of the floor path on the smoke configuration (outputs discarded)",
+  "inputs-only predictions (no truth) on all 480 held-out runs: results/e4/a4_heldout_inputs.json"
+ ],
+ "pass": "on all 480 runs: N2 within-1 share >= 0.85 and MAE <= 0.6 (dev: 1.00 and 0.10; the margin is for the disjoint families and d = 10, where the Gaussian-init overlap is largest), and the verdict word 'N2 better' against every must-beat row",
+ "verdict_words": "per comparison, by the 95% bootstrap CI of mean(|row - truth| - |n2 - truth|), resampling configurations (fam, d, p0, lam, w0; each with its 5 replicates; 10000 resamples): CI above 0 'N2 better', below 0 'baseline better', else 'not separated'. Against the early count (a measurement) the rung 1a reading rule: 'N2 at least as good as the early reading' / 'not separated' / 'early reading better', never 'beats measurement'. Non-finite runs: misses in within-1, out of the MAE and the intervals",
+ "must_beat": {
+  "static": "static_bound #{c^2 >= 4 lam s} (no LN)",
+  "race": "delivered_race (linjepa.escape_score, no LN)",
+  "mu_P2": "mu_dvd, mu_dvd_signed (= window), mu_dvd_exact of arXiv 2610.02344 on (s, c, p0 I, lam), and the same three on the LN-effective cross-covariance Gamma c with Gamma at the all-alive state a = c/s (mu_ln_*; added by this position, stricter than the plan's list)"
+ },
+ "words_reported": {
+  "ln_static": "the LN fixed-point set (N2-iv)",
+  "all_alive": "8, the rank at step 0",
+  "window": "= mu_dvd_signed",
+  "dev_median": "7",
+  "early_count": "the run's rank at 10% of T",
+  "other_mu": "mu_dvd_nowd, _pq, _pq_signed, _sorted and their mu_ln_ forms"
+ },
+ "informative_runs": {
+  "source": "results/e4/a4_heldout_inputs.json (python3 code/e4_a4.py inputs heldout ..., inputs only, no truth, frozen code)",
+  "n2_predicted_hist_rank0_to_8": [
+   0,
+   0,
+   0,
+   71,
+   63,
+   89,
+   106,
+   66,
+   85
+  ],
+  "share_differing_from_n2": {
+   "static_bound": 0.758,
+   "delivered_race": 0.979,
+   "window": 0.958,
+   "all_alive": 0.823,
+   "mu_dvd": 0.958,
+   "mu_dvd_exact": 0.958,
+   "mu_ln_dvd": 0.852,
+   "mu_ln_dvd_signed": 0.852,
+   "mu_ln_dvd_exact": 0.852,
+   "ln_static": 0.713,
+   "dev_median": 0.863
+  },
+  "ln_static_differing_by_lam": {
+   "0.01": 0.5,
+   "0.04": 0.708,
+   "0.15": 0.7,
+   "0.4": 0.942
+  },
+  "reading": "each comparison against ln_static, the static bound, the delivered race and the window is also read on its differing runs (code: comparisons.<row>.differing_runs), with the pooled reading beside it",
+  "ci_half_width": "projected from dev (96 configurations, 1 run each; code/e4_a4.py verdict on results/e4/a4_dev): half-widths ln_static 0.13, static bound 0.39, all_alive 0.28, dev_median 0.18, delivered race 0.55, window 0.56, early count 0.08. The held-out grid has 96 configurations with 5 runs each, so its half-widths are expected at or below these; a true difference of 0.15 or less could therefore read 'not separated' against every row"
+ }
+}

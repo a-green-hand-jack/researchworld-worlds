@@ -1,0 +1,22 @@
+{
+  "config_id": "b_scale_low_decay_zero",
+  "data": {
+    "dataset": "generated controlled Fourier-pattern images",
+    "seed": 0
+  },
+  "masking": {
+    "fraction_semantics": "expected_masked_fraction; per-example masked count is Binomial(64, mask_fraction)",
+    "geometry": "independent_per_patch_no_contiguous_blocks",
+    "rank_evaluation_policy": "one fixed seeded Bernoulli context mask reused at every checkpoint",
+    "rank_evaluation_sampler": "independent_patch_bernoulli",
+    "sampler": "independent_patch_bernoulli",
+    "training_policy": "independent Bernoulli patch visibility resampled for every training batch"
+  },
+  "numpy": "2.4.6",
+  "pillow": "11.1.0",
+  "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.36",
+  "pyarrow": "18.1.0",
+  "python": "3.11.2 (main, Oct  7 2026, 12:35:07) [GCC 12.2.0]",
+  "tier": "B_controlled",
+  "torch": "2.13.0+cpu"
+}

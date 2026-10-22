@@ -1,0 +1,6 @@
+E5 held-out short_pulse base/alpha0.5/ema0.2 (frozen code 76abca2, raw runs sha256 8c844511...): for each direction
+with a model error (truth alive, model dead, after t1), whether the truth fell below THR at a checkpoint after t1
+and came back (missed regain) or never fell (spurious model loss); and the model's state at the end.
+base {'directions_missed_regain': 15, 'directions_truth_never_fell': 10, 'pairs_missed_regain': 270, 'pairs_truth_never_fell': 10}
+alpha0.5 {'directions_missed_regain': 15, 'directions_truth_never_fell': 0, 'pairs_missed_regain': 260, 'pairs_truth_never_fell': 0}
+ema0.2 {'directions_missed_regain': 15, 'directions_truth_never_fell': 0, 'pairs_missed_regain': 420, 'pairs_truth_never_fell': 0}

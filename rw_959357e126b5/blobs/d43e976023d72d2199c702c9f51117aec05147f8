@@ -1,0 +1,47 @@
+\section{Testing the race in linear JEPAs}
+\label{sec:experiments}
+
+A development set (E1, \EoneRuns{} runs of full-batch gradient descent, $\Pred_0=p_0I$, $\lambda_W=\lambda_P=\lambda$; \cref{app:details}) fixed the capture rule; for the held-out E1b and E2 the predicted rank of every run and the pass criteria were committed before any run.
+The rank counts singular values of $\Wc$ above \EoneSvThr{}; the baselines are the initial window and the static bound $\#\{k:c_k^2\ge4\lambda\sigma_k\}$; ``error'' is the mean absolute rank error (bootstrap 95\% intervals in brackets); \cref{tab:summary} summarises the tests.
+
+\begin{table}[t]
+  \centering
+  \caption{Main registered tests: result (mean absolute rank error unless stated; $\pm1$: share within one direction) against the best registered baseline (window: initial window; static: static bound; unlabelled: early count, but E7: step-0 rule, MLP-GD: initial features, E8: registered bars) and verdict. Deep predictors miss inside a passing E1b test (corrected in E1c). MLP-LN: all runs (sample-robust \ExtRfourRobMae{}). E8: $f(20)$, T and P up, then down. All criteria: \cref{tab:e1b,tab:e2,tab:e3,tab:ext-tests}}
+  \label{tab:summary}
+  \input{tables/tab_summary}
+\end{table}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{fig5_e1b_phase}
+  \caption{The race predicts held-out ranks (E1b, at convergence). (a)~Mean rank (5 seeds) over $p_0$ and $\lambda$; black: predicted collapse boundary; dashed: predicted contours; the static bound collapses only for $\lambda>\EoneBStaticLam$. (b,\,c)~Each run against the race and the static bound; markers: E1b arms; grey crosses: AdamW, mostly unconverged.}
+  \label{fig:e1b}
+\end{figure}
+
+\subsection{Held-out linear tests (E1b)}
+\label{sec:heldout}
+
+E1b changes everything E1 could have tuned ($n=d=24$, $\sigma_k$ from $1.5$ to $0.5$, $c_k=0.92^k\sigma_k$, $a_0=10^{-3}$, step $0.1$); \EoneBCritPass{} of its \EoneBCritAll{} criteria pass (\cref{tab:e1b}).
+On the \EoneBAlignedRuns{} runs with aligned statistics, read at convergence, the race predicts the exact rank in \EoneBAlignedExact{} of runs, with error \EoneBAlignedMae{}; the initial window misses by \EoneBAlignedWindowMae{} directions and the static bound by \EoneBAlignedBoundMae{} (\cref{fig:e1b}b,\,c).
+On the phase grid (\cref{fig:e1b}a) complete collapse sets in at $\lambda_c=\EoneBLamCollapseTenth$, $\EoneBLamCollapseHalf$ and $\EoneBLamCollapseOne$ for $p_0=0.1$, $0.5$ and $1$, as the race predicted (\EoneBGridCollapseMisses{} of \EoneBGridCells{} cells missed), far below the static $\EoneBStaticLam$.
+Weight decay also first raises the rank and then lowers it, as predicted: it brings the gain into the windows of the weaker directions before it closes them. For random predictors and non-commuting statistics, the general form of the criterion (\cref{app:more}) has error \EoneBGeneralMae{}, and without stop-gradient or predictor all \EoneBNosgRuns{} runs collapse, as predicted.
+
+Two of E1b's registered criteria fail and one arm misses its bar.
+Inside the aligned arm, which passes as a whole, it over-predicts the rank of deep predictors by about one direction (error \EoneBDepthMae{}), because depth enters only through the clock; a capture correction derived after this miss (\cref{app:more}) passed a separate registered test on new statistics (E1c, \EoneCDeepRuns{} runs: error \EoneCMae{} against \EoneCMaeDepthOne{}).
+The sign of the EMA effect is right in \EoneBEmaSignAgree{} of \EoneBEmaSignOf{} pairs, short of the registered all.
+The AdamW criterion fails on its first part, insensitivity of the rank to the initial scale (\cref{tab:e1b}), although its second part, that the rank is nearer the static bound than the race, holds (\cref{sec:adamw}).
+
+\subsection{Masking (E2)}
+\label{sec:e2e3}
+\label{sec:e2}
+
+Masks set the statistics: independent coordinate masks that put each coordinate in the target with probability $r=1-q$ give
+\begin{equation}
+\sigma_k=q^2\hat\Sigma_k+q(1-q)\,\bar\sigma,\qquad c_k=q(1-q)\big(\hat\Sigma_k-\bar\sigma\big),
+\label{eq:bernoulli}
+\end{equation}
+with $\hat\Sigma_k$ the eigenvalues of $\Sigma$ and $\bar\sigma=\Sigma_{ii}$ (\cref{app:proofs}); the rank can peak in $r$, since the drive vanishes as $r\to0$ and the context as $r\to1$. E2 splits a Gaussian field on a cycle of $n=64$ sites by complementary masks; cyclic masks keep $\Sigma_c$ and $\Sigma_{tc}$ circulant, so the race applies per frequency.
+On the \EtwoCycRuns{} cyclic-mask runs it predicts the rank with error \EtwoCycMae{}, against \EtwoCycWindowMae{} for the initial window and \EtwoCycBoundMae{} for the static bound (\cref{fig:e2}), and SGD on sampled masks stays within \EtwoSgdMae{} of the population prediction.
+The rank's maximum over the masking ratio $r$ is placed within one grid step in all \EtwoPeakProfiles{} profiles, but only \EtwoNonmonoConf{} of the \EtwoNonmonoPred{} profiles predicted to fall again at high $r$ do.
+The race fails for nonlinear encoders: a tanh encoder under Bernoulli masks errs by \EtwoTanhBernMae{} and its rank still rises in the last quarter of training in \EtwoTanhBernRising{} of runs (post hoc), suggesting the premise fails there, and a two-layer encoder read from its initial features misses by \EtwoMlpMae{} (\cref{sec:deep}).
+

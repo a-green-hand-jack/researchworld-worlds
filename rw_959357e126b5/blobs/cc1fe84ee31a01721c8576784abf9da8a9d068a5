@@ -1,0 +1,91 @@
+"""E8 production, post hoc readings beside the registered scoring (no verdict changes): hardware per row, the
+pre-switch agreement of switched rows with their start row (noise floor of f), the lr share left after each switch
+epoch, f(e) set against it, a Fieller interval for every f(e) beside the delivered bootstrap, f on the final probe
+accuracy (unregistered), and the count ceiling.
+lr share left after e = sum of lr over steps >= e * spe / sum over all steps (vit_jepa.hyper schedules).
+Fieller: ratio (mean R(e) - mean R(N)) / (mean R(0) - mean R(N)), numerator and denominator sharing mean R(N)
+(covariance var R(N) / n), t quantile with df = n - 1 = 4, 95%.
+Usage: python3 code/checks/e8_grid_readings.py RUNS8_DIR results/e8/grid/counts.csv results/e8/grid/posthoc/grid_readings.json
+"""
+import sys, os, json, glob, math, csv
+from math import comb
+import numpy as np
+from scipy import stats
+
+SPE, EP, SWITCH = 195, 50, [2, 5, 10, 20]
+
+
+def lr_share_left(cfg):
+    tf = int(cfg["full_epochs"] * SPE); warm = int(cfg["warmup_frac"] * tf)
+    # as vit_jepa.hyper: sched 'const' is lr_max at every step (no warm-up); otherwise linear warm-up, then cosine to 0
+    lr = np.array([1.0 if cfg["sched"] == "const" else (s / max(warm, 1) if s < warm else
+                   0.5 * (1 + math.cos(math.pi * min((s - warm) / max(tf - warm, 1), 1.0)))) for s in range(EP * SPE)])
+    return {e: float(lr[e * SPE:].sum() / lr.sum()) for e in SWITCH}
+
+
+def fieller(xe, xn, x0, level=0.95):
+    xe, xn, x0 = (np.asarray(v, float) for v in (xe, xn, x0)); n = len(xn)
+    a, b = xe.mean() - xn.mean(), x0.mean() - xn.mean()
+    vn = xn.var(ddof=1) / n
+    v11, v22, v12 = xe.var(ddof=1) / len(xe) + vn, x0.var(ddof=1) / len(x0) + vn, vn
+    t = stats.t.ppf(0.5 + level / 2, n - 1)
+    A = b * b - t * t * v22; B = -2 * (a * b - t * t * v12); C = a * a - t * t * v11
+    if A <= 0:
+        return [float(a / b), None, None]
+    d = B * B - 4 * A * C
+    if d < 0:
+        return [float(a / b), None, None]
+    return [float(a / b), float((-B - math.sqrt(d)) / (2 * A)), float((-B + math.sqrt(d)) / (2 * A))]
+
+
+def main(runs, counts_csv, out):
+    rows = {}
+    for r in csv.DictReader(open(counts_csv)):
+        rows.setdefault(r["row"], []).append(r)
+    res = dict(status="post hoc, beside the registered scoring; no verdict changes", inputs=[runs, counts_csv],
+               bootstrap_distinct_resamples_n5=comb(9, 5), arms={})
+    gpu = {}
+    for d in sorted(glob.glob(os.path.join(runs, "*_*", "s*"))):
+        if os.path.isdir(d):
+            g = json.load(open(os.path.join(d, "config.json"))).get("gpu", "?").replace("NVIDIA ", "").replace("Tesla ", "").replace("GeForce ", "")
+            gpu.setdefault(os.path.basename(os.path.dirname(d)), []).append(g)
+    res["gpu_per_row"] = gpu
+    tot = {}
+    for k, v in gpu.items():
+        if not k.startswith("PR_"):
+            for g in v:
+                tot[g] = tot.get(g, 0) + 1
+    res["gpu_grid_total"] = tot
+    cnt = lambda row, ep: [float(r["ep%d" % ep]) for r in sorted(rows[row], key=lambda r: r["seed"])]
+    prb = lambda row: [float(r["probe_last"]) for r in sorted(rows[row], key=lambda r: r["seed"])]
+    for A in "TP":
+        cfg = json.load(open(glob.glob(os.path.join(runs, f"{A}_lo", "s0", "config.json"))[0]))
+        share = lr_share_left(cfg)
+        arm = dict(lr_share_left=share, count_max_epoch50=max(max(cnt(r, EP)) for r in rows if r.startswith(A + "_")))
+        for dirn, (N, Z) in dict(lo2hi=(f"{A}_lo", f"{A}_hi"), hi2lo=(f"{A}_hi", f"{A}_lo")).items():
+            cell = {}
+            for e in SWITCH:
+                row = f"{A}_{dirn}_e{e}"
+                pre = max(abs(a - b) for a, b in zip(cnt(row, e), cnt(N, e)))
+                xe, xn, x0 = cnt(row, EP), cnt(N, EP), cnt(Z, EP)
+                pe, pn, p0 = prb(row), prb(N), prb(Z)
+                cell[str(e)] = dict(f=fieller(xe, xn, x0)[0], f_fieller95=fieller(xe, xn, x0)[1:],
+                                    lr_share_left=share[e], pre_switch_max_count_diff_vs_start_row=pre,
+                                    gpus=gpu.get(row), f_probe_last=float((np.mean(pe) - np.mean(pn)) / (np.mean(p0) - np.mean(pn))))
+            arm[dirn] = cell
+        arm["gpus_constant_rows"] = {r: gpu.get(r) for r in (f"{A}_lo", f"{A}_hi")}
+        res["arms"][A] = arm
+    res["probe_last_row_means_P"] = {r: float(np.mean(prb(r))) for r in rows if r.startswith("P_")}
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    json.dump(res, open(out, "w"), indent=1)
+    print(json.dumps(res["gpu_grid_total"]))
+    for A, a in res["arms"].items():
+        print(A, "share", {k: round(v, 3) for k, v in a["lr_share_left"].items()}, "max count", a["count_max_epoch50"], a["gpus_constant_rows"])
+        for dirn in ("lo2hi", "hi2lo"):
+            for e, c in a[dirn].items():
+                print("  %s e=%s f=%.3f fieller=%s pre=%g probe_f=%.2f gpus=%s" % (dirn, e, c["f"], [None if v is None else round(v, 3) for v in c["f_fieller95"]], c["pre_switch_max_count_diff_vs_start_row"], c["f_probe_last"], c["gpus"]))
+    pm = res["probe_last_row_means_P"]; print("P probe row means", round(min(pm.values()), 3), round(max(pm.values()), 3))
+
+
+if __name__ == "__main__":
+    main(*sys.argv[1:4])

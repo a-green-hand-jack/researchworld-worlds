@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# E10 (r) check: (1) re-run the delivered code/e10_retro.py on a copy, (2) diff against the delivered outputs,
+# (3) run the independent recomputation indep.py. Outputs go to /hutian/work/e10chk/out/. Read-only on experiment-repo.
+# Wall time about 10-15 min on 8 CPUs (e10_retro ~8 min with an 8-process pool; indep.py ~10 min single-threaded, in parallel).
+set -u
+W=/hutian/work/e10chk
+EXP=/hutian/experiment-repo
+OUT=$W/out
+mkdir -p "$OUT" "$OUT/rerun" "$OUT/indep"
+cd "$W"
+
+# environment: the delivered package versions (python 3.11.2, numpy 2.4.6, scipy 1.17.1, sklearn 1.9.1, torch 2.13.0+cpu, pandas 3.0.6)
+if ! "$W/venv/bin/python" -c "import numpy, scipy, sklearn, torch, pandas" 2>/dev/null; then
+  /hutian/.venv/bin/python3 -m venv "$W/venv"
+  "$W/venv/bin/pip" install -q numpy==2.4.6 scipy==1.17.1 scikit-learn==1.9.1 pandas==3.0.6 filelock typing_extensions sympy networkx jinja2 fsspec
+  "$W/venv/bin/pip" install -q --no-deps --index-url https://download.pytorch.org/whl/cpu torch==2.13.0
+fi
+PY=$W/venv/bin/python
+
+# their repository at the pinned commit (single-commit repo; 3176215 dated 2026-10-01)
+[ -d "$W/dvd/.git" ] || git clone -q https://github.com/jose-melo/drive-vs-decay.git "$W/dvd"
+git -C "$W/dvd" checkout -q 3176215b2d1613fd56d7b7eb99f8126aad9bc9cb
+# OpenML cache: $W/openml_cache (already populated; fetch_openml downloads anything missing)
+mkdir -p "$W/openml_cache"
+
+# copy of the delivered code (so no __pycache__ is written into experiment-repo)
+rm -rf "$W/exp" && mkdir -p "$W/exp" && cp -r "$EXP/code" "$W/exp/" && rm -rf "$W/exp/code/__pycache__" "$W/exp/code/"*/__pycache__
+EXPCOMMIT=$(git -C "$EXP" rev-parse HEAD)
+
+# warm the OpenML cache once (avoids two processes downloading into it at the same time)
+(cd "$W/exp" && OMP_NUM_THREADS=1 "$PY" -c "
+import sys; sys.path.insert(0, 'code'); sys.argv = ['x']
+from sklearn.datasets import fetch_openml
+for i, fr in ((1592, False), (41169, True), (41168, True)): fetch_openml(data_id=i, as_frame=fr, parser='auto', data_home='$W/openml_cache')
+") > "$OUT/openml_warm.log" 2>&1
+
+# (1) delivered script and (3) independent script, in parallel
+(cd "$W/exp" && "$PY" code/e10_retro.py "$W/dvd" "$W/openml_cache" "$OUT/rerun") > "$OUT/rerun/run.log" 2>&1 &
+P1=$!
+(cd "$W" && OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 "$PY" indep.py "$W/dvd" "$W/openml_cache" "$EXP/results/e10/retro_rows.csv" "$OUT/indep") > "$OUT/indep/run.log" 2>&1 &
+P2=$!
+wait $P1; RC1=$?
+wait $P2; RC2=$?
+
+# (2) diff of the re-run against the delivered outputs (rtol 1e-9)
+RC3=1
+if [ $RC1 -eq 0 ]; then
+  "$PY" "$W/diff_outputs.py" "$EXP/results/e10" "$OUT/rerun" "$OUT/diff.json" > "$OUT/diff.log" 2>&1; RC3=$?
+fi
+
+"$PY" - "$OUT" "$RC1" "$RC2" "$RC3" "$EXPCOMMIT" <<'EOF'
+import json, sys, os
+out, rc1, rc2, rc3, ec = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4]), sys.argv[5]
+s = dict(experiment_repo_commit=ec, their_commit="3176215b2d1613fd56d7b7eb99f8126aad9bc9cb",
+         exit_codes=dict(e10_retro=rc1, indep=rc2, diff=rc3))
+if os.path.exists(f"{out}/diff.json"):
+    d = json.load(open(f"{out}/diff.json"))
+    s["diff"] = {k: d[k] for k in ("json_leaves_delivered", "json_differing", "row_fields_compared", "row_fields_differing")}
+    s["diff"]["json_differing_keys"] = list(d["json_differing_fields"])[:50]
+if os.path.exists(f"{out}/indep/indep.json"):
+    d = json.load(open(f"{out}/indep/indep.json"))
+    s["indep_mismatches_vs_delivered_rows"] = d["b_rowwise_mismatches_vs_delivered"]
+    s["indep_race_eq_window"] = d["b_race_eq_window"]
+    s["indep_scores_all"] = d["scores"]["all"]
+    s["indep_paired_all"] = d["c_paired"]["all"]
+json.dump(s, open(f"{out}/summary.json", "w"), indent=1)
+print(json.dumps(s, indent=1)[:4000])
+EOF
+echo "HUTIAN_WAKE: e10chk done e10_retro=$RC1 indep=$RC2 diff=$RC3 summary=$OUT/summary.json"

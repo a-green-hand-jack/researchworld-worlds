@@ -1,0 +1,22 @@
+\section{Related work}
+\label{sec:related}
+
+\paragraph{JEPAs and how they avoid collapse.}
+I-JEPA~\citep{assran2023ijepa} and V-JEPA~\citep{bardes2024vjepa} instantiate JEPAs~\citep{lecun2022path} with an EMA target encoder and a narrow predictor, and report that predictor depth and masking strategy matter.
+Like BYOL, SimSiam, DINO and data2vec~\citep{grill2020byol,chen2021simsiam,caron2021dino,baevski2022data2vec}, they avoid collapse through architecture and training procedure, whereas Barlow Twins, VICReg and LeJEPA regularise the embedding statistics~\citep{zbontar2021barlow,bardes2022vicreg,balestriero2025lejepa}.
+Dimensional collapse shows in the singular-value spectrum of the embedding~\citep{jing2022dimensional} and is summarised by its effective rank~\citep{garrido2023rankme}, which in I-JEPA rises and then falls during training~\citep{thilak2024lidar}.
+
+\paragraph{Fixed points of non-contrastive dynamics.}
+On an invariant manifold of linear BYOL and SimSiam that ties the predictor to the encoder, \citet{tian2021understanding} show that weight decay makes the collapsed point stable, that a mode survives only from outside a basin, and that all modes collapse above a threshold in weight decay.
+With an optimal ridge predictor \citet{arbel2026peira} obtain the static rule $c^2\ge4\lambda$ (in our notation $c_k^2\ge4\lambda\sigma_k$), which \citet{ponce2025dual} obtain for a trained predictor and a scalar input, and \citet{wang2021directset} obtain an analogous variance threshold for a directly set predictor.
+Without the stop-gradient every mode collapses~\citep{halvagal2023implicit}; \citet{littwin2024jepa} solve deep linear self-distillation.
+These analyses characterise end states, or a balanced regime. \Cref{prop:fixed}(b) recovers the static threshold and \cref{cor:alpha1} the balanced basin of \citet{tian2021understanding}; we start instead from the unbalanced initialisation used in practice and predict which end state training reaches.
+
+\paragraph{The stability count at initialisation.}
+Closest to our work, \citet{demelocosta2026drive} linearise the linear-JEPA flow at the collapsed point with the predictor fixed, bound the rank by the number of modes whose drive-to-decay ratio $\mu$ exceeds one, read predictor scale, masking and encoder weight decay as shifts of $\mu$ and the EMA rate as a time scale that does not change which modes escape, and propose an identity-biased predictor for I-JEPA.
+In our model their escape condition is the initial window $g_k(p_0)>0$ (\cref{sec:race}); they have no predictor weight decay, with which the collapsed point is an attractor and the gain leaves the window, so that survival is a race.
+Scored retrospectively on their public Tabular-JEPA grid, where weight decay is negligible and the race reduces to the initial window, their count orders the rank better than the race does (\cref{app:related}).
+
+\paragraph{Learning from small initialisation.}
+From small initialisation, linear networks learn modes one at a time~\citep{saxe2014exact,simon2023stepwise,li2021greedy}; without weight decay a unit activates once an integrated signal exceeds a threshold of order $\log(1/\text{init})$~\citep{pesme2023saddle,kunin2025alternating} and pathways compete with permanent early deficits~\citep{kleinman2023critical}, while weight decay on a large factor switches the implicit bias at $t\approx\log(\text{scale})/\lambda$~\citep{lyu2023dichotomy}.
+None has a decaying gain that closes each direction's window. \Cref{app:related} gives more detail.

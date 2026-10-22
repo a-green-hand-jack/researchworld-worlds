@@ -1,0 +1,49 @@
+"""Development only (A1 v4): the 80-bit truth of a development grid re-run with a and p at the checkpoints and
+per-direction step-level events after the first crossing of 0.05 (peak |a|, min |a|, min p, step of the first
+fall below 0.05). Not scoring; the held-out grid is not used.
+Usage: python3 code/checks/e4_v4_dev_traj.py dev3 OUT.npz [NPROC]"""
+import sys, os, json, gzip
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import e4_a1 as A
+G = sys.argv[1]
+if G == "dev3":
+    import e4_dev3
+else:
+    import e4_dev as dev; A.STATS = dict(dev.STATS)
+
+
+def one(cfg):
+    c, s = A.stats(cfg["stats"]); L = np.longdouble
+    c, s = c.astype(L), s.astype(L)
+    eta, lam, b1, b2 = (L(cfg[x]) for x in ("eta", "lam", "b1", "b2")); eps = L(1e-8)
+    a = A.init_a(cfg).astype(L); p = np.full(c.shape, L(cfg["p0"]))
+    ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c)
+    n = c.size; cross = np.full(n, -1); peak = np.zeros(n); mina = np.full(n, np.inf); minp = np.full(n, np.inf)
+    fall = np.full(n, -1); ck = {t: i for i, t in enumerate(A.CHECKS)}; aC = np.zeros((len(ck), n)); pC = np.zeros((len(ck), n))
+    sa = np.zeros((len(ck), n)); dec = 1 - eta * lam
+    for t in range(1, A.T + 1):
+        r = c - p * s; ga = -a * p * r; gp = -a * a * r
+        ma = b1 * ma + (1 - b1) * ga; va = b2 * va + (1 - b2) * ga * ga
+        mp = b1 * mp + (1 - b1) * gp; vp = b2 * vp + (1 - b2) * gp * gp
+        bc1, bc2 = 1 - b1 ** t, 1 - b2 ** t
+        a = a * dec - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps); p = p * dec - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+        if t > A.K:
+            Aa = np.abs(a).astype(float); new = (cross < 0) & (Aa > A.THR); cross[new] = t
+            on = cross >= 0
+            peak = np.where(on, np.maximum(peak, Aa), peak); mina = np.where(on, np.minimum(mina, Aa), mina)
+            minp = np.where(on, np.minimum(minp, p.astype(float)), minp)
+            fall[(on) & (fall < 0) & (Aa <= A.THR)] = t
+        if t in ck:
+            i = ck[t]; aC[i] = np.abs(a).astype(float); pC[i] = p.astype(float); sa[i] = np.sqrt(va / bc2).astype(float)
+    return cfg["id"], aC, pC, sa, cross, peak, mina, minp, fall
+
+
+if __name__ == "__main__":
+    cfgs = e4_dev3.configs() if G == "dev3" else None
+    with Pool(int(sys.argv[3]) if len(sys.argv) > 3 else 8) as pool:
+        res = sorted(pool.map(one, cfgs), key=lambda x: x[0])
+    keys = ["id", "a", "p", "sig_a", "cross", "peak", "mina", "minp", "fall"]
+    np.savez_compressed(sys.argv[2], **{k: np.array([r[i] for r in res]) for i, k in enumerate(keys)})

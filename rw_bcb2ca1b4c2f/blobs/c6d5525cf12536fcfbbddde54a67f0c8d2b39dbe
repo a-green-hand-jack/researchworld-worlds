@@ -1,0 +1,61 @@
+"""Review check (internal-review-repo) of the A2' registration (experiment-repo 2a2d7a8, prediction.json A2p),
+before its score is read: is the truth floor that decides 'not well posed' (f_floor > 0.10) measured where the
+registration puts the failing regime (eta = 0.031)?
+The registered floor runs are id % 8 == 0. configs() loops product(stats, p0, lam, a0, eta, b1, b2), so id % 8 fixes
+(a0, eta, b2) to their first values. This check runs the registered truth (code/e4_a1.py truth, 80-bit) and the
+registered floor (code/e4_a1h2.py perturbed_init, a0_k (1 +- 1e-15)) to T_h on every one of the 216 runs and reports
+the floor's rank-within-1 failure at T_h on the registered subset, on all runs and per (eta, stats, b2, a0) cell.
+Truth is run only to T_h (the floor reading needs nothing later); the model is not run.
+Usage: python3 checks/e4_a2p_floor.py EXPERIMENT_CHECKOUT OUT.json"""
+import sys, os, json, time, itertools
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+EXP = sys.argv[1]
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e4_a1 as A
+import e4_a1h2 as H2
+import e4_a2p as P
+
+A.STATS = dict(P.A2P_STATS)
+_INIT = A.init_a
+
+
+def one(cfg):
+    A.STATS = dict(P.A2P_STATS)
+    Th = cfg["T_h"]; ch = P.checks_half(Th)
+    A.T, A.CHECKS = Th, ch
+    A.init_a = _INIT
+    tr = A.truth(cfg)
+    A.init_a = H2.perturbed_init
+    try:
+        fl = A.truth(cfg)
+    finally:
+        A.init_a = _INIT
+    n_t = int(np.sum(tr["alive"][-1])); n_f = int(np.sum(fl["alive"][-1]))
+    conv = len({int(np.sum(x)) for x in tr["alive"]}) == 1
+    return dict(id=cfg["id"], stats=cfg["stats"], p0=cfg["p0"], lam=cfg["lam"], a0=cfg["a0"], eta=cfg["eta"], b2=cfg["b2"],
+                T_h=Th, finite=tr["finite"], floor_finite=fl["finite"], n_truth=n_t, n_floor=n_f,
+                fail=bool((not fl["finite"]) or (not tr["finite"]) or abs(n_t - n_f) > 1),
+                diff=abs(n_t - n_f), converged_half=conv)
+
+
+if __name__ == "__main__":
+    cfgs = P.configs(); t0 = time.time()
+    with Pool(8) as pool:
+        rows = sorted(pool.map(one, sorted(cfgs, key=lambda c: -c["T_h"]), chunksize=1), key=lambda r: r["id"])
+    share = lambda rs: dict(runs=len(rs), floor_within1_failure=float(np.mean([r["fail"] for r in rs])) if rs else None,
+                            mean_abs_diff=float(np.mean([r["diff"] for r in rs])) if rs else None)
+    out = dict(registered_subset_id_mod_8=share([r for r in rows if r["id"] % 8 == 0]),
+               registered_subset_composition={k: sorted({r[k] for r in rows if r["id"] % 8 == 0}) for k in ("a0", "eta", "b2", "stats", "lam", "p0")},
+               all_runs=share(rows),
+               by_eta={str(e): share([r for r in rows if r["eta"] == e]) for e in P.ETA},
+               by_eta_stats={f"{e}|{s}": share([r for r in rows if r["eta"] == e and r["stats"] == s]) for e in P.ETA for s in P.A2P_STATS},
+               by_cell_eta_b2_a0={f"eta={e}|b2={b}|a0={a}": share([r for r in rows if (r["eta"], r["b2"], r["a0"]) == (e, b, a)])
+                                  for e in P.ETA for b in P.B2 for a in P.A0},
+               converged_half_share=float(np.mean([r["converged_half"] for r in rows])),
+               nonfinite=int(sum(not r["finite"] for r in rows)),
+               rows=rows, seconds=time.time() - t0, numpy=np.__version__,
+               experiment_commit="c8366f9e99b725fa9830f5aed9e53df3fe0e8b0e (A2p registered at 2a2d7a8)")
+    json.dump(out, open(sys.argv[2], "w"), indent=1)
+    print(json.dumps({k: v for k, v in out.items() if k != "rows"}, indent=1))

@@ -1,0 +1,484 @@
+"""E10 (r), retrospective, zero compute (no training): our race (N1), the static window and the drive-vs-decay
+counts of De Melo Costa et al. (arXiv 2610.02344v1; code github.com/jose-melo/drive-vs-decay @ 3176215, 2026-10-01)
+scored from inputs alone on their public Tabular-JEPA outcomes. Everything here is retrospective: their outcomes
+were public before this script was written. No prediction reads an outcome column.
+
+Their setting (tabular/experiment_1.py, reproduce_tabular.sh @ 3176215): linear encoder x -> LayerNorm(W (m1*x) + b),
+d = 64, kaiming_normal(a = sqrt 5) W, zero b; linear predictor Wp (64 x 64, no bias, no residual) ~ N(0, alpha^2);
+EMA target encoder on m2*x (momentum 0.996 -> 1); loss MSE; AdamW lr 1e-3, wd 1e-5 on encoder and predictor, cosine
+to 0.01 lr, clip 1.0, batch 256 (drop_last), 30 epochs in the script (the paper says 40); masks: per sample an
+independent random subset of k1 = max(1, int(n ctx)) context and k2 = max(1, int(n tgt)) target features,
+tgt = min(0.5, max(0.1, 1 - ctx)), overlap allowed; data: stratified 80/10/10 split (random_state = seed),
+mean imputation, per-column min-max scaling fitted on train. Grid: aloi (n = 128), helena (27), jannis (54);
+alpha in {1e-4, 1e-3, 0.01, 0.1, 0.5, 1, 2, 5, 10}; ctx in {0.001, 0.01, 0.1, ..., 0.8}; seeds 42, 123, 456.
+
+Inputs per row (all from data and hyperparameters; nothing from the run):
+  statistics of the min-max-scaled train split, replicated from their loaders and the OpenML ids of their download
+  script (aloi 1592, helena 41169, jannis 41168). Exact masked moments for independent random-subset masks with
+  G_ii = k1/n, G_ij = k1 (k1 - 1)/(n (n - 1)):
+    centred (primary; the encoder has a bias, and their code centres):  S11 = G o M - (k1/n)^2 mu mu^T,
+                                                                       S21 = (k1 k2/n^2) (M - mu mu^T);
+    uncentred (theory definition, sensitivity '_unc'):                 S11 = G o M,  S21 = (k1 k2/n^2) M;
+  M = E[x x^T], mu = E[x] over the train split. The target density k2/n sits in S21 (their code puts it in gamma).
+  W0, P0: the torch draws of their constructors under torch.manual_seed(seed + 1) (Linear(n, 64) reset, kaiming,
+  Linear(64, 64) reset, normal_(std = alpha)); seed + 1 is inferred from their CSV (cells with the same k1 have
+  identical outcomes, so each cell was a fresh run with config_id = 1). '_altP' redraws P0 independently.
+  lam = wd = 1e-5 in units where the GD step is lr (the decoupled decay per step lr wd matches); horizon
+  t_end = sum of the cosine lr over the run, so the predictor's own decay over the run is exp(-wd t_end) > 0.9999.
+Criteria (linearised at W = 0 with the predictor at P0, no LayerNorm, no bias, as in both theories):
+  window: data modes u_k (eigenvectors of S11, a_k), c_k = u_k^T sym(S21) u_k; direction W = w u_k^T obeys
+    w' = A_k w, A_k = c_k P^T - a_k P^T P - lam (the cross-mode terms of S21 in the S11 basis are dropped);
+    mode k is open iff max Re eig(A_k) > 0; count = min(#open k, span of their unstable eigenvectors, d).
+  race (N1 on this block reduction): mode k escapes iff it is open at P0 and, with P(t) = exp(-lam t) P0 and
+    F(t) = int max Re eig(A_k(t)), log|W0 u_k| + F(t) clears the capture amplitude (1/2) log(lam |p| / |c_k - p a_k|)
+    (p = v^H P v on the top unstable eigenvector v, drive sign(p)(c_k - p a_k) > 0) before it leaves the window,
+    t <= t_end. Same count rule. Here the predictor barely decays and W0 = O(1) lies far above the capture scale, so
+    race = window is an implementation consistency check, not a test; a tie with the window is not a win.
+  window_adamw: the same window with lam = 0 (theory/ext_A_adamw.md A-i: under AdamW the window 0 < p < c/s loses
+    its weight-decay dependence near collapse).
+  dvd, dvd_nowd, dvd_signed, dvd_sorted, dvd_pq, dvd_pq_signed, dvd_exact: as in code/baselines/dvd_mu.py
+    (their r_tight, Eq. 51-52 and variants, with the weight-decay floor lam); dvd_exact only for helena (the
+    Kronecker eigenproblem is 1728^2 there, 3456^2 and 8192^2 for jannis and aloi, beyond the CPU budget).
+    dvd_exact is also the exact, non-decoupled form of our window in the lam_P -> 0 limit (same linear operator,
+    same span count), so window vs dvd_exact on helena measures the error of the block reduction above.
+  dvd_final_theirs: their recorded tjepa/rc_r_tight_abs, a reference only: final-checkpoint values (their App. C.7)
+    computed by code that is not in the public repository, so not from inputs alone.
+Measured quantity: their CSV has no thresholded singular-value count; the closest measured rank is tjepa/effective_rank
+  (ERank, exp-entropy of the normalised singular values of a batch of up to 256 embeddings; rc_erank_repr agrees).
+  All counts are scored against ERank. Both papers say a count is not an ERank prediction (their Prop. C.4: r_tight
+  is an upper bound), so Spearman is the primary statistic and MAE, over and exceed are reported beside it.
+Tab. 16 (T-JEPA transformer on jannis): a 16-layer transformer predictor, no weight decay; neither criterion can be
+  computed faithfully from inputs for it. Reported: their own epoch-0 mu_50 against the outcome, and a labelled
+  linear analogue (jannis statistics, 64 x 64 Gaussian P0 at alpha, lam = 0), with the structural fact that at
+  lam = 0 every count of the form c q > a p (p = s^2, q = s) is non-increasing in alpha.
+Usage: python3 code/e10_retro.py <drive-vs-decay checkout @ 3176215> <OpenML cache dir> results/e10
+Inputs: results/tabular_phase_grid/full_sweep_per_run.csv, results/tabular_phase_grid/transformer_grid_jannis.csv
+  (their repository); OpenML 1592, 41169, 41168 via sklearn.datasets.fetch_openml (cached in the given directory).
+"""
+import sys, os, json, csv, hashlib, subprocess, math, time, platform
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")                       # one BLAS thread per worker process (cells run in a pool)
+import numpy as np
+from scipy.stats import spearmanr
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "baselines"))
+from dvd_mu import r_tight, r_tight_pq, q_paired, spectra_paired, spectra_signed, spectra_sorted, exact_count, _span, boot
+
+D, LR, WD, EPOCHS, BATCH = 64, 1e-3, 1e-5, 30, 256
+OPENML = dict(aloi=1592, helena=41169, jannis=41168)
+SEEDS = [42, 123, 456]
+GRID = "results/tabular_phase_grid/full_sweep_per_run.csv"
+TGRID = "results/tabular_phase_grid/transformer_grid_jannis.csv"
+SRC = ["tabular/experiment_1.py", "tabular/reproduce_tabular.sh", "tabular/src/linear_tjepa/data.py",
+       "tabular/src/linear_tjepa/mask.py", "tabular/src/linear_tjepa/model.py", "tabular/src/linear_tjepa/encoder.py",
+       "tabular/src/linear_tjepa/predictor.py", "tabular/src/datasets/aloi.py", "tabular/src/datasets/helena.py",
+       "tabular/src/datasets/jannis.py", "tabular/src/collapse_metrics.py", "tabular/experiment_2.py",
+       "tabular/jannis_hyperparameters.json"]
+
+
+def sha(path):
+    return hashlib.sha256(open(path, "rb").read()).hexdigest()
+
+
+# ------------------------------------------------------------------------------------------- data (their pipeline)
+def load_xy(name, cache):
+    """X, y as their loaders see them after reproduce_tabular.sh (arff/csv round trips are exact)."""
+    from sklearn.datasets import fetch_openml
+    if name == "aloi":                                   # their script: as_frame=False, X dense
+        d = fetch_openml(data_id=OPENML[name], as_frame=False, parser="auto", data_home=cache)
+        X = d.data.toarray() if hasattr(d.data, "toarray") else np.asarray(d.data)
+        return np.asarray(X, float), aloi_labels(cache, X.shape[0])
+    import pandas as pd
+    d = fetch_openml(data_id=OPENML[name], as_frame=True, parser="auto", data_home=cache)
+    df = d.frame.copy()
+    df["class"] = pd.to_numeric(df["class"], errors="coerce").astype("Int64")
+    df = df.dropna(subset=["class"]).reset_index(drop=True)
+    assert df.columns[0] == "class"                      # their loader takes X = data.iloc[:, 1:]
+    return df.iloc[:, 1:].to_numpy(float), df["class"].astype(int).to_numpy()
+
+
+def aloi_labels(cache, N):
+    """The class column (attribute index 128) of the cached sparse ARFF; sparse rows omit class 0. Read directly
+    because the sparse-ARFF target returned by sklearn 1.9.1 is not the class column (uninitialised values)."""
+    import gzip
+    fn = [os.path.join(r, f) for r, _, fs in os.walk(cache) for f in fs if f == "aloi.sparse_arff.gz"][0]
+    y, data = [], False
+    for line in gzip.open(fn, "rt"):
+        if not data:
+            data = line.strip().lower() == "@data"; continue
+        line = line.strip()
+        if not line.startswith("{"): continue
+        v = dict(e.split() for e in line[1:-1].split(",") if e.strip())
+        y.append(int(float(v.get("128", 0))))
+    assert len(y) == N
+    return np.array(y)
+
+
+def train_split(X, y, seed):
+    """Their LinearTJEPADataModule.load: stratified test 0.1, then val 0.1/0.9; mean imputation; min-max on train."""
+    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import MinMaxScaler
+    Xt, _, yt, _ = train_test_split(X, y, test_size=0.1, random_state=seed, stratify=y)
+    Xtr, _, _, _ = train_test_split(Xt, yt, test_size=0.1 / 0.9, random_state=seed, stratify=yt)
+    Xtr = Xtr.copy()
+    for j in range(Xtr.shape[1]):
+        bad = ~np.isfinite(Xtr[:, j])
+        if bad.any():
+            Xtr[bad, j] = np.mean(Xtr[~bad, j])
+    return MinMaxScaler().fit_transform(Xtr).astype(np.float32).astype(float)
+
+
+def moments(Xtr):
+    mu = Xtr.mean(0)
+    return Xtr.T @ Xtr / Xtr.shape[0], mu
+
+
+def masked_stats(M, mu, ctx, centred=True):
+    n = M.shape[0]
+    tgt = min(0.5, max(0.1, 1.0 - ctx))
+    k1, k2 = max(1, int(n * ctx)), max(1, int(n * tgt))
+    G = np.full((n, n), k1 * (k1 - 1) / (n * (n - 1))); np.fill_diagonal(G, k1 / n)
+    S11 = G * M; S21 = (k1 * k2 / n ** 2) * M
+    if centred:
+        S11 = S11 - (k1 / n) ** 2 * np.outer(mu, mu); S21 = S21 - (k1 * k2 / n ** 2) * np.outer(mu, mu)
+    return S11, S21, k1, k2
+
+
+def init_of(n, alpha, seed, alt=False):
+    """Their constructors' draws under torch.manual_seed(seed + 1) (alt: an independent P0 draw)."""
+    import torch
+    torch.set_num_threads(1)
+    torch.manual_seed(seed + 1)
+    enc = torch.nn.Linear(n, D)
+    torch.nn.init.kaiming_normal_(enc.weight, a=math.sqrt(5)); torch.nn.init.zeros_(enc.bias)
+    pred = torch.nn.Linear(D, D, bias=False)
+    if alt:
+        torch.manual_seed(seed + 100001); pred = torch.nn.Linear(D, D, bias=False)
+    torch.nn.init.normal_(pred.weight, std=alpha)
+    return enc.weight.detach().double().numpy(), pred.weight.detach().double().numpy()
+
+
+def horizon(n_train):
+    """sum of the cosine lr over the run (GD time) and the predictor's own decay factor prod(1 - lr_t wd)."""
+    T = EPOCHS * (n_train // BATCH)
+    t = np.arange(T)
+    lr = 0.01 * LR + (LR - 0.01 * LR) * (1 + np.cos(np.pi * t / T)) / 2
+    return float(lr.sum()), float(np.prod(1 - lr * WD))
+
+
+# ------------------------------------------------------------------------------------------- criteria
+def _blocks(S11, S21, P, lam):
+    a, U = np.linalg.eigh(S11)
+    c = np.einsum("ik,ij,jk->k", U, (S21 + S21.T) / 2, U)
+    PtP = P.T @ P
+    return a, U, c, PtP
+
+
+def _open(a, c, P, PtP, lam, rho=1.0):
+    """per data mode: max Re eig of A_k, its top eigenvector, and the unstable eigenvectors."""
+    g, top, vecs = np.empty(a.size), [], []
+    for k in range(a.size):
+        ev, V = np.linalg.eig(rho * c[k] * P.T - rho ** 2 * a[k] * PtP - lam * np.eye(P.shape[0]))
+        i = np.argmax(ev.real); g[k] = ev[i].real; top.append(V[:, i])
+        sel = ev.real > 0
+        vecs.append(np.hstack([V[:, sel].real, V[:, sel].imag]) if sel.any() else None)
+    return g, top, vecs
+
+
+def _count(keep, vecs):
+    if not keep.any(): return 0
+    return int(min(keep.sum(), _span(np.hstack([vecs[k] for k in np.flatnonzero(keep)])), D))
+
+
+def window_count(S11, S21, P, lam):
+    a, U, c, PtP = _blocks(S11, S21, P, lam)
+    g, _, vecs = _open(a, c, P, PtP, lam)
+    return _count(g > 0, vecs)
+
+
+def race_count(S11, S21, W0, P, lam, t_end, ngrid=3):
+    """N1 on the block reduction (docstring): window at P0, then log-gain and capture along the predictor's decay.
+    Returns (race count, window count) from the same blocks."""
+    a, U, c, PtP = _blocks(S11, S21, P, lam)
+    logw0 = np.log(np.linalg.norm(W0 @ U, axis=0) + 1e-300)
+    t = np.linspace(0.0, t_end, ngrid)
+    G, CAP = [], []
+    for tj in t:
+        rho = np.exp(-lam * tj)
+        g, top, vecs = _open(a, c, P, PtP, lam, rho)
+        if tj == 0: vecs0, g0 = vecs, g
+        p = np.array([np.real(np.vdot(v, rho * P @ v)) / np.real(np.vdot(v, v)) for v in top])
+        gap = (c - p * a) * np.sign(p)
+        cap = np.where(gap > 0, 0.5 * np.log(lam * np.abs(p) / np.maximum(gap, 1e-300) + 1e-300), np.inf)
+        G.append(g); CAP.append(cap)
+    G, CAP = np.array(G), np.array(CAP)
+    F = np.vstack([np.zeros(a.size), np.cumsum(0.5 * (G[1:] + G[:-1]) * np.diff(t)[:, None], axis=0)])
+    inwin = np.cumprod(G > 0, axis=0).astype(bool)        # still inside the window since t = 0
+    esc = (inwin & (logw0[None, :] + F - CAP >= 0)).any(0)
+    return _count(esc & (g0 > 0), vecs0), _count(g0 > 0, vecs0)
+
+
+def dvd_all(S11, S21, P, lam, exact=False):
+    sp = np.linalg.svd(P, compute_uv=False)
+    pp, qp = q_paired(P)
+    a, c = spectra_paired(S11, S21)
+    out = dict(dvd=r_tight(a, c, sp, lam), dvd_nowd=r_tight(a, c, sp, 0.0), dvd_pq=r_tight_pq(a, c, pp, np.abs(qp), lam))
+    a, c = spectra_sorted(S11, S21); out["dvd_sorted"] = r_tight(a, c, sp, lam)
+    a, c = spectra_signed(S11, S21); out["dvd_signed"] = r_tight(a, c, sp, lam)
+    out["dvd_pq_signed"] = r_tight_pq(a, c, pp, qp, lam)
+    if exact:
+        out["dvd_exact"] = exact_count(S11, S21, P, lam)
+    return out
+
+
+# ------------------------------------------------------------------------------------------- scoring
+def _rho(x, y):
+    return float(spearmanr(x, y)[0]) if np.std(x) > 0 and np.std(y) > 0 else None
+
+
+def boot_rho(x, y, B=1000, seed=0):
+    r = np.random.default_rng(seed); x, y = np.asarray(x, float), np.asarray(y, float)
+    v = [_rho(x[i], y[i]) for i in (r.integers(0, x.size, x.size) for _ in range(B))]
+    v = np.array([z for z in v if z is not None])
+    return [_rho(x, y), float(np.quantile(v, 0.025)), float(np.quantile(v, 0.975))] if v.size and _rho(x, y) is not None else None
+
+
+def boot_drho(x1, x2, y, B=1000, seed=0):
+    """paired bootstrap of rho(x1, y) - rho(x2, y) over rows."""
+    r = np.random.default_rng(seed); x1, x2, y = (np.asarray(z, float) for z in (x1, x2, y))
+    if _rho(x1, y) is None or _rho(x2, y) is None: return None
+    v = []
+    for _ in range(B):
+        i = r.integers(0, y.size, y.size); a, b = _rho(x1[i], y[i]), _rho(x2[i], y[i])
+        if a is not None and b is not None: v.append(a - b)
+    return [_rho(x1, y) - _rho(x2, y), float(np.quantile(v, 0.025)), float(np.quantile(v, 0.975))]
+
+
+def score(rows, key, meas="erank"):
+    rs = [r for r in rows if r.get(key) not in (None, "")]
+    if not rs: return None
+    pr = np.array([float(r[key]) for r in rs]); me = np.array([float(r[meas]) for r in rs])
+    e = pr - me
+    return dict(n=len(rs), spearman=boot_rho(pr, me), mae=boot(np.abs(e)), bias=float(e.mean()),
+                over=float((e > 0).mean()), exceed=float((e < 0).mean()))
+
+
+def paired(rows, key, base, meas="erank"):
+    rs = [r for r in rows if r.get(key) not in (None, "") and r.get(base) not in (None, "")]
+    if not rs: return None
+    x1 = np.array([float(r[key]) for r in rs]); x2 = np.array([float(r[base]) for r in rs])
+    me = np.array([float(r[meas]) for r in rs])
+    return dict(n=len(rs), d_abs_err=boot(np.abs(x1 - me) - np.abs(x2 - me)), d_spearman=boot_drho(x1, x2, me),
+                equal_share=float((x1 == x2).mean()))
+
+
+# ------------------------------------------------------------------------------------------- Tab. 16 (T-JEPA, jannis)
+def tab16(repo, stats_jannis):
+    rows = list(csv.DictReader(open(os.path.join(repo, TGRID))))
+    obs = []
+    for r in rows:
+        sc, cx = float(r["config_predictor_init_scale"]), float(r["config_context_ratio"])
+        obs.append(dict(alpha=sc, ctx=cx, mu50_epoch0=float(r["collapse_jacobian_mu_median_epoch0_mean"]),
+                        erank_last=float(r["collapse_effective_rank_last_epoch_mean"]),
+                        probe=float(r["probe_test_score_lastepoch_mean"])))
+    prior = min(o["probe"] for o in obs)
+    for o in obs:
+        o["learned"] = bool(o["probe"] > prior + 0.05)
+    M, mu, _ = stats_jannis
+    n = M.shape[0]
+    _, Z = init_of(n, 1.0, 42)
+    ana = []
+    for o in obs:
+        if o["alpha"] not in (0.01, 0.05, 0.1, 0.2): continue
+        k1 = max(1, int(n * o["ctx"])); k2 = max(1, int(n * 0.389))   # target share: midpoint of their json range
+        G = np.full((n, n), k1 * (k1 - 1) / (n * (n - 1))); np.fill_diagonal(G, k1 / n)
+        S11 = G * M - (k1 / n) ** 2 * np.outer(mu, mu); S21 = (k1 * k2 / n ** 2) * (M - np.outer(mu, mu))
+        P = o["alpha"] * Z
+        d = dvd_all(S11, S21, P, 0.0)
+        ana.append(dict(alpha=o["alpha"], ctx=o["ctx"], window_lam0=window_count(S11, S21, P, 0.0),
+                        dvd_lam0=d["dvd"], dvd_signed_lam0=d["dvd_signed"], learned=o["learned"],
+                        mu50_epoch0=o["mu50_epoch0"], erank_last=o["erank_last"], probe=o["probe"]))
+    def verdict(key, pred_learn):
+        c = [a for a in ana if a["alpha"] in (0.01, 0.05)]
+        return dict(predicted_learn={f"{a['alpha']}@{a['ctx']}": bool(pred_learn(a)) for a in c},
+                    correct=int(sum(pred_learn(a) == a["learned"] for a in c)), of=len(c),
+                    correct_all_four_scales=int(sum(pred_learn(a) == a["learned"] for a in ana)), of_all=len(ana),
+                    orders_005_above_001=int(sum(
+                        next(b[key] for b in c if b["alpha"] == 0.05 and b["ctx"] == a["ctx"]) > a[key]
+                        for a in c if a["alpha"] == 0.01)) if key else None)
+    pattern = dict(alpha_005_learns=[o["learned"] for o in obs if o["alpha"] == 0.05],
+                   alpha_001_learns=[o["learned"] for o in obs if o["alpha"] == 0.01],
+                   alpha_001_mu50_gt1=[o["mu50_epoch0"] > 1 for o in obs if o["alpha"] == 0.01],
+                   collapsed_001_with_mu50_gt1=int(sum((not o["learned"]) and o["mu50_epoch0"] > 1 for o in obs if o["alpha"] == 0.01)),
+                   n_001_with_mu50_gt1=int(sum(o["mu50_epoch0"] > 1 for o in obs if o["alpha"] == 0.01)),
+                   learned_rule=f"probe > class-prior accuracy ({prior:.4f}) + 0.05")
+    scored = dict(their_mu50_epoch0_gt1=verdict("mu50_epoch0", lambda a: a["mu50_epoch0"] > 1),
+                  window_lam0_analogue_count_ge2=verdict("window_lam0", lambda a: a["window_lam0"] >= 2),
+                  dvd_lam0_analogue_count_ge2=verdict("dvd_lam0", lambda a: a["dvd_lam0"] >= 2),
+                  dvd_signed_lam0_analogue_count_ge2=verdict("dvd_signed_lam0", lambda a: a["dvd_signed_lam0"] >= 2))
+    return dict(label="retrospective; Tab. 16 is a 16-layer transformer predictor (pred_embed_dim 16), exp_weight_decay 0",
+                faithful=False,
+                why_not_faithful="race, window and r_tight need the predictor's linear map at init and the encoder's linear "
+                "statistics; for the T-JEPA transformer both are the Jacobians of 16-layer attention stacks with LayerNorm, "
+                "which their CSV does not record and which cannot be recomputed without their full T-JEPA initialisation "
+                "and a linearisation not defined in either paper. Their pred_init_scale multiplies every >= 2-D predictor "
+                "matrix by alpha/0.02, which has no single-gain linear analogue.",
+                structural="with exp_weight_decay = 0 the floor lam is 0; r_tight's pair test c_k s_l > a_k s_l^2 is "
+                "s_l < c_k/a_k, and the window's p c - p^2 s > 0 is p < c/s: both counts are non-increasing in alpha for a "
+                "fixed predictor direction, so no count of this form can say 'alpha = 0.05 learns, alpha = 0.01 collapses'.",
+                analogue="linear analogue only: jannis train statistics (seed 42 split), k1 = int(n ctx), target share 0.389 "
+                "(midpoint of the json range), P0 = alpha Z with Z the seed-43 64 x 64 standard Gaussian, lam = 0; "
+                "'learn' predicted iff count >= 2",
+                pattern=pattern, scored=scored, observed=obs, analogue_rows=ana,
+                seeds_note="their CSV gives sem = 0 for every cell (one seed per cell)")
+
+
+# ------------------------------------------------------------------------------------------- main
+KEYS = ["race", "window", "window_adamw", "dvd", "dvd_nowd", "dvd_signed", "dvd_sorted", "dvd_pq", "dvd_pq_signed",
+        "dvd_exact", "race_unc", "window_unc", "dvd_unc", "window_altP", "dvd_altP", "dvd_final_theirs"]
+BASES = ["window", "window_adamw", "dvd", "dvd_nowd", "dvd_signed", "dvd_sorted", "dvd_pq", "dvd_pq_signed", "dvd_exact",
+         "dvd_final_theirs"]
+
+
+STATS = {}
+
+
+def cell(args):
+    """All inputs-only counts of one cell (dataset, alpha, k1, seed); ctx is any ratio with that k1."""
+    name, alpha, k1, s, ctx = args
+    M, mu, ntr = STATS[name, s]
+    n = M.shape[0]
+    S11, S21, _, k2 = masked_stats(M, mu, ctx)
+    W0, P0 = init_of(n, alpha, s)
+    t_end = horizon(ntr)[0]
+    out = dict(k1=k1, k2=k2)
+    out["race"], out["window"] = race_count(S11, S21, W0, P0, WD, t_end)
+    out["window_adamw"] = window_count(S11, S21, P0, 0.0)
+    out.update(dvd_all(S11, S21, P0, WD, exact=(name == "helena")))
+    U11, U21, _, _ = masked_stats(M, mu, ctx, centred=False)
+    out["race_unc"], out["window_unc"] = race_count(U11, U21, W0, P0, WD, t_end)
+    out["dvd_unc"] = dvd_all(U11, U21, P0, WD)["dvd"]
+    _, P1 = init_of(n, alpha, s, alt=True)
+    out["window_altP"] = window_count(S11, S21, P1, WD)
+    out["dvd_altP"] = dvd_all(S11, S21, P1, WD)["dvd"]
+    return out
+
+
+def main(repo, cache, outdir):
+    t0 = time.time()
+    os.makedirs(outdir, exist_ok=True)
+    grid = list(csv.DictReader(open(os.path.join(repo, GRID))))
+    stats, prov = {}, {}
+    for name in OPENML:
+        X, y = load_xy(name, cache)
+        for s in SEEDS:
+            Xtr = train_split(X, y, s)
+            M, mu = moments(Xtr)
+            stats[name, s] = (M, mu, Xtr.shape[0])
+        prov[name] = dict(openml_id=OPENML[name], n_features=int(X.shape[1]), n_rows=int(X.shape[0]),
+                          n_train={s: stats[name, s][2] for s in SEEDS},
+                          horizon_gd_time={s: horizon(stats[name, s][2])[0] for s in SEEDS},
+                          predictor_decay_factor_over_run={s: horizon(stats[name, s][2])[1] for s in SEEDS})
+        print(name, X.shape, round(time.time() - t0, 1), flush=True)
+    STATS.update(stats)
+    cells = {}
+    for r in grid:
+        name, alpha, ctx, s = r["data_set"], float(r["predictor_init_scale"]), float(r["context_ratio"]), int(r["seed"])
+        n = stats[name, s][0].shape[0]
+        cells.setdefault((name, alpha, max(1, int(n * ctx)), s), ctx)
+    import multiprocessing as mp
+    keys = sorted(cells, key=lambda k: k[0] != "helena")          # the dvd_exact cells first
+    with mp.get_context("fork").Pool(min(8, os.cpu_count() or 1)) as pool:
+        outs = pool.map(cell, [k + (cells[k],) for k in keys], chunksize=1)
+    cache_rows = dict(zip(keys, outs))
+    print(len(cache_rows), "cells", round(time.time() - t0, 1), flush=True)
+    rows = []
+    for r in grid:
+        name, alpha, ctx, s = r["data_set"], float(r["predictor_init_scale"]), float(r["context_ratio"]), int(r["seed"])
+        n = stats[name, s][0].shape[0]
+        key = (name, alpha, max(1, int(n * ctx)), s)
+        row = dict(dataset=name, alpha=alpha, ctx=ctx, seed=s, n=n, erank=float(r["tjepa/effective_rank"]),
+                   erank_repr=float(r["tjepa/rc_erank_repr"]), probe=float(r["probe/probe_test_score"]),
+                   dvd_final_theirs=int(float(r["tjepa/rc_r_tight_abs"])))
+        row.update(cache_rows[key])
+        rows.append(row)
+    sets = {"all (810 rows)": rows}
+    for name in OPENML:
+        sets[name] = [r for r in rows if r["dataset"] == name]
+    sets["all, ctx 0.001 dropped (duplicates of ctx 0.01)"] = [r for r in rows if r["ctx"] != 0.001]
+    res = {}
+    for g, rs in sets.items():
+        res[g] = dict(rows=len(rs),
+                      scores={k: score(rs, k) for k in KEYS if any(r.get(k) is not None for r in rs)},
+                      race_minus={b: paired(rs, "race", b) for b in BASES if any(r.get(b) is not None for r in rs)},
+                      window_adamw_minus={b: paired(rs, "window_adamw", b) for b in ["dvd_nowd", "dvd", "dvd_sorted", "dvd_final_theirs"]},
+                      race_eq_window=float(np.mean([r["race"] == r["window"] for r in rs])),
+                      race_eq_window_adamw=float(np.mean([r["race"] == r["window_adamw"] for r in rs])),
+                      window_eq_dvd=float(np.mean([r["window"] == r["dvd"] for r in rs])),
+                      window_eq_exact=(float(np.mean([r["window"] == r["dvd_exact"] for r in rs if "dvd_exact" in r]))
+                                       if any("dvd_exact" in r for r in rs) else None),
+                      altP_window_agree=float(np.mean([r["window"] == r["window_altP"] for r in rs])),
+                      altP_dvd_agree=float(np.mean([r["dvd"] == r["dvd_altP"] for r in rs])))
+        print(g, len(rs), {k: (v["spearman"][0] if v["spearman"] else None, round(v["mae"][0], 2), round(v["over"], 2))
+                           for k, v in res[g]["scores"].items() if v}, flush=True)
+    t16 = tab16(repo, stats["jannis", 42])
+    with open(os.path.join(outdir, "retro_rows.csv"), "w", newline="") as f:
+        keys = list(rows[0].keys())
+        keys += [k for k in sorted({k for r in rows for k in r}) if k not in keys]
+        w = csv.DictWriter(f, keys); w.writeheader(); w.writerows(rows)
+    import sklearn, scipy, torch, pandas
+    commit = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    ofiles = {}
+    for root, _, fs in os.walk(cache):
+        for fn in fs:
+            p = os.path.join(root, fn); ofiles[os.path.relpath(p, cache)] = sha(p)
+    doc = dict(what="E10 (r), retrospective: race / window / drive-vs-decay counts from inputs alone vs their public "
+                    "Tabular-JEPA outcomes (arXiv 2610.02344v1, github.com/jose-melo/drive-vs-decay @ 3176215)",
+               label="retrospective (their outcomes were public before this script; no prediction reads an outcome column)",
+               definition=__doc__,
+               measured="tjepa/effective_rank (ERank) of their full_sweep_per_run.csv: the closest measured rank quantity; "
+                        "their CSV has no thresholded singular-value count, so the planned primary statistic (rank MAE of the "
+                        "thresholded count) cannot be computed without retraining",
+               consistency_vs_test="race vs window: consistency check (lam_P -> 0 limit, W0 above capture). race vs dvd* and "
+                                   "every count vs ERank: retrospective comparison on public outcomes, not a held-out test.",
+               keys=dict(race="N1 on the block reduction, lam = wd, horizon of the run",
+                         window="static window at P0, lam = wd", window_adamw="window with lam = 0 (AdamW reading)",
+                         dvd="their r~_tight, Eq. 51-52, with weight-decay floor", dvd_nowd="the same, lam = 0",
+                         dvd_signed="App. C.8 signed form", dvd_sorted="Eq. 31 sorted form", dvd_pq="Eq. 51 paired on both sides",
+                         dvd_pq_signed="Eq. 7 paired, signed", dvd_exact="exact Kronecker linearisation (helena only)",
+                         race_unc="race on uncentred moments", window_unc="window on uncentred moments",
+                         dvd_unc="dvd on uncentred moments", window_altP="window with an independent P0 draw",
+                         dvd_altP="dvd with an independent P0 draw",
+                         dvd_final_theirs="their recorded rc_r_tight_abs (final checkpoint, code not public): reference, not inputs-only"),
+               stat="spearman = rank correlation of count and ERank [rho, 95% bootstrap CI over rows, 1000 resamples]; "
+                    "mae = mean |count - ERank| [mean, 95% CI, 2000 resamples]; bias = mean(count - ERank); over = share of "
+                    "rows with count > ERank; exceed = share with ERank > count (violation of r_tight as an upper bound); "
+                    "race_minus[b]: paired bootstrap over rows of |race - ERank| - |b - ERank| (negative favours race) and of "
+                    "rho(race) - rho(b) (positive favours race); equal_share = share of rows with race == b; window_adamw_minus[b]: "
+                    "the same for the lam = 0 window (like-for-like partner: dvd_nowd)",
+               provenance=dict(their_commit=commit, their_files={p: sha(os.path.join(repo, p)) for p in [GRID, TGRID] + SRC},
+                               openml_cache_files=ofiles, datasets=prov,
+                               taken_from={"model, optimiser, masks, grid": "tabular/experiment_1.py, src/linear_tjepa/*.py",
+                                           "data download and loaders": "tabular/reproduce_tabular.sh, src/datasets/*.py, src/linear_tjepa/data.py",
+                                           "outcomes": GRID, "Tab. 16 outcomes": TGRID,
+                                           "T-JEPA config": "tabular/experiment_2.py, tabular/jannis_hyperparameters.json",
+                                           "epochs (30) and final-checkpoint counts": "reproduce_tabular.sh; paper App. C.7 (40 epochs)"}),
+               notes=["seed + 1 init convention inferred from identical outcomes of cells with equal k1",
+                      "aloi labels: with sklearn 1.9.1 the sparse-ARFF target of OpenML 1592 is not the class column "
+                      "(1005 distinct uninitialised values, and the stratified split then fails); the class column is read "
+                      "from the cached ARFF instead (1000 classes x 108 rows). Labels only choose the train rows.",
+                      "their CSV has 810 rows (the paper reports 804 completed); in the jannis alpha = 1e-3 cell the seed labels "
+                      "of ctx 0.001 and 0.01 are permuted (identical outcomes)",
+                      "dvd_exact computed for helena only (CPU budget)"],
+               command="python3 code/e10_retro.py <drive-vs-decay checkout @ 3176215> <OpenML cache dir> results/e10",
+               versions=dict(python=platform.python_version(), numpy=np.__version__, scipy=scipy.__version__,
+                             sklearn=sklearn.__version__, torch=torch.__version__, pandas=pandas.__version__),
+               runtime_s=round(time.time() - t0, 1),
+               results=res, tab16=t16)
+    json.dump(doc, open(os.path.join(outdir, "retro.json"), "w"), indent=1)
+    print(json.dumps(t16["scored"], indent=0)[:3000])
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "e10_retro", round(time.time() - t0, 1), "s")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1], sys.argv[2], sys.argv[3])

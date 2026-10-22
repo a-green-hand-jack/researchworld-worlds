@@ -1,0 +1,111 @@
+"""Independent check of experiment-repo's 2610.02344 baseline (code/baselines/dvd_mu.py at 112f91e) on the
+E1b arms where the predictor or the data are not spectrally decoupled (randpred, noncomm), plus the aligned
+arms as a control.
+
+Their criterion (2610.02344v1 Sec. 3.2-3.3, Eq. 3-8, App. A.5, Table 3): linearise the encoder flow at
+W = Wa = 0 with the predictor fixed at its initial value; weight decay is an additive floor. For the delivered
+model (code/linjepa.py: L = 1/2 E||P W x1 - Wbar x2||^2 + lam/2 ||W||^2, S21 = E[x2 x1^T]) the linearisation
+with Wbar = W (the EMA rate does not move the zero crossing, their J.7) is
+    dW/dt = -P^T P W S11 + P^T W S21 - lam W,
+    vec: J = S21^T (x) P^T - S11 (x) P^T P - lam I.
+Variants computed here:
+  exact     : the same linearisation without the decoupling approximation (their App. A.5 route): unstable
+              eigenvalues of J (Re > lam); exact_modes = |pi_k U| (data modes with an unstable direction),
+              exact_rtight = min(|pi_k U|, dim span of the unstable predictor-side eigenvectors, d)
+  paired_q  : eigenvector-paired form of Eq. 7/51 on BOTH sides: p_l, v_l eigenpairs of P^T P,
+              q_l = v_l^T P^T v_l (signed) and |q_l| (abs), c_k, a_k as in dvd_mu.py; r_tight of Eq. 8/52
+  sv_q      : q_l = singular value of P (what dvd_mu.py uses), to reproduce its numbers
+Inputs: experiment-repo 112f91e code/e1b.py, code/linjepa.py, results/e1b/e1b_runs.csv
+Usage: python3 checks/dvd_baseline_exact.py /hutian/experiment-repo
+"""
+import sys, os, csv, json
+import numpy as np
+
+repo = sys.argv[1]
+sys.path.insert(0, os.path.join(repo, "code"))
+os.chdir(repo)
+import e1b
+
+
+def r_tight(a, c, p, q, lam):
+    U = np.outer(c, q) > np.outer(a, p) + lam
+    return int(min(U.any(1).sum(), U.any(0).sum()))
+
+
+def exact_count(S11, S21, P, lam):
+    """Exact linearisation (no decoupling): returns (|pi_k U|, exact r_tight) for the growing component.
+    Identity-type predictor P = p0 I: J = (p0 S21 - p0^2 S11)^T (x) I - lam, so the count is the number of
+    eigenvalues of p0 S21 - p0^2 S11 with real part > lam (each column direction free).
+    Aligned data: column k of W obeys dw_k/dt = (c_k P^T - a_k P^T P - lam) w_k; |pi_k U| = number of columns
+    with an unstable eigenvalue, |pi_l U| = dimension of the span of all unstable eigenvectors."""
+    d = P.shape[0]
+    p0 = P[0, 0]
+    if np.allclose(P, p0 * np.eye(d)):
+        ev = np.linalg.eigvals(p0 * S21 - p0 ** 2 * S11)
+        k = int((ev.real > lam).sum())
+        return k, min(k, d)
+    assert np.allclose(S11, np.diag(np.diag(S11))) and np.allclose(S21, np.diag(np.diag(S21)))
+    ks, vecs = 0, []
+    for a, c in zip(np.diag(S11), np.diag(S21)):
+        ev, V = np.linalg.eig(c * P.T - a * P.T @ P)
+        sel = ev.real > lam
+        if sel.any():
+            ks += 1; vecs.append(np.real(V[:, sel])); vecs.append(np.imag(V[:, sel]))
+    span = int(np.linalg.matrix_rank(np.hstack(vecs), tol=1e-8)) if vecs else 0
+    return ks, min(ks, span, d)
+
+
+def mae(x):
+    x = np.asarray(x, float); return float(np.abs(x).mean())
+
+
+cfgs = {c["id"]: c for c in e1b.configs()}
+dvd = {int(r["id"]): r for r in csv.DictReader(open("results/baselines/dvd_e1b_runs.csv"))}
+out = {}
+rows = []
+for r in csv.DictReader(open("results/e1b/e1b_runs.csv")):
+    if r["diverged"] or r["rank_meas"] == "":
+        continue
+    cfg = cfgs[int(r["id"])]
+    if cfg["exp"] not in ("randpred", "noncomm", "grid"):
+        continue
+    S11, S21 = e1b.stats(cfg)
+    W0, P = e1b.init_of(cfg)
+    lam = cfg["lam"]
+    meas = int(r["rank_meas"])
+    a, Uu = np.linalg.eigh(S11)
+    c_signed = np.einsum("ik,ij,jk->k", Uu, (S21 + S21.T) / 2, Uu)
+    p, V = np.linalg.eigh(P.T @ P)
+    q_signed = np.einsum("ik,ij,jk->k", V, P.T, V)
+    s = np.sqrt(np.clip(p, 0, None))
+    ks, rt = exact_count(S11, S21, P, lam)
+    d = P.shape[0]
+    row = dict(exp=cfg["exp"], id=cfg["id"], depth=cfg["depth"], width=cfg["width"], p0=cfg["p0"], lam=lam, meas=meas,
+               rank_pred=int(r["rank_pred"]),
+               sv_q_abs=r_tight(a, np.abs(c_signed), p, s, lam),
+               paired_q_signed=r_tight(a, c_signed, p, q_signed, lam),
+               paired_q_abs=r_tight(a, np.abs(c_signed), p, np.abs(q_signed), lam),
+               exact_modes=ks, exact_rtight=rt,
+               dvd_repo=int(dvd[cfg["id"]]["dvd"]), dvd_signed_repo=int(dvd[cfg["id"]]["dvd_signed"]))
+    rows.append(row)
+
+for exp in ("grid", "randpred", "noncomm"):
+    rs = [x for x in rows if x["exp"] == exp]
+    res = dict(runs=len(rs))
+    for k in ("rank_pred", "dvd_repo", "dvd_signed_repo", "sv_q_abs", "paired_q_abs", "paired_q_signed", "exact_modes", "exact_rtight"):
+        v = [x[k] for x in rs if x[k] is not None]
+        if v:
+            e = np.array(v) - np.array([x["meas"] for x in rs if x[k] is not None])
+            res[k] = dict(mae=round(mae(e), 2), bias=round(float(e.mean()), 2), exact=round(float((e == 0).mean()), 2))
+    res["sv_q_abs_equals_dvd_repo"] = int(sum(x["sv_q_abs"] == x["dvd_repo"] for x in rs))
+    out[exp] = res
+    print(exp, json.dumps(res))
+# by depth/width for randpred
+for key in sorted({(x["depth"], x["width"]) for x in rows if x["exp"] == "randpred"}, key=str):
+    rs = [x for x in rows if x["exp"] == "randpred" and (x["depth"], x["width"]) == key]
+    print("randpred", key, "n", len(rs), "meas mean", np.mean([x["meas"] for x in rs]).round(2),
+          {k: round(mae(np.array([x[k] for x in rs]) - np.array([x["meas"] for x in rs])), 2)
+           for k in ("rank_pred", "dvd_repo", "paired_q_abs", "paired_q_signed", "exact_modes", "exact_rtight")})
+json.dump(dict(summary=out, rows=rows, inputs=["experiment-repo 112f91e code/e1b.py", "code/linjepa.py",
+          "results/e1b/e1b_runs.csv", "results/baselines/dvd_e1b_runs.csv"]),
+          open("/hutian/repo/checks/dvd_baseline_exact.json", "w"), indent=1)

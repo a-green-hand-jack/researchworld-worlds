@@ -1,0 +1,227 @@
+"""E5 / B1 development grid, scored on the schedule-affected part (internal review of the B1 registration, items 1-3).
+Post hoc on the delivered dev runs (results/e5/b1dev); no registered verdict changes. Unregistered additions:
+  * time-resolved, per-direction baselines: capture_static (the stage model's own capture times, then alive iff
+    lam_W(t) <= c^2/(4s): losses and regains exactly at the crossings, no post-capture dynamics; the ablation of the
+    slaved post-capture claim), static_now (alive iff lam_W(t) <= c^2/(4s)), race_frozen0 / race_frozenT (the stage
+    model with the schedule frozen at its initial / final values);
+  * the development revision stage_qs (code/e5_theory.py stage_model_qs: quasi-steady predictor, decay-limited);
+  * B1a on the schedule-affected pairs: checkpoints after the first knot at which the truth or any scored predictor is
+    in a different state than at the first knot (one common, symmetric subset per run, so differences are paired);
+  * B1b on the events at or after the first knot (truth and predictor alike; unmatched counted on both sides);
+  * the predictor after a true loss: |ln| of truth p against the slaved p = w sqrt(lam_W / lam_P) of the stage model,
+    against stage_qs's p, and against own decay from the last alive checkpoint;
+  * regains (lost, later alive again) and 'sub-capture' directions (truth alive with p < c/(2s) at a checkpoint: on
+    the saddle side of the window, not on the captured branch).
+Usage: python3 code/checks/e5_b1_sched.py RUNDIR OUT.json [NPROC]"""
+import sys, os, json, gzip, math, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import e5_b1 as B, e5_theory as th
+
+THR = B.THR
+NAMES = ["stage", "stage_qs", "capture_static", "static_now", "race_frozen0", "race_frozenT"]
+
+
+def crossing_events(alive, t):
+    ev = []
+    for j, k in zip(*np.nonzero(alive[1:] != alive[:-1])):
+        ev.append((int(k), "gain" if alive[j + 1, k] else "loss", float(t[j + 1])))
+    return ev
+
+
+def one(line):
+    rec = json.loads(line); cfg, tr, pr = rec["cfg"], rec["truth"], rec["pred"]
+    G = B.GRIDS[cfg["grid"]]; c, s = B.stats(G); n = c.size
+    w0 = np.linalg.norm(B.init_amp(cfg, n), axis=0)
+    t = np.array(tr["t"]); A = np.array(tr["a"], float); Pt = np.array(tr["p"], float); am = A > THR
+    dt = B.ETA; N = int(round(cfg["T"] / dt)); tf = np.arange(N + 1) * dt
+    lWf = th.lam_of(cfg["kW"], tf); lW = th.lam_of(cfg["kW"], t); lP = th.lam_of(cfg["kP"], t)
+    lstar = th.static_threshold(c, s)
+    states, events = {}, {}
+    states["stage"] = np.array(pr["W"], float) > THR; events["stage"] = [tuple(e) for e in pr["events"]]
+    q = th.stage_model_qs(c, s, w0, cfg["p0"], cfg["kW"], cfg["kP"], cfg["alpha"], cfg["kappa"], cfg["T"], dt=dt)
+    idx = np.clip(np.round(t / dt).astype(int), 0, N)
+    states["stage_qs"] = q["W"][idx] > THR; events["stage_qs"] = q["events"]; Pqs = q["P"][idx]
+    tc = np.array([np.inf if x is None else x for x in pr["tc"]], float)
+    cs_f = (tf[:, None] >= tc[None, :]) & (lstar[None, :] >= lWf[:, None])
+    states["capture_static"] = cs_f[idx]; events["capture_static"] = crossing_events(cs_f, tf)
+    sn_f = np.broadcast_to(lstar[None, :] >= lWf[:, None], (N + 1, n))
+    states["static_now"] = sn_f[idx]; events["static_now"] = crossing_events(sn_f, tf)
+    for name, tv in (("race_frozen0", 0.0), ("race_frozenT", cfg["T"])):
+        vw = th.lam_of(cfg["kW"], [tv])[0]; vp = th.lam_of(cfg["kP"], [tv])[0]
+        r = th.stage_model(c, s, w0, cfg["p0"], [(0.0, vw)], [(0.0, vp)], cfg["alpha"], cfg["kappa"], cfg["T"], dt=dt)
+        states[name] = r["W"][idx] > THR; events[name] = r["events"]
+    meas = B.debounce(tr["trans"])
+    out = dict(id=cfg["id"], kind=cfg["kind"], variant=cfg["variant"], p0=cfg["p0"], lo=cfg["lo"], hi=cfg["hi"],
+               ts=cfg["ts"], seed=cfg["seed"], pairs=int(am.size),
+               agree={k: int((v == am).sum()) for k, v in states.items()},
+               final={"truth": int(am[-1].sum()), **{k: int(v[-1].sum()) for k, v in states.items()}})
+    ev_all = {}
+    for k in NAMES:
+        e, _, u, ne = B.match_events(meas, B.debounce(events[k]), cfg["kW"], cfg["kP"])
+        ev_all[k] = dict(errs=e, unmatched=u, n_events=ne)
+    out["events_all"] = ev_all
+    if cfg["ts"] is not None:
+        ts = cfg["ts"]; i0 = int(np.argmin(np.abs(t - ts)))
+        U = np.zeros_like(am)
+        for v in [am] + [states[k] for k in NAMES]:
+            U[i0 + 1:] |= v[i0 + 1:] != v[i0][None, :]
+        out["sched_pairs"] = int(U.sum())
+        out["sched_agree"] = {k: int(((states[k] == am) & U).sum()) for k in NAMES}
+        Ut = np.zeros_like(am); Ut[i0 + 1:] = am[i0 + 1:] != am[i0][None, :]
+        out["truth_changed_pairs"] = int(Ut.sum())
+        out["truth_changed_agree"] = {k: int(((states[k] == am) & Ut).sum()) for k in NAMES}
+        # E5 amendment 2: truth-or-model subset, per model m in ("stage", "stage_qs")
+        out["tm"] = {}
+        for m in ("stage", "stage_qs"):
+            Um = Ut.copy(); Um[i0 + 1:] |= states[m][i0 + 1:] != states[m][i0][None, :]
+            out["tm"][m] = dict(pairs=int(Um.sum()), agree={k: int(((states[k] == am) & Um).sum()) for k in NAMES})
+        post = {}
+        mpost = {k: [e for e in v if e[2] >= ts] for k, v in meas.items()}
+        for k in NAMES:
+            pk = {kk: [e for e in v if e[2] >= ts] for kk, v in B.debounce(events[k]).items()}
+            e, _, u, ne = B.match_events(mpost, pk, cfg["kW"], cfg["kP"])
+            post[k] = dict(errs=e, unmatched=u, n_events=ne)
+        out["events_post"] = post
+        out["truth_events_post"] = int(sum(len(v) for v in mpost.values()))
+    # predictor after a true loss
+    was = np.maximum.accumulate(am, axis=0); dead = was & ~am
+    if dead.any():
+        rr = np.sqrt(lW / np.maximum(lP, 1e-300))[:, None]
+        ps = rr * np.array(pr["W"], float)
+        last = np.zeros_like(Pt); LamP = np.concatenate([[0.0], np.cumsum(0.5 * (lP[1:] + lP[:-1]) * np.diff(t))])
+        LamP = LamP + lP[0] * t[0]
+        own = np.full(Pt.shape, np.nan); la = np.full(n, -1)
+        for j in range(t.size):
+            la = np.where(am[j], j, la)
+            ok = la >= 0
+            own[j, ok] = np.abs(Pt[la[ok], np.nonzero(ok)[0]]) * np.exp(-cfg["alpha"] * (LamP[j] - LamP[la[ok]]))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            f = lambda x: float(np.nanmedian(np.abs(np.log(np.abs(Pt[dead]) / np.maximum(x[dead], 1e-300)))))
+            g = lambda x: float(np.nanmedian(np.log(np.abs(Pt[dead]) / np.maximum(x[dead], 1e-300))))
+            out["post_loss"] = dict(n=int(dead.sum()), vs_slaved=f(ps), vs_qs=f(Pqs), vs_own_decay=f(own),
+                                    signed_vs_slaved=g(ps), signed_vs_qs=g(Pqs), signed_vs_own_decay=g(own),
+                                    a_dead_median=float(np.median(A[dead])))
+            # per pair, for the pooled statistic of the registered B1d (summ_v2 of code/e5_b1.py) and the comparators of
+            # E5 amendment 3: the slaved relation on the truth's own w; on the stage model's W only where it is dead too
+            lg = lambda x: np.log(np.abs(Pt[dead]) / np.maximum(x[dead], 1e-300)).tolist()
+            out["post_loss_pairs"] = dict(qs=lg(Pqs), own_decay=lg(own),
+                                          slaved_truth_w=lg(rr * np.abs(A)), slaved_model_W=lg(ps),
+                                          stage_dead=(~states["stage"][dead]).tolist())
+
+    def regains(alive):
+        lost = np.zeros(n, bool); reg = np.zeros(n, bool)
+        for j in range(1, alive.shape[0]):
+            lost |= alive[j - 1] & ~alive[j]; reg |= lost & alive[j]
+        return reg
+    rt = regains(am)
+    out["regain"] = {"truth": int(rt.sum()), **{k: int(regains(states[k]).sum()) for k in ("stage", "stage_qs", "capture_static")},
+                     "truth_and_stage": int((rt & regains(states["stage"])).sum()),
+                     "truth_and_qs": int((rt & regains(states["stage_qs"])).sum())}
+    sub = am & (np.abs(Pt) < (c / (2 * s))[None, :])
+    out["subcapture_dirs"] = int(sub.any(0).sum())
+    out["subcapture_pairs"] = int(sub.sum())
+    out["stage_miss_on_sub"] = int((sub & (states["stage"] != am)).sum())
+    out["qs_miss_on_sub"] = int((sub & (states["stage_qs"] != am)).sum())
+    out["stage_miss"] = int((states["stage"] != am).sum()); out["qs_miss"] = int((states["stage_qs"] != am).sum())
+    return out
+
+
+def boot(x, B_=2000, seed=0):
+    x = np.asarray(x, float)
+    if x.size == 0:
+        return [None, None]
+    r = np.random.default_rng(seed); m = x[r.integers(0, x.size, (B_, x.size))].mean(1)
+    return [float(np.quantile(m, 0.025)), float(np.quantile(m, 0.975))]
+
+
+def ev_summary(rows, key, name):
+    R = [r for r in rows if key in r]
+    E = np.concatenate([r[key][name]["errs"] for r in R]) if R else np.array([])
+    ne = sum(r[key][name]["n_events"] for r in R); un = sum(r[key][name]["unmatched"] for r in R)
+    return dict(events=ne, matched=int(E.size), unmatched_share=un / max(ne, 1),
+                median=float(np.median(E)) if E.size else None, p90=float(np.quantile(E, 0.9)) if E.size else None)
+
+
+def summ(rows):
+    out = dict(runs=len(rows))
+    if not rows:
+        return out
+    P = sum(r["pairs"] for r in rows)
+    out["state_agree"] = {k: sum(r["agree"][k] for r in rows) / P for k in NAMES}
+    S = [r for r in rows if "sched_pairs" in r]
+    if S:
+        sp = sum(r["sched_pairs"] for r in S); tp = sum(r["truth_changed_pairs"] for r in S)
+        out["sched_pairs"] = sp; out["sched_share_of_pairs"] = sp / sum(r["pairs"] for r in S)
+        out["sched_agree"] = {k: sum(r["sched_agree"][k] for r in S) / max(sp, 1) for k in NAMES}
+        dis = lambda r, k: (r["sched_pairs"] - r["sched_agree"][k]) / max(sp / len(S), 1e-12)
+        out["sched_disagree_minus_stage_ci"] = {k: boot([dis(r, k) - dis(r, "stage") for r in S]) for k in NAMES if k != "stage"}
+        out["sched_disagree_minus_qs_ci"] = {k: boot([dis(r, k) - dis(r, "stage_qs") for r in S]) for k in NAMES if k != "stage_qs"}
+        out["truth_changed_pairs"] = tp
+        out["truth_changed_agree"] = {k: sum(r["truth_changed_agree"][k] for r in S) / max(tp, 1) for k in NAMES}
+        out["truth_or_model"] = {m: dict(pairs=sum(r["tm"][m]["pairs"] for r in S),
+                                         agree={k: sum(r["tm"][m]["agree"][k] for r in S) / max(sum(r["tm"][m]["pairs"] for r in S), 1) for k in NAMES})
+                                 for m in ("stage", "stage_qs")}
+        out["events_post"] = {k: ev_summary(S, "events_post", k) for k in NAMES}
+        out["truth_events_post"] = sum(r["truth_events_post"] for r in S)
+    out["events_all"] = {k: ev_summary(rows, "events_all", k) for k in NAMES}
+    tru = np.array([r["final"]["truth"] for r in rows])
+    out["final_mae"] = {k: float(np.mean(np.abs(np.array([r["final"][k] for r in rows]) - tru))) for k in NAMES}
+    out["final_within1"] = {k: float(np.mean(np.abs(np.array([r["final"][k] for r in rows]) - tru) <= 1)) for k in NAMES}
+    out["regain"] = {k: sum(r["regain"][k] for r in rows) for k in rows[0]["regain"]}
+    PL = [r["post_loss"] for r in rows if "post_loss" in r]
+    if PL:
+        out["post_loss"] = dict(runs=len(PL), pairs=sum(x["n"] for x in PL),
+                                **{k: float(np.median([x[k] for x in PL])) for k in ("vs_slaved", "vs_qs", "vs_own_decay", "signed_vs_slaved", "signed_vs_qs", "signed_vs_own_decay", "a_dead_median")})
+    PP = [r["post_loss_pairs"] for r in rows if "post_loss_pairs" in r]
+    if PP:
+        cat = lambda k: np.array([v for x in PP for v in x[k]], float)
+        md = np.array([v for x in PP for v in x["stage_dead"]], bool)
+        med = lambda v: float(np.nanmedian(np.abs(v))) if v.size else None
+        sgn = lambda v: float(np.nanmedian(v)) if v.size else None
+        stw = cat("slaved_truth_w"); smw = cat("slaved_model_W")
+        out["post_loss_pooled"] = dict(
+            note="pooled over all post-loss pairs of all runs, as the registered B1d (summ_v2); post_loss above is the median over runs of per-run medians",
+            runs=len(PP), pairs=int(md.size),
+            **{f"median_abs_vs_{k}": med(cat(k)) for k in ("qs", "own_decay")},
+            **{f"median_signed_vs_{k}": sgn(cat(k)) for k in ("qs", "own_decay")},
+            slaved_truth_w=dict(median_signed=sgn(stw), median_abs=med(stw),
+                                truth_above_share=float(np.mean(stw[np.isfinite(stw)] > 0)) if np.isfinite(stw).any() else None),
+            stage_alive_share=float(1 - md.mean()),
+            slaved_model_W_stage_dead=dict(pairs=int(md.sum()), median_signed=sgn(smw[md]), median_abs=med(smw[md])),
+            slaved_model_W_stage_alive=dict(pairs=int((~md).sum()), median_signed=sgn(smw[~md])),
+            slaved_model_W_all=dict(median_signed=sgn(smw), median_abs=med(smw)))
+    for k in ("subcapture_dirs", "subcapture_pairs", "stage_miss_on_sub", "qs_miss_on_sub", "stage_miss", "qs_miss"):
+        out[k] = sum(r[k] for r in rows)
+    return out
+
+
+if __name__ == "__main__":
+    rundir, outp = sys.argv[1], sys.argv[2]; nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    t0 = time.time()
+    lines = list(gzip.open(os.path.join(rundir, "b1_dev_runs.jsonl.gz"), "rt"))
+    with Pool(nproc) as pool:
+        rows = []
+        for i, r in enumerate(pool.imap_unordered(one, lines, chunksize=4)):
+            rows.append(r)
+            if (i + 1) % 400 == 0:
+                print(f"{i + 1}/{len(lines)} {time.time() - t0:.0f}s", flush=True)
+    rows.sort(key=lambda r: r["id"])
+    sch = [r for r in rows if r["ts"] is not None]
+    res = dict(status="post hoc on the development grid (unregistered scoring; internal review of the B1 registration)",
+               runs=os.path.join(rundir, "b1_dev_runs.jsonl.gz"), names=NAMES,
+               all=summ(rows), schedules=summ(sch),
+               by_kind={k: summ([r for r in rows if r["kind"] == k]) for k in B.KINDS},
+               by_variant={v: summ([r for r in sch if r["variant"] == v]) for v in B.VARIANTS},
+               by_cell={f"{k}|{v}": summ([r for r in rows if r["kind"] == k and r["variant"] == v]) for k in B.KINDS for v in B.VARIANTS},
+               seconds=time.time() - t0, numpy=np.__version__, command=" ".join(["code/checks/e5_b1_sched.py"] + sys.argv[1:]),
+               md5={f: B.md5(os.path.join(os.path.dirname(__file__), "..", f)) for f in ("e5_b1.py", "e5_theory.py")})
+    os.makedirs(os.path.dirname(outp), exist_ok=True)
+    json.dump(res, open(outp, "w"), indent=1)
+    with gzip.open(outp.replace(".json", "_rows.jsonl.gz"), "wt") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+    print(json.dumps({k: res["schedules"].get(k) for k in ("truth_or_model", "post_loss", "post_loss_pooled")}, indent=1))
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E5 B1 dev schedule-affected rescoring done", flush=True)

@@ -1,0 +1,7 @@
+# Monte Carlo evidence
+
+Run `python3 analysis/monte_carlo.py` from the repository root. It writes `results/pi_mc.json`. Python, NumPy and SciPy versions are recorded in that file. An independent rerun can use `--output /path/to/rerun.json`; timing fields will differ.
+
+The sample size is fixed by the objective, not selected from the results. Root seed 20261019 is chosen before execution. NumPy SeedSequence spawns 20 separate PCG64 streams; spawn keys identify the seeds reproducibly. No seeds are rejected or replaced. The first stream serves as a full-size timing pilot and is included; the remaining streams execute with two worker threads. Every generated pair counts toward the required 20,000,000 points.
+
+The main interval is the two-sided Student t interval across 20 per-seed estimates, using sample SD with 19 degrees of freedom. Each estimate averages one million Bernoulli membership indicators, supporting the approximate normality needed by this interval. The interval describes repeated-simulation uncertainty, not uncertainty in the mathematical constant. The pooled-count mean is checked against the seed mean, and the empirical seed SD is compared with the theoretical binomial SD sqrt(pi*(4-pi)/1,000,000). These checks do not select results or change the prescribed interval.

@@ -1,0 +1,16 @@
+import json, math, sys, statistics
+import numpy as np
+from scipy.stats import t
+d = json.load(open(sys.argv[1])); r = json.load(open(sys.argv[2]))
+# independent reimplementation (chunked, different code path)
+ss = np.random.SeedSequence(20261019).spawn(20)
+ins = []
+for s in ss:
+    g = np.random.Generator(np.random.PCG64(s)); p = g.random((1_000_000, 2))
+    ins.append(int(((p*p).sum(1) <= 1).sum()))
+est = [4*i/1e6 for i in ins]
+m = statistics.mean(est); sd = statistics.stdev(est); h = t.ppf(.975,19)*sd/math.sqrt(20)
+print("counts match delivered:", ins == [x["inside"] for x in d["runs"]], "rerun:", ins == [x["inside"] for x in r["runs"]])
+print("mean", m, d["mean_estimate"]); print("ci", m-h, m+h, d["ci_95"]); print("err", m-math.pi, d["signed_error"])
+print("sd", sd, "theory", 4*math.sqrt(math.pi/4*(1-math.pi/4)/1e6), "total", 20*10**6, d["total_points"], sum(ins), d["total_inside"])
+print("distinct keys", len({tuple(x["spawn_key"]) for x in d["runs"]}))

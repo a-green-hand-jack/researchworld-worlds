@@ -1,0 +1,77 @@
+{
+ "experiment": "E6 / direction C, rung 4: layer-normalised target (A4's LN, no affine, eps 1e-5, stop-gradient) in rung 2's MLP encoder f(x) = W2 phi(W1 x), identity predictor p0 I, weight decay on W1, W2 and P, full-batch GD (plan v2.33 Sec. 3 C 'Rung 4 development and registration'; story-repo request experiment-repo#21)",
+ "status": "registered before any held-out run; frozen code = the commit adding this file (md5s below). code/e6_r4.py (model, truth, inputs-only rows; the development grid's code) is imported unchanged; code/e6_r4_heldout.py adds the held-out grid, independent draws per base run, a truth-floor re-run per base run, the measured-W1 rows of the development diagnostic and the scoring. Its training loop (train_full) is e6_r4.train with W1 also kept every 50 steps; on the smoke grid its ranks, deltas, early count, snapshots and every inputs-only row equal e6_r4.train's exactly",
+ "md5": {
+  "code/e6_r4_heldout.py": "dd977e41b8e6978242d40746fa9f31bc",
+  "code/e6_r4.py": "2b99b11a8a90c433b51e2e27a2ab30c2",
+  "code/e6_r2.py": "321bbbe97b5fbe82ebe0965a7333d4c5",
+  "code/e4_a4.py": "a7e50edf15bea8d8310f8bee938041b4",
+  "code/baselines/dvd_mu.py": "88ed281a7bea8dc0b312f88221ff5f4d"
+ },
+ "scope": "gradient descent, eta = 0.1, the rung-2 MLP (n = 32, H = 64, d = 32, N = 1024 pairs, mask rate 0.5, w0 = 1e-3), horizon 8 e-folds of lam; AdamW with an LN target is not covered",
+ "model_and_truth": {
+  "truth": "embedding rank #sv((Z - mean Z) Pi / sqrt N) > 0.05 at T (Z = f(x_c); the constant output direction projected out as in A4), as on dev",
+  "settled": "same rank over the last 4 of the 20 checks (reported; settled-only scoring beside the primary)",
+  "floor": "every base run has one re-run with W2(0)'s rows scaled by 1 + U(-1e-3, 1e-3) (rungs 2-3's 'w2' floor; seed 8e6 + run seed). A base run is fragile if the two truths differ at all or either diverged (A4-R1). Reported: the fragile share, the shares differing by exactly 1 and by more than 1, per data x act cell",
+  "verdict_word_rule": "A4 revision 3's: if at most 5% of base runs are fragile the word comes from all base runs, and is 'undetermined' if the sample-robust verdict differs; if more than 5% are fragile (truth ill-posed) the word is 'pass / fail on sample-robust runs', with the all-run verdict beside it; if at most half the base runs are sample-robust the word is 'undetermined (truth ill-posed)'",
+  "nonfinite": "a diverged run has no truth: a miss in within-1 (within-1 is over all base runs), left out of the MAE and the paired intervals; a row that is non-finite on a finite run is likewise a miss",
+  "clusters": "configuration-cluster bootstrap (unit: data, act, s1, lam, p0 with its 3 independent draws; 40 clusters; 2000 resamples; 95% percentile intervals)"
+ },
+ "grid": {
+  "values": "data field / latent; act tanh / relu; s1 tanh 0.8, 1.1, 1.8 and relu 0.8, 1.1; lam 0.006, 0.009; p0 0.8, 1.5; 3 independent draws per configuration: 120 base runs + 120 floor re-runs",
+  "disjoint_from_dev": "dev used s1 0.6 / 1.2 / 2.4, lam 0.004 / 0.012, p0 0.6 / 1.2, seed 640; held-out seeds are 40000 + k (k = base run index), floors keep the seed",
+  "stable_range": "relu stays inside the s1 range dev found stable (dev: every relu run at s1 = 2.4 diverged at step 50, both data types and every lam and p0; relu at 0.6 and 1.2 never diverged); tanh adds s1 = 1.8 inside its dev range (tanh was stable at 2.4). The relu divergence at s1 = 2.4, eta = 0.1 is reported as a property of the LN target with relu (under the plain target rung 2 ran relu at s1 = 2.8 without divergence, because W2 stays small); any held-out divergence counts as a miss and is reported per cell",
+  "pilot_disclosed": "a cost pilot ran grid configurations 24 (field tanh s1 1.8), 36 (field relu 0.8), 84 (latent tanh 1.8) and floor 144 with the seed moved to 49990 (no registered seed). Its process times set the cost; its outputs were also printed and seen: truth 22 / 5 / 15 against n2_decay 4 / 3 / 5 and n2_meas_full 2 / 3 / 6. Nothing in the registration was changed after seeing them"
+ },
+ "criterion": {
+  "rule": "the plan's exit (Sec. 3 A, fixed before A4's outcome): n2_decay if A4 passes, ln_static_decay if A4 fails or is undetermined; the v2.32 exception: if A4 passes but its word against ln_static is 'baseline better', ln_static_decay. The other is an extra row",
+  "A4_outcome": "A4 held-out (c25c7a1, results/e4/a4_heldout/a4_heldout_verdict.json): 'pass on sample-robust runs', and against ln_static 'N2 better' (0.87 [0.73, 1.00]). So the criterion is n2_decay and ln_static_decay is the extra row",
+  "n2_decay": "A4's N2 reduced flow per direction of the initial context-feature eigenbasis U0, with s_k, c_k, tau_k recomputed every 50 steps on rung 2's decay path W1(t) = (1 - eta lam)^t W1(0) (inputs only; e6_r4.py)",
+  "tolerance": "rung 2's: MAE <= 1.5 and within-1 >= 0.70 over all base runs (pass / fail); dev gives no reason to change it",
+  "expectation_from_development": "fail: on dev n2_decay has MAE 8.43, within-1 0.18, bias -8.1 on the 40 finite runs, ln_static_decay 10.85, and no inputs-only row is within 4 directions on tanh",
+  "reading_of_a_fail": "a crossing: 'no validated LN criterion in the MLP encoder', not a failure of A4 (A4 passed in its own linear model)"
+ },
+ "located_cause": {
+  "note": "registered statements on the finite base runs, each with its own word 'confirmed / not confirmed'; computed on all finite base runs and on the sample-robust ones, the word is that of the subset the verdict uses (sample-robust if the truth is ill-posed) and 'undetermined' if the two differ. Only statements dev supports are registered",
+  "R4-a": {
+   "statement": "W1 leaves its decay path at once: delta(T/20) = |W1(t)/(1 - eta lam)^t - W1(0)| / |W1(0)| at the first check exceeds 0.1 on every finite base run (rung 2's maximum up to the first escape was 4.3e-3; 0.1 is 23 times that)",
+   "reported": "the per-run distribution (min, q10, median, max, median per act) beside rung 2's 4.3e-3",
+   "development": "dev 40 finite runs: min 0.385, q10 0.477, median 0.84; min per act tanh 0.385 (s1 2.4), relu 0.428 (s1 1.2); delta falls with s1"
+  },
+  "R4-b": {
+   "statement": "n2_decay under-counts on tanh: truth > n2_decay on at least 80% of the finite tanh base runs and the bias mean(n2_decay - truth) has its configuration-cluster CI below 0",
+   "reported": "the share and bias with CIs for n2_decay and ln_static_decay, on tanh and on relu",
+   "development": "dev tanh (24): under-count share 1.00, bias -12.75 (ln_static_decay share 1.00); relu (16): 0.56, bias -1.19 (not registered for relu)"
+  },
+  "R4-c": {
+   "statement": "on tanh the rank grows after the early check: rank(T) - early count > 1 on at least 30% of the finite tanh base runs and the configuration-cluster CI of mean(rank(T) - early count) lies above 0",
+   "reported": "the share with its CI and the mean rise with its CI, on tanh and on relu",
+   "development": "dev tanh: 54% rise by more than 1, mean rise 2.25 (rank 11.2 at T/20, 14.1 at 10% of T, 16.4 at T); relu: 50%, mean 1.63 (not registered for relu)"
+  }
+ },
+ "conditional_row": {
+  "row": "n2_meas_full: A4's N2 flow fed with the run's own measured W1(t) every 50 steps over the whole run, in the initial eigenbasis U0 as n2_decay. A measured-input row, like n2_meas; never called a prediction",
+  "words": "'accounts for the rank given the first layer' if inside rung 2's tolerance (MAE <= 1.5, within-1 >= 0.70 over all base runs), else 'does not'; 'undetermined' if all base runs and the sample-robust runs disagree; settled-only reported",
+  "development_disclosed": "post hoc diagnostic on the 48 dev runs (code/checks/e6_r4_diag.py at ceaef66 -> results/e6/r4_dev/posthoc/diag.json; development use, dev truths already read): n2_meas_full MAE 8.40, within-1 0.20, bias -8.25 (tanh 11.83, relu 3.25); n2_meas_rot (basis re-diagonalised on the measured S11(t)) 8.15; n2_init (W1 frozen at W1(0)) 8.08; ln_static on the measured W1(T) statistics 9.05; |W1(T)|/|W1(0)| median 1.11 (0.42-4.99), the hidden feature covariance keeps 61 of 64 directions above 0.05^2. So on dev the reduced flow fails even given the measured first layer",
+  "expectation_from_development": "does not",
+  "reported_beside": "n2_meas_rot, n2_init, ln_static_T and n2_meas (measured W1 up to 10% of T, then decaying), with the same scoring; |W1| ratio and hidden rank at the checks"
+ },
+ "baselines": {
+  "rows": "r_init, ln_static_init, w2_exact_decay, r_decay, static, r_lin, window, all_alive (d - 1), zero; the seven mu variants of arXiv 2610.02344 (dvd, dvd_signed, dvd_sorted, dvd_pq, dvd_pq_signed, dvd_exact, dvd_nowd) on the initial statistics and their mu_ln_* forms on the LN-effective cross term (P2, closes experiment-repo#12); the early count (embedding rank at 10% of T, a measurement)",
+  "words": "per baseline, the configuration-cluster CI of mean(|baseline - truth| - |n2_decay - truth|): 'criterion better' (CI above 0), 'baseline better' (below 0), 'not separated'. Against the early count the rung 1a reading rule: 'criterion at least as good as the early reading' / 'not separated' / 'early reading better', never 'beats measurement'. Each row's MAE, within-1 and bias are reported on all, sample-robust and settled runs and per data x act cell"
+ },
+ "outcomes_fixed_in_the_plan": {
+  "criterion fails, R4-a-c confirmed": "under a layer-normalised target the first layer of an MLP encoder learns from the start, because the normalised target's drive does not vanish as the encoder shrinks; the near-collapse reduction that carries the race to rung 2 does not apply, and no inputs-only criterion of this paper predicts the MLP rank under an LN target",
+  "conditional row accounts": "add: given the first layer's measured features, the N2 flow predicts the rank; what is missing is the first layer's learning",
+  "conditional row does not": "no localisation beyond the departure",
+  "criterion passes": "reported as registered; the paper says the dev expectation was wrong"
+ },
+ "cost_and_gate": {
+  "estimate": "pilot (process time on the shared host): base runs 198-221 s at T = 13333 (lam 0.006), so about 140 s at T = 8889; floor re-runs 41 s at T = 13333. 120 base + 120 floor runs: about 25 000 process-s = 7.0 CPU-h (about 1 h wall on 8 processes); up to about 9 CPU-h if the host is 25% slower",
+  "gate": "at most 10 CPU-h: runs under the standing CPU gate (story-repo request experiment-repo#21 item 8); the runner stops submitting past 10 process CPU-h (bound stop reported, re-run skips finished runs, score with n per cell)"
+ },
+ "commands": {
+  "run": "python3 code/e6_r4_heldout.py run results/e6/r4_heldout 8 10   (stops submitting past 10 process CPU-h; re-running skips finished runs; scores itself when every run is in)",
+  "score": "python3 code/e6_r4_heldout.py score results/e6/r4_heldout -> results/e6/r4_heldout/r4_heldout_score.json (scored once)"
+ }
+}

@@ -1,0 +1,244 @@
+"""Independent recomputation for the E10 (r) check (does not import code/e10_retro.py or dvd_mu.py).
+
+Usage: venv/bin/python indep.py <drive-vs-decay checkout> <OpenML cache> <delivered retro_rows.csv> <outdir>
+(a) Spearman of their recorded tjepa/rc_r_tight_abs vs tjepa/effective_rank (all, per dataset, ctx != 0.001).
+(b) window / race / window_lam0 / dvd / dvd_nowd per row, written from the definitions in the e10 docstring.
+(c) paired bootstrap of delta rho: (i) rows resampled with replacement, B = 2000, rng seed 12345;
+    (ii) cluster bootstrap over (dataset, alpha, k1, seed) cells (rows with the same k1 share an outcome), B = 2000.
+"""
+import sys, os, json, math, gzip
+import numpy as np, pandas as pd
+from scipy.stats import spearmanr, rankdata
+
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+REPO, CACHE, DELIV, OUT = sys.argv[1:5]
+os.makedirs(OUT, exist_ok=True)
+D, LR, WD, EPOCHS, BATCH = 64, 1e-3, 1e-5, 30, 256
+IDS = dict(aloi=1592, helena=41169, jannis=41168)
+SEEDS = (42, 123, 456)
+
+grid = pd.read_csv(os.path.join(REPO, "results/tabular_phase_grid/full_sweep_per_run.csv"))
+grid["erank"] = grid["tjepa/effective_rank"]; grid["theirs"] = grid["tjepa/rc_r_tight_abs"].astype(float)
+if os.environ.get("E10CHK_SMOKE"):                       # smoke test only: one dataset, a few rows
+    grid = grid[grid.data_set == os.environ["E10CHK_SMOKE"]].head(12).reset_index(drop=True)
+    IDS = {os.environ["E10CHK_SMOKE"]: IDS[os.environ["E10CHK_SMOKE"]]}
+
+
+def rho(x, y):
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    if x.std() == 0 or y.std() == 0: return np.nan
+    rx, ry = rankdata(x), rankdata(y)
+    return float(np.corrcoef(rx, ry)[0, 1])
+
+
+subsets = {"all": grid.index, **{d: grid.index[grid.data_set == d] for d in IDS},
+           "ctx!=0.001": grid.index[grid.context_ratio != 0.001]}
+res = {"a_theirs_recorded_vs_erank": {}}
+for name, idx in subsets.items():
+    g = grid.loc[idx]
+    res["a_theirs_recorded_vs_erank"][name] = dict(n=len(g), rho=rho(g.theirs, g.erank),
+                                                   rho_scipy=float(spearmanr(g.theirs, g.erank)[0]))
+print(json.dumps(res["a_theirs_recorded_vs_erank"], indent=0))
+
+
+# ---------------------------------------------------------------- data statistics
+def load(name):
+    from sklearn.datasets import fetch_openml
+    if name == "aloi":
+        d = fetch_openml(data_id=IDS[name], as_frame=False, parser="auto", data_home=CACHE)
+        X = d.data.toarray() if hasattr(d.data, "toarray") else np.asarray(d.data)
+        fn = [os.path.join(r, f) for r, _, fs in os.walk(CACHE) for f in fs if f.startswith("aloi") and f.endswith(".gz")][0]
+        y, body = [], False
+        for line in gzip.open(fn, "rt"):
+            s = line.strip()
+            if not body:
+                body = s.lower() == "@data"; continue
+            if s.startswith("{"):
+                kv = {}
+                for e in s[1:-1].split(","):
+                    if e.strip():
+                        k, v = e.split(); kv[int(k)] = float(v)
+                y.append(int(kv.get(128, 0.0)))
+        return np.asarray(X, float), np.array(y)
+    d = fetch_openml(data_id=IDS[name], as_frame=True, parser="auto", data_home=CACHE)
+    f = d.frame
+    y = pd.to_numeric(f["class"], errors="coerce")
+    keep = y.notna().to_numpy()
+    X = f.drop(columns=["class"]).to_numpy(float)[keep]
+    return X, y[keep].astype(int).to_numpy()
+
+
+def train_stats(X, y, seed):
+    from sklearn.model_selection import train_test_split
+    Xa, _, ya, _ = train_test_split(X, y, test_size=0.1, random_state=seed, stratify=y)
+    Xt, _, _, _ = train_test_split(Xa, ya, test_size=0.1 / 0.9, random_state=seed, stratify=ya)
+    Xt = Xt.copy()
+    for j in range(Xt.shape[1]):
+        m = ~np.isfinite(Xt[:, j])
+        if m.any(): Xt[m, j] = Xt[~m, j].mean()
+    lo, hi = Xt.min(0), Xt.max(0)
+    rng = np.where(hi > lo, hi - lo, 1.0)
+    Z = ((Xt - lo) / rng).astype(np.float32).astype(float)
+    return Z.T @ Z / len(Z), Z.mean(0), len(Z)
+
+
+def cov_blocks(M, mu, ctx):
+    n = len(mu)
+    k1 = max(1, int(n * ctx)); k2 = max(1, int(n * min(0.5, max(0.1, 1 - ctx))))
+    r1, r11 = k1 / n, k1 * (k1 - 1) / (n * (n - 1))
+    S11 = r11 * M + (r1 - r11) * np.diag(np.diag(M)) - r1 ** 2 * np.outer(mu, mu)
+    S21 = (k1 * k2 / n ** 2) * (M - np.outer(mu, mu))
+    return S11, S21, k1
+
+
+def inits(n, alpha, seed):
+    import torch
+    torch.manual_seed(seed + 1)
+    e = torch.nn.Linear(n, D); torch.nn.init.kaiming_normal_(e.weight, a=math.sqrt(5))
+    p = torch.nn.Linear(D, D, bias=False); torch.nn.init.normal_(p.weight, std=alpha)
+    return e.weight.detach().double().numpy(), p.weight.detach().double().numpy()
+
+
+def gd_time(ntr):
+    T = EPOCHS * (ntr // BATCH)
+    lr = [LR * (0.01 + 0.99 * 0.5 * (1 + math.cos(math.pi * t / T))) for t in range(T)]
+    return sum(lr), max(lr) * WD
+
+
+def rank_tol(V, tol=1e-7):
+    if V.size == 0: return 0
+    s = np.linalg.svd(V, compute_uv=False)
+    return int((s > tol * s[0]).sum()) if s[0] > 0 else 0
+
+
+def mode_eigs(a_k, c_k, P, lam, scale=1.0):
+    A = scale * c_k * P.T - scale ** 2 * a_k * (P.T @ P) - lam * np.eye(D)
+    w, V = np.linalg.eig(A)
+    return w, V
+
+
+def window_and_race(S11, S21, W0, P, lam, tend, ngrid=3):
+    a, U = np.linalg.eigh(S11)
+    c = np.array([U[:, k] @ (0.5 * (S21 + S21.T)) @ U[:, k] for k in range(len(a))])
+    lw0 = np.log(np.linalg.norm(W0 @ U, axis=0) + 1e-300)
+    ts = np.linspace(0, tend, ngrid)
+    growth = np.zeros((ngrid, len(a))); capture = np.full((ngrid, len(a)), np.inf)
+    unstable0 = {}
+    for j, t in enumerate(ts):
+        sc = math.exp(-lam * t)
+        for k in range(len(a)):
+            w, V = mode_eigs(a[k], c[k], P, lam, sc)
+            i = int(np.argmax(w.real)); growth[j, k] = w[i].real
+            if j == 0 and w[i].real > 0:
+                sel = w.real > 0; unstable0[k] = np.hstack([V[:, sel].real, V[:, sel].imag])
+            v = V[:, i]; p = float(np.real(np.conj(v) @ (sc * P) @ v) / np.real(np.conj(v) @ v))
+            gap = np.sign(p) * (c[k] - p * a[k])
+            if gap > 0: capture[j, k] = 0.5 * math.log(lam * abs(p) / gap + 1e-300)
+    F = np.zeros_like(growth)
+    for j in range(1, ngrid):
+        F[j] = F[j - 1] + 0.5 * (growth[j] + growth[j - 1]) * (ts[j] - ts[j - 1])
+    open0 = growth[0] > 0
+    stay = np.logical_and.accumulate(growth > 0, axis=0)
+    esc = open0 & (stay & (lw0[None] + F >= capture)).any(0)
+
+    def cnt(mask):
+        ks = [k for k in np.flatnonzero(mask)]
+        return 0 if not ks else int(min(len(ks), rank_tol(np.hstack([unstable0[k] for k in ks])), D))
+    return cnt(open0), cnt(esc)
+
+
+def window_only(S11, S21, P, lam):
+    a, U = np.linalg.eigh(S11)
+    c = np.einsum("ik,ij,jk->k", U, 0.5 * (S21 + S21.T), U)
+    vs = []
+    for k in range(len(a)):
+        w, V = mode_eigs(a[k], c[k], P, lam)
+        if w.real.max() > 0:
+            sel = w.real > 0; vs.append(np.hstack([V[:, sel].real, V[:, sel].imag]))
+    return 0 if not vs else int(min(len(vs), rank_tol(np.hstack(vs)), D))
+
+
+def rtight(S11, S21, P, lam):
+    a, U = np.linalg.eigh(S11)
+    c = np.abs(np.einsum("ik,ij,jk->k", U, S21, U))
+    s = np.linalg.svd(P, compute_uv=False)
+    unst = c[:, None] * s[None, :] > a[:, None] * s[None, :] ** 2 + lam
+    return int(min(unst.any(1).sum(), unst.any(0).sum()))
+
+
+rows = []
+stats, lrwd = {}, {}
+for name in IDS:
+    X, y = load(name)
+    for s in SEEDS:
+        stats[name, s] = train_stats(X, y, s)
+        lrwd[f"{name}/{s}"] = dict(n_train=stats[name, s][2], gd_time=gd_time(stats[name, s][2])[0],
+                                   max_lr_wd=gd_time(stats[name, s][2])[1])
+    print(name, X.shape, flush=True)
+cache = {}
+for i, r in grid.iterrows():
+    name, alpha, ctx, s = r.data_set, float(r.predictor_init_scale), float(r.context_ratio), int(r.seed)
+    M, mu, ntr = stats[name, s]
+    S11, S21, k1 = cov_blocks(M, mu, ctx)
+    key = (name, alpha, k1, s)
+    if key not in cache:
+        W0, P0 = inits(len(mu), alpha, s)
+        win, race = window_and_race(S11, S21, W0, P0, WD, gd_time(ntr)[0])
+        cache[key] = dict(window=win, race=race, window_lam0=window_only(S11, S21, P0, 0.0),
+                          dvd=rtight(S11, S21, P0, WD), dvd_nowd=rtight(S11, S21, P0, 0.0),
+                          window_lam_d2=window_only(S11, S21, P0, WD * D / 2),
+                          dvd_lam_d2=rtight(S11, S21, P0, WD * D / 2))
+    rows.append(dict(dataset=name, alpha=alpha, ctx=ctx, seed=s, k1=k1, erank=r.erank, theirs=r.theirs, **cache[key]))
+mine = pd.DataFrame(rows)
+mine.to_csv(os.path.join(OUT, "indep_rows.csv"), index=False)
+
+# ---------------------------------------------------------------- (b) compare with delivered rows
+dl = pd.read_csv(DELIV)
+KEY = ["dataset", "alpha", "ctx", "seed"]
+dl = mine[KEY].merge(dl, on=KEY, how="left", validate="one_to_one")
+assert len(dl) == len(mine)
+cmp = {}
+for mk, dk in [("window", "window"), ("race", "race"), ("window_lam0", "window_adamw"), ("dvd", "dvd"),
+               ("dvd_nowd", "dvd_nowd"), ("theirs", "dvd_final_theirs")]:
+    cmp[f"{mk} vs delivered {dk}"] = int((mine[mk].to_numpy() != dl[dk].to_numpy()).sum())
+res["b_rowwise_mismatches_vs_delivered"] = cmp
+res["b_race_eq_window"] = int((mine.race == mine.window).sum())
+res["b_race_ne_window_rows"] = mine[mine.race != mine.window].to_dict("records")
+res["b_lr_wd"] = lrwd
+res["b_max_lr_times_wd"] = LR * WD
+
+# ---------------------------------------------------------------- (a') scores, (c) bootstrap
+def boot_drho(x1, x2, y, groups=None, B=2000, seed=12345):
+    rng = np.random.default_rng(seed); x1, x2, y = map(np.asarray, (x1, x2, y))
+    if groups is None:
+        idxs = (rng.integers(0, len(y), len(y)) for _ in range(B))
+    else:
+        g = pd.factorize(groups)[0]; members = [np.flatnonzero(g == u) for u in range(g.max() + 1)]
+        idxs = (np.concatenate([members[j] for j in rng.integers(0, len(members), len(members))]) for _ in range(B))
+    v = []
+    for i in idxs:
+        a, b = rho(x1[i], y[i]), rho(x2[i], y[i])
+        if np.isfinite(a) and np.isfinite(b): v.append(a - b)
+    if not v: return [rho(x1, y) - rho(x2, y), None, None]
+    return [rho(x1, y) - rho(x2, y), float(np.quantile(v, .025)), float(np.quantile(v, .975))]
+
+
+mine["cell"] = mine.dataset + "|" + mine.alpha.astype(str) + "|" + mine.k1.astype(str) + "|" + mine.seed.astype(str)
+sub = {"all": mine.index, **{d: mine.index[mine.dataset == d] for d in IDS}, "ctx!=0.001": mine.index[mine.ctx != 0.001]}
+res["scores"], res["c_paired"] = {}, {}
+for nm, idx in sub.items():
+    m = mine.loc[idx]
+    res["scores"][nm] = {k: dict(rho=rho(m[k], m.erank), mae=float((m[k] - m.erank).abs().mean()))
+                         for k in ["race", "window", "window_lam0", "dvd", "dvd_nowd", "theirs", "window_lam_d2", "dvd_lam_d2"]}
+    res["c_paired"][nm] = {}
+    for x1, x2 in [("race", "dvd"), ("race", "dvd_nowd"), ("window_lam0", "dvd_nowd"), ("race", "theirs"),
+                   ("window_lam0", "theirs"), ("window_lam_d2", "dvd_lam_d2")]:
+        res["c_paired"][nm][f"{x1}-{x2}"] = dict(
+            rows=boot_drho(m[x1], m[x2], m.erank),
+            cells=boot_drho(m[x1], m[x2], m.erank, groups=m.cell.to_numpy()) if nm in ("all", "ctx!=0.001") else None)
+    d = (m.race - m.erank).abs() - (m.dvd - m.erank).abs()
+    rng = np.random.default_rng(7); bm = [d.to_numpy()[rng.integers(0, len(d), len(d))].mean() for _ in range(2000)]
+    res["c_paired"][nm]["abs_err race-dvd"] = [float(d.mean()), float(np.quantile(bm, .025)), float(np.quantile(bm, .975))]
+json.dump(res, open(os.path.join(OUT, "indep.json"), "w"), indent=1, default=float)
+print(json.dumps({k: res[k] for k in ["b_rowwise_mismatches_vs_delivered", "b_race_eq_window", "scores", "c_paired"]},
+                 indent=1, default=float))

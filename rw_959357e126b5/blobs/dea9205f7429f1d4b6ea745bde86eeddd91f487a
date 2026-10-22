@@ -1,0 +1,517 @@
+# Direction A (plan v2.4): the near-collapse competition under Adam/AdamW — working note
+
+A4 (layer-normalised target, gradient descent only) is in `theory/ext_A_lntarget.md`.
+
+Status: **A1 scored twice.** On held-out grid 1, phase model v3 passes A1b and A1c and fails A1a and A1d.
+On held-out grid 2, v4 passes A1b, A1c and A1d (`results/e4/prediction.json` A1 and A1_v4). A3 is in development: tolerance
+v2 in `results/e4/a3_tolerance.json`, and its model is not yet frozen. A2 is pending. The numerical observations
+below are on development grids and delivered configurations, not held-out tests.
+Scripts are in `code/checks/e4_*.py` and their printed output in `results/e4/` (numpy 2.4.6, CPU).
+
+## Setting
+
+We use the delivered per-mode reduction (theory/derivations.md): a mode k has amplitude a, a
+predictor gain p and statistics (c, s). Under stop-gradient, the gradients of the JEPA loss
+without weight decay are
+
+    G_a = -a (p c - p^2 s) = -a h(p),     G_p = -a^2 (c - p s).
+
+AdamW updates every coordinate x by
+
+    x <- (1 - eta*lam) x - eta * mhat/(sqrt(vhat) + eps)
+
+with decoupled weight decay. The decay is never part of the gradient, so it does not enter m or v.
+Under gradient descent the same mode obeys `da/dt = a (h(p) - lam)` and `dp/dt = a^2 (c - p s) - lam p`.
+The race comes from that second equation: near a = 0 the predictor's drive vanishes like a^2,
+while its decay `-lam p` does not.
+
+## A-i. Transit phase: both sides move at the learning-rate speed (derived)
+
+While a coordinate's gradient keeps its sign over the second-moment window 1/(1 - beta2), Adam's
+step is close to `eta * sign(G)` (the sign-descent limit). Then:
+
+- **Predictor.** `|dp/dt| ≈ eta` towards `c/s`, *independent of the amplitude a*. The vanishing
+  `a^2` factor, which under GD lets weight decay win the race, is normalised away.
+- **Amplitude.** `da/dt ≈ eta (sign(h(p)) - lam a)`. Outside the window it falls linearly at speed
+  `≈ eta`; inside it rises linearly. Its speed is set by eta, not by a.
+- **Window.** The gradient's sign is set by `h(p) = p (c - p s)`, so the window is `0 < p < c/s`
+  and does not depend on lam. Decoupled decay enters only as `eta*lam*x`, which is negligible
+  while `lam |x| << 1`.
+
+The delivered window `{h(p) > lam}` and the static bound `c^2 >= 4 lam s` therefore lose their
+weight-decay dependence near collapse under AdamW.
+
+## A-0. Exact reduction in the aligned basis (derived; statement of type (a))
+
+AdamW acts coordinate by coordinate. With S11, S21 diagonal, a diagonal initial W and P0 = p0 I, every off-diagonal
+entry of W and P has zero gradient, so its moments stay zero and its decoupled decay keeps it at zero. The matrix
+flow is then exactly n independent scalar AdamW maps on (a_k, p_k) with the gradients above. Checked in
+`code/checks/e4_reduction.py` (`results/e4/explore/reduction.txt`): over five E1b AdamW settings and 20k steps the
+aligned matrix flow and the scalar maps have the same rank at every checkpoint, with per-mode amplitudes equal to
+about 1e-2 decades (round-off amplified by the chattering at p = c/s).
+
+The same check shows that **the reduction fails for the E1b initialisation** (a random orthogonal W): from step
+2000 on, 1 to 15 directions per checkpoint have a different alive/dead state, and the rank differs (17 vs 24 at
+p0 = 0.5, lam = 0.005). Adam is not rotation-invariant, and this is A3's effect (below).
+
+## A-ii'. Collapse and re-escape: heavy-ball Adam on a decaying second moment (derived; checked per direction)
+
+This replaces the earlier A-ii. That section said "vhat forgets and the step renormalises the tiny gradient". The
+traces show something else (`code/checks/e4_phase_first.py`, `results/e4/explore/phase_first.txt`):
+
+1. **Transient (first ~10^2 steps).** The first Adam step has size eta whatever a0 is, so a jumps to O(eta). This
+   is why the delivered E1b AdamW arm is insensitive to w0. p moves towards c/s at up to eta per step.
+2. **Collapse.** Outside the window (h(p) < 0), a oscillates around 0. Its gradient g = -h a then shrinks, so it
+   stops feeding v_a, and Adam becomes heavy-ball GD with a frozen preconditioner sigma_t = sqrt(vhat_t):
+
+       a_{t+1} = (1 - eta lam) a_t - eta mhat_t / sigma_t,   m_t = b1 m_{t-1} + (1 - b1)(-h) a_t.
+
+   With q = eta (1 - b1) |h| / sigma, the per-step factor is a root of z^2 - (1 + b1 - q) z + b1 = 0. While the
+   roots are complex, |z| = sqrt(b1). The amplitude therefore decays by sqrt(b1) per step (0.949 for b1 = 0.9:
+   -0.053 per step against the measured -0.055), whatever the curvature. G_p ~ a^2 vanishes with it, so p moves
+   only by the decoupled decay, p_t = p_K (1 - eta lam)^(t - K).
+3. **Re-escape.** sigma_t decays as b2^(t/2) (corrected for bias). A real root crosses -1 when
+   **q_t = 2 (1 + b1)**, i.e. sigma_t = eta (1 - b1) |h(p_t)| / (2 (1 + b1)). After that the oscillation grows. This
+   is the classic stability loss of heavy-ball, not a renormalisation of the gradient. A second route back is p
+   drifting into the window by decay before that (h > 0: a root above 1). In a scalar trace (c = 0.5, s = 1,
+   lam = 0.005, p0 = 2), sigma_a at the burst is 2.01e-4 against the predicted threshold 2.0e-4.
+4. **Burst and capture.** The growing oscillation reaches |a| ~ sigma / (|h| sqrt(1 - b2)) ~ eta (1 - b1) /
+   (2 (1 + b1) sqrt(1 - b2)) ≈ 0.017 (eta = 0.02). There it refills v_a. While a is that large, p moves towards c/s
+   at the lr speed and the mode is captured with a small amplitude a_c.
+
+`code/e4_theory.py` (`phase_model`) integrates steps 2-3 in closed form per step, from the exact state at K = 300.
+On four E1b AdamW settings (`results/e4/explore/phase_first.txt`), it predicts the re-escape step of 17 of 24
+directions at p0 = 2, lam = 0.005 to within 20 steps out of 5000-10000. Examples are 5457 vs 5460, 10475 vs 10480
+and 7588 vs 7600, including the non-monotone order in k, which comes from the competition between sigma's decay
+and the decaying |h(p_t)|.
+
+The misses are the weak directions (c/s <~ 0.25). They do burst at the predicted step, but they are captured with
+a_c below the rank threshold 0.05, and they cross it only thousands of steps later (A-iii'). The phase model also
+misses the window-entry route at p0 = 0.5. There, directions with p_K inside the window are predicted alive at K
+when their |a| is still below 0.05.
+
+## A-iii'. Post-capture hover: the second wait (derived; v3 supersedes the static estimate)
+
+After capture below the rank threshold, p is quasi-static just below c/s. Stationarity of p under decoupled decay
+gives the curvature seen by a:
+
+    h = lam p^2 sigma_p / a^2,
+
+and a grows at the log rate eta (h / sigma_a - lam) per step. Both preconditioners still hold the burst's memory and
+decay as sigma(t)^2 = v_K b2^(t-K) / (1 - b2^t). The earlier static estimate (p at its own edge of stability from the
+start, sigma* = eta c^2 (1 - b1) / (2 (1 + b1) s), independent of lam) was a leading-order guess and is about 2x too
+slow on the development grid. What happens instead:
+
+- **Hover wait (closed form).** While sigma_p is above p's edge-of-stability level
+  sigma_p^eos = eta a^2 s (1 - b1) / (2 (1 + b1)), p is smooth. a then integrates the log rate above in closed form
+  until |a| crosses the threshold (alive) or sigma_p reaches sigma_p^eos.
+- **Edge-of-stability event (exact segment).** When sigma_p reaches sigma_p^eos, p starts to chatter. The chatter
+  raises the mean of h by a factor of 38-118 over the smooth value on the traces examined, and a escapes within a few
+  hundred to ~1500 steps. This stage is nonlinear, so the model runs the exact scalar map for 1500 steps from a
+  re-seeded state:
+  - p is at its stationary value p_c - lam p_c sigma_p / (a^2 s), with m_p = -lam p sigma_p;
+  - the moments are the decayed ones.
+
+## Event-driven phase model (v3, `code/e4_theory.py: phase_model_hybrid`)
+
+Per direction, from the exact state at K = 300, the model alternates closed-form waits with short exact segments:
+
+1. **Collapse wait (closed form, A-ii').** Run while h < 0 or |a| is below the seed amplitude 1e-6. The heavy-ball
+   log spectral radius is summed per step on the decaying second moment, with p drifting by decoupled decay only.
+2. **Burst and capture (exact, 600 steps).** These run from a re-seeded state on the z = -1 eigenvector:
+   - |a| = 1e-6;
+   - m_a = (1 - b1) h a / (1 + b1);
+   - decayed v.
+3. **Hover wait** (closed form, A-iii') to the threshold or to p's edge of stability.
+4. **Edge-of-stability event** (exact, 1500 steps).
+
+A direction is alive from the first step at which |a| > 0.05 in any stage, and the model loops over at most 8
+events. The exact segments cover at most 2100 of up to 40000-60000 steps per direction; the waits that set the time
+scale, which are 10^3-10^4 steps, are closed form.
+
+**Development grid** (`code/e4_dev.py`, config list committed before it ran; 480 aligned runs; two statistics sets;
+p0 in {0.5, 1, 2, 3}, lam in {0.002, ..., 0.05}, a0 in {1e-4, 1e-2}, eta in {0.01, 0.02, 0.05}, b2 in {0.999, 0.99};
+b1 = 0.9; T = 40000). Scored with the A1 metrics (`code/e4_score.py`, `results/e4/dev/dev_score_v3.json`):
+
+| metric (dev, not A1 scoring) | v3 | tolerance |
+|---|---|---|
+| A1b burst time, median abs ln ratio | 0.0022 | <= 0.05 |
+| A1b p90 | 0.019 | <= 0.15 |
+| A1b misses | 7 / 7355 (0.1%) | <= 5% |
+| A1c alive-state agreement | 0.996 | >= 0.90 |
+| A1c rank within 1 | 0.980 | >= 0.90 |
+
+On the same grid, the earlier static-hover model (v1) failed in 706 of the direction-checkpoints of a stride-4
+subset, against 110 for v3. Most of the remaining errors are at p0 = 2-3 and mid-run (t ~ 4k-16k). These numbers were
+used to build the model and do not test it. The test is the held-out grid registered in `results/e4/prediction.json`
+(section A1), with:
+- new statistics (n = 32);
+- new p0, lam, a0, eta, b1 (including b1 = 0.85, never used in development) and b2;
+- per-direction random initial amplitudes;
+- T = 60000.
+
+**Consequence for the criterion (aligned basis).** Under AdamW with eps < eta (1 - b1) |h| / (2 (1 + b1)), collapse is a
+wait, not an absorbing state, and every direction with c > 0 returns. With a larger eps the stability limit is never
+reached and collapse is absorbing (review check: at eps = 1e-2, eta|h|/eps = 1, |a| reaches 3e-323 and stays). With
+lam > 0, return can also happen by window entry. A1 is scoped to eps = 1e-8 and full-batch gradients
+(`results/e4/a1_tolerance_v2.json`). Under minibatch noise, sqrt(vhat) is floored by the gradient noise, so the
+condition becomes eta |h| > 38 sqrt(vhat_noise) (b1 = 0.9). The full-batch result does not carry to the ViT without
+this. The rank at a horizon T counts the directions whose waits (stability loss, then hover
+to the threshold or to p's edge of stability) end before T. These waits are set by the second-moment memory
+1/(1 - b2) times log-ratios of gradient scales, and only weakly by lam. This is consistent with the delivered E1b
+finding that the AdamW rank sits far above the static bound.
+
+## A1 held-out result (scored once; `results/e4/a1/a1_score.json`)
+
+The frozen v3 model (`ebc17db`) was scored on the registered grid (`results/e4/prediction.json` A1,
+`results/e4/a1_tolerance_v2.json`). The grid has 384 runs with n = 32 and an 80-bit ground truth. All runs are
+finite.
+
+| part | result | tolerance | verdict |
+|---|---|---|---|
+| A1a reduction (48 runs) | state agreement 0.9895, rank equal 0.899 | both >= 0.99 | **fail** |
+| A1b burst wait (10398 directions) | median 0.0015, p90 0.0056, misses 0.09%; constant-wait oracle median 0.99 | median <= 0.05, p90 <= 0.15, misses <= 5%, <= 0.5x oracle | **pass** |
+| A1c return wait (10809 directions) | median 0.0045, p90 0.090, misses 0.6%; oracle median 0.90 | median <= 0.10, p90 <= 0.30, misses <= 5%, <= 0.5x oracle | **pass** |
+| A1d alive state (30 log-spaced checkpoints) | agreement 0.978 (best baseline 0.730, majority oracle); rank within 1 at 0.808 (best baseline 0.406) | agreement >= 0.90, rank within 1 >= 0.90, 2x margins | **fail** (rank within 1) |
+
+The window-entry route (82 directions, reported only) has median 0.020.
+
+Post-hoc diagnosis (`code/checks/e4_a1_diagnosis.py`, `results/e4/a1/diagnosis.txt`; not part of the scoring):
+
+- **A1d.** Second collapses, counted two ways (`code/checks/e4_a1_posthoc.py`, `results/e4/a1/posthoc.json`
+  `second_collapse`):
+  - **(S) after the per-step first crossing:** dead at a checkpoint after the step at which |a| first exceeded 0.05.
+    978 of 12288 directions (8.0%). These pairs are 5527 of the 8163 wrong pairs (68%), and 1968 of the 2214
+    checkpoints with rank error > 1 (89%) contain a wrongly predicted pair of this kind.
+  - **(C) between checkpoints:** alive at one checkpoint and dead at a later one. 409 of 12288 directions (3.3%):
+    0.1% for ho1 at b2 = 0.995, 5.5% for ho2. These explain 2762 wrong pairs (34%) and 1461 rank-error checkpoints
+    (66%).
+  - (S) is the one the model's "once alive, alive" rule is tested against and is used for the attributions; (C)
+    misses directions whose first crossing and fall both happen between checkpoints. The frozen model keeps a direction alive after its first crossing of 0.05, so it misses both of the
+  two mechanisms behind these directions (`code/checks/e4_a1_recur.py`, `results/e4/a1/recur.txt`; minimum |a|
+  after the first crossing):
+  - **Hover at the threshold (33%: min |a| >= 0.025).** The captured amplitude sits near 0.05. Its log rate
+    eta (h / sigma_a - lam) is negative until sigma_a decays, so it drifts a few percent below the threshold and
+    back. An example is held-out id 23, k = 20: it first crosses 0.05 at step 3213 (peak 0.0537), falls below at
+    step 4436, reaches its step-level minimum 0.0435 at step 6968 (0.0472 at the checkpoints) and is back above at
+    step 7152.
+  - **True second collapse (36%: min |a| < 1e-3).** The burst throws p across the window, for example to p < 0,
+    as in dev id 122, k = 23, where it reaches p = -0.013. h turns negative again and the heavy-ball collapse
+    restarts. The burst there peaked below 0.05.
+  - The remaining 31% are in between.
+
+  Those shares are of the 409 directions under (C). **Attribution of the A1d failure by mechanism** (post hoc,
+  `code/checks/e4_a1_mechanism.py`, `results/e4/a1/mechanism.json`; 80-bit truth recomputed, alive states identical
+  to the stored ones). Under (S), each wrong pair is classed by the truth's |a| at that checkpoint:
+
+  | state at the wrong checkpoint | wrong (S) pairs | share of all 8163 wrong pairs | rank-error>1 checkpoints with one (of 2214) | with only this kind |
+  |---|---|---|---|---|
+  | hover, \|a\| >= 0.025 | 4963 | 61% | 1897 (86%) | 1692 (76%) |
+  | collapsed, \|a\| < 1e-3 | 534 | 6.5% | 264 (12%) | 63 (3%) |
+  | in between | 30 | 0.4% | 23 (1%) | 2 |
+
+  By direction (step-level minimum after the first crossing), the 978 (S) directions split 317 hover, 452 collapse and
+  209 in between. A direction that collapses later still spends most of its wrong checkpoints below the threshold
+  at a hover level.
+
+  **Level split** (same file, `attribution.level`; internal review point 3, which my first reading got wrong). The
+  hover pairs are not amplitudes a few percent below 0.05: |a|/0.05 there is 0.60 / 0.76 / 0.86 / 0.96 at the
+  1/10/50/90% quantiles (42% within 10% of the threshold, 16% within 5%), and it matches the directions' own c/s
+  (median 0.85 x threshold). They are captured amplitudes settled at c/s below the threshold, i.e. A-iv' itself.
+  - 74% of the wrong (S) pairs are on directions with c/s <= 0.05 (79% of the hover pairs, 34% of the collapsed ones).
+  - Of the 2214 rank-error>1 checkpoints, 1411 (64%) have every wrong (S) pair on such a direction: the most the settled
+    level can fix. 557 (25%) involve a direction with c/s > 0.05, which the settled law keeps alive: these need the
+    post-capture dynamics (second collapse, transient). 246 (11%) have no wrong (S) pair.
+
+  So A1d's failure is **mainly the settled level (A-iv'); about a quarter of the rank-error checkpoints need the
+  post-capture dynamics.** This matches dev3's 0.792 -> 0.900 under the settled law alone (below), and v4's 0.947
+  on the second held-out grid (H2) with its post-crossing segment.
+
+  The timing of the first returns is accurate (A1c). What fails is "once alive, alive". The revised model (v4) adds the
+  settled level and the event loop past the first crossing, and is scored on a new held-out grid (H2, below).
+- **A1a.** The float64 scalar map itself disagrees with its own 80-bit run at the same level: state 0.9909 and rank
+  equal 0.902, against 0.9895 and 0.899 between the matrix and the scalar map. In exact arithmetic the aligned
+  reduction is exact (the off-diagonal gradients are exactly zero). The shortfall is the rounding sensitivity of the
+  map near the stability limit, which a 0.99 tolerance on float64 trajectories does not allow for. The registered
+  result stands as a fail. The statement that can be checked is the reduction up to rounding, together with the
+  sensitivity itself. The evidence, post hoc (`results/e4/a1/posthoc.json` `A1a`, the 48 registered A1a configs):
+  - **The matrix run stays diagonal, by construction.** With diagonal S11, S21, W0 and P0, every product in the
+    aligned update is a product of diagonal matrices, so the off-diagonal gradients, moments and entries stay exact
+    zeros in floating point as well (an algebraic fact, A-0). The implementation check agrees: max |off-diagonal| of
+    W and P in the float64 matrix run, every 1000 steps and at every checkpoint to t = 60000, is 0 in all 48 runs.
+    Matrix and scalar runs therefore differ only in floating-point operation order.
+  - **The 80-bit truth is as sensitive.** With every a0_k changed by a relative 1e-15 (random sign), the 80-bit run
+    changes 0 of 1536 burst steps but 366 alive_from steps, 0.33% of alive pairs, and its rank equality with the
+    unperturbed truth falls to 0.942 (0.925 at b2 = 0.995, 0.960 at 0.9995; rank within 1 at 0.988). The review's
+    independent draw gives 0.971 / 0.935 (internal-review-repo `checks/e4_a1_heldout_rescore.json`). Float64 scalar
+    against 80-bit: 0.928 / 0.876. So rank equality >= 0.99 between two finite-precision runs was not attainable on
+    this grid.
+  - A1d's 0.808 is not this sensitivity: the perturbed truth keeps rank within 1 at 0.988.
+- **What sets the burst wait (mechanism baselines on the A1b set, post hoc; `posthoc.json`
+  `A1b_mechanism_baselines`).** Each predictor starts from the exact state at K:
+
+  | predictor of the burst wait | median \|ln ratio\| | p90 | misses |
+  |---|---|---|---|
+  | eps floor: sqrt(vhat) decays to eps (bias correction exact / frozen at K) | 1.96 / 1.99 | 3.06 / 3.11 | 1.9% / 2.3% |
+  | stability crossing alone: sqrt(vhat) decays to eta (1-b1)\|h_K\| / (2(1+b1)), no regrowth (exact / frozen) | 0.60 / 0.46 | 1.87 / 1.47 | 1.9% |
+  | frozen phase model (A1b) | 0.0015 | 0.0056 | 0.09% |
+
+  The momentum stability limit, not eps, sets the wait; the regrowth from the crossing back to 1e-3 is the
+  remaining factor. The stability threshold itself is the heavy-ball one (Cohen et al. 2022); what is new here is
+  its use as the re-escape clock of a collapsed direction under a decaying second moment, against the eps account.
+  The frozen-bias-correction numbers equal the review's (`checks/e4_a1_heldout_rescore.json`).
+
+**Scope of the A1 pass.** A1b and A1c test the closed-form waits *conditioned on the exact optimiser state at
+K = 300* (a, p, m, v per direction), in the aligned full-batch model with eps = 1e-8. They do not predict from
+initialisation and say nothing about minibatch training (see the eps condition and minibatch caveat above). A1a and
+A1d failed as registered; the diagnosis above is post hoc. All four travel together into the paper.
+
+## A-iv' (development, after the A1 held-out result): the captured state under AdamW
+
+Not scored; development grids 2 and 3 only (`results/e4/dev2/`, `results/e4/dev3/`). The held-out grid is not used.
+
+**Statement.** A captured direction of the aligned scalar AdamW map settles, in the edge-of-stability chatter of p,
+at |a| = |p| = c/s, independent of lam, under two conditions:
+- **lam c/s < 1 (inside the l-infinity box).** Converged AdamW with decoupled decay lam is a KKT point of min L subject
+  to ||x||_inf <= 1/lam (Xie & Li 2024, `xie2024implicit`, arXiv 2404.04454). When c/s > 1/lam the amplitude sits at
+  the cap 1/lam instead; the review's lam scan on dev3b (p0 2, eta 0.02) shows k = 0 settling at 0.500 = 1/lam against
+  c/s = 1 at lam = 2, and the law holding up to lam = 0.5 (internal-review-repo 1742b3e `checks/e4_aiv_settled.json`).
+  No A1 grid comes near it (lam c/s <= 0.15 on every development and held-out grid).
+- **eta lam (t - t_c) >> 1 (settled).** After capture at t_c, |p| - |a| relaxes at a rate 0.8-4.0 x eta lam
+  (review check `e4_aiv_balance.json`, dev2 statistics), so the law is the long-time limit. At eta 0.01, lam 0.002
+  (eta lam T = 1.2) |a_T|/(c/s) is 0.75-0.98; that is where dev2's 1% quantile of 0.832 below comes from.
+  The rate is not uniform. On A2's cell lam 0.028, eta 0.027, b2 0.9992 a captured direction can settle in two
+  stages: p reaches c/s first, while |a| is still small (|a| < 0.5 c/s when p first comes within 5% of c/s in 227 of
+  228 traced directions), and |a| then stalls on a plateau whose level scales with c/s (0.10-0.12 c/s in every
+  direction of run 187, 0.77-2.37 thr), not with thr, before it grows to |a| = |p| = c/s. The cell sets the plateau's
+  duration: 4,400-7,700 steps in run 187 at b2 0.9992 (T_h 6,914), at most 750 steps at b2 0.996
+  (`results/e4/a2/plateau.json`; 25 dead directions traced to 10 T_h in `results/e4/a2/readings.json`). A plateau
+  "at thr" is a selection effect: the directions dead at T_h are those whose plateau falls at or below thr (c/s
+  0.22-0.50), so wherever thr cuts the plateau the alive count at T_h depends on thr through the plateau. The end state
+  holds there (|a| = |p| = c/s at eta lam (t - t_c) = 3.9-11.2); the time to reach it is longer than the
+  0.8-4.0 x eta lam rate implies.
+
+**Credit.** Neither ingredient of the end state is new. |a| = |p| is the sign-flow balance with decoupled decay,
+|p| - |a| = e^{-eta lam t}(|p0| - |a0|) (`jacobs2026never` Lemma 4.5; brief §5.3). p = c/s, independent of lam
+inside the box, is the `xie2024implicit` KKT point. What this note adds is the edge-of-stability chatter version for
+the JEPA scalar map (both normalised updates carry the same filtered residual, below) and its use for the rank count:
+alive at t iff captured by t and c/s > thr.
+
+**Derivation (balance of the chatter means).**
+- Captured, p chatters about p̄ at its momentum stability limit, so the residual r = c - p s oscillates with rms ρ
+  and a small mean ⟨r⟩.
+- Both gradients are r times a slowly varying factor: g_a = -a p r and g_p = -a² r. So √v̂_a ≈ |a p| ρ,
+  √v̂_p ≈ a² ρ, and both normalised updates carry the same filtered signal, a function of ⟨r⟩/ρ shared by a and p
+  (same b1, b2, same r).
+- Stationarity of the means under decoupled decay sets that shared signal equal to lam |a| and to lam |p|, hence
+  |a| = |p|.
+- The mean residual needed to balance decay is small, so p̄ = c/s to leading order. This step is qualitative: written
+  as ⟨r⟩ = lam c ρ / (κ s) with an O(1) filter factor κ, the measured ⟨r⟩/ρ/(lam c/s) has p10/p50/p90 1.1 / 3.0 / 47
+  (review check), so κ is not a constant and no quantitative ⟨r⟩ is claimed.
+- Gradient descent behaves differently: there decay sets the captured amplitude, and the static bound
+  c² >= 4 lam s decides survival. Under AdamW, lam does not enter the settled amplitude. It acts only through the
+  collapse and return waits (A-ii', A-iii'), i.e. through *which* directions are captured by a given time.
+- The count of directions above a fixed threshold therefore tends to #{k : c_k/s_k > thr} among the captured ones.
+
+**Check** (80-bit, 48 random runs per grid, `code/checks/e4_settled_state.py`, `results/e4/dev*/settled_state.txt`):
+
+| grid | captured at T | \|a_T\| / (c/s), 1/10/50/90/99% | \|p_T\| / (c/s), median | alive at T = (c/s > thr) among captured |
+|---|---|---|---|---|
+| dev3 (1536 directions) | 1344 | 0.943 / 0.989 / 1.000 / 1.010 / 1.045 | 1.000 | 0.997 (4 disagree) |
+| dev2 (1152 directions) | 1152 | 0.832 / 0.974 / 1.000 / 1.001 / 1.007 | 1.000 | 1.000 |
+
+The chatter amplitude over the last 5000 steps has a median max/min of 1.07 on dev3 and 1.02 on dev2.
+
+**What it does to A1d (development ablation, `code/checks/e4_v4_settled_ablation.py`).** The v3 predictions are kept,
+with the rule "alive at t iff crossed by t and (c/s > thr, or t - crossing < τ)":
+
+| grid | rule | state error | rank within 1 |
+|---|---|---|---|
+| dev3 | v3 (τ = ∞) | 0.035 | 0.792 |
+| dev3 | settled law, τ = 0 | 0.017 | 0.900 |
+| dev3 | settled law, τ = 1000 / 3000 / 6000 / 12000 | 0.018 / 0.019 / 0.020 / 0.024 | 0.896 / 0.888 / 0.877 / 0.857 |
+| dev2 | v3, and the settled law at any τ | 0.008 | 0.970 |
+
+**The transient is not yet modelled.** For c/s < thr, the time from the first crossing to the last step above thr
+ranges from 11 to 48000 steps (dev3, 157 directions, median 6150). It falls with lam and rises with eta, so neither
+1/(eta lam) nor 1/(1-b2) predicts it (p10-p90 of ln(measured/predicted) spans 5-8).
+
+Remaining dev3 errors at τ = 0, in pairs:
+
+| error | pairs |
+|---|---|
+| dead after crossing although c/s > thr: dips during the transient and true second collapses (p thrown across 0) | 2556 |
+| model crossing early | 911 |
+| above thr during the transient although c/s <= thr | 729 |
+| model crossing late | 602 |
+
+**Next.** Model the post-burst transient: the overshoot amplitude, and whether p is thrown across 0, from the state
+at the stability loss. Freeze v4 with the settled law. Register a new held-out grid, disjoint from A1's, before it
+runs.
+
+## Phase model v4 (development; `code/e4_theory.py: phase_model_v4`)
+
+v4 keeps v3's closed forms and carries the event loop past the first crossing. Each direction is in one of three
+states, re-read after every event:
+
+- **Collapsed** (h < 0, or |a| below the seed amplitude): A-ii' collapse wait to the stability loss, re-seed, then an
+  exact burst segment (600 steps).
+- **Hover** (inside the window, below thr): A-iii' wait, either to thr (then settled) or to p's edge of stability
+  (then an exact chatter segment, 1500 steps).
+- **Captured** (|a| > thr): an exact post-crossing segment (600 steps). This segment carries the burst's throw of p
+  and any second collapse. After it, a direction above thr with p inside the window is settled: by A-iv' it is alive
+  iff c/s > thr from then on. Otherwise it re-enters the loop.
+
+At most 12 events per direction are allowed; at the cap the settled law applies. No constant was fitted to a grid.
+The segment lengths only set where the exact map hands back to the closed forms. Varying the post-crossing segment
+over 300-3000 steps moves dev3's rank-within-1 failure from 0.0644 to 0.0639 and leaves dev2's unchanged
+(`results/e4/dev*/v4_dev_score.txt`, `code/checks/e4_dev_v4_on_grid.py`).
+
+**Development scores (not scored, A1 metrics):**
+
+| grid | rule | A1b / A1c | state error | rank within 1 | best baseline (error / rank failure) |
+|---|---|---|---|---|---|
+| dev3 | v3 | pass / pass | 0.035 | 0.792 | 0.276 / 0.733 |
+| dev3 | settled law on v3, τ = 0 | | 0.017 | 0.900 | |
+| dev3 | **v4** | pass / pass | **0.016** | **0.936** | 0.276 / 0.733 |
+| dev2 | v3 | pass / pass | 0.008 | 0.970 | |
+| dev2 | **v4** | pass / pass | **0.006** | **0.985** | 0.219 / 0.412 |
+
+On dev3, v4 still gets 4349 pairs wrong:
+
+| error | pairs |
+|---|---|
+| dead after the truth's first crossing (dips during the transient, second collapses) | 1539 |
+| alive in truth, model crossed and re-dead with c/s > thr | 843 |
+| model early | 697 |
+| model late | 647 |
+| alive in truth above thr during the transient although c/s <= thr | 623 |
+
+The post-burst transient is now simulated rather than modelled in closed form, and only for 600 steps. What
+remains is mostly the long tail of that transient (A-iv' gives its end state, not its duration).
+
+v4 is frozen at the commit that adds this section. It is registered for a second held-out grid in
+`results/e4/prediction.json` (`A1_v4`), whose values are disjoint from development grids 1-3 and from A1's held-out
+grid. A1's held-out grid informed the diagnosis, so it is not reused to score v4.
+
+**Held-out result (scored once; `results/e4/a1h2/a1h2_score.json`).** On H2 (384 runs), v4 passes A1b (median
+0.0020, p90 0.013), A1c (median 0.0044, p90 0.064) and A1d. A1d has state error 0.011 against a best baseline of
+0.191, and rank within 1 at 0.947 against a tolerance of 0.90. The truth's own 1e-15 floor is state error 0.006 and
+rank-within-1 failure 0.026, against the model's 0.053. A1's failure on the first held-out grid stays reported as
+registered.
+
+**Post hoc beside the H2 score (internal review point 2; `results/e4/a1h2/posthoc/`, produced by the review's checks
+`code/checks/e4_a1h2_v3_check.py` and `e4_a1h2_exact_share.py` run on this repository, outputs identical to the
+review's).** They strengthen the claim and do not change it.
+- *H2 contains grid 1's failure.* The frozen v3 (ebc17db) scores A1d rank within 1 **0.779** on H2 (it fails, as on
+  grid 1 at 0.808); v3 + the A-iv' settled law 0.907; v4 0.947. On h2a (8 of 32 directions with c/s <= 0.05):
+  0.643 / 0.899 / 0.930; on h2b 0.914 / 0.914 / 0.965. The second-collapse share is 7.2% (grid 1: 8.0%). So H2 is not
+  an easier grid; the settled law carries most of the repair, the post-capture loop adds +0.04.
+- *Exact-integration share.* v4 is a hybrid: it integrates the exact map for a mean of 1768 steps per direction
+  (median 600, p90 3300, max 17100), **3.0% of the horizon**. Baselines that receive the exact truth for the same
+  S_k steps after K and then hold it (persistence, or the settled law) reach rank within 1 of **0.42**, and the
+  ceiling (exact through the next checkpoint) 0.445. The result comes from the closed-form waits and the settled law,
+  not from the exact segments.
+
+**Scope test of the settledness condition (A1_v4_scope, registered at 70c3367 before it ran; `results/e4/a1h3/`).**
+H2 had eta lam T >= 6 in every cell. H3 (128 runs, disjoint from every earlier grid) crosses eta lam T from 0.54 to
+25.2 on the same statistics, with v4 frozen. **Registered reading: not binding.** In the unsettled bin
+(eta lam T <= 2.52, 80 runs) v4's rank-within-1 failure is 0.041 (state error 0.009), within A1d's 0.10; the settled
+bin (12.6, 25.2; 32 runs) has 0.012 (0.004). Per cell 0.03-0.05 at eta lam T <= 2.52, 0.015 at 4.32, 0.004 / 0.021 at
+12.6 / 25.2; the best baseline is at 0.64-0.95. The failure is about 3x higher where the amplitude has not settled,
+but stays within tolerance. The extra error is timing, not level (post hoc, internal review point 1;
+`results/e4/a1h3/posthoc/a1h3_check.json`). After the truth's first crossing there are 5, 6 and 0 model-alive/truth-dead
+pairs on c/s > thr in the unsettled, intermediate and settled bins (of 76,800, 15,360 and 30,720). The unsettled
+excess is model-dead/truth-alive on c/s > thr (0.0059 against 0.0017 per pair), which is the wait before a return.
+The level part is exposed only through directions near thr. h3b's smallest c/s is 0.282 (5.6 thr), and v3, v3 + the
+settled law and v4 score the same there. The reading rests on h3a's 12 directions with c/s <= thr/0.75, whose |a|
+after capture stays at 0.96-1.07 thr. So, on these directions, the relaxation toward c/s does not move the alive count
+across thr at eta lam T >= 0.54, and the settled law can be used as the count's end state from the first crossing on;
+the amplitude itself is below c/s there. On h3a, frozen v3's rank failure is 0.221 / 0.363 / 0.210 by bin; with the
+settled law it is 0.059 / 0.021 / 0.019. Over the whole grid A1b and A1c pass (A1c median 0.012, p90 0.17); the
+single intermediate cell (16 runs, reported only) has A1c p90 0.127 and 8% misses. Truth floor on the registered
+16-run subset 0.0008 / 0.000; that subset sits in one cell, and on all 128 runs the rank floor is 0.0036
+(`results/e4/floor/truth_floor_full.json`).
+
+## A3 (rotated basis), first observations (exploratory)
+
+From the E1b initialisation (`code/checks/e4_rotated_modes.py`, `results/e4/explore/rotated_modes.txt`):
+
+- **Strong directions are always alive.** At lam = 0.005 (p0 = 0.5 and 2), directions k <= 16 (c/s >= 0.26) are
+  alive at every checkpoint up to 40k steps, with amplitudes 0.4-2.2, above c/s.
+- **Weak directions flicker.** Directions k >= 17 collapse and re-escape intermittently, down to 1e-55. At
+  lam = 0.05, all 24 are often alive, but the tail drops out at times.
+- **Working hypothesis (to derive before A3's grid).** Each coordinate's second moment is shared by all directions,
+  and the captured directions dominate it. So a collapsed direction does not get its own renormalisation: it sees
+  GD with the shared preconditioner eta/sigma, while the decoupled decay acts unpreconditioned. The result is the
+  delivered GD race with an effective decay lam * sigma. Adam's lack of rotation invariance then decides which
+  regime applies: per-direction renormalisation (aligned) or a GD-like race on a shared clock (generic basis). The
+  ViT is in the generic case.
+- **The hypothesis fails as a level predictor** (development grid v2, `code/checks/e4_a3_sigma_static.py`,
+  `results/e4/a3dev2/sigma_static_test.txt`). The shared scale of √v̂ for W, measured in the truth, is 1-6e-3. So
+  λσ is 5e-6 to 3e-4, and the static count at λσ is 24/24 in every rotated cell. The truth is 15.8-23.3. The
+  rotated runs are not near a balanced fixed point. With e1b statistics at θ = 1 and λ = 0.005, the leading singular
+  values of W are about 3 (c/s = 1). The diagonal of V'PV sits at 0.4-0.7, flat in k (c/s runs 1 to 0.16). The
+  weakest directions sit at singular values of order 1e-3. At λ = 0.05 the leading singular values are 1.5 and fewer
+  directions are lost. The loss is an imbalance between W and P that weight decay corrects. The mechanism is what
+  A3's model has to capture; decay-driven death at λσ is not it.
+- **What the dead directions see** (development, e1b statistics, seed 1, `code/checks/e4_a3_gain.py`,
+  `results/e4/a3dev2/gain.txt`). For w_k = W u_k, the predictor's effective gain is g_k = w_k'Pw_k / |w_k|^2, and
+  the window curvature is h_k = g_k (c_k - g_k s_k). Medians over [T/2, T]:
+  - **Alive directions** have g_k = c_k/s_k exactly and h_k = 0: they are fitted, as in the aligned case. Their
+    amplitudes are 1.5-2.6x c/s at λ = 0.005 and closer to it at λ = 0.05.
+  - **Dead directions** (θ = 0.25 or 1, λ = 0.005; c/s 0.15-0.24) see g_k = 0.26-0.38, above their c/s. So
+    h_k < 0: they are outside the window and stay collapsed, at |w_k| ≈ 0.01.
+  - **P's spectrum** at λ = 0.005 under rotation keeps eigenvalues that match no c/s (0.84, 0.68, 0.57, ... at
+    θ = 1). At λ = 0.05 they are gone. Then g_k = c_k/s_k for all but the last one or two directions, and the rank
+    is 21-22.
+  - **Working mechanism (next to derive).** At θ = 0 the off-diagonal gradients vanish exactly, so P's unused
+    directions get no update. Under rotation, Adam's entrywise normalisation is not equivariant: the chatter of the
+    fitted directions leaks O(eta) normalised updates into P's unused subspace. Decoupled decay removes them at rate
+    eta·λ. The unused spectrum of P therefore settles at a level that falls with λ. A direction is dead iff its
+    c/s is below the gain that this unused spectrum gives it. This accounts for the four development signs: θ '−',
+    λ '+' under rotation and '0' at θ = 0, and a0 '0' (memory of the initialisation decays). It does not yet give
+    the level. The level needs the injected update's size and correlation time, and the gain a tiny w_k sees.
+
+- **The unused-spectrum gate fails as a level model** (development, `code/checks/e4_a3_level_explore.py`,
+  `results/e4/a3dev2/level_explore.txt`; e1b statistics, theta = 1, one factor at a time). The time-averaged P on
+  the output subspace that W does not use has eigenvalues 0.36-0.63, two to three times the boundary between the
+  last alive and the first dead direction (c/s 0.15-0.24). So 'dead iff c/s is below the unused spectrum' does not
+  hold. Dead directions sit at |w_k| of about 0.01, spread over the output space, and see a mixed gain of 0.26-0.38
+  (above). The boundary in c/s is not shared between the two development statistics sets either (0.263 vs 0.349 at
+  theta = 1, lam = 0.005). The level also moves with b2 (0.99 / 0.999 / 0.9999: rank 16.8 / 18.0 / 23.2), eta
+  (0.01 / 0.04: 17.8 / 20.2) and b1 (0.8 / 0.95: 18.9 / 16.8). It falls as the alive amplitudes exceed c/s (median
+  |w|/(c/s) 1.0-2.9), which is the W-P imbalance noted above. **The level model is open.** A3's held-out test is
+  therefore a sign replication of the mechanism, registered as A3s_mech (`a3_tolerance.json` v3). It is weaker than
+  a model-derived test and is reported as such.
+
+## Observations in the matrix model (E1b statistics, delivered AdamW configuration)
+
+These use d = n = 24, c/s = 0.92^k, eta = 0.02, w0 = 1e-4, orthogonal init with jitter, seed 0.
+The source files are `matrix_adam_long.txt` and `matrix_adam_sv.txt`.
+
+- **Rank does not converge.** At 200k steps the rank fluctuates by ±1-3 between checks. This
+  matches the delivered "2.8% converged".
+- **Higher weight decay gives higher rank, the opposite of GD and of the static bound.**
+  - p0 = 0.5: 15-18 at lam = 0.005, but 23-24 at lam = 0.05 after the first quarter.
+  - p0 = 2.0: 16-18 at lam = 0.005, but 22-24 at lam = 0.05.
+  - The static bound gives 21 and 11 for these two lam values.
+- **The predictor's singular values converge to c_k/s_k.** At lam = 0.05 they are
+  1.03, 0.95, 0.87, 0.79, … against c/s = 1, 0.92, 0.85, 0.78, …
+- **The amplitudes are O(1)**, not the GD fixed point.
+
+## Next steps (to turn this into A1-A3)
+
+1. **A1 (scored).** On held-out grid 1, A1b and A1c pass and A1a and A1d fail (see above). v4 carries the loop past
+   the first crossing and passes A1b-A1d on the second held-out grid (A1_v4).
+2. **A3.** Derive the shared-preconditioner race for a generic basis, and commit its own A1-type tolerance before
+   its development grid. A3's sign predictions cover a0, lam and rotation.
+3. **A2.** Registered and scored (`results/e4/a2/`): it fails on convergence. 71/192 runs are still moving at
+   T_h = K + 5/(eta lam). The cause is mostly late capture, not dies-and-returns (`results/e4/a2/readings.json`).
+   Among directions with c/s > 2 thr that change state over [T_h/2, T_h], 142 of 147 are late births, from |a|
+   down to 1e-157-1e-50, and one dies and returns. The horizon 5/(eta lam) does not cover the escape from a collapsed
+   state. In one cell (lam 0.028, eta 0.027, b2 0.9992) captured directions settle in two stages (above, under A-iv'),
+   so A-iv''s end state holds but its timing does not. On converged runs v4's rank error is 0.017 and below every
+   baseline's, and the closed-form count #{c/s > thr} equals v4 in 119/121. A2' (`results/e4/a2p/`) tested v4's count
+   at T_h without a convergence requirement on a fresh grid that contains A2's failing regime. It passes: within-1
+   0.935, every baseline beaten, full truth floor 0.032.

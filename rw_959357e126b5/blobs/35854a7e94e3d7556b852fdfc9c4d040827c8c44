@@ -1,0 +1,107 @@
+"""E6 rung 1a, after the held-out score (post hoc, beside the registered verdict).
+(1) the held-out grid re-scored by the amended score_v2 (non-finite base runs count as A1 misses);
+(2) the generic arm with 5 seeds: held-out seeds 310-312 plus 313-314 (grid heldout_g45, run after the score);
+(3) the reading rule of results/e6/prediction.json note_2026-10-18: the measured count along the trajectory
+    against A1, and the earliest fraction of T from which the measurement matches A1;
+(4) the development grid's fixed-time early baselines (t = 25, 50), re-run from the frozen truth to t = 50.
+usage: e6_r1_heldout_post.py OUT.json [nproc]"""
+import os, sys, json, gzip, time
+from multiprocessing import Pool
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import e6_r1 as E
+
+HERE = os.path.join(os.path.dirname(__file__), "..", "..", "results", "e6")
+
+
+def load(grid, d):
+    return [json.loads(l) for l in gzip.open(os.path.join(HERE, d, f"r1_{grid}_runs.jsonl.gz"), "rt")]
+
+
+def fragile(rows):
+    base = {r["cfg"]["id"]: (r["truth"]["counts"] or [None])[-1] for r in rows if not r["cfg"].get("pert")}
+    return {r["cfg"]["floor_of"] for r in rows if r["cfg"].get("pert") and (r["truth"].get("counts") or [None])[-1] != base[r["cfg"]["floor_of"]]}
+
+
+def trajectory(R):
+    """MAE of the measured count at each checkpoint against the final count, beside A1's; earliest fraction from
+    which the measured MAE <= A1's at every later checkpoint, and from which (measured - A1) is not above 0 (CI)."""
+    R = [r for r in R if r["truth"].get("counts")]
+    if not R:
+        return None
+    tru = np.array([r["truth"]["counts"][-1] for r in R]); ep = np.abs(np.array([r["pred"]["race_deep_A1"] for r in R]) - tru)
+    rows = []
+    for j in range(E.NCHK):
+        e = np.abs(np.array([r["truth"]["counts"][j] for r in R]) - tru); ci = E.boot_ci(e - ep)
+        rows.append(dict(frac=(j + 1) / E.NCHK, mae=float(e.mean()), minus_A1=float((e - ep).mean()), minus_A1_ci=ci))
+    def earliest(ok):
+        f = None
+        for x in reversed(rows):
+            if not ok(x):
+                break
+            f = x["frac"]
+        return f
+    T = np.array([r["cfg"]["T"] for r in R])
+    return dict(runs=len(R), A1_mae=float(ep.mean()), by_checkpoint=rows,
+                earliest_frac_mae_le_A1=earliest(lambda x: x["mae"] <= float(ep.mean())),
+                earliest_frac_not_worse_ci=earliest(lambda x: x["minus_A1_ci"][0] <= 0),
+                T_median=float(np.median(T)), t25_frac_median=float(np.median(25.0 / T)), t50_frac_median=float(np.median(50.0 / T)))
+
+
+def groups(base, fn):
+    out = {}
+    for arm in ("aligned", "generic"):
+        R = [r for r in base if r["cfg"]["arm"] == arm and r["cfg"]["L"] >= 2]
+        out[arm] = dict(L_ge2=fn(R), **{f"L{L}": fn([r for r in R if r["cfg"]["L"] == L]) for L in (2, 3)})
+    return out
+
+
+def dev_early(rec):
+    cfg = dict(rec["cfg"], grid="dev_early", T=50.0)
+    tr = E.truth(cfg, E.init(dict(rec["cfg"])))
+    return rec["cfg"]["id"], tr.get("early")
+
+
+if __name__ == "__main__":
+    outp = sys.argv[1]; nproc = int(sys.argv[2]) if len(sys.argv) > 2 else 8; t0 = time.time()
+    ho = load("heldout", "r1heldout"); g45 = load("heldout_g45", "r1heldout_g45")
+    off = max(r["cfg"]["id"] for r in ho) + 1
+    for r in g45:
+        r["cfg"]["id"] += off
+        if r["cfg"].get("pert"):
+            r["cfg"]["floor_of"] += off
+    fr_ho, fr_45 = fragile(ho), fragile(g45)
+    b_ho = [r for r in ho if not r["cfg"].get("pert")]; b_45 = [r for r in g45 if not r["cfg"].get("pert")]
+    res = dict(status="post hoc, after the registered held-out score (results/e6/r1heldout/r1_heldout_score.json); not a registered verdict",
+               heldout_rescored=groups(b_ho, lambda R: E.score_v2(R, fr_ho)),
+               generic_seeds_313_314=dict(runs=len(b_45), floor_runs=len(g45) - len(b_45), fragile=len(fr_45),
+                                          nonfinite=sum(not r["truth"].get("counts") for r in b_45),
+                                          **groups(b_45, lambda R: E.score_v2(R, fr_45))["generic"]),
+               generic_5_seeds=groups(b_ho + b_45, lambda R: E.score_v2(R, fr_ho | fr_45))["generic"],
+               trajectory_heldout=groups(b_ho, trajectory),
+               trajectory_generic_5_seeds=groups(b_ho + b_45, trajectory)["generic"])
+    dev = load("dev", "r1dev"); res["trajectory_dev"] = groups(dev, trajectory)
+    E.GRIDS["dev_early"] = E.GRIDS["dev"]
+    D = [r for r in dev if r["cfg"]["L"] >= 2]
+    with Pool(nproc) as pool:
+        early = dict(pool.map(dev_early, D, chunksize=4))
+    dv = {}
+    for arm in ("aligned", "generic"):
+        for Lk, sel in (("L_ge2", lambda L: L >= 2), ("L2", lambda L: L == 2), ("L3", lambda L: L == 3)):
+            R = [r for r in D if r["cfg"]["arm"] == arm and sel(r["cfg"]["L"]) and r["truth"].get("counts")]
+            tru = np.array([r["truth"]["counts"][-1] for r in R]); ep = np.abs(np.array([r["pred"]["race_deep_A1"] for r in R]) - tru)
+            d = dict(runs=len(R), A1_mae=float(ep.mean()))
+            for te in ("25.0", "50.0"):
+                e = np.abs(np.array([early[r["cfg"]["id"]][te] for r in R]) - tru)
+                d[f"early_{te[:-2]}"] = dict(mae=float(e.mean()), minus_A1=float((e - ep).mean()), minus_A1_ci=E.boot_ci(e - ep))
+            e = np.abs(np.array([r["truth"]["counts"][1] for r in R]) - tru)
+            d["v1_early_10pct"] = dict(mae=float(e.mean()), minus_A1=float((e - ep).mean()), minus_A1_ci=E.boot_ci(e - ep))
+            dv[f"{arm}_{Lk}"] = d
+    res["dev_fixed_early"] = dv
+    res["consistency_dev_rerun"] = "truth re-run to t = 50 from the frozen init (deterministic from the config); the dev run's own checkpoints are not at 25/50"
+    res.update(seconds=time.time() - t0, numpy=np.__version__, command=" ".join(["code/checks/e6_r1_heldout_post.py"] + sys.argv[1:]),
+               md5={f: E.md5(os.path.join(os.path.dirname(__file__), "..", f)) for f in ("e6_r1.py", "linjepa.py")})
+    json.dump(res, open(outp, "w"), indent=1)
+    print(json.dumps({"generic_5_seeds": {k: {kk: v.get(kk) for kk in ("runs", "A1", "pass", "nonfinite")} for k, v in res["generic_5_seeds"].items()},
+                      "dev_fixed_early": dv}, indent=1), flush=True)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E6 held-out post hoc done", flush=True)

@@ -1,0 +1,99 @@
+"""Numbers quoted in the interim Tier B paragraph (sections/experiments.tex).
+
+Reads experiment-repo's committed per-seed files; pass the path of an
+experiment-repo checkout (commit recorded in tierB_numbers.txt).
+"""
+import csv, glob, statistics, sys
+from pathlib import Path
+
+root = Path(sys.argv[1] if len(sys.argv) > 1 else "../experiment-repo")
+T3 = 3.182446305284263  # t_{0.975, 3}
+
+late = []
+for f in sorted(glob.glob(str(root / "results/raw/vit_runs/b_reference/trajectory_seed*.csv"))):
+    by_step = {}
+    for r in csv.DictReader(open(f)):
+        by_step[int(r["step"])] = (int(r["numerical_rank"]), float(r["effective_rank"]))
+    print(Path(f).name, " ".join(f"{s}:{v[0]}/{v[1]:.1f}" for s, v in sorted(by_step.items())))
+for f in sorted(glob.glob(str(root / "results/raw/vit_runs/b_reference/summary_seed*.csv"))):
+    r = next(csv.DictReader(open(f)))
+    late.append(int(r["late_numerical_rank"]))
+    print(Path(f).name, "early count", r["early_predicted_rank"], "rank@250", r["early_rank_at_end"],
+          "late", r["late_numerical_rank"], "error", r["rank_error"], "wall s", round(float(r["wall_clock_seconds"])))
+m, sd = statistics.mean(late), statistics.stdev(late)
+print(f"late rank mean {m:.2f} sd {sd:.2f} 95% t-interval {m - T3*sd/2:.1f}--{m + T3*sd/2:.1f}")
+for r in csv.DictReader(open(root / "results/derived/vit_transfer_diagnostics.csv")):
+    if r["config_id"] == "b_reference":
+        print("seed", r["seed"], "positive", r["early_positive_unfiltered"], "above 1e-3", r["early_positive_above_1e3_floor"],
+              "and overlap>=0.5", r["early_positive_above_1e3_and_overlap_ge_0p5"])
+
+# One-factor cells and Tier C (interim; seed 0 only where that is all that is committed).
+print("--- one-factor cells and Tier C, every committed seed")
+for f in sorted(glob.glob(str(root / "results/raw/vit_runs/*/summary_seed*.csv"))):
+    r = next(csv.DictReader(open(f)))
+    if r["config_id"] == "b_reference":
+        continue
+    print(r["config_id"], "seed", r["seed"], "scale", r["predictor_scale"], "depth", r["predictor_depth"],
+          "m", r["mask_fraction"], "tau", r["ema_tau"], "wd", r["weight_decay"],
+          "early count", r["early_predicted_rank"], "rank@250", r["early_rank_at_end"],
+          "late", r["late_numerical_rank"], "eff", round(float(r["late_effective_rank"]), 1),
+          "probe", r["probe_accuracy"], "wall s", round(float(r["wall_clock_seconds"])))
+
+# Per-configuration aggregates over every committed seed (mean, sample SD).
+print("--- per configuration, every committed seed")
+cells = {}
+for f in sorted(glob.glob(str(root / "results/raw/vit_runs/*/summary_seed*.csv"))):
+    r = next(csv.DictReader(open(f)))
+    cells.setdefault(r["config_id"], []).append(r)
+total_wall = 0.0
+for cid, rows in sorted(cells.items()):
+    late = [int(r["late_numerical_rank"]) for r in rows]
+    eff = [float(r["late_effective_rank"]) for r in rows]
+    early = [int(r["early_predicted_rank"]) for r in rows]
+    wall = [float(r["wall_clock_seconds"]) for r in rows]
+    total_wall += sum(wall)
+    sd = lambda v: statistics.stdev(v) if len(v) > 1 else float("nan")
+    print(f"{cid} n={len(rows)} seeds={[r['seed'] for r in rows]} late {late} mean {statistics.mean(late):.1f} sd {sd(late):.1f}"
+          f" eff mean {statistics.mean(eff):.1f} sd {sd(eff):.1f} early-late {statistics.mean(e - l for e, l in zip(early, late)):.1f}"
+          f" wall mean {statistics.mean(wall):.0f}")
+ref3 = [int(r["late_numerical_rank"]) for r in cells["b_reference"] if r["seed"] in ("0", "1", "2")]
+print(f"b_reference primary seeds 0-2 late {ref3} mean {statistics.mean(ref3):.1f} sd {statistics.stdev(ref3):.1f}")
+print(f"committed nonlinear runs {sum(len(v) for v in cells.values())}, summed wall-clock {total_wall:.0f} s = {total_wall/3600:.1f} h")
+
+# Tier C: trained vs same-seed initialization probe (P6 sanity check).
+print("--- Tier C probe against same-seed initialization")
+init = {(r["config_id"], r["seed"]): r["probe_accuracy_init"] for r in csv.DictReader(open(root / "results/derived/vit_init_probe.csv"))}
+T = {1: 12.706204736174703, 2: 4.302652729911275, 3: T3}
+for cid, rows in sorted(cells.items()):
+    if not cid.startswith("c_"):
+        continue
+    tr = [float(r["probe_accuracy"]) for r in rows]
+    ini = [float(init[(cid, r["seed"])]) for r in rows]
+    d = [a - b for a, b in zip(tr, ini)]
+    n = len(d)
+    md, sdd = statistics.mean(d), statistics.stdev(d)
+    h = T[n - 1] * sdd / n ** 0.5
+    print(f"{cid} n={n} trained {tr} mean {statistics.mean(tr):.4f} sd {statistics.stdev(tr):.4f}; init {ini} mean {statistics.mean(ini):.4f} sd {statistics.stdev(ini):.4f};"
+          f" paired gain {md*100:.2f} pp sd {sdd*100:.2f} 95% t-interval {100*(md-h):.2f}--{100*(md+h):.2f} pp")
+
+# Paired same-seed contrasts (late numerical rank), each against its own reference.
+print("--- paired same-seed contrasts, late numerical rank (cell minus reference)")
+late_by = {cid: {r["seed"]: int(r["late_numerical_rank"]) for r in rows} for cid, rows in cells.items()}
+pairs = [("b_scale_low", "b_reference"), ("b_scale_high", "b_reference"), ("b_depth_shallow", "b_reference"),
+         ("b_depth_deep", "b_reference"), ("b_mask_low", "b_reference"), ("b_mask_high", "b_reference"),
+         ("b_ema_fast", "b_reference"), ("b_ema_slow", "b_reference")]
+for lvl in ("scale_low", "scale_high", "mask_low", "mask_high"):
+    pairs += [(f"b_{lvl}_decay_strong", f"b_{lvl}_decay_zero"), (f"b_{lvl}", f"b_{lvl}_decay_zero"),
+              (f"b_{lvl}_decay_strong", f"b_{lvl}")]
+for a, b in pairs:
+    seeds = sorted(set(late_by.get(a, {})) & set(late_by.get(b, {})) & {"0", "1", "2"})
+    d = [late_by[a][s] - late_by[b][s] for s in seeds]
+    extra = ""
+    if len(d) > 1:
+        md, sdd = statistics.mean(d), statistics.stdev(d)
+        h = T[len(d) - 1] * sdd / len(d) ** 0.5
+        extra = f" mean {md:.2f} sd {sdd:.2f} 95% t-interval {md-h:.1f}--{md+h:.1f}"
+    print(f"{a} - {b}: seeds {seeds} diffs {d}{extra}")
+# Isolated direct decoupled-AdamW multiplier over the run (constant encoder LR 3e-4, 6,000 steps).
+for wd in (1e-4, 5e-4):
+    print(f"AdamW coefficient {wd:g}: (1 - 3e-4*{wd:g})^6000 = {(1 - 3e-4 * wd) ** 6000:.7f}")

@@ -1,0 +1,210 @@
+"""E4 / A3: the linear JEPA under AdamW when the problem is rotated relative to the coordinate basis.
+
+Rotated problem: the aligned problem of A1 (S11 = diag(s), S21 = diag(c), W0 = diag(a0 * jit), P0 = p0 I) conjugated
+by orthogonal maps, S11 -> U S11 U^T, S21 -> U S21 U^T, W0 -> V W0 U^T, P0 -> V P0 V^T = p0 I. Gradient descent is
+equivariant under this conjugation (W(t) = V W_aligned(t) U^T, same rank); AdamW is not, since it normalises
+coordinate by coordinate. U(theta) = expm(theta log U_r), V(theta) = expm(theta log V_r) with U_r, V_r random in SO(n)
+(per seed); theta = 0 is the aligned problem (exact scalar reduction, A-0), theta = 1 a generic basis. side = 'both'
+rotates U and V, 'out' only V (the delivered E1b initialisation: random orthogonal W, diagonal statistics), 'in'
+only U.
+Rank (a3_tolerance.json v2, internal review): the delivered rank, the number of singular values of W
+above 0.05 (code/e1b.py), at every checkpoint; rank_tavg is its mean over [T/2, T]. Direction k's amplitude is
+||W u_k|| (u_k = U e_k, the k-th data eigenvector); alive iff > 0.05 (A1's threshold); the per-direction count
+(rank_dir, rank_dir_tavg) and alive_frac_k are the direction-level metrics.
+Ground truth: the matrix AdamW map with decoupled decay, full batch, float64 (dtype switchable), no flush of small
+entries. Recorded at the checkpoints: per-direction amplitudes, the singular values of W, the predictor in the
+data basis (diagonal of V^T P V), and the shared-preconditioner scale sigma = median over entries of
+sqrt(vhat) for W and for P (and the rms over entries).
+Usage: python3 code/e4_a3.py dev results/e4/a3dev2 [NPROC]      development grid v2 (no tolerance scoring)
+       python3 code/e4_a3.py pilot                               timing of a few runs"""
+import sys, os, json, time, itertools, gzip
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from scipy.linalg import expm, logm
+sys.path.insert(0, os.path.dirname(__file__))
+import e4_dev as dev
+
+THR = 0.05
+
+
+def rotation(n, seed, theta):
+    """U(theta) = expm(theta log U_r), U_r Haar in SO(n) from the seed; U(0) = I, U(1) = U_r."""
+    g = np.random.default_rng(seed)
+    Q, R = np.linalg.qr(g.standard_normal((n, n))); Q = Q * np.sign(np.diag(R))
+    if np.linalg.det(Q) < 0:
+        Q[:, 0] = -Q[:, 0]
+    if theta == 0:
+        return np.eye(n)
+    A = np.real(logm(Q)); A = 0.5 * (A - A.T)
+    return expm(theta * A)
+
+
+def checkpoints(T, n_lin=200):
+    early = np.unique(np.round(np.geomspace(10, T / n_lin, 20)).astype(int))
+    return sorted(set(early.tolist()) | set(np.linspace(T / n_lin, T, n_lin).astype(int).tolist()))
+
+
+def problem(cfg):
+    c, s = dev.stats(cfg["stats"]) if cfg["stats"] in dev.STATS else stats_extra(cfg["stats"])
+    n = s.size
+    th = cfg["theta"]
+    U = rotation(n, 7919 * cfg["seed"] + 1, th if cfg["side"] in ("both", "in") else 0.0)
+    V = rotation(n, 7919 * cfg["seed"] + 2, th if cfg["side"] in ("both", "out") else 0.0)
+    jit = np.exp(0.1 * np.random.default_rng(cfg["seed"]).standard_normal(n))
+    return c, s, U, V, cfg["a0"] * jit
+
+
+STATS_EXTRA = {}
+
+
+def stats_extra(name):
+    s, r = STATS_EXTRA[name]
+    return s * r ** np.arange(s.size), s
+
+
+def matrix_adamw(cfg, dtype=np.float64, pert=None):
+    """pert: (seed, rel) multiplies each a0_k by 1 + rel * (+-1) with signs from the seed (the truth's own floor)."""
+    c, s, U, V, a0 = problem(cfg)
+    if pert is not None:
+        a0 = a0 * (1 + pert[1] * np.random.default_rng(pert[0]).choice([-1.0, 1.0], a0.size))
+    f = lambda x: np.asarray(x, dtype=dtype)
+    S11, S21 = f(U @ np.diag(s) @ U.T), f(U @ np.diag(c) @ U.T)
+    W, P = f(V @ np.diag(a0) @ U.T), f(cfg["p0"] * np.eye(s.size))
+    Uf, Vf = f(U), f(V)
+    eta, lam, b1, b2, eps = (f(cfg[k]) for k in ("eta", "lam", "b1", "b2", "eps"))
+    m = [np.zeros_like(W), np.zeros_like(P)]; v = [np.zeros_like(W), np.zeros_like(P)]
+    T = cfg["T"]; cks = set(checkpoints(T)); rec = dict(t=[], amp=[], sv=[], pdiag=[], sigW=[], sigP=[], rmsW=[], rmsP=[])
+    one = f(1.0); bp1, bp2 = one, one
+    finite = True
+    for t in range(1, T + 1):
+        R = P @ W @ S11 - W @ S21
+        g = (P.T @ R, R @ W.T); x = [W, P]
+        bp1 = bp1 * b1; bp2 = bp2 * b2
+        for i in range(2):
+            m[i] = b1 * m[i] + (1 - b1) * g[i]; v[i] = b2 * v[i] + (1 - b2) * g[i] * g[i]
+            x[i] = x[i] * (1 - eta * lam) - eta * (m[i] / (1 - bp1)) / (np.sqrt(v[i] / (1 - bp2)) + eps)
+        W, P = x
+        if t in cks:
+            amp = np.linalg.norm(W @ Uf, axis=0)
+            if not np.all(np.isfinite(amp)):
+                finite = False; break
+            rec["t"].append(t); rec["amp"].append(amp.astype(float))
+            rec["sv"].append(np.linalg.svd(np.asarray(W, float), compute_uv=False))
+            rec["pdiag"].append(np.diag(Vf.T @ P @ Vf).astype(float))
+            rec["sigW"].append(float(np.median(np.sqrt(v[0] / (1 - bp2)))))
+            rec["sigP"].append(float(np.median(np.sqrt(v[1] / (1 - bp2)))))
+            rec["rmsW"].append(float(np.sqrt(np.mean(v[0] / (1 - bp2))))); rec["rmsP"].append(float(np.sqrt(np.mean(v[1] / (1 - bp2)))))
+    amp = np.asarray(rec["amp"]) if rec["amp"] else np.zeros((0, s.size))
+    sv = np.asarray(rec["sv"]) if rec["sv"] else np.zeros((0, s.size))
+    rank_dir, rank = (amp > THR).sum(1), (sv > THR).sum(1)
+    half = np.asarray(rec["t"]) >= T / 2
+    lg = lambda M: [[round(float(np.log10(max(z, 1e-300))), 3) for z in row] for row in M]
+    sub = list(range(0, len(rec["t"]), 4))
+    rec = dict(rec, log10_amp=lg(rec.pop("amp")), log10_sv=lg(rec.pop("sv")),
+               pdiag_every4=[[round(float(z), 4) for z in rec["pdiag"][i]] for i in sub], t_every4=[rec["t"][i] for i in sub])
+    del rec["pdiag"]
+    ok = finite and half.any()
+    out = dict(rec, finite=finite, rank=[int(r) for r in rank], rank_dir=[int(r) for r in rank_dir],
+               rank_tavg=float(rank[half].mean()) if ok else None,
+               rank_dir_tavg=float(rank_dir[half].mean()) if ok else None,
+               dtype=np.dtype(dtype).name, pert=list(pert) if pert is not None else None,
+               alive_frac=[float(z) for z in (amp[half] > THR).mean(0)] if finite and half.any() else None,
+               static_bound=int((c ** 2 >= 4 * cfg["lam"] * s).sum()))
+    return out
+
+
+DEV_BASE = dict(eta=0.02, b1=0.9, b2=0.999, eps=1e-8, T=100000)
+
+
+def dev_configs():
+    """Development grid: the A1 development statistics (e1b, dev2), the delivered E1b AdamW eta = 0.02, b = (0.9,
+    0.999); theta in {0, 0.25, 0.5, 1} on side 'both', and theta = 1 on sides 'out' and 'in'; lam, a0, p0 as in
+    the delivered E1b AdamW configurations; 4 seeds (seed sets the rotations and the initial jitter)."""
+    rot = [(0.0, "both"), (0.25, "both"), (0.5, "both"), (1.0, "both"), (1.0, "out"), (1.0, "in")]
+    out = []
+    for st, (th, side), lam, a0, p0, seed in itertools.product(dev.STATS, rot, [0.005, 0.02, 0.05], [1e-4, 1e-2],
+                                                                [0.5, 2.0], [1, 2, 3, 4]):
+        out.append(dict(DEV_BASE, id=len(out), stats=st, theta=th, side=side, lam=lam, a0=a0, p0=p0, seed=seed))
+    return out
+
+
+LD = np.longdouble
+PERT_REL = 1e-15
+
+
+def truth_dtype(cfg):
+    """a3_tolerance.json v2: theta = 0 runs (A1's exact map, whose float64 truth underflows at b2 = 0.9995) are
+    scored on long double outright; theta > 0 on float64 unless the precision rule switches them."""
+    return LD if cfg["theta"] == 0 else np.float64
+
+
+def run_cfg(cfg, dtype=None, pert=None):
+    t0 = time.time()
+    r = matrix_adamw(cfg, dtype=truth_dtype(cfg) if dtype is None else dtype, pert=pert)
+    return dict(cfg, seconds=time.time() - t0, **r)
+
+
+def run_job(job):
+    """job = (cfg, variant): 'truth' (truth_dtype), 'f64_pert' (float64, a0 x (1 +- 1e-15)), 'ld' (long double)."""
+    cfg, var = job
+    if var == "truth":
+        r = run_cfg(cfg)
+    elif var == "f64_pert":
+        r = run_cfg(cfg, np.float64, (99991 + cfg["id"], PERT_REL))
+    elif var == "f64":
+        r = run_cfg(cfg, np.float64)
+    else:
+        r = run_cfg(cfg, LD)
+    r["variant"] = var
+    return r
+
+
+def precision_jobs(cfgs, every):
+    """The precision subset: every `every`-th id among theta > 0 runs, re-run as float64 with a 1e-15-perturbed a0
+    (the truth's floor) and in long double."""
+    sub = [c for c in cfgs if c["theta"] > 0 and c["id"] % every == 0]
+    return [(c, "f64_pert") for c in sub] + [(c, "ld") for c in sub]
+
+
+def precision_jobs_stratified(cfgs, rng_seed, cells_every=1):
+    """The precision subset stratified over seeds and cells (internal review point 2; precision_jobs aliases with the
+    seed loop: in development v2 every 4th id is seed 1 only). Among theta > 0 runs, group by cell (every key but id
+    and seed), take every `cells_every`-th cell in sorted order and one seed per cell drawn from
+    numpy default_rng(rng_seed). Used for the held-out registration; development v2 keeps precision_jobs as run."""
+    cells = {}
+    for c in cfgs:
+        if c["theta"] > 0:
+            cells.setdefault(tuple(sorted((k, str(v)) for k, v in c.items() if k not in ("id", "seed"))), []).append(c)
+    g = np.random.default_rng(rng_seed); sub = []
+    for i, key in enumerate(sorted(cells)):
+        pick = cells[key][int(g.integers(len(cells[key])))]
+        if i % cells_every == 0:
+            sub.append(pick)
+    return [(c, "f64_pert") for c in sub] + [(c, "ld") for c in sub]
+
+
+if __name__ == "__main__":
+    if sys.argv[1] == "pilot":
+        for cfg in [dict(DEV_BASE, stats="e1b", theta=1.0, side="both", lam=0.02, a0=1e-4, p0=2.0, seed=1, T=20000),
+                    dict(DEV_BASE, stats="e1b", theta=0.0, side="both", lam=0.02, a0=1e-4, p0=2.0, seed=1, T=20000)]:
+            t0 = time.time(); r = matrix_adamw(cfg)
+            print(cfg["theta"], f"{time.time() - t0:.1f}s for T={cfg['T']}", r["rank"][-5:], r["rank_tavg"], r["sigW"][-1])
+        sys.exit()
+    outdir = sys.argv[2]; nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    os.makedirs(outdir, exist_ok=True); cfgs = dev_configs(); t0 = time.time(); runs = []
+    # development v2: the truth (theta = 0 in long double), and the precision subset (every 4th rotated id)
+    jobs = [(c, "truth") for c in cfgs] + precision_jobs(cfgs, 4)
+    jobs.sort(key=lambda j: -(j[1] == "ld") - (j[0]["theta"] == 0))  # longest first
+    from multiprocessing import Pool
+    with Pool(nproc) as pool:
+        for i, r in enumerate(pool.imap_unordered(run_job, jobs)):
+            runs.append(r)
+            if (i + 1) % 48 == 0:
+                print(f"{i+1}/{len(jobs)} {time.time()-t0:.0f}s", flush=True)
+    runs.sort(key=lambda r: (r["variant"], r["id"]))
+    with gzip.open(os.path.join(outdir, "a3dev_runs.jsonl.gz"), "wt") as f:
+        for r in runs:
+            f.write(json.dumps(r) + "\n")
+    json.dump(dict(runs=len(runs), seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv)),
+              open(os.path.join(outdir, "a3dev_meta.json"), "w"), indent=1)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E4 A3 development grid done", flush=True)

@@ -1,0 +1,12 @@
+\begin{abstract}
+Joint-embedding predictive architectures (JEPAs) avoid collapse through heuristics that lack a common explanation.
+Near the collapsed solution each direction of representation space is grown by the predictive signal shared by context and target and shrunk by weight decay and self-prediction.
+With weight decay the collapsed point is stable, and at a standard initialisation a direction survives only if it captures the order-one predictor before the predictor's gain decays out of its growth window.
+This race has no fitted constants; on \EoneBRuns{} held-out, pre-registered linear-JEPA runs it predicts the rank with error \EoneBAlignedMae{} where its assumptions hold (stability count at initialisation: \EoneBAlignedWindowMae{}; static threshold: \EoneBAlignedBoundMae{}), and under masking \EtwoCycMae{} (static: \EtwoCycBoundMae{}).
+We extend it beyond gradient descent, one encoder layer and the near-collapse window.
+Under AdamW weight decay drops out of the settled count, and a frozen phase model predicts a linear encoder's held-out count at a fixed horizon (error \ExtAtwopMae{}; static bound \ExtAtwopStaticMae{}) but not a converged rank.
+With a layer-normalised target a reduced flow of its gain predicts a linear encoder's held-out rank (error \ExtAfourMae{} on sample-robust runs), which plain-target criteria miss.
+With a deep linear encoder survival becomes a power law in the initial scale, predicted with aligned factors (error \ExtCAlMae{}) but not with generic ones.
+A post-capture model of weight-decay schedules fails its registered test on short pulses.
+In an I-JEPA-style ViT, switching weight decay mid-training shows that collapse is not decided early: raising it at epoch 20 of 50 still removes directions, and lowering it brings lost directions back only partly, in one arm not at all.
+\end{abstract}

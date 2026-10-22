@@ -1,0 +1,641 @@
+#!/usr/bin/env python3
+"""Run one pinned nonlinear JEPA configuration on controlled data or CIFAR-10."""
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import io
+import json
+import math
+import os
+import platform
+import random
+import sys
+import time
+from dataclasses import asdict, dataclass, replace
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pyarrow.parquet as parquet
+import torch
+from PIL import Image
+from sklearn.linear_model import RidgeClassifier
+from torch import nn
+from torch.nn import functional as F
+
+PATCH_SIZE = 4
+NUM_PATCHES = 64
+IMAGE_SIZE = 32
+EMBED_DIMENSION = 192
+PREDICTOR_DIMENSION = 64
+ENCODER_DEPTH = 6
+PREDICTOR_HEADS = 4
+BATCH_SIZE = 256
+TIER_B_STEPS = 6_000
+TIER_C_EPOCHS = 50
+CHECKPOINTS = (0, 25, 50, 100, 250, 500, 1_000, 2_000, 4_000, 6_000)
+SEEDS = (0, 1, 2)
+EXTRA_SEEDS = {"b_reference": (3,)}
+EXTRA_SEED_CONFIGS = set(EXTRA_SEEDS)
+MASK_SAMPLER = "independent_patch_bernoulli"
+MASK_GEOMETRY = "independent_per_patch_no_contiguous_blocks"
+MASK_FRACTION_SEMANTICS = "expected_masked_fraction; per-example masked count is Binomial(64, mask_fraction)"
+TRAINING_MASK_POLICY = "independent Bernoulli patch visibility resampled for every training batch"
+RANK_EVALUATION_MASK_POLICY = "one fixed seeded Bernoulli context mask reused at every checkpoint"
+
+
+@dataclass(frozen=True)
+class Config:
+    config_id: str
+    tier: str
+    predictor_scale: float
+    predictor_depth: int
+    mask_fraction: float
+    ema_tau: float
+    weight_decay: float
+    predictor_weight_decay: float = 1.0e-4
+    predictor_lr_ratio: float = 1.0
+    epochs: int = 0
+    steps: int = TIER_B_STEPS
+    batch_size: int = BATCH_SIZE
+    hidden_dimension: int = EMBED_DIMENSION
+    predictor_dimension: int = PREDICTOR_DIMENSION
+    patch_size: int = PATCH_SIZE
+    num_patches: int = NUM_PATCHES
+
+
+class TransformerBlock(nn.Module):
+    def __init__(self, dimension: int, heads: int, mlp_ratio: int = 4):
+        super().__init__()
+        if dimension % heads:
+            raise ValueError("attention dimension must be divisible by head count")
+        self.dimension = dimension
+        self.heads = heads
+        self.norm_one = nn.LayerNorm(dimension)
+        self.query_key_value = nn.Linear(dimension, 3 * dimension)
+        self.attention_projection = nn.Linear(dimension, dimension)
+        self.norm_two = nn.LayerNorm(dimension)
+        self.mlp = nn.Sequential(
+            nn.Linear(dimension, mlp_ratio * dimension),
+            nn.GELU(),
+            nn.Linear(mlp_ratio * dimension, dimension),
+        )
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        normalized = self.norm_one(inputs)
+        batch_size, token_count, dimension = normalized.shape
+        query_key_value = self.query_key_value(normalized).reshape(
+            batch_size, token_count, 3, self.heads, dimension // self.heads
+        ).permute(2, 0, 3, 1, 4)
+        attended = F.scaled_dot_product_attention(
+            query_key_value[0], query_key_value[1], query_key_value[2]
+        )
+        attended = attended.transpose(1, 2).reshape(batch_size, token_count, dimension)
+        outputs = inputs + self.attention_projection(attended)
+        return outputs + self.mlp(self.norm_two(outputs))
+
+
+class ViTEncoder(nn.Module):
+    def __init__(self, depth: int = ENCODER_DEPTH, dimension: int = EMBED_DIMENSION):
+        super().__init__()
+        self.patch = nn.Conv2d(3, dimension, kernel_size=PATCH_SIZE, stride=PATCH_SIZE, bias=True)
+        self.position = nn.Parameter(torch.zeros(1, NUM_PATCHES, dimension))
+        self.blocks = nn.ModuleList([TransformerBlock(dimension, heads=3) for _ in range(depth)])
+        self.norm = nn.LayerNorm(dimension)
+        nn.init.trunc_normal_(self.position, std=0.02)
+
+    def forward(self, images: torch.Tensor) -> torch.Tensor:
+        patches = self.patch(images).flatten(2).transpose(1, 2)
+        outputs = patches + self.position
+        for block in self.blocks:
+            outputs = block(outputs)
+        return self.norm(outputs)
+
+
+class Predictor(nn.Module):
+    def __init__(self, dimension: int, predictor_dimension: int, depth: int, scale: float):
+        super().__init__()
+        self.input_projection = nn.Linear(dimension, predictor_dimension)
+        self.blocks = nn.ModuleList([TransformerBlock(predictor_dimension, PREDICTOR_HEADS, mlp_ratio=4) for _ in range(depth)])
+        self.norm = nn.LayerNorm(predictor_dimension)
+        self.output_projection = nn.Linear(predictor_dimension, dimension)
+        self.scale = scale
+        nn.init.normal_(self.output_projection.weight, std=1.0 / math.sqrt(predictor_dimension))
+        nn.init.zeros_(self.output_projection.bias)
+
+    def forward(self, embeddings: torch.Tensor) -> torch.Tensor:
+        outputs = self.input_projection(embeddings)
+        for block in self.blocks:
+            outputs = block(outputs)
+        return self.scale * self.output_projection(self.norm(outputs))
+
+
+class JEPA(nn.Module):
+    def __init__(self, config: Config):
+        super().__init__()
+        self.encoder = ViTEncoder()
+        self.predictor = Predictor(EMBED_DIMENSION, config.predictor_dimension, config.predictor_depth, config.predictor_scale)
+        self.target_encoder = ViTEncoder()
+        self.target_encoder.load_state_dict(self.encoder.state_dict())
+        for parameter in self.target_encoder.parameters():
+            parameter.requires_grad_(False)
+
+    @torch.no_grad()
+    def update_target(self, tau: float) -> None:
+        for target_parameter, online_parameter in zip(self.target_encoder.parameters(), self.encoder.parameters()):
+            target_parameter.mul_(tau).add_(online_parameter, alpha=1.0 - tau)
+
+
+def write_csv(path: Path, rows: list[dict[str, Any]], fields: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def configs() -> list[Config]:
+    reference = dict(predictor_scale=1.0, predictor_depth=2, mask_fraction=0.5, ema_tau=0.99, weight_decay=1.0e-4)
+    values: list[Config] = [Config("b_reference", "B_controlled", **reference)]
+    values.extend([
+        Config("b_scale_low", "B_controlled", **{**reference, "predictor_scale": 0.5}),
+        Config("b_scale_high", "B_controlled", **{**reference, "predictor_scale": 2.0}),
+        Config("b_depth_shallow", "B_controlled", **{**reference, "predictor_depth": 1}),
+        Config("b_depth_deep", "B_controlled", **{**reference, "predictor_depth": 3}),
+        Config("b_mask_low", "B_controlled", **{**reference, "mask_fraction": 0.25}),
+        Config("b_mask_high", "B_controlled", **{**reference, "mask_fraction": 0.75}),
+        Config("b_ema_fast", "B_controlled", **{**reference, "ema_tau": 0.9}),
+        Config("b_ema_slow", "B_controlled", **{**reference, "ema_tau": 0.999}),
+    ])
+    paired = [
+        ("scale_low", {"predictor_scale": 0.5}),
+        ("scale_high", {"predictor_scale": 2.0}),
+        ("mask_low", {"mask_fraction": 0.25}),
+        ("mask_high", {"mask_fraction": 0.75}),
+    ]
+    for name, change in paired:
+        values.append(Config(f"b_{name}_decay_zero", "B_controlled", **{**reference, **change, "weight_decay": 0.0}))
+        values.append(Config(f"b_{name}_decay_strong", "B_controlled", **{**reference, **change, "weight_decay": 5.0e-4}))
+    return values
+
+
+def config_by_id(config_id: str) -> Config:
+    candidates = configs()
+    for config in candidates:
+        if config.config_id == config_id:
+            if config.tier == "C_real_cifar10":
+                return config
+            return config
+    if config_id.startswith("c_"):
+        reference = dict(predictor_scale=1.0, predictor_depth=2, mask_fraction=0.5, ema_tau=0.99, weight_decay=1.0e-4)
+        changes = {
+            "c_reference": {},
+            "c_scale_low": {"predictor_scale": 0.5},
+            "c_scale_high": {"predictor_scale": 2.0},
+            "c_mask_low": {"mask_fraction": 0.25},
+            "c_mask_high": {"mask_fraction": 0.75},
+            "c_ema_slow": {"ema_tau": 0.999},
+        }
+        if config_id not in changes:
+            raise KeyError(f"unknown configuration: {config_id}")
+        return Config(config_id, "C_real_cifar10", **{**reference, **changes[config_id]}, epochs=TIER_C_EPOCHS, steps=0)
+    raise KeyError(f"unknown configuration: {config_id}")
+
+
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.set_num_threads(min(4, os.cpu_count() or 1))
+    torch.set_num_interop_threads(1)
+
+
+def patchify(images: torch.Tensor) -> torch.Tensor:
+    batch_size, channels, height, width = images.shape
+    patches = images.reshape(batch_size, channels, height // PATCH_SIZE, PATCH_SIZE, width // PATCH_SIZE, PATCH_SIZE)
+    return patches.permute(0, 2, 4, 1, 3, 5).reshape(batch_size, NUM_PATCHES, channels * PATCH_SIZE * PATCH_SIZE)
+
+
+def unpatchify(patches: torch.Tensor) -> torch.Tensor:
+    batch_size = patches.shape[0]
+    channels = 3
+    images = patches.reshape(batch_size, IMAGE_SIZE // PATCH_SIZE, IMAGE_SIZE // PATCH_SIZE, channels, PATCH_SIZE, PATCH_SIZE)
+    return images.permute(0, 3, 1, 4, 2, 5).reshape(batch_size, channels, IMAGE_SIZE, IMAGE_SIZE)
+
+
+def mask_views(images: torch.Tensor, mask_fraction: float, generator: torch.Generator) -> tuple[torch.Tensor, torch.Tensor]:
+    patches = patchify(images)
+    visible = torch.rand((images.shape[0], NUM_PATCHES), generator=generator, device=images.device) >= mask_fraction
+    context = unpatchify(patches * visible.unsqueeze(-1))
+    return context, ~visible
+
+
+def controlled_data(seed: int = 0) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    generator = torch.Generator().manual_seed(seed)
+    coordinates = torch.linspace(-1.0, 1.0, IMAGE_SIZE)
+    grid_x, grid_y = torch.meshgrid(coordinates, coordinates, indexing="ij")
+    patterns: list[torch.Tensor] = []
+    for frequency in range(1, 9):
+        patterns.append(torch.sin(frequency * math.pi * grid_x) * torch.cos((frequency + 1) * math.pi * grid_y))
+    pattern_tensor = torch.stack(patterns)
+    coefficients = torch.randn((12_288, len(patterns)), generator=generator)
+    images = torch.einsum("nk,kxy->nxy", coefficients, pattern_tensor)
+    images = images.unsqueeze(1).repeat(1, 3, 1, 1)
+    images += 0.1 * torch.randn(images.shape, generator=generator)
+    images = images / images.abs().amax(dim=(1, 2, 3), keepdim=True).clamp_min(1.0)
+    labels = torch.argmax(coefficients[:, :10], dim=1)
+    return images[:10_240], images[10_240:], labels[:10_240], labels[10_240:]
+
+
+def decode_parquet(path: Path) -> tuple[torch.Tensor, torch.Tensor]:
+    table = parquet.read_table(path, columns=["img", "label"])
+    image_structs = table["img"].to_pylist()
+    images = np.empty((len(image_structs), 3, IMAGE_SIZE, IMAGE_SIZE), dtype=np.float32)
+    for index, image_struct in enumerate(image_structs):
+        with Image.open(io.BytesIO(image_struct["bytes"])) as image:
+            images[index] = np.asarray(image.convert("RGB"), dtype=np.float32).transpose(2, 0, 1) / 255.0
+    return torch.from_numpy(images), torch.tensor(np.asarray(table["label"].to_numpy(), dtype=np.int64))
+
+
+def cifar_data(data_root: Path) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, dict[str, Any]]:
+    train_path = data_root / "train-00000-of-00001.parquet"
+    test_path = data_root / "test-00000-of-00001.parquet"
+    train_images, train_labels = decode_parquet(train_path)
+    test_images, test_labels = decode_parquet(test_path)
+    mean = train_images.mean(dim=(0, 2, 3), keepdim=True)
+    standard_deviation = train_images.std(dim=(0, 2, 3), keepdim=True).clamp_min(1.0e-6)
+    train_images = (train_images - mean) / standard_deviation
+    test_images = (test_images - mean) / standard_deviation
+    hashes = {}
+    for path in (train_path, test_path):
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        hashes[path.name] = {"bytes": path.stat().st_size, "sha256": digest}
+    metadata = {
+        "dataset": "CIFAR-10",
+        "source": "Hugging Face dataset uoft-cs/cifar10, plain_text parquet",
+        "source_revision": "0b2714987fa478483af9968de7c934580d0bb9a2",
+        "train_rows": int(len(train_images)),
+        "test_rows": int(len(test_images)),
+        "files": hashes,
+        "normalization": "train-channel mean and standard deviation",
+    }
+    return train_images, test_images, train_labels, test_labels, metadata
+
+
+def covariance_eigendecomposition(embeddings: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
+    centered = embeddings - embeddings.mean(dim=0, keepdim=True)
+    covariance = centered.T @ centered / max(len(embeddings) - 1, 1)
+    values, vectors = torch.linalg.eigh(covariance)
+    return (
+        values.flip(0).detach().cpu().numpy(),
+        vectors.flip(1).detach().cpu().numpy(),
+    )
+
+
+def covariance_spectrum(embeddings: torch.Tensor) -> np.ndarray:
+    values, _ = covariance_eigendecomposition(embeddings)
+    return values
+
+
+def align_eigendecomposition(
+    previous_vectors: np.ndarray,
+    current_values: np.ndarray,
+    current_vectors: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    overlaps = np.clip(np.abs(previous_vectors.T @ current_vectors), 0.0, 1.0)
+    available = set(range(current_vectors.shape[1]))
+    permutation: list[int] = []
+    for previous_index in range(previous_vectors.shape[1]):
+        current_index = max(available, key=lambda index: overlaps[previous_index, index])
+        permutation.append(current_index)
+        available.remove(current_index)
+    permutation_array = np.asarray(permutation, dtype=int)
+    return (
+        current_values[permutation_array],
+        current_vectors[:, permutation_array],
+        overlaps[np.arange(len(permutation_array)), permutation_array],
+    )
+
+
+def effective_rank(values: np.ndarray) -> float:
+    values = np.clip(np.asarray(values, dtype=float), 0.0, None)
+    total = values.sum()
+    if total <= 0:
+        return 0.0
+    probabilities = values[values > 0] / total
+    return float(np.exp(-np.sum(probabilities * np.log(probabilities))))
+
+
+def numerical_rank(values: np.ndarray, threshold: float = 1.0e-3) -> int:
+    maximum = float(np.max(values, initial=0.0))
+    return int(np.sum(values / maximum >= threshold)) if maximum > 0 else 0
+
+
+@torch.no_grad()
+def measure_spectra(
+    model: JEPA,
+    context_images: torch.Tensor,
+    target_images: torch.Tensor,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    model.encoder.eval()
+    model.target_encoder.eval()
+    online_pooled = model.encoder(context_images).mean(dim=1)
+    target_pooled = model.target_encoder(target_images).mean(dim=1)
+    online_values, online_vectors = covariance_eigendecomposition(online_pooled)
+    target_values, target_vectors = covariance_eigendecomposition(target_pooled)
+    return online_values, target_values, online_vectors, target_vectors
+
+
+@torch.no_grad()
+def frozen_embeddings(model: JEPA, images: torch.Tensor, batch_size: int = 512) -> np.ndarray:
+    model.encoder.eval()
+    values: list[np.ndarray] = []
+    for start in range(0, len(images), batch_size):
+        pooled = model.encoder(images[start : start + batch_size]).mean(dim=1)
+        values.append(pooled.cpu().numpy())
+    return np.concatenate(values, axis=0)
+
+
+def training_steps(config: Config, n_examples: int) -> int:
+    if config.tier == "C_real_cifar10":
+        return config.epochs * math.ceil(n_examples / config.batch_size)
+    return config.steps
+
+
+def train(config: Config, seed: int, data: tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor], output_directory: Path) -> None:
+    set_seed(seed)
+    train_images, test_images, train_labels, test_labels = data
+    model = JEPA(config)
+    encoder_parameters = list(model.encoder.parameters())
+    predictor_parameters = list(model.predictor.parameters())
+    optimizer = torch.optim.AdamW(
+        [
+            {"params": encoder_parameters, "lr": 3.0e-4, "weight_decay": config.weight_decay},
+            {"params": predictor_parameters, "lr": 3.0e-4 * config.predictor_lr_ratio, "weight_decay": config.predictor_weight_decay},
+        ]
+    )
+    generator = torch.Generator().manual_seed(seed + 50_000)
+    sample_count = min(len(train_images), 512)
+    rank_images = train_images[:sample_count]
+    rank_mask_seed = seed + 90_000
+    rank_context_images, _ = mask_views(
+        rank_images,
+        config.mask_fraction,
+        torch.Generator().manual_seed(rank_mask_seed),
+    )
+    steps_per_epoch = max(math.ceil(len(train_images) / config.batch_size), 1)
+    total_steps = training_steps(config, len(train_images))
+    checkpoints = {step for step in CHECKPOINTS if step <= total_steps}
+    if config.tier == "C_real_cifar10":
+        checkpoints.update(
+            epoch * steps_per_epoch for epoch in range(10, config.epochs + 1, 10)
+        )
+    checkpoints.add(total_steps)
+    trajectory_rows: list[dict[str, Any]] = []
+    losses: dict[int, float] = {}
+    spectra: dict[int, np.ndarray] = {}
+    target_spectra: dict[int, np.ndarray] = {}
+    online_alignment_overlaps: dict[int, np.ndarray] = {}
+    target_alignment_overlaps: dict[int, np.ndarray] = {}
+    previous_online_vectors: np.ndarray | None = None
+    previous_target_vectors: np.ndarray | None = None
+    start_time = time.time()
+    for step in range(total_steps + 1):
+        if step in checkpoints:
+            values, target_values, online_vectors, target_vectors = measure_spectra(
+                model, rank_context_images, rank_images
+            )
+            if previous_online_vectors is None:
+                online_overlaps = np.ones(len(values), dtype=float)
+                target_overlaps = np.ones(len(target_values), dtype=float)
+            else:
+                values, online_vectors, online_overlaps = align_eigendecomposition(
+                    previous_online_vectors, values, online_vectors
+                )
+                target_values, target_vectors, target_overlaps = align_eigendecomposition(
+                    previous_target_vectors, target_values, target_vectors
+                )
+            previous_online_vectors = online_vectors
+            previous_target_vectors = target_vectors
+            spectra[step] = values
+            target_spectra[step] = target_values
+            online_alignment_overlaps[step] = online_overlaps
+            target_alignment_overlaps[step] = target_overlaps
+            losses[step] = float("nan") if step == 0 else losses.get(step, float("nan"))
+            for direction_index, eigenvalue in enumerate(values):
+                trajectory_rows.append(
+                    {
+                        "tier": config.tier,
+                        "config_id": config.config_id,
+                        "run_id": f"{config.config_id}_seed{seed}",
+                        "seed": seed,
+                        "step": step,
+                        "epoch": step / steps_per_epoch,
+                        "time": step * 3.0e-4,
+                        "predictor_scale": config.predictor_scale,
+                        "predictor_depth": config.predictor_depth,
+                        "mask_fraction": config.mask_fraction,
+                        "mask_sampler": MASK_SAMPLER,
+                        "mask_geometry": MASK_GEOMETRY,
+                        "mask_fraction_semantics": MASK_FRACTION_SEMANTICS,
+                        "ema_tau": config.ema_tau,
+                        "weight_decay": config.weight_decay,
+                        "predictor_weight_decay": config.predictor_weight_decay,
+                        "predictor_lr_ratio": config.predictor_lr_ratio,
+                        "direction_index": direction_index,
+                        "representation_eigenvalue": float(eigenvalue),
+                        "target_representation_eigenvalue": float(target_values[direction_index]),
+                        "effective_rank": effective_rank(values),
+                        "numerical_rank": numerical_rank(values),
+                        "loss": losses[step],
+                        "theory_growth_rate": float("nan"),
+                        "measured_growth_rate": float("nan"),
+                        "eigenvector_alignment_overlap": float(online_alignment_overlaps[step][direction_index]),
+                        "target_eigenvector_alignment_overlap": float(target_alignment_overlaps[step][direction_index]),
+                        "rank_measure": "online_encoder_masked_context_covariance",
+                        "target_rank_measure": "target_encoder_full_image_covariance",
+                        "theory_model_scope": "linear_theory_not_exact_for_nonlinear_vit",
+                        "status": "final",
+                    }
+                )
+        if step == total_steps:
+            break
+        indices = torch.randint(len(train_images), (config.batch_size,), generator=generator)
+        images = train_images[indices]
+        context, target_mask = mask_views(images, config.mask_fraction, generator)
+        online_embeddings = model.encoder(context)
+        with torch.no_grad():
+            target_embeddings = model.target_encoder(images)
+        predictions = model.predictor(online_embeddings)
+        target_mask_float = target_mask.unsqueeze(-1).float()
+        loss = ((predictions - target_embeddings.detach()) ** 2 * target_mask_float).sum() / target_mask_float.sum().clamp_min(1.0) / EMBED_DIMENSION
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(list(model.encoder.parameters()) + list(model.predictor.parameters()), 1.0)
+        optimizer.step()
+        model.update_target(config.ema_tau)
+        if step + 1 in checkpoints:
+            losses[step + 1] = float(loss.detach())
+    late_step = max(spectra)
+    early_steps = [step for step in (25, 50, 100, 250) if step in spectra]
+    if len(early_steps) >= 2:
+        first_step, last_early_step = min(early_steps), max(early_steps)
+        early_slopes = (
+            np.log(np.maximum(spectra[last_early_step], 1.0e-30))
+            - np.log(np.maximum(spectra[first_step], 1.0e-30))
+        ) / ((last_early_step - first_step) * 3.0e-4)
+    else:
+        early_slopes = np.zeros(EMBED_DIMENSION)
+    early_predicted_rank = int(np.sum(early_slopes > 0.0))
+    early_baseline_rank = numerical_rank(spectra[first_step]) if early_steps else 0
+    early_rank_at_end = numerical_rank(spectra[last_early_step]) if early_steps else 0
+    for row in trajectory_rows:
+        if row["direction_index"] < len(early_slopes):
+            row["measured_growth_rate"] = float(early_slopes[row["direction_index"]])
+    probe_accuracy = float("nan")
+    if config.tier == "C_real_cifar10":
+        train_embeddings = frozen_embeddings(model, train_images)
+        test_embeddings = frozen_embeddings(model, test_images)
+        probe = RidgeClassifier(alpha=1.0)
+        probe.fit(train_embeddings, train_labels.numpy())
+        probe_accuracy = float(np.mean(probe.predict(test_embeddings) == test_labels.numpy()))
+    summary = {
+        "tier": config.tier,
+        "config_id": config.config_id,
+        "run_id": f"{config.config_id}_seed{seed}",
+        "seed": seed,
+        "predictor_scale": config.predictor_scale,
+        "predictor_depth": config.predictor_depth,
+        "mask_fraction": config.mask_fraction,
+        "mask_sampler": MASK_SAMPLER,
+        "mask_geometry": MASK_GEOMETRY,
+        "mask_fraction_semantics": MASK_FRACTION_SEMANTICS,
+        "training_mask_policy": TRAINING_MASK_POLICY,
+        "ema_tau": config.ema_tau,
+        "weight_decay": config.weight_decay,
+        "predictor_weight_decay": config.predictor_weight_decay,
+        "predictor_lr_ratio": config.predictor_lr_ratio,
+        "steps": total_steps,
+        "epochs": config.epochs,
+        "batch_size": config.batch_size,
+        "parameter_count": sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad),
+        "early_window_first_step": min(early_steps) if early_steps else 0,
+        "early_window_last_step": max(early_steps) if early_steps else 0,
+        "early_predicted_rank": early_predicted_rank,
+        "early_baseline_rank": early_baseline_rank,
+        "early_rank_at_end": early_rank_at_end,
+        "early_prediction_definition": "count of aligned online covariance eigenvalue log-slopes > 0 over steps 25-250",
+        "predicted_rank_phi": float("nan"),
+        "predicted_rank_fixedpoint": float("nan"),
+        "rank_prediction_scope": "not_applicable_to_nonlinear_vit",
+        "rank_sample_count": sample_count,
+        "rank_evaluation_mask_policy": RANK_EVALUATION_MASK_POLICY,
+        "rank_evaluation_mask_sampler": MASK_SAMPLER,
+        "rank_evaluation_mask_seed": rank_mask_seed,
+        "late_checkpoint_step": late_step,
+        "rank_measure": "online_encoder_masked_context_covariance",
+        "target_rank_measure": "target_encoder_full_image_covariance",
+        "eigenvector_alignment": "greedy maximum-overlap matching between consecutive checkpoints",
+        "linear_probe_protocol": "RidgeClassifier(alpha=1.0), frozen mean-pooled online encoder on full images, all train/test rows",
+        "late_effective_rank": effective_rank(spectra[late_step]),
+        "late_numerical_rank": numerical_rank(spectra[late_step]),
+        "late_target_effective_rank": effective_rank(target_spectra[late_step]),
+        "late_target_numerical_rank": numerical_rank(target_spectra[late_step]),
+        "rank_error": numerical_rank(spectra[late_step]) - early_predicted_rank,
+        "probe_accuracy": probe_accuracy,
+        "final_loss": losses.get(late_step, float("nan")),
+        "wall_clock_seconds": time.time() - start_time,
+        "torch": torch.__version__,
+        "status": "final",
+    }
+    output_directory.mkdir(parents=True, exist_ok=True)
+    write_csv(output_directory / f"trajectory_seed{seed}.csv", trajectory_rows, list(trajectory_rows[0].keys()))
+    write_csv(output_directory / f"summary_seed{seed}.csv", [summary], list(summary.keys()))
+    with (output_directory / f"config_seed{seed}.json").open("w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "config": asdict(config),
+                "seed": seed,
+                "protocol": {
+                    "mask_sampler": MASK_SAMPLER,
+                    "mask_geometry": MASK_GEOMETRY,
+                    "mask_fraction_semantics": MASK_FRACTION_SEMANTICS,
+                    "training_mask_policy": TRAINING_MASK_POLICY,
+                    "rank_evaluation_mask_policy": RANK_EVALUATION_MASK_POLICY,
+                    "rank_evaluation_mask_sampler": MASK_SAMPLER,
+                },
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config-id", required=True)
+    parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--data-root", type=Path, default=Path("data/cifar10"))
+    parser.add_argument("--output-root", type=Path, default=Path("results/raw/vit_runs"))
+    parser.add_argument("--steps", type=int, default=None, help="override Tier-B steps for a pilot")
+    parser.add_argument("--epochs", type=int, default=None, help="override Tier-C epochs for a pilot")
+    args = parser.parse_args()
+    config = config_by_id(args.config_id)
+    if args.steps is not None:
+        if config.tier != "B_controlled":
+            raise ValueError("--steps is only valid for Tier B")
+        config = replace(config, steps=args.steps)
+    if args.epochs is not None:
+        if config.tier != "C_real_cifar10":
+            raise ValueError("--epochs is only valid for Tier C")
+        config = replace(config, epochs=args.epochs)
+    if config.tier == "B_controlled":
+        data = controlled_data()
+        data_metadata = {"dataset": "generated controlled Fourier-pattern images", "seed": 0}
+    else:
+        data = cifar_data(args.data_root)
+        data_metadata = data[-1]
+        data = data[:4]
+    output_directory = args.output_root / config.config_id
+    train(config, args.seed, data, output_directory)
+    with (output_directory / "data_provenance.json").open("w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "config_id": config.config_id,
+                "tier": config.tier,
+                "data": data_metadata,
+                "python": sys.version,
+                "torch": torch.__version__,
+                "numpy": np.__version__,
+                "pyarrow": __import__("pyarrow").__version__,
+                "pillow": Image.__version__,
+                "platform": platform.platform(),
+                "masking": {
+                    "sampler": MASK_SAMPLER,
+                    "geometry": MASK_GEOMETRY,
+                    "fraction_semantics": MASK_FRACTION_SEMANTICS,
+                    "training_policy": TRAINING_MASK_POLICY,
+                    "rank_evaluation_policy": RANK_EVALUATION_MASK_POLICY,
+                    "rank_evaluation_sampler": MASK_SAMPLER,
+                },
+            },
+            handle,
+            indent=2,
+            sort_keys=True,
+        )
+        handle.write("\n")
+    print(json.dumps({"config_id": config.config_id, "seed": args.seed, "status": "PASS"}, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

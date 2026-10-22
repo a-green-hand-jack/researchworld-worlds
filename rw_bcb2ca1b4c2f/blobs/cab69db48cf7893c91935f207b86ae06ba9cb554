@@ -1,0 +1,71 @@
+{\scriptsize
+\setlength{\tabcolsep}{2pt}
+\textbf{(a)} race, the two static baselines and the signed form of $\mu$\\[2pt]
+\begin{tabular}{@{}lrccccc@{}}
+\toprule
+Arm & $n$ & race & window & static & $\mu$ signed & \shortstack{measured $>$\\ $\mu$ signed}  \\
+\midrule
+grid & 360 & \textbf{0.11{\tiny\,[0.08,0.14]}} & 3.51{\tiny\,[3.16,3.84]} & 11.74{\tiny\,[11.09,12.38]} & 3.51{\tiny\,[3.16,3.84]} & 43.1\% \\
+EMA rate & 150 & \textbf{0.26{\tiny\,[0.19,0.34]}} & 3.88{\tiny\,[3.47,4.29]} & 10.51{\tiny\,[9.84,11.20]} & 3.88{\tiny\,[3.47,4.29]} & 75.3\% \\
+depth & 90 & \textbf{0.81{\tiny\,[0.66,0.97]}} & 4.42{\tiny\,[3.98,4.84]} & 10.41{\tiny\,[9.94,10.88]} & 4.42{\tiny\,[3.98,4.84]} & 83.3\% \\
+aligned, pooled & 600 & \textbf{0.25{\tiny\,[0.21,0.29]}} & 3.74{\tiny\,[3.50,3.99]} & 11.23{\tiny\,[10.80,11.69]} & 3.74{\tiny\,[3.50,3.99]} & 57.2\% \\
+non-commuting & 90 & \textbf{0.11{\tiny\,[0.06,0.18]}} & 1.06{\tiny\,[0.73,1.41]} & 12.50{\tiny\,[11.90,13.09]} & 1.50{\tiny\,[1.08,1.97]} & 38.9\% \\
+random predictor & 105 & \textbf{0.69{\tiny\,[0.55,0.83]}} & -- & 13.34{\tiny\,[13.01,13.68]} & 10.67{\tiny\,[9.81,11.47]} & 1.0\% \\
+finite batch & 30 & \textbf{0.63{\tiny\,[0.37,0.90]}} & 4.87{\tiny\,[4.17,5.57]} & 9.13{\tiny\,[8.33,9.90]} & 4.87{\tiny\,[4.17,5.57]} & 100.0\% \\
+balanced init & 60 & \textbf{0.00{\tiny\,[0.00,0.00]}} & -- & 4.60{\tiny\,[3.37,5.93]} & 1.20{\tiny\,[0.62,1.87]} & 25.0\% \\
+\midrule
+pop., cyclic masks & 648 & \textbf{0.03{\tiny\,[0.02,0.05]}} & 1.04{\tiny\,[0.91,1.17]} & 4.04{\tiny\,[3.81,4.27]} & 1.04{\tiny\,[0.91,1.17]} & 26.4\% \\
+pop., non-cyclic block & 216 & \textbf{0.19{\tiny\,[0.12,0.25]}} & 0.62{\tiny\,[0.47,0.79]} & 3.00{\tiny\,[2.74,3.25]} & 0.33{\tiny\,[0.27,0.39]} & 33.3\% \\
+SGD & 108 & \textbf{0.47{\tiny\,[0.29,0.68]}} & 1.64{\tiny\,[1.27,2.02]} & 3.03{\tiny\,[2.59,3.48]} & 1.64{\tiny\,[1.27,2.02]} & 25.0\% \\
+tanh encoder & 108 & 10.58{\tiny\,[7.60,13.92]} & 10.86{\tiny\,[7.70,14.44]} & 10.58{\tiny\,[7.80,13.70]} & 10.86{\tiny\,[7.70,14.44]} & 55.6\% \\
+two-layer tanh & 108 & 2.69{\tiny\,[2.16,3.28]} & 1.97{\tiny\,[1.49,2.48]} & 3.75{\tiny\,[3.19,4.32]} & \textbf{1.90{\tiny\,[1.41,2.44]}} & 25.0\% \\
+no predictor & 108 & \textbf{0.00{\tiny\,[0.00,0.00]}} & -- & -- & \textbf{0.00{\tiny\,[0.00,0.00]}} & 0.0\% \\
+\bottomrule
+\end{tabular}
+\\[6pt]
+\textbf{(b)} variants of $\mu$ with the predictor side of Eq.~51 (same runs)\\[2pt]
+\begin{tabular}{@{}lrccc@{}}
+\toprule
+Arm & $n$ & $\mu$ (Eq.~51, $q{=}s$) & $\mu$ (Eq.~51, $q$ paired) & $\mu$ signed, $q$ paired \\
+\midrule
+grid & 360 & 3.51{\tiny\,[3.16,3.84]} & 3.51{\tiny\,[3.16,3.84]} & 3.51{\tiny\,[3.16,3.84]} \\
+EMA rate & 150 & 3.88{\tiny\,[3.47,4.29]} & 3.88{\tiny\,[3.47,4.29]} & 3.88{\tiny\,[3.47,4.29]} \\
+depth & 90 & 4.42{\tiny\,[3.98,4.84]} & 4.42{\tiny\,[3.98,4.84]} & 4.42{\tiny\,[3.98,4.84]} \\
+aligned, pooled & 600 & 3.74{\tiny\,[3.50,3.99]} & 3.74{\tiny\,[3.50,3.99]} & 3.74{\tiny\,[3.50,3.99]} \\
+non-commuting & 90 & 1.50{\tiny\,[1.08,1.97]} & 1.50{\tiny\,[1.08,1.97]} & 1.50{\tiny\,[1.08,1.97]} \\
+random predictor & 105 & 10.67{\tiny\,[9.81,11.47]} & 3.02{\tiny\,[2.70,3.34]} & 3.62{\tiny\,[3.18,4.03]} \\
+finite batch & 30 & 4.87{\tiny\,[4.17,5.57]} & 4.87{\tiny\,[4.17,5.57]} & 4.87{\tiny\,[4.17,5.57]} \\
+balanced init & 60 & 1.20{\tiny\,[0.62,1.87]} & 1.20{\tiny\,[0.62,1.87]} & 1.20{\tiny\,[0.62,1.87]} \\
+\midrule
+pop., cyclic masks & 648 & 9.86{\tiny\,[8.68,10.96]} & 9.86{\tiny\,[8.68,10.96]} & 1.04{\tiny\,[0.91,1.17]} \\
+pop., non-cyclic block & 216 & 0.53{\tiny\,[0.41,0.66]} & 0.53{\tiny\,[0.41,0.66]} & 0.33{\tiny\,[0.27,0.39]} \\
+SGD & 108 & 17.67{\tiny\,[13.97,21.25]} & 17.67{\tiny\,[13.97,21.25]} & 1.64{\tiny\,[1.27,2.02]} \\
+tanh encoder & 108 & 10.22{\tiny\,[7.88,12.74]} & 10.22{\tiny\,[7.88,12.74]} & 10.86{\tiny\,[7.70,14.44]} \\
+two-layer tanh & 108 & 9.44{\tiny\,[6.91,12.32]} & 9.44{\tiny\,[6.91,12.32]} & \textbf{1.90{\tiny\,[1.41,2.44]}} \\
+no predictor & 108 & \textbf{0.00{\tiny\,[0.00,0.00]}} & \textbf{0.00{\tiny\,[0.00,0.00]}} & \textbf{0.00{\tiny\,[0.00,0.00]}} \\
+\bottomrule
+\end{tabular}
+\\[6pt]
+\textbf{(c)} further variants of $\mu$ (same runs)\\[2pt]
+\begin{tabular}{@{}lrccc@{}}
+\toprule
+Arm & $n$ & $\mu$ sorted (Eq.~31) & $\mu$, no decay floor & $\mu$ exact linearisation \\
+\midrule
+grid & 360 & 3.51{\tiny\,[3.16,3.84]} & 4.63{\tiny\,[4.05,5.23]} & 3.51{\tiny\,[3.16,3.84]} \\
+EMA rate & 150 & 3.88{\tiny\,[3.47,4.29]} & 3.67{\tiny\,[3.27,4.07]} & 3.88{\tiny\,[3.47,4.29]} \\
+depth & 90 & 4.42{\tiny\,[3.98,4.84]} & 4.42{\tiny\,[3.97,4.88]} & 4.42{\tiny\,[3.98,4.84]} \\
+aligned, pooled & 600 & 3.74{\tiny\,[3.50,3.99]} & 4.36{\tiny\,[4.02,4.72]} & 3.74{\tiny\,[3.50,3.99]} \\
+non-commuting & 90 & 0.94{\tiny\,[0.68,1.24]} & 1.50{\tiny\,[1.08,1.97]} & 1.28{\tiny\,[0.91,1.69]} \\
+random predictor & 105 & 10.67{\tiny\,[9.81,11.47]} & 13.53{\tiny\,[12.28,14.74]} & 6.19{\tiny\,[5.48,6.94]} \\
+finite batch & 30 & 4.87{\tiny\,[4.17,5.57]} & 4.37{\tiny\,[3.50,5.23]} & 4.87{\tiny\,[4.17,5.57]} \\
+balanced init & 60 & 1.20{\tiny\,[0.62,1.87]} & 10.35{\tiny\,[8.42,12.35]} & 1.20{\tiny\,[0.62,1.87]} \\
+\midrule
+pop., cyclic masks & 648 & 9.03{\tiny\,[7.83,10.18]} & 11.44{\tiny\,[10.14,12.73]} & 1.04{\tiny\,[0.91,1.17]} \\
+pop., non-cyclic block & 216 & 0.81{\tiny\,[0.55,1.10]} & 10.19{\tiny\,[8.42,12.04]} & 0.26{\tiny\,[0.21,0.32]} \\
+SGD & 108 & 17.03{\tiny\,[13.27,20.90]} & 23.00{\tiny\,[18.70,27.01]} & 1.64{\tiny\,[1.27,2.02]} \\
+tanh encoder & 108 & \textbf{9.31{\tiny\,[6.89,11.98]}} & 15.06{\tiny\,[11.80,18.47]} & 10.86{\tiny\,[7.70,14.44]} \\
+two-layer tanh & 108 & 15.94{\tiny\,[12.29,19.77]} & 17.40{\tiny\,[13.62,21.27]} & 1.91{\tiny\,[1.38,2.52]} \\
+no predictor & 108 & \textbf{0.00{\tiny\,[0.00,0.00]}} & \textbf{0.00{\tiny\,[0.00,0.00]}} & \textbf{0.00{\tiny\,[0.00,0.00]}} \\
+\bottomrule
+\end{tabular}
+}

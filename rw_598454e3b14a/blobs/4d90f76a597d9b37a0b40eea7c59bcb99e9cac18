@@ -1,0 +1,72 @@
+"""E6 rung 1a development grid, rescored as the internal review of the rung-1a registration asks (post hoc,
+unregistered; no registered verdict changes):
+  * the tolerance applied per arm over L >= 2 and per L, with L = 1 (where race_deep_A1 is the delivered race and
+    equals race_depth1) as the control;
+  * the 'early' baseline read along the whole trajectory: the measured count at each of the 20 checkpoints
+    (5%, 10%, ..., 100% of T), so its value does not hinge on one outcome-dependent reading time; reported with the
+    earliest checkpoint at which it is at least as good as race_deep_A1;
+  * race_deep_1d labelled as a check of the alpha = 1 reduction (exact on the aligned arm), not as support for A1.
+Usage: python3 code/checks/e6_r1_byL.py results/e6/r1dev results/e6/r1dev/posthoc/byL.json"""
+import sys, os, json, gzip
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import e6_r1 as E
+
+PRIMARY = "race_deep_A1"
+
+
+def boot(x, B=2000, seed=0):
+    x = np.asarray(x, float); r = np.random.default_rng(seed)
+    m = x[r.integers(0, x.size, (B, x.size))].mean(1); return [float(np.quantile(m, 0.025)), float(np.quantile(m, 0.975))]
+
+
+def score(R):
+    if not R:
+        return dict(runs=0)
+    tru = np.array([r["truth"]["counts"][-1] for r in R])
+    ep = np.abs(np.array([r["pred"][PRIMARY] for r in R]) - tru)
+    out = dict(runs=len(R), primary=dict(mae=float(ep.mean()), mae_ci=boot(ep), within1=float((ep <= 1).mean())))
+    base = {}
+    for nm in R[0]["pred"]:
+        if nm == PRIMARY:
+            continue
+        e = np.abs(np.array([r["pred"][nm] for r in R]) - tru); d = e - ep
+        base[nm] = dict(mae=float(e.mean()), minus_primary=float(d.mean()), minus_primary_ci=boot(d))
+    out["baselines"] = base
+    traj = []
+    for j in range(len(R[0]["truth"]["counts"]) - 1):
+        e = np.abs(np.array([r["truth"]["counts"][j] for r in R]) - tru); d = e - ep
+        traj.append(dict(frac=(j + 1) / 20, mae=float(e.mean()), minus_primary=float(d.mean()), minus_primary_ci=boot(d)))
+    out["early_trajectory"] = traj
+    out["early_at_10pct_registered"] = traj[1]
+    tie = [x["frac"] for x in traj if x["mae"] <= out["primary"]["mae"]]
+    out["earliest_frac_early_as_good"] = tie[0] if tie else None
+    beat = [x["frac"] for x in traj if x["minus_primary_ci"][1] < 0]
+    out["earliest_frac_early_better_ci"] = beat[0] if beat else None
+    others = [k for k in base if k not in ("race_deep_1d",)]
+    out["tolerance_vs_static_and_race_baselines"] = bool(out["primary"]["within1"] >= 0.90 and
+                                                         all(base[k]["minus_primary_ci"][0] > 0 for k in others if k != "early"))
+    out["tolerance_with_early_10pct"] = bool(out["tolerance_vs_static_and_race_baselines"] and traj[1]["minus_primary_ci"][0] > 0)
+    return out
+
+
+if __name__ == "__main__":
+    d, outp = sys.argv[1], sys.argv[2]
+    rows = [json.loads(l) for l in gzip.open(os.path.join(d, "r1_dev_runs.jsonl.gz"), "rt")]
+    rows = [r for r in rows if r["truth"].get("counts")]
+    res = dict(status="post hoc on the development grid (unregistered; internal review of the rung-1a registration)",
+               note="race_deep_1d is a check of the alpha = 1 reduction (exact on the aligned arm), not support for A1",
+               command="code/checks/e6_r1_byL.py " + " ".join(sys.argv[1:]))
+    for arm in ("aligned", "generic"):
+        R = [r for r in rows if r["cfg"]["arm"] == arm]
+        res[arm] = dict(L_ge2=score([r for r in R if r["cfg"]["L"] >= 2]),
+                        **{f"L{L}": score([r for r in R if r["cfg"]["L"] == L]) for L in sorted({r["cfg"]["L"] for r in R})})
+    json.dump(res, open(outp, "w"), indent=1)
+    for arm in ("aligned", "generic"):
+        for k, v in res[arm].items():
+            if v.get("runs"):
+                print(arm, k, v["runs"], "A1 %.3f w1 %.3f" % (v["primary"]["mae"], v["primary"]["within1"]),
+                      "early10 %.3f %s" % (v["early_at_10pct_registered"]["mae"], [round(x, 3) for x in v["early_at_10pct_registered"]["minus_primary_ci"]]),
+                      "early@5%% %.3f" % v["early_trajectory"][0]["mae"], "tie@", v["earliest_frac_early_as_good"],
+                      "better@", v["earliest_frac_early_better_ci"], "tol(no early)", v["tolerance_vs_static_and_race_baselines"],
+                      "1d %.3f" % v["baselines"]["race_deep_1d"]["mae"], "depth1 %.2f staticL %.2f window %.2f" % tuple(v["baselines"][k]["mae"] for k in ("race_depth1", "staticL", "window")))

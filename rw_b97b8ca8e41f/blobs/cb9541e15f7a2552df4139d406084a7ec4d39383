@@ -1,0 +1,19 @@
+\section{Related work}
+\label{sec:related}
+
+\paragraph{Joint-embedding and predictive self-supervised learning.}
+Contrastive learning \citep{chen2020simclr} and redundancy reduction \citep{zbontar2021barlow,bardes2022vicreg} prevent collapse with explicit terms in the objective.
+BYOL \citep{grill2020byol} and SimSiam \citep{chen2021simsiam} showed that an asymmetric predictor with a stop-gradient suffices in practice; DINO \citep{caron2021dino} and data2vec \citep{baevski2022data2vec} use EMA teachers.
+I-JEPA \citep{assran2023ijepa}, V-JEPA \citep{bardes2024vjepa} and V-JEPA~2 \citep{assran2025vjepa2} predict in latent space from masked context, in contrast to masked autoencoders that reconstruct pixels \citep{he2022mae}.
+LeJEPA \citep{balestriero2025lejepa} replaces the heuristics with an explicit distributional regularizer; we instead explain why the heuristics work without one.
+
+\paragraph{Theory of non-contrastive learning.}
+The closest account is \citet{tian2021understanding}, who reduced linear BYOL/SimSiam with a symmetric predictor to decoupled per-eigenmode dynamics, found the weight-decay threshold above which only the collapsed fixed point remains, characterized the basins of attraction and gave a sufficient condition on the initialization for avoiding collapse, proved that removing the stop-gradient collapses the representation, and discussed the roles of the predictor learning rate and the EMA; DirectPred follows from it.
+Our \cref{prop:decouple,prop:window,prop:stopgrad} are the JEPA form of these results and reduce to them in a matched limit (\cref{app:prior}).
+We add three things: the context and target covariances of masked prediction, which make $s_j$ and $c_j$ direction- and mask-dependent (\cref{prop:masking}); the observation that the predictor drifts through each direction's window before it receives any signal, which turns the fixed-point analysis into a closed-form survival criterion and rank prediction (\cref{prop:survival,cor:depth}); and the dependence of the predictor-learning-rate effect on the weight-decay convention, which reconciles their fast-predictor observation with the opposite prediction under coupled decay.
+\Cref{tab:prior} in \cref{app:prior} states, for each of the closest accounts, which of our statements recovers its result and in which limit, and what our theory predicts beyond it.
+\citet{wang2021demystify} proved that weight decay discards directions with high augmentation variance, which is our threshold $\rho_js_j>4\lambda$ for two noisy views; \citet{littwin2024jepa} showed that deep linear JEPAs are biased towards features with large regression coefficients $\rho_j$, the quantity to which our predictor converges without weight decay and which bounds every window; \citet{ziyin2023shapes} derived when complete and dimensional collapse occur in the loss landscape near the origin, the counterpart of our fixed-point count, which over-predicts the rank reached from small initialization; \citet{simon2023stepwise} showed that joint-embedding methods learn eigenmodes one at a time with onset times logarithmic in the initialization scale, as in phase~I of our criterion, except that with a decaying predictor a direction whose onset comes after its window closes is never learned.
+\citet{zhuo2023rank} explained non-contrastive methods by a rank difference between the online and target branches; \citet{wen2022head} and \citet{halvagal2023implicit} studied the prediction head and its eigenvalues as an implicit variance regularizer; \citet{bao2023normalization} showed that feature normalization prevents collapse in these dynamics; \citet{li2022collapse} studied partial collapse empirically.
+
+Dimensional collapse was characterized for contrastive learning by \citet{jing2022dimensional}, and effective rank as a measure of representation quality by \citet{garrido2023rankme}.
+Our analysis uses the deep-linear-network tools of \citet{saxe2014exact}.

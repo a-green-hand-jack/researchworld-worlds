@@ -1,0 +1,23 @@
+"""Independent recomputation of the 20-seed Monte Carlo pi study (reviewer's own code)."""
+import csv, math, sys
+import numpy as np
+from scipy import stats
+
+N, K, ROOT = 1_000_000, 20, 20261019
+per_seed_csv = sys.argv[1]
+counts = []
+for ss in np.random.SeedSequence(ROOT).spawn(K):
+    g = np.random.Generator(np.random.PCG64(ss))
+    p = g.random((N, 2))
+    counts.append(int(((p * p).sum(axis=1) <= 1.0).sum()))
+est = 4 * np.array(counts) / N
+with open(per_seed_csv) as f:
+    theirs = [int(r['inside']) for r in csv.DictReader(f)]
+print('counts identical:', counts == theirs)
+m, s = est.mean(), est.std(ddof=1)
+h = stats.t.ppf(0.975, K - 1) * s / math.sqrt(K)
+print(f'total points {K*N}, total inside {sum(counts)}')
+print(f'mean {m!r} sd {s!r} halfwidth {h!r}')
+print(f'CI [{m-h!r}, {m+h!r}] contains pi: {m-h <= math.pi <= m+h}')
+print(f'signed error {m-math.pi!r}; |err|/SEM {abs(m-math.pi)/(s/math.sqrt(K)):.3f}')
+print(f'pooled 4*total_inside/total {4*sum(counts)/(K*N)!r}')

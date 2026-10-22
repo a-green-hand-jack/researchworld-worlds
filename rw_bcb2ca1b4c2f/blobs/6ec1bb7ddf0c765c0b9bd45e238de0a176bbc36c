@@ -1,0 +1,227 @@
+"""Retrospective, post hoc: rung 2's r_decay (code/e6_r2.py) on the 108 runs of the delivered E2 MLP arm (code/e2.py,
+exp = mlp: f(x) = W2 tanh(W1 x), H = 128, n = d = 64, minibatch SGD B = 64 on sampled fields and masks, P0 = p0 I,
+decay lam on W1, W2 and P). Inputs only: no training is re-run. The truths (rank_meas, #sv(W2) > 0.05 at t_end) were
+known, and r_decay was developed after E2's result on the rung-2 development grids.
+
+Per run, from its own seed (code/e2.py mlp_init: W1(0), W2(0), P0) and the delivered Monte Carlo sample of the hidden
+statistics (feature_stats: rng 10^6 + seed, 2e5 draws in chunks of 1e4, same draw order):
+  r_init_check  linjepa.n1_general on the statistics at initialisation = the delivered rank_pred; recomputed here as a
+                reproduction check of the inputs (must equal the delivered value on every run)
+  r_decay       e6_r2.n1g_tv with the statistics of W1(t) = (1 - eta lam)^step W1(0), recomputed every STAT_EVERY = 50
+                steps (as rung 2), same integrator, check spacing (10) and count (maximum over checks) as N1-general.
+                The statistics depend on W1 only through the scalar a = (1 - eta lam)^step, so S(a) is computed on the
+                fixed Monte Carlo sample at a grid of log a (step DLOG = 0.1, from 0 to log A_LIN) and S(a)/a^2 is
+                interpolated linearly in log a; below A_LIN, S(a) = a^2 S(A_LIN) / A_LIN^2 (tanh linear there;
+                pre-activation sd times A_LIN is recorded per run).
+Not in r_decay: the SGD noise in W1's drift (W1 moves by gradient noise of order |W2| and by minibatch sampling), the
+masks' sampling noise in W2's own dynamics, and any W1 learning once W2 has grown.
+Compared on the same 108 runs with the delivered r_init (2.69) and the mu variants of results/baselines/dvd_e2_runs.csv
+(dvd_signed 1.90, dvd_exact 1.91, dvd_pq 9.44): MAE, within-1, bias, exceed (share of runs with truth > count), pooled
+and per mask family; configuration-cluster bootstrap CIs (36 clusters fam x r x lam, 3 seeds each) and seed-cluster CIs
+(3 clusters) of err(baseline) - err(r_decay).
+Usage: python3 code/checks/e2_mlp_rdecay.py run OUTDIR [NPROC] | pilot ID | score OUTDIR"""
+import sys, os, json, time, csv, gzip, hashlib
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, ".."))
+import e2
+import e6_r2
+from linjepa import n1_general
+
+ROOT = os.path.join(HERE, "..", "..")
+M_MC = 200000
+CHUNK = 10000
+DLOG = 0.1
+A_LIN = 0.01
+assert e6_r2.STAT_EVERY == 50 and e6_r2.CHECK_EVERY == 10
+
+
+def runs():
+    cf = [c for c in e2.configs() if c["exp"] == "mlp"]
+    tr = {}
+    for l in open(os.path.join(ROOT, "results", "e2", "e2_runs.jsonl")):
+        r = json.loads(l); tr[r["id"]] = r
+    mu = {int(r["id"]): r for r in csv.DictReader(open(os.path.join(ROOT, "results", "baselines", "dvd_e2_runs.csv")))
+          if r["exp"] == "mlp"}
+    assert len(cf) == 108 and set(mu) == {c["id"] for c in cf}
+    return cf, tr, mu
+
+
+def mc_preacts(cfg):
+    """The delivered feature_stats draws, kept as pre-activations W1(0) x (context, target)."""
+    _, W1, _, _ = e2.mlp_init(cfg["seed"], cfg["p0"], cfg["w0"])
+    rng = np.random.default_rng(10 ** 6 + cfg["seed"])
+    Ac, At = [], []
+    for _ in range(M_MC // CHUNK):
+        xc, xt = e2.sample(rng, cfg["fam"], cfg["r"], CHUNK)
+        Ac.append(xc @ W1.T); At.append(xt @ W1.T)
+    return np.concatenate(Ac), np.concatenate(At)
+
+
+def stats_at(Ac, At, a):
+    S11 = np.zeros((e2.H, e2.H)); S21 = np.zeros((e2.H, e2.H))
+    for i in range(0, M_MC, CHUNK):            # same chunked accumulation as e2.feature_stats
+        hc, ht = np.tanh(a * Ac[i:i + CHUNK]), np.tanh(a * At[i:i + CHUNK])
+        S11 += hc.T @ hc; S21 += ht.T @ hc
+    return S11 / M_MC, S21 / M_MC
+
+
+def one(cfg):
+    t0 = time.time()
+    lam, p0, eta = cfg["lam"], cfg["p0"], e2.ETA
+    t_end = e2.horizon(cfg["fam"], cfg["r"], lam, p0, "mlp")
+    T = int(t_end / eta)
+    _, _, W2, P0 = e2.mlp_init(cfg["seed"], p0, cfg["w0"])
+    Ac, At = mc_preacts(cfg)
+    S0 = stats_at(Ac, At, 1.0)
+    r_init = n1_general(S0[0], S0[1], W2, P0, lam, 1.0, eta, T)
+    dec = 1 - eta * lam
+    la_end = T * np.log(dec)
+    la_min = max(la_end, np.log(A_LIN))
+    grid = np.arange(0.0, la_min - DLOG, -DLOG)
+    grid = grid[grid >= la_min - 1e-12]
+    if grid[-1] > la_min + 1e-12:
+        grid = np.append(grid, la_min)
+    G11, G21 = [], []
+    for la in grid:
+        a = np.exp(la)
+        s11, s21 = stats_at(Ac, At, a)
+        G11.append(s11 / a ** 2); G21.append(s21 / a ** 2)
+    G11, G21 = np.array(G11), np.array(G21)
+    t1 = time.time()
+
+    def stat_at(step):
+        la = step * np.log(dec)
+        if la <= grid[-1]:
+            k, w = len(grid) - 1, 0.0
+        else:
+            k = int(np.searchsorted(-grid, -la, side="right")) - 1
+            k = min(max(k, 0), len(grid) - 2)
+            w = (grid[k] - la) / (grid[k] - grid[k + 1])
+        if len(grid) == 1:
+            s11, s21 = G11[0], G21[0]
+        elif la <= grid[-1]:
+            s11, s21 = G11[-1], G21[-1]
+        else:
+            s11 = (1 - w) * G11[k] + w * G11[k + 1]; s21 = (1 - w) * G21[k] + w * G21[k + 1]
+        a2 = np.exp(2 * la)
+        return s11 * a2, s21 * a2
+    r_decay = e6_r2.n1g_tv(stat_at, W2, P0, lam, eta, T)
+    # exactness of the interpolation: at grid points stat_at reproduces S(a) (checked at step 0); between grid points,
+    # the relative error at the midpoint of the widest-curvature interval (the first) is recorded
+    e0 = float(np.abs(stat_at(0)[0] - S0[0]).max())
+    emid = None
+    if len(grid) > 1:
+        lm = (grid[0] + grid[1]) / 2; st = lm / np.log(dec)
+        a = np.exp(st * np.log(dec)); ex = stats_at(Ac, At, a); ip = stat_at(st)
+        emid = float(max(np.abs(ip[i] - ex[i]).max() / np.abs(ex[i]).max() for i in (0, 1)))
+    pre_sd = float(np.sqrt(np.mean(Ac ** 2)))
+    return dict(id=cfg["id"], fam=cfg["fam"], r=cfg["r"], lam=lam, seed=cfg["seed"], t_end=t_end, steps=T,
+                a_end=float(np.exp(la_end)), grid_points=int(len(grid)), preact_sd=pre_sd,
+                tanh_arg_sd_at_A_LIN=pre_sd * A_LIN, interp_err_step0=e0, interp_relerr_mid=emid,
+                r_init_check=int(r_init), r_decay=int(r_decay),
+                seconds_stats=t1 - t0, seconds_total=time.time() - t0)
+
+
+def md5(p):
+    return hashlib.md5(open(p, "rb").read()).hexdigest()
+
+
+def cmd_run(outdir, nproc=4):
+    os.makedirs(outdir, exist_ok=True)
+    cf, _, _ = runs(); t0 = time.time(); c0 = time.process_time()
+    order = sorted(cf, key=lambda c: -e2.horizon(c["fam"], c["r"], c["lam"], c["p0"], "mlp"))
+    res = []
+    with Pool(int(nproc)) as pool:
+        for i, r in enumerate(pool.imap_unordered(one, order, chunksize=1)):
+            res.append(r)
+            print(f"run {r['id']} r_init {r['r_init_check']} r_decay {r['r_decay']} {r['seconds_total']:.0f}s | "
+                  f"{i + 1}/{len(cf)} {time.time() - t0:.0f}s", flush=True)
+    res.sort(key=lambda r: r["id"])
+    with open(os.path.join(outdir, "e2_mlp_rdecay_runs.jsonl"), "w") as f:
+        for r in res:
+            f.write(json.dumps(r) + "\n")
+    meta = dict(runs=len(res), wall_s=time.time() - t0, cpu_s_workers=sum(r["seconds_total"] for r in res),
+                nproc=int(nproc), numpy=np.__version__, M_MC=M_MC, DLOG=DLOG, A_LIN=A_LIN,
+                md5={p: md5(os.path.join(HERE, "..", p)) for p in
+                     ["checks/e2_mlp_rdecay.py", "e2.py", "e6_r2.py", "linjepa.py"]})
+    json.dump(meta, open(os.path.join(outdir, "e2_mlp_rdecay_meta.json"), "w"), indent=1)
+    print(json.dumps(cmd_score(outdir)["pooled"], indent=1))
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), f"E2 MLP r_decay: {len(res)} runs, "
+          f"{meta['cpu_s_workers'] / 3600:.2f} CPU-h", flush=True)
+
+
+def summ(rows, keys, B=10000, seed=0):
+    tru = np.array([r["truth"] for r in rows], float)
+    out = dict(runs=len(rows), truth_mean=float(tru.mean()))
+    err = {}
+    for k in keys:
+        p = np.array([r[k] for r in rows], float); e = np.abs(p - tru); err[k] = e
+        out[k] = dict(mae=float(e.mean()), within1=float((e <= 1).mean()), bias=float((p - tru).mean()),
+                      exceed=float((tru > p).mean()))
+    rng = np.random.default_rng(seed)
+    for clus in ("config", "seed"):
+        lab = [(r["fam"], r["r"], r["lam"]) if clus == "config" else r["seed"] for r in rows]
+        ul = sorted(set(lab)); ix = [np.array([i for i, l in enumerate(lab) if l == u]) for u in ul]
+        for k in keys:
+            if k == "r_decay":
+                continue
+            dlt = err[k] - err["r_decay"]
+            sums = np.array([dlt[i].sum() for i in ix]); cnt = np.array([len(i) for i in ix])
+            draw = rng.integers(0, len(ul), (B, len(ul)))
+            m = sums[draw].sum(1) / cnt[draw].sum(1)
+            out[k][f"minus_r_decay_ci_{clus}"] = [float(np.quantile(m, 0.025)), float(np.quantile(m, 0.975))]
+            out[k][f"n_clusters_{clus}"] = len(ul)
+        for k in keys:
+            if k != "r_decay":
+                out[k]["minus_r_decay"] = float((err[k] - err["r_decay"]).mean())
+    return out
+
+
+def cmd_score(outdir):
+    cf, tr, mu = runs()
+    res = {json.loads(l)["id"]: json.loads(l) for l in open(os.path.join(outdir, "e2_mlp_rdecay_runs.jsonl"))}
+    rows = []
+    for c in cf:
+        r = res[c["id"]]; m = mu[c["id"]]
+        rows.append(dict(id=c["id"], fam=c["fam"], r=c["r"], lam=c["lam"], seed=c["seed"],
+                         truth=tr[c["id"]]["rank_meas"], r_decay=r["r_decay"], r_init=int(m["rank_pred"]),
+                         r_init_check=r["r_init_check"], dvd_signed=int(m["dvd_signed"]),
+                         dvd_exact=int(m["dvd_exact"]), dvd_pq=int(m["dvd_pq"]),
+                         converged=tr[c["id"]].get("converged")))
+    keys = ["r_decay", "r_init", "dvd_signed", "dvd_exact", "dvd_pq"]
+    out = dict(definition=__doc__, label="retrospective, post hoc (truths known; r_decay developed after E2)",
+               reproduction=dict(r_init_check_equals_delivered=sum(r["r_init"] == r["r_init_check"] for r in rows),
+                                 of=len(rows)),
+               pooled=summ(rows, keys), per_family={f: summ([r for r in rows if r["fam"] == f], keys)
+                                                    for f in ("bern", "block")},
+               converged_only=summ([r for r in rows if r["converged"]], keys),
+               per_lam={str(l): summ([r for r in rows if r["lam"] == l], keys) for l in (0.001, 0.01)},
+               max_tanh_arg_sd_at_A_LIN=max(r["tanh_arg_sd_at_A_LIN"] for r in res.values()),
+               max_interp_err_step0=max(r["interp_err_step0"] for r in res.values()),
+               max_interp_relerr_mid=max(r["interp_relerr_mid"] or 0.0 for r in res.values()),
+               cost=json.load(open(os.path.join(outdir, "e2_mlp_rdecay_meta.json"))))
+    tol = dict(mae=1.5, within1=0.70)
+    p = out["pooled"]
+    out["plan_branch_inputs"] = dict(
+        inside_rung2_tolerance=bool(p["r_decay"]["mae"] <= tol["mae"] and p["r_decay"]["within1"] >= tol["within1"]),
+        beats_r_init_ci_config=bool(p["r_init"]["minus_r_decay_ci_config"][0] > 0),
+        beats_dvd_signed_ci_config=bool(p["dvd_signed"]["minus_r_decay_ci_config"][0] > 0),
+        rung2_tolerance=tol)
+    json.dump(out, open(os.path.join(outdir, "e2_mlp_rdecay.json"), "w"), indent=1)
+    with open(os.path.join(outdir, "e2_mlp_rdecay_rows.csv"), "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
+    return out
+
+
+if __name__ == "__main__":
+    c = sys.argv[1]
+    if c == "run":
+        cmd_run(sys.argv[2], *(sys.argv[3:4] or [4]))
+    elif c == "pilot":
+        cf, tr, mu = runs(); cfg = [x for x in cf if x["id"] == int(sys.argv[2])][0]
+        r = one(cfg); print(json.dumps(r), "truth", tr[cfg["id"]]["rank_meas"], "delivered r_init", mu[cfg["id"]]["rank_pred"])
+    elif c == "score":
+        print(json.dumps(cmd_score(sys.argv[2])["pooled"], indent=1))

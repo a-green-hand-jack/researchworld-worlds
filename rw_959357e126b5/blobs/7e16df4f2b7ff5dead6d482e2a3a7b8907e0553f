@@ -1,0 +1,105 @@
+"""Check of experiment-repo fbdb6f3 (code/baselines/vit_mu.py, results/e7/dev/vit_mu_e3.json): the arXiv 2610.02344
+mu baseline for the ViT, against the paper's own definitions, on the same E3 rows as code/checks/e7_dev_vit_mu.py.
+
+Paper (v1): Eq. (31) singular-value form mu~_kl = [sv_k(Sigma_X1)/a_k] * [sv_l(Wp^T M2bar)/p_l], gamma~_kl paired with
+a_k p_l of the SAME (k, l) (App. A.4 warns that pairing the k-th largest gamma with the k-th largest sigma miscounts);
+U~ = {(k,l): mu~_kl > 1}; rank budget r~_tight = min(|pi_k U~|, |pi_l U~|, d, N) (Cor. 3.3, Prop. C.4, Table 7); J.1
+weight decay as an additive floor, escape iff gamma - sigma > eta.  The data and predictor factors are taken exactly as
+vit_mu.py computes them (data_k = sv_k(p S)/eig_k(S11), pred_l = (1-p) s_l / s_l^2); only the pairing, the count and
+the floor's units differ.  Units: vit_jepa.py trains on F.mse_loss (mean over batch x target tokens x width d), whose
+gradient is (2/d) times that of the paper's 1/2 E||.||^2, so in the run's own step units the floor reads
+(2/d) g (gamma - sigma) > wd, g = 1/(1-momentum); vit_mu.py uses g (gamma - sigma) > wd.
+Usage: python3 e7_vit_mu_check.py EXP_TREE DATA_DIR OUT.json
+"""
+import sys, os, json, csv
+import numpy as np, torch
+
+EXP, DATA, OUT = sys.argv[1:4]
+sys.path.insert(0, os.path.join(EXP, "code")); sys.path.insert(0, os.path.join(EXP, "code", "baselines"))
+from e3_grid import grid, cli_args
+import vit_mu as M
+V = M.V
+
+
+def factors(cfg, X):
+    torch.manual_seed(cfg["seed"])
+    enc = V.ViT(cfg["width"], cfg["depth"], cfg["heads"], cfg["patch"])
+    pred = V.Predictor(cfg["width"], cfg["pred_width"], cfg["pred_depth"], cfg["pred_heads"], enc.G, cfg["pred_init_scale"],
+                       norm=bool(cfg["pred_norm"]))
+    with torch.no_grad():
+        Z = torch.cat([(enc.patch(X[i:i + 500]).flatten(2).transpose(1, 2) + enc.pos).reshape(-1, cfg["width"])
+                       for i in range(0, len(X), 500)]).double()
+    S = Z.T @ Z / Z.shape[0]
+    p = M.context_ratio(cfg)
+    D = torch.diag(torch.diag(S))
+    S11 = p * D + p * p * (S - D)
+    sv = torch.linalg.svdvals(p * S)
+    e11 = torch.linalg.eigvalsh(S11).flip(0).clamp(min=0)
+    Wp = (pred.proj.weight @ pred.embed.weight).detach().double()
+    ew = torch.linalg.eigvalsh(Wp.T @ Wp).flip(0).clamp(min=0)
+    return p, sv.numpy(), e11.numpy(), ew.numpy()
+
+
+def counts(p, sv, e11, ew, wd, gfac, d):
+    gam = np.outer(sv, (1 - p) * np.sqrt(ew))            # gamma~_kl, same (k, l) as sigma_kl
+    sig = np.outer(e11, ew)
+    ok = sig > 1e-12
+    out = {}
+    U = ok & (gam > sig)
+    out["U_loose"] = int(U.sum())
+    out["r_tight"] = int(min(U.any(1).sum(), U.any(0).sum(), d))
+    if gfac is not None:
+        for tag, f in (("floor_vitmu_units", gfac), ("floor_run_units", gfac * 2.0 / d)):
+            Uw = ok & ((gam - sig) * f > wd)
+            out["U_loose_" + tag] = int(Uw.sum())
+            out["r_tight_" + tag] = int(min(Uw.any(1).sum(), Uw.any(0).sum(), d))
+            # vit_mu.py's index pairing (k = l), with this floor
+            out["diag_" + tag] = int((((sv * (1 - p) * np.sqrt(ew)) - e11 * ew) * f > wd).sum())
+    # vit_mu.py's own readings, recomputed, to tie this check to the delivered file
+    gs = np.sort(gam.flatten())[::-1]; ss = np.sort(sig.flatten())[::-1]; k = ss > 1e-12
+    out["vitmu_n_mu"] = int((gs[k] / ss[k] > 1).sum())
+    out["vitmu_n_mu_diag"] = int((sv * (1 - p) * np.sqrt(ew) > e11 * ew).sum())
+    return out
+
+
+def main():
+    G = grid()
+    R = {r["name"]: r for r in csv.DictReader(open(os.path.join(EXP, "results/e3/runs.csv")))}
+    deliv = json.load(open(os.path.join(EXP, "results/e7/dev/vit_mu_e3.json")))
+    D = {(r["name"], r["seed"]): r for r in deliv["rows"]}
+    X, _ = V.load(DATA, "train"); X = X[:M.N_IMG]
+    rows = []
+    for n in sorted(G):
+        if n not in R:
+            continue
+        over = dict(G[n][3])
+        if None in over.get("wd", [0]):
+            continue
+        for s, meas in enumerate(R[n]["count_seeds"].split()):
+            cfg = M.cfg_from_cli(s, cli_args(over))
+            p, sv, e11, ew = factors(cfg, X)
+            gfac = 1.0 / (1 - cfg["momentum"]) if cfg["opt"] == "sgd" else None
+            c = counts(p, sv, e11, ew, cfg["wd"][0], gfac, cfg["width"])
+            dl = D[(n, s)]
+            c["matches_delivered"] = bool(c["vitmu_n_mu"] == dl["n_mu"] and c["vitmu_n_mu_diag"] == dl["n_mu_diag"]
+                                          and (gfac is None or c["diag_floor_vitmu_units"] == dl["n_mu_wd"]))
+            rows.append(dict(name=n, seed=s, arm=G[n][0], wd=cfg["wd"][0], measured=int(meas), context_ratio=p, **c))
+            print(n, s, meas, {k: v for k, v in c.items() if not k.startswith("U_")}, flush=True)
+    H = json.load(open(os.path.join(EXP, "results/e7/dev/headroom_race.json")))
+    keys = sorted({k for r in rows for k in r if k not in ("name", "seed", "arm", "wd", "measured", "context_ratio", "matches_delivered")})
+    mae = {}
+    for a in ("T", "P"):
+        rr = [r for r in rows if r["arm"] == a]
+        mae[a] = dict(runs=len(rr), all_match_delivered=all(r["matches_delivered"] for r in rr),
+                      **{k: float(np.mean([abs(r[k] - r["measured"]) for r in rr])) for k in keys if all(k in r for r in rr)})
+        mae[a]["delivered_reference"] = {k: v for k, v in H["E3"]["mae"][a].items() if k in ("step0", "headroom_200", "headroom_400", "early_200")}
+    tw = sorted({r["wd"] for r in rows if r["name"].startswith("T_wd")})
+    series = {str(w): {k: float(np.mean([r[k] for r in rows if r["name"].startswith("T_wd") and r["wd"] == w]))
+                       for k in ["measured"] + [k for k in keys if all(k in r for r in rows if r["arm"] == "T")]} for w in tw}
+    json.dump(dict(what=__doc__, exp_tree=EXP, torch=torch.__version__, n_images=M.N_IMG, mae=mae, T_wd_series=series, rows=rows),
+              open(OUT, "w"), indent=1)
+    print(json.dumps(dict(mae=mae, series=series), indent=1))
+
+
+if __name__ == "__main__":
+    main()

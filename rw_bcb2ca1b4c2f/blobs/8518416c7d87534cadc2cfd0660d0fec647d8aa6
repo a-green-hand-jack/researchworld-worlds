@@ -1,0 +1,29 @@
+"""Review check (internal-review-repo): recompute every inputs-only row of E6 rung 4 held-out from (cfg, Xc, Xt) alone,
+with no training output (e6_r4.predict(cfg, Xc, Xt, {}), as experiment-repo#11 c711 describes), on all 120 base
+configurations, and compare with the delivered pred fields. Shows no truth or training output entered those rows.
+Usage: python3 inputs_only.py EXPROOT"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+root = os.path.abspath(sys.argv[1]); sys.path.insert(0, os.path.join(root, "code"))
+from multiprocessing import Pool
+import numpy as np
+import e6_r4_heldout as h, e6_r4 as r4, e6_r2 as r2
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+def one(cfg):
+    Xc, Xt = r2.sample(cfg); return cfg["id"], r4.predict(cfg, Xc, Xt, {})
+
+if __name__ == "__main__":
+    D = {r["cfg"]["id"]: r for r in map(json.loads, gzip.open(os.path.join(root, "results/e6/r4_heldout/r4_heldout_runs.jsonl.gz"), "rt"))}
+    cf = [c for c in h.configs() if "floor_of" not in c]
+    t0 = time.time()
+    with Pool(8) as p:
+        res = p.map(one, cf, chunksize=1)
+    out, keys = {}, set()
+    for i, pr in res:
+        d = D[i]["pred"]; keys |= set(pr)
+        out[i] = [k for k in pr if repr(pr[k]) != repr(d.get(k, "MISSING"))]
+    summ = dict(configs=len(res), rows=sorted(keys), configs_with_diff=sum(1 for v in out.values() if v),
+                values_compared=sum(len(pr) for _, pr in res), numpy=np.__version__, wall_s=time.time() - t0)
+    json.dump(dict(summary=summ, diffs={k: v for k, v in out.items() if v}), open(os.path.join(HERE, "inputs_only.json"), "w"), indent=1)
+    print("HUTIAN_WAKE: r4 inputs-only recompute done " + json.dumps({k: v for k, v in summ.items() if k != "rows"}), flush=True)

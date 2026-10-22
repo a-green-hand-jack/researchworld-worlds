@@ -1,0 +1,11 @@
+#!/bin/bash
+# Full rescore of E7 production from the raw runs (release ext-runs-3 e7__production__runs7.tar.gz) with the frozen
+# scorer (code/e7_score.py md5 6ae02027) at experiment 121fc64, then a structural comparison with results/e7/score.json.
+set -u
+cd /hutian/work/e7prod
+md5sum exp/code/e7_score.py
+mkdir -p rescore
+python3 -u exp/code/e7_score.py runs7 /hutian/work/cifar rescore/score.json > rescore/log.txt 2>&1; echo "scorer exit $?"
+tail -2 rescore/log.txt
+python3 -u /hutian/repo/checks/e7_prod/compare_score.py score_delivered.json rescore/score.json /hutian/repo/checks/e7_prod/rescore_compare.json
+echo "HUTIAN_WAKE: E7 full rescore check finished"

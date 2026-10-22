@@ -1,0 +1,194 @@
+"""Independent check of the A1 held-out result (experiment-repo 028c9d4 results/e4/a1/a1_score.json, a1_runs.jsonl.gz;
+registration results/e4/prediction.json A1 and results/e4/a1_tolerance_v2.json at d77e9b8; frozen model ebc17db).
+
+1. Rescore A1b/A1c/A1d and the four A1d baselines from the delivered per-run records with my own code.
+2. Re-simulate the 80-bit ground truth for a stratified sample of runs with my own longdouble implementation of the
+   scalar AdamW map (from the update written in theory/ext_A_adamw.md) and compare burst / alive_from / checkpoint
+   states direction by direction with the delivered records.
+3. Rounding sensitivity: the same sample in longdouble with every a0_k perturbed by a relative 1e-15 (about 5 float64
+   ulps), and in float64: alive-pair and rank disagreement with the unperturbed longdouble truth. Tests the A1a
+   diagnosis ("rounding sensitivity of the map itself") and bounds how deterministic the A1d target is.
+4. Splits of A1c by subset: collapse set (h_K < 0, |a_K| <= 1e-3), window/growth (h_K >= 0), and 1e-3 < |a_K| <= 0.05.
+5. Post-hoc closed-form wait baselines on the A1b collapse set (not registered; for the paper's mechanism claim):
+   eps-floor wait (sqrt(vhat) decays to eps), and the stability-crossing time alone (sqrt(vhat) decays to
+   eta (1-b1)|h_K| / (2(1+b1)), ignoring p drift and the regrowth back to 1e-3).
+6. Second collapse: directions alive at a checkpoint and dead at a later one, and the A1d errors they explain.
+7. A1a: rescore from the delivered matrix/scalar records, and whether the float64 matrix run stays exactly diagonal
+   (max |off-diagonal| of W and P every 1000 steps) on one registered A1a config (id 197, ho2, b2 = 0.9995).
+
+Usage: python3 checks/e4_a1_heldout_rescore.py /path/to/experiment-repo [NPROC] > checks/e4_a1_heldout_rescore.json
+"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+
+ROOT = sys.argv[1]
+sys.path.insert(0, os.path.join(ROOT, "code"))
+import e4_a1 as ho  # noqa: E402  (configs, stats, init_a, CHECKS only)
+
+K, T, THR, BURST = 300, 60000, 0.05, 1e-3
+CK = [int(x) for x in np.unique(np.round(np.geomspace(K + 50, T, 30)))]
+assert CK == ho.CHECKS
+
+
+def sim(cfg, dtype, rel=0.0):
+    c, s = ho.stats(cfg["stats"]); D = dtype
+    c = c.astype(D); s = s.astype(D); one = D(1)
+    b1, b2, eta, lam = (D(cfg[k]) for k in ("b1", "b2", "eta", "lam")); eps = D(1e-8)
+    a = ho.init_a(cfg).astype(D) * (one + D(rel)); p = np.full(c.shape, D(cfg["p0"]))
+    ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c)
+    burst = np.zeros(c.size, int); alive = np.zeros(c.size, int); at = []; cks = set(CK)
+    for t in range(1, T + 1):
+        r = c - p * s
+        ga = -a * p * r; gp = -a * a * r
+        ma = b1 * ma + (one - b1) * ga; va = b2 * va + (one - b2) * ga * ga
+        mp = b1 * mp + (one - b1) * gp; vp = b2 * vp + (one - b2) * gp * gp
+        bc1 = one - b1 ** t; bc2 = one - b2 ** t
+        a = a * (one - eta * lam) - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps)
+        p = p * (one - eta * lam) - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+        if t > K:
+            A = np.abs(a)
+            burst[(burst == 0) & (A > BURST)] = t; alive[(alive == 0) & (A > THR)] = t
+            if t in cks:
+                at.append(A > THR)
+    return dict(burst=burst, alive_from=alive, alive=np.array(at, bool))
+
+
+def resim(args):
+    cfg, rec = args
+    L = sim(cfg, np.longdouble); P = sim(cfg, np.longdouble, 1e-15); F = sim(cfg, np.float64)
+    nz = lambda x: np.array([0 if v is None else v for v in x])
+    A = np.array(rec["alive"], bool)
+    return dict(id=cfg["id"], b2=cfg["b2"], stats=cfg["stats"],
+                burst_equal=int((L["burst"] == nz(rec["burst"])).sum()),
+                alive_from_equal=int((L["alive_from"] == nz(rec["alive_from"])).sum()),
+                states_equal=int((L["alive"] == A).sum()), n=32, pairs=int(A.size),
+                pert_pairs_differ=int((P["alive"] != L["alive"]).sum()),
+                pert_rank_equal=int((P["alive"].sum(1) == L["alive"].sum(1)).sum()),
+                pert_rank_within1=int((np.abs(P["alive"].sum(1) - L["alive"].sum(1)) <= 1).sum()),
+                pert_burst_differ=int((P["burst"] != L["burst"]).sum()),
+                f64_pairs_differ=int((F["alive"] != L["alive"]).sum()),
+                f64_rank_equal=int((F["alive"].sum(1) == L["alive"].sum(1)).sum()),
+                checkpoints=len(CK))
+
+
+def offdiag(cfg):
+    c, s = ho.stats(cfg["stats"]); n = c.size; eta, lam, b1, b2, eps = cfg["eta"], cfg["lam"], cfg["b1"], cfg["b2"], 1e-8
+    W = np.diag(ho.init_a(cfg)); P = cfg["p0"] * np.eye(n); S11, S21 = np.diag(s), np.diag(c)
+    m = [np.zeros_like(W), np.zeros_like(P)]; v = [np.zeros_like(W), np.zeros_like(P)]; mx = 0.0
+    off = lambda X: float(np.abs(X - np.diag(np.diag(X))).max())
+    for t in range(1, T + 1):
+        R = P @ W @ S11 - W @ S21; g = [P.T @ R, R @ W.T]; x = [W, P]
+        for i in range(2):
+            m[i] = b1 * m[i] + (1 - b1) * g[i]; v[i] = b2 * v[i] + (1 - b2) * g[i] ** 2
+            x[i] = x[i] * (1 - eta * lam) - eta * (m[i] / (1 - b1 ** t)) / (np.sqrt(v[i] / (1 - b2 ** t)) + eps)
+        W, P = x
+        if t % 1000 == 0:
+            mx = max(mx, off(W), off(P))
+    return dict(id=cfg["id"], max_abs_offdiag_every_1000_steps=mx)
+
+
+def waits(pred, meas, mask):
+    e, miss, n = [], 0, 0
+    for k in np.where(mask)[0]:
+        tp, tm = pred[k], meas[k]
+        if tp is None and tm is None:
+            continue
+        n += 1
+        if tp is None or tm is None:
+            miss += 1
+        else:
+            e.append(abs(np.log(max(tp - K, 1.0) / (tm - K))))
+    return e, miss, n
+
+
+def summ(e, miss, n):
+    e = np.array(e)
+    return dict(scored=n, median=float(np.median(e)) if e.size else None,
+                p90=float(np.quantile(e, 0.9)) if e.size else None, misses=miss, miss_share=miss / max(n, 1))
+
+
+def main():
+    nproc = int(sys.argv[2]) if len(sys.argv) > 2 else 8
+    runs = [json.loads(l) for l in gzip.open(os.path.join(ROOT, "results/e4/a1/a1_runs.jsonl.gz"), "rt")]
+    cfgs = {c["id"]: c for c in ho.configs()}
+    out = dict(source="experiment-repo 028c9d4 results/e4/a1/a1_runs.jsonl.gz", runs=len(runs))
+    # 1 + 4 + 5 + 6
+    acc = {k: [[], 0, 0] for k in ("A1b", "A1c", "A1c_collapse", "A1c_growth", "A1c_mid", "eps_floor", "stab_cross")}
+    meas_b = []
+    names = ("model", "all_alive", "persistence_K", "static_bound", "majority_oracle")
+    agree = {k: [] for k in names}; rk = {k: [] for k in names}
+    second = dict(directions=0, total=0, wrong_pairs=0, wrong_second=0, rankbad=0, rankbad_with_second=0)
+    for r in runs:
+        cfg = cfgs[r["id"]]
+        for k in ("stats", "p0", "lam", "a0", "eta", "b1", "b2"):
+            assert cfg[k] == r[k]
+        c, s = ho.stats(r["stats"]); b1, b2, eta = r["b1"], r["b2"], r["eta"]
+        st = {k: np.array(v) for k, v in r["state_K"].items()}
+        aK = np.abs(st["a"]); hK = st["p"] * (c - st["p"] * s)
+        setb = (hK < 0) & (aK <= BURST); setc = aK <= THR
+        for key, pred, meas, m in (("A1b", r["pred_burst"], r["burst"], setb), ("A1c", r["pred_alive_from"], r["alive_from"], setc),
+                                   ("A1c_collapse", r["pred_alive_from"], r["alive_from"], setc & setb),
+                                   ("A1c_growth", r["pred_alive_from"], r["alive_from"], setc & (hK >= 0)),
+                                   ("A1c_mid", r["pred_alive_from"], r["alive_from"], setc & (hK < 0) & (aK > BURST))):
+            e, mi, nn = waits(pred, meas, m); acc[key][0] += e; acc[key][1] += mi; acc[key][2] += nn
+        meas_b += [r["burst"][k] - K for k in np.where(setb)[0] if r["burst"][k] is not None]
+        # post-hoc closed-form baselines (wait from sigma_K)
+        sig = np.sqrt(st["va"] / (1 - b2 ** K))
+        t_eps = K + 2 / (1 - b2) * np.log(np.maximum(sig, 1e-300) / 1e-8)
+        sc = eta * (1 - b1) * np.abs(hK) / (2 * (1 + b1))
+        t_sc = K + 2 / (1 - b2) * np.log(np.maximum(sig, 1e-300) / sc)
+        for key, tp in (("eps_floor", t_eps), ("stab_cross", t_sc)):
+            pr = [float(x) if (x < T and x > K) else (float(K + 1) if x <= K else None) for x in tp]
+            e, mi, nn = waits(pr, r["burst"], setb); acc[key][0] += e; acc[key][1] += mi; acc[key][2] += nn
+        A = np.array(r["alive"], bool); Pm = np.array(r["pred_alive"], bool)
+        preds = dict(model=Pm, all_alive=np.ones_like(A), persistence_K=np.broadcast_to(aK > THR, A.shape),
+                     static_bound=np.broadcast_to(c ** 2 >= 4 * r["lam"] * s, A.shape),
+                     majority_oracle=np.broadcast_to(A.mean(0) >= 0.5, A.shape))
+        for k, P in preds.items():
+            agree[k].append((P == A).ravel()); rk[k].append(np.abs(P.sum(1) - A.sum(1)) <= 1)
+        was = np.maximum.accumulate(A, axis=0); sec = was & ~A
+        second["directions"] += int(sec.any(0).sum()); second["total"] += A.shape[1]
+        W = Pm != A; second["wrong_pairs"] += int(W.sum()); second["wrong_second"] += int((W & sec).sum())
+        bad = np.abs(Pm.sum(1) - A.sum(1)) > 1
+        second["rankbad"] += int(bad.sum()); second["rankbad_with_second"] += int((bad & sec.any(1)).sum())
+    mb = np.array(meas_b, float)
+    out["A1b"] = summ(*acc["A1b"]); out["A1c"] = summ(*acc["A1c"])
+    W0 = float(np.median(mb)); out["A1b"]["constant_wait_oracle_median"] = float(np.median(np.abs(np.log(W0 / mb))))
+    out["A1c_split_reported_only"] = {k: summ(*acc[k]) for k in ("A1c_collapse", "A1c_growth", "A1c_mid")}
+    out["posthoc_wait_baselines_on_A1b_set"] = {k: summ(*acc[k]) for k in ("eps_floor", "stab_cross")}
+    out["A1d"] = dict(error_rate={k: 1 - float(np.concatenate(v).mean()) for k, v in agree.items()},
+                      rank_within_1_failure={k: 1 - float(np.concatenate(v).mean()) for k, v in rk.items()})
+    out["second_collapse"] = second
+    a1a = [((np.array(r["a1a_matrix_absa"]) > THR) == (np.array(r["a1a_scalar_absa"]) > THR)).mean() for r in runs if "a1a_matrix_absa" in r]
+    a1r = [((np.array(r["a1a_matrix_absa"]) > THR).sum(1) == (np.array(r["a1a_scalar_absa"]) > THR).sum(1)).mean()
+           for r in runs if "a1a_matrix_absa" in r]
+    out["A1a"] = dict(runs=len(a1a), state_agreement=float(np.mean(a1a)), rank_equal=float(np.mean(a1r)),
+                      offdiag_check=offdiag(cfgs[197]))
+    # 2 + 3: stratified resimulation, two runs per stats x p0 x b1 x b2 cell (lam 0.003 and 0.03, a0 3e-3, eta 0.015)
+    rec = {r["id"]: r for r in runs}
+    samp = [c for c in ho.configs() if c["a0"] == 3e-3 and c["eta"] == 0.015 and c["lam"] in (0.003, 0.03)]
+    t0 = time.time()
+    with Pool(nproc) as pool:
+        rs = pool.map(resim, [(c, rec[c["id"]]) for c in samp])
+    tot = lambda k, sel=lambda x: True: int(sum(x[k] for x in rs if sel(x)))
+    out["resim"] = dict(runs=len(rs), seconds=round(time.time() - t0, 1),
+                        directions=tot("n"), burst_equal=tot("burst_equal"), alive_from_equal=tot("alive_from_equal"),
+                        pairs=tot("pairs"), states_equal=tot("states_equal"),
+                        by_b2={str(b): dict(pairs=tot("pairs", lambda x, b=b: x["b2"] == b),
+                                            pert_pairs_differ=tot("pert_pairs_differ", lambda x, b=b: x["b2"] == b),
+                                            f64_pairs_differ=tot("f64_pairs_differ", lambda x, b=b: x["b2"] == b),
+                                            checkpoints=tot("checkpoints", lambda x, b=b: x["b2"] == b),
+                                            pert_rank_equal=tot("pert_rank_equal", lambda x, b=b: x["b2"] == b),
+                                            pert_rank_within1=tot("pert_rank_within1", lambda x, b=b: x["b2"] == b),
+                                            f64_rank_equal=tot("f64_rank_equal", lambda x, b=b: x["b2"] == b),
+                                            pert_burst_differ=tot("pert_burst_differ", lambda x, b=b: x["b2"] == b))
+                               for b in (0.995, 0.9995)},
+                        per_run=rs)
+    out["numpy"] = np.__version__
+    print(json.dumps(out, indent=1))
+
+
+if __name__ == "__main__":
+    main()

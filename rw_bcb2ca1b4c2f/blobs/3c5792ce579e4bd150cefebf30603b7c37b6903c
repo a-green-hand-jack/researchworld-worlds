@@ -1,0 +1,109 @@
+# Reading notes: arXiv 2610.02344v1 (for E5 of the standard)
+
+De Melo Costa, Ahn, Popineau, Rimmel and Doan, *Drive vs. Decay: On the Training
+Dynamics of Joint-Embedding Predictive Architectures*. v1 was submitted on
+2026-10-01, before the 18 Oct 2026 cutoff of objective #5. The arXiv comment
+says "Accepted at NeurIPS 2026 (Main Track)". The PDF has 57 pages. I read the
+v1 PDF (arxiv.org/pdf/2610.02344v1) on 2026-10-17. Page numbers below are PDF
+pages. These are my notes for judging the extension's positioning, not the
+brief, which belongs to idea-repo.
+
+## What it establishes (prior work the extension must credit)
+
+- **Model (p3–4, Lemma 3.1):**
+  - linear JEPA with context encoder W, EMA target W_a at rate β, linear
+    predictor W_p;
+  - Bernoulli feature masks on the context input and on the target outputs;
+  - population gradient flow.
+- **Criterion (p4, Eqs. 3–7):**
+  - It linearises at W = W_a = 0 with the predictor held fixed.
+  - Drive γ ∈ Spec(Σ_X1ᵀ ⊗ W_pᵀ M̄_2). Decay σ ∈ Spec(Σ_11 ⊗ W_pᵀ W_p).
+  - Each mode has the characteristic equation λ² + (β+σ)λ + βσ(1−μ) = 0, with
+    μ = γ/σ. A mode escapes iff μ > 1.
+  - Under approximate spectral decoupling (Assumption 3.2),
+    μ_kℓ = (c_k/a_k)(q_ℓ/p_ℓ): a data-side factor times a predictor-side factor.
+  - App. A.5 gives non-decoupled certificates.
+- **Rank budget (p5, Cor. 3.3):** the count of super-critical modes (k, ℓ)
+  bounds the post-escape rank of the growing component and the effective rank.
+  It is tested on 810 Tabular-JEPA runs, with ρ(ERank, r̃_tight) = 0.91 / 0.91 /
+  0.62 on helena / aloi / jannis (p8, Table 2).
+- **Joint training (p5, Lemma 3.4, App. F.6):**
+  - The predictor gradient is quadratic in the encoder, so the collapsed set is
+    a manifold of equilibria.
+  - The predictor is quasi-static while the encoder grows from small
+    initialisation, and the count of unstable eigenvalues is preserved up to
+    O(δ²).
+  - **There is no predictor weight decay in this lemma.**
+- **Heuristics as doses on μ (p7–8, Table 3; App. J, p48–49):**
+  - J.1, weight decay on the context encoder only: an additive floor,
+    σ → σ + η_wd, so a mode escapes iff γ − σ > η_wd. This is static.
+  - J.2, predictor scale α: μ(α) = μ(1)/α, and nothing escapes above
+    α_ext = max μ(1).
+  - J.3 and J.4: SIGReg and VICReg lower the predictor factor.
+  - J.5: mimetic initialisation is a decaying dose.
+  - J.6, frozen identity predictor: mode k escapes iff s_k > (1−p)/(p_tgt−p).
+    With symmetric additive view noise nothing escapes.
+  - J.7, EMA rate β: it sets the speed, not which modes escape, and the escape
+    rate increases with β. The proportional-target assumption of Tian et al. is
+    the limit β → ∞ (App. F).
+  - Masking enters through the cross-view retention c_k/a_k.
+- **Recovered as limiting cases (App. J.2):** DirectPred, IsoLoss, the rate
+  equation of Halvagal et al. and predictor orthonormalisation.
+- **ResidualPred (p9–10, App. I):**
+  - an identity-biased attention predictor (W_p = I + ΔW_p at initialisation);
+  - better rank and probe accuracy than the standard predictor on tabular data
+    and in I-JEPA: ViT-S/4 on CIFAR-10/100, ViT-S/8 on STL-10, ViT-S/16 on
+    ImageNet-100 at predictor depths 2 and 6, ViT-B/16, and an ImageNet-1k
+    matched-budget pilot;
+  - it beats SIGReg and the two compose;
+  - mimetic initialisation trails it by 4.9 points.
+- **Images (p10, App. K):**
+  - The initialisation-time estimator does not separate the predictors.
+  - The drive is measured after the predictor equilibrates: it is higher for
+    ResidualPred in 9 of 9 matched comparisons.
+  - Effective rank is necessary for accuracy but not sufficient.
+- **Its stated limitations (p10):**
+  - linear setting and spectral decoupling;
+  - images are an empirical extension measured after predictor equilibration;
+  - μ = 1 is a local initialisation criterion;
+  - the full official I-JEPA recipe is untested.
+
+## Overlap with the delivered paper (6e496ca)
+
+| Delivered claim | Overlapping part of 2610.02344 |
+|---|---|
+| Per-direction drive against decay | its core (Eqs. 3–7) |
+| Rank as the number of directions that escape | its Cor. 3.3 rank budget |
+| Predictor scale p_0 | J.2 |
+| EMA rate | J.7 |
+| Masking through the statistics the masks leave | cross-view retention c_k/a_k, J.6 |
+| Frozen target, identity predictor | J.6 |
+| Weight decay | J.1, static floor on the encoder only |
+| ViT tests | ResidualPred ViT experiments, App. K |
+
+## Not in it, as far as this reading goes
+
+- **Predictor weight decay and the decaying predictor gain.** Lemma 3.4 has a
+  quasi-static predictor and no decay. In the delivered paper the race
+  (survival when the growing direction captures the predictor before its gain
+  decays out of the window), collapse as an attractor under weight decay, and
+  the unbalanced start are the parts this work does not contain.
+- The delivered paper's held-out pre-registered tests, its λ-collapse boundary
+  against the static threshold, depth L, the learning-rate ratio α, AdamW, and
+  the masking-race tests (E2).
+
+## Consequences for the review (standard E5)
+
+1. The extended paper must cite this work. Every delivered claim in the overlap
+   table is re-worded as building on it, or as departing from it where it does
+   (for example J.7 says EMA cannot change which modes escape; the delivered
+   paper has EMA predictions, one of whose signs failed).
+2. Its μ-count with the weight-decay floor (J.1) is a static, quasi-static
+   predictor criterion. It is the natural baseline beside the static threshold
+   on the delivered E1b/E1c/E2 runs and on any new runs. If the race beats it,
+   that is the clearest statement of what is new. If not, the paper must say so.
+3. Identity-biased predictors are prior work (ResidualPred). An extension
+   claiming a predictor design must compare against ResidualPred.
+4. Their App. K finding bears on O1: on images the initialisation-time drive
+   estimator is null and the drive is read after predictor equilibration, which
+   is consistent with the delivered E3 step-0 rule's partial failure.

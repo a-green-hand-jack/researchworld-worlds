@@ -1,0 +1,322 @@
+"""E1b: held-out, pre-registered test of the near-collapse race theory in linear JEPAs.
+
+New data statistics (not used to develop N1 in E1): n = d = 24, sigma_k = linspace(1.5, 0.5),
+c_k = sigma_k * 0.92^k (aligned, Assumption 1(i)); Euler step eta = 0.1 (time t = eta * step).
+Arms (exp column):
+  grid      p0 x lam phase grid, identity predictor, copy target, alpha = 1, w0 = 1e-3 (5 seeds)
+  ema_alpha EMA rate kappa x predictor lr ratio alpha in two regimes (p0 inside / above the window)
+  depth     identity-initialised deep predictor L in {1,2,3}
+  balanced  Tian et al. 2021 regime: P0 = p0 I, W0 = p0 x orthogonal (exactly balanced, no jitter)
+  nosg      stop-gradient removed (Prop. 5)          nopred  P = I fixed (Prop. 6)
+  randpred  Gaussian predictor (scale s, depth 1-2, width 24 / 96): N1-general (Sec. 6)
+  noncomm   non-commuting, non-symmetric statistics, identity predictor: N1-general
+  adam      AdamW (decoupled weight decay), w0 in {1e-4, 1e-2}: Sec. 8 directional predictions
+  batch     finite-batch SGD from Gaussian data with the same population statistics
+  traj      per-mode trajectories for representative configs (one seed), for growth-rate checks
+Usage:
+  python3 code/e1b.py predict results/e1b    # writes prediction.json from the initialisation only
+  python3 code/e1b.py run results/e1b        # simulations -> e1b_runs.jsonl, trajectories.json
+  python3 code/e1b.py analyze results/e1b    # scores against prediction.json -> summary.json, e1b_runs.csv
+"""
+import sys, os, json, time, itertools, csv
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+from linjepa import (simulate, init_params, predictor_product, escape_score, race_end_time, window, growth_rate,
+                     race_closed_form, scalar_race_alpha1, n1_general, rankme)
+
+n = d = 24
+SIG = np.linspace(1.5, 0.5, n)
+C = SIG * 0.92 ** np.arange(n)
+ETA = 0.1
+SV_THR = 0.05
+T_CAP = 4000.0
+SEEDS = range(5)
+
+
+def noncomm_stats(sseed):
+    """x1 ~ N(0, S11), x2 = M x1 + noise: S21 = M S11, non-symmetric, not commuting with S11."""
+    r = np.random.default_rng(1000 + sseed)
+    U, _ = np.linalg.qr(r.standard_normal((n, n)))
+    S11 = U @ np.diag(SIG) @ U.T
+    Q1, _ = np.linalg.qr(r.standard_normal((n, n)))
+    A = r.standard_normal((n, n)); A = (A - A.T) / 2
+    w, V = np.linalg.eig(0.35 * A)          # Q2 = Q1 expm(0.35 A), a partial rotation
+    Q2 = Q1 @ np.real(V @ np.diag(np.exp(w)) @ np.linalg.inv(V))
+    M = Q1 @ np.diag(0.92 ** np.arange(n)) @ Q2.T
+    S21 = M @ S11
+    return S11, S21
+
+
+def stats(cfg):
+    if cfg["exp"] == "noncomm":
+        return noncomm_stats(cfg["sseed"])
+    return np.diag(SIG), np.diag(C)
+
+
+def horizon(cfg):
+    lam, p0, alpha, depth = cfg["lam"], cfg["p0"], cfg["alpha"], cfg.get("depth", 1)
+    if cfg["exp"] in ("nosg", "nopred"):
+        return 1500.0
+    if lam == 0 or alpha == 0:
+        return 1500.0
+    t_race = race_end_time(C, SIG, lam, lam, alpha, max(p0, 1e-3), depth)
+    t = 3.0 * t_race + 300.0
+    if cfg.get("kappa") is not None:
+        t += 5.0 / cfg["kappa"]
+    return float(min(t, T_CAP))
+
+
+def configs():
+    out = []
+    def add(**k):
+        base = dict(lam=0.01, p0=1.0, alpha=1.0, w0=1e-3, kappa=None, depth=1, width=None, pred_init="identity",
+                    w_init="orthogonal", jitter=0.1, stopgrad=True, optimizer="gd", batch=None, sseed=0, eta=ETA)
+        base.update(k); out.append(base)
+    for p0, lam, s in itertools.product([0.1, 0.2, 0.35, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0],
+                                        [0.0, 0.001, 0.002, 0.004, 0.008, 0.016, 0.032, 0.064], SEEDS):
+        add(exp="grid", p0=p0, lam=lam, seed=s)
+    for (reg, p0), kappa, alpha, s in itertools.product([("inside", 0.5), ("above", 2.0)],
+                                                        [None, 1.0, 0.3, 0.1, 0.03], [0.25, 1.0, 4.0], SEEDS):
+        add(exp="ema_alpha", regime=reg, p0=p0, lam=0.01, kappa=kappa, alpha=alpha, seed=s)
+    for L, lam, p0, s in itertools.product([1, 2, 3], [0.005, 0.01, 0.02], [0.5, 1.0], SEEDS):
+        add(exp="depth", depth=L, lam=lam, p0=p0, seed=s)
+    for p0, lam, s in itertools.product([0.01, 0.03, 0.1, 0.3], [0.002, 0.005, 0.01, 0.02, 0.05], range(3)):
+        add(exp="balanced", p0=p0, w0=p0, lam=lam, jitter=0.0, seed=s)
+    for lam, p0, s in itertools.product([0.0, 0.01], [0.5, 1.0], SEEDS):
+        add(exp="nosg", lam=lam, p0=p0, stopgrad=False, seed=s)
+    for lam, s in itertools.product([0.0, 0.01], SEEDS):
+        add(exp="nopred", lam=lam, p0=1.0, alpha=0.0, seed=s)
+    for (L, width), p0, lam, s in itertools.product([(1, None), (2, 24), (2, 96)], [0.5, 1.0, 2.0],
+                                                    [0.005, 0.01, 0.02], SEEDS):
+        add(exp="randpred", depth=L, width=width, pred_init="gaussian", p0=p0, lam=lam, seed=s)
+    for sseed, p0, lam, s in itertools.product([0, 1], [0.5, 1.0, 2.0], [0.005, 0.01, 0.02], SEEDS):
+        add(exp="noncomm", sseed=sseed, p0=p0, lam=lam, seed=s)
+    for p0, lam, w0, s in itertools.product([0.5, 1.0, 2.0], [0.005, 0.01, 0.02, 0.05], [1e-4, 1e-2], range(3)):
+        add(exp="adam", optimizer="adam", eta=0.02, p0=p0, lam=lam, w0=w0, seed=s)
+    for B, p0, s in itertools.product([8, 32, 128], [0.5, 1.0], SEEDS):
+        add(exp="batch", batch=B, p0=p0, lam=0.01, seed=s)
+    for i, c in enumerate(out):
+        c["id"] = i
+    return out
+
+
+TRAJ = [dict(exp="traj", p0=0.5, lam=0.01, alpha=1.0, kappa=None), dict(exp="traj", p0=2.0, lam=0.01, alpha=1.0, kappa=None),
+        dict(exp="traj", p0=1.0, lam=0.004, alpha=1.0, kappa=None), dict(exp="traj", p0=0.5, lam=0.01, alpha=1.0, kappa=0.1),
+        dict(exp="traj", p0=1.0, lam=0.01, alpha=4.0, kappa=None)]
+
+
+def init_of(cfg):
+    _, W, Ps = init_params(cfg["seed"], n, d, cfg["w0"], cfg["p0"], cfg["depth"], cfg["width"], cfg["pred_init"],
+                           cfg["w_init"], cfg["jitter"])
+    return W, predictor_product(Ps)
+
+
+# ------------------------------------------------------------------------------------------- predictions
+def predict_one(cfg):
+    """Theory predictions from the initialisation and hyperparameters only (no simulation of the model)."""
+    exp, lam, p0, alpha, kappa, L = cfg["exp"], cfg["lam"], cfg["p0"], cfg["alpha"], cfg["kappa"], cfg["depth"]
+    t_end = horizon(cfg)
+    W0, P0 = init_of(cfg)
+    S11, S21 = stats(cfg)
+    out = dict(id=cfg["id"], t_end=t_end)
+    out["rank_bound"] = int((C ** 2 >= 4 * lam * SIG).sum())                 # static threshold (Tian/Wang/PEIRA)
+    if exp in ("nosg", "nopred"):
+        out["rank_pred"] = 0                                                  # Props 5 and 6
+        out["pred"] = [0] * n
+        out["rank_window"] = int((growth_rate(p0 if exp == "nosg" else 1.0, C, SIG, lam) > 0).sum()) if exp == "nopred" else None
+        return out
+    if exp in ("randpred", "noncomm"):
+        T = int(t_end / ETA)
+        out["rank_pred"] = n1_general(S11, S21, W0, P0, lam, alpha, ETA, T, depth=L, kappa=kappa)
+        if exp == "noncomm":
+            sv21 = np.sort(np.linalg.eigvalsh((S21 + S21.T) / 2))[::-1]; ev11 = np.sort(np.linalg.eigvalsh(S11))[::-1]
+            out["rank_bound"] = int((sv21 ** 2 >= 4 * lam * ev11).sum())
+            out["rank_window"] = int((p0 * sv21 - p0 ** 2 * ev11 - lam > 0).sum())
+        return out
+    logw = np.log(np.linalg.norm(W0, axis=0))
+    if exp == "balanced":
+        pm, _ = window(C, SIG, lam)
+        basin = (np.isfinite(pm) & (np.exp(logw) > pm)).astype(int)            # Tian's basin: |w0| > p_-
+        wT = scalar_race_alpha1(C, SIG, lam, p0, np.exp(logw), t_end, dt=0.05)  # Cor. 3a, exact reduction
+        out.update(pred=basin.tolist(), rank_pred=int(basin.sum()),
+                   pred_cor3a=(np.abs(wT) > SV_THR).astype(int).tolist(), rank_cor3a=int((np.abs(wT) > SV_THR).sum()))
+        return out
+    eff_eta_lam = lam
+    scores = np.array([escape_score(C[k], SIG[k], lam, lam, alpha, p0, logw[k], kappa=kappa, t_end=t_end, depth=L)
+                       for k in range(n)])
+    pred = (scores >= 0).astype(int)
+    out.update(pred=pred.tolist(), rank_pred=int(pred.sum()), scores=[float(x) for x in scores],
+               rank_window=int((growth_rate(p0, C, SIG, lam, kappa) > 0).sum()))
+    if kappa is None and lam > 0:
+        sc, _ = race_closed_form(C, SIG, lam, alpha, p0, logw, depth=L)
+        out["rank_closed"] = int((sc >= 0).sum())
+        if alpha == 1.0 and L == 1:
+            wT = scalar_race_alpha1(C, SIG, lam, p0, np.exp(logw), t_end, dt=0.05)
+            out["rank_cor3a"] = int((np.abs(wT) > SV_THR).sum())
+            out["pred_cor3a"] = (np.abs(wT) > SV_THR).astype(int).tolist()
+    return out
+
+
+def boundary_curves():
+    """Predicted rank on a fine (p0, lam) grid at the nominal amplitude w0 = 1e-3 (no jitter): the phase-diagram
+    contours, incl. the complete-collapse boundary lam_c(p0) (largest lam with predicted rank >= 1)."""
+    p0s = np.round(np.exp(np.linspace(np.log(0.05), np.log(4.0), 41)), 4)
+    lams = np.round(np.exp(np.linspace(np.log(5e-4), np.log(0.1), 41)), 6)
+    R = np.zeros((p0s.size, lams.size), int)
+    for i, p0 in enumerate(p0s):
+        for j, lam in enumerate(lams):
+            t_end = horizon(dict(exp="grid", lam=lam, p0=p0, alpha=1.0))
+            R[i, j] = sum(escape_score(C[k], SIG[k], lam, lam, 1.0, p0, np.log(1e-3), t_end=t_end) >= 0 for k in range(n))
+    lam_c = [float(lams[R[i] >= 1].max()) if (R[i] >= 1).any() else None for i in range(p0s.size)]
+    return dict(p0=p0s.tolist(), lam=lams.tolist(), rank_pred=R.tolist(), lam_collapse=lam_c,
+                static_lam_collapse=float((C ** 2 / (4 * SIG)).max()), w0=1e-3)
+
+
+def predicted_signs(P, cfgs):
+    """Directional predictions implied by the per-cell predictions (mean predicted rank over seeds)."""
+    by = {}
+    for c in cfgs:
+        if c["exp"] == "ema_alpha":
+            by.setdefault((c["regime"], c["alpha"], c["kappa"]), []).append(P[c["id"]]["rank_pred"])
+    ema = {}
+    for reg in ["inside", "above"]:
+        for a in [0.25, 1.0, 4.0]:
+            ema[f"{reg}/alpha={a}"] = {str(k): float(np.mean(by[(reg, a, k)])) for k in [None, 1.0, 0.3, 0.1, 0.03]}
+    return ema
+
+
+def cmd_predict(outdir):
+    cfgs = configs()
+    t0 = time.time()
+    with Pool(int(os.environ.get("NPROC", "8"))) as pool:
+        preds = pool.map(predict_one, cfgs, chunksize=4)
+    P = {p["id"]: p for p in preds}
+    doc = dict(
+        experiment="E1b", status="pre-registered: written from the initialisation and hyperparameters before any E1b run",
+        statistics=dict(n=n, d=d, sigma="linspace(1.5, 0.5, 24)", c="sigma_k * 0.92^k", eta=ETA,
+                        noncomm="code/e1b.py noncomm_stats(sseed), sseed in {0, 1}"),
+        definitions=dict(
+            rank="number of singular values of W above 0.05 at the end of the run (t_end per config)",
+            survival="aligned arms: column norm |W u_k| > 0.05 at t_end (u_k = e_k)",
+            converged="rank unchanged over the last 20% of the run (rank recorded at 20 equally spaced times)",
+            fitted_constants="none; the capture rule and the 0.05 threshold were frozen after E1 (development set)"),
+        predictors=dict(
+            rank_pred="N1 (theory note Sec. 3) for aligned GD arms; Tian basin |w0|>p_- for 'balanced'; 0 for nosg/nopred "
+                      "(Props 5, 6); N1-general (Sec. 6, code/linjepa.py n1_general) for randpred/noncomm; N1 with the "
+                      "SGD clock for adam and batch (expected to fail for adam, see criteria)",
+            rank_closed="N1' closed form", rank_cor3a="exact alpha=1 scalar reduction (Cor. 3a)",
+            rank_window="static initial window #{g_k(p0) > 0}", rank_bound="static threshold #{c_k^2 >= 4 lam sigma_k} (Tian 2021, Wang 2021, PEIRA)"),
+        success_criteria={
+            "grid/ema_alpha/depth (N1)": "per-mode accuracy >= 0.95 and rank MAE <= 0.5; N1 MAE below static-bound MAE and window MAE",
+            "balanced": "Tian basin criterion exact rank in >= 90% of runs; Cor. 3a exact in >= 90%",
+            "nosg/nopred": "rank 0 in every run (lam > 0); at lam = 0 rank 0 (no mode grows)",
+            "randpred/noncomm (N1-general)": "rank MAE <= 1.0 and exact match >= 50%; MAE below static-bound MAE",
+            "ema_alpha signs": "within each (regime, alpha), the measured mean rank ordering over kappa matches the predicted ordering at every adjacent kappa pair where the prediction differs by >= 1",
+            "adam (Sec. 8, directional)": "(i) |mean rank(w0=1e-2) - mean rank(w0=1e-4)| <= 1 at each (p0, lam) "
+                                          "(the scale-free update removes log(1/w0) from the race); (ii) rank MAE to the static "
+                                          "bound smaller than rank MAE to N1-with-SGD-clock",
+            "batch (Sec. 8, directional)": "mean rank non-decreasing in batch size B; B = 128 within 1 of the population N1 prediction"},
+        boundary=boundary_curves(),
+        predicted_signs=dict(ema_alpha=predicted_signs(P, cfgs)),
+        runs=[dict(cfg, **{k: v for k, v in P[cfg["id"]].items() if k != "id"}) for cfg in cfgs],
+        trajectory_configs=TRAJ,
+        seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv))
+    json.dump(doc, open(os.path.join(outdir, "prediction.json"), "w"))
+    print("prediction.json:", len(cfgs), "configs", f"{time.time()-t0:.0f}s")
+
+
+# ------------------------------------------------------------------------------------------- runs
+def sampler_aligned(rng, B):
+    rho = C / SIG
+    x1 = rng.standard_normal((B, n)) * np.sqrt(SIG)
+    x2 = rho * x1 + rng.standard_normal((B, n)) * np.sqrt(SIG * (1 - rho ** 2))
+    return x1, x2
+
+
+def run_one(cfg):
+    t_end = horizon(cfg)
+    eta = cfg["eta"]
+    T = int(t_end / eta)
+    S11, S21 = stats(cfg)
+    out = simulate(S11, S21, d, cfg["lam"], cfg["lam"], p0=cfg["p0"], w0=cfg["w0"], eta=eta, T=T, alpha=cfg["alpha"],
+                   kappa=cfg["kappa"], depth=cfg["depth"], width=cfg["width"], pred_init=cfg["pred_init"], seed=cfg["seed"],
+                   w_init=cfg["w_init"], jitter=cfg["jitter"], stopgrad=cfg["stopgrad"], S22=S11,
+                   optimizer=cfg["optimizer"], sampler=sampler_aligned if cfg["batch"] else None, batch=cfg["batch"],
+                   rank_checks=20, sv_thr=SV_THR)
+    ranks = out["ranks"]
+    if out["diverged"] is not None:   # iteration blew up (step size too large for the grown scale); no rank
+        return dict(id=cfg["id"], t_end=t_end, steps=T, diverged=out["diverged"], rank_meas=None, rankme=None,
+                    surv=None, converged=False, rank_t=ranks, sv_top=None, p_final=None)
+    sv = out["sv"]
+    conv = len(set(r for _, r in ranks[-4:])) == 1
+    return dict(id=cfg["id"], t_end=t_end, steps=T, diverged=None, rank_meas=int((sv > SV_THR).sum()), rankme=rankme(sv),
+                surv=(out["mode_norms"] > SV_THR).astype(int).tolist(), converged=bool(conv), rank_t=ranks,
+                sv_top=[float(x) for x in sv[:8]], p_final=float(np.linalg.svd(out["P"], compute_uv=False).max()))
+
+
+def run_one_safe(cfg):
+    try:
+        return run_one(cfg)
+    except Exception as e:   # recorded, never silently dropped
+        return dict(id=cfg["id"], diverged=None, rank_meas=None, error=repr(e))
+
+
+def run_traj(cfg):
+    c = dict(lam=0.01, p0=1.0, alpha=1.0, w0=1e-3, kappa=None, depth=1, width=None, pred_init="identity",
+             w_init="orthogonal", jitter=0.1, seed=0)
+    c.update(cfg)
+    t_end = horizon(dict(c, exp="grid"))
+    T = int(t_end / ETA)
+    every = max(1, T // 400)
+    out = simulate(np.diag(SIG), np.diag(C), d, c["lam"], c["lam"], p0=c["p0"], w0=c["w0"], eta=ETA, T=T,
+                   alpha=c["alpha"], kappa=c["kappa"], seed=c["seed"], w_init="orthogonal", record_every=every)
+    t = np.array([x[0] for x in out["traj"]]); amp = np.array([x[1] for x in out["traj"]])
+    pmax = np.array([x[2].max() for x in out["traj"]])
+    a0 = amp[0]
+    # predictions: A1 log-amplitude log w0 + F_k(t) (copy target; closed form), and the exact reduced flow
+    pt = c["p0"] * np.exp(-c["alpha"] * c["lam"] * t)
+    if c["kappa"] is None:
+        F = (C[None] * (c["p0"] - pt[:, None]) - SIG[None] / 2 * (c["p0"] ** 2 - pt[:, None] ** 2)
+             - c["lam"] * np.log(c["p0"] / pt[:, None])) / (c["alpha"] * c["lam"])
+    else:
+        g = growth_rate(pt[:, None], C[None], SIG[None], c["lam"], c["kappa"])
+        F = np.concatenate([np.zeros((1, n)), np.cumsum(0.5 * (g[1:] + g[:-1]) * np.diff(t)[:, None], 0)])
+    return dict(cfg=c, t=t.tolist(), amp=amp.tolist(), p_max=pmax.tolist(), a0=a0.tolist(),
+                pred_logamp_A1=(np.log(a0)[None] + F).tolist(), g_p0=growth_rate(c["p0"], C, SIG, c["lam"], c["kappa"]).tolist())
+
+
+def cmd_run(outdir):
+    assert os.path.exists(os.path.join(outdir, "prediction.json")), "pre-register first"
+    cfgs = configs()
+    t0 = time.time()
+    res = []
+    with Pool(int(os.environ.get("NPROC", "8"))) as pool:
+        trajs = pool.map(run_traj, TRAJ)
+        json.dump(trajs, open(os.path.join(outdir, "trajectories.json"), "w"))
+        print("trajectories done", f"{time.time()-t0:.0f}s", flush=True)
+        order = sorted(cfgs, key=lambda c: -horizon(c) / c["eta"])
+        for i, r in enumerate(pool.imap_unordered(run_one_safe, order, chunksize=1)):
+            res.append(r)
+            if (i + 1) % 100 == 0:
+                print(f"{i+1}/{len(cfgs)} done, {time.time()-t0:.0f}s", flush=True)
+    res.sort(key=lambda r: r["id"])
+    with open(os.path.join(outdir, "e1b_runs.jsonl"), "w") as f:
+        for r in res:
+            f.write(json.dumps(r) + "\n")
+    json.dump(dict(runs=len(res), seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv),
+                   nproc=int(os.environ.get("NPROC", "8"))), open(os.path.join(outdir, "e1b_meta.json"), "w"), indent=1)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E1b finished", len(res), "runs", f"{time.time()-t0:.0f}s", flush=True)
+
+
+if __name__ == "__main__":
+    cmd, outdir = sys.argv[1], sys.argv[2]
+    os.makedirs(outdir, exist_ok=True)
+    if cmd == "predict":
+        cmd_predict(outdir)
+    elif cmd == "run":
+        cmd_run(outdir)
+    elif cmd == "analyze":
+        import e1b_analyze
+        e1b_analyze.main(outdir)

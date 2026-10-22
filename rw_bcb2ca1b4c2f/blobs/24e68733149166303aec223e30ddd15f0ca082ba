@@ -1,0 +1,28 @@
+{
+ "grid": "r3_heldout",
+ "what": "CPU-time projection before launch (bounded go condition 1): sum(T) x process CPU-s per step",
+ "runs": 128,
+ "base": 64,
+ "floor": 64,
+ "sum_T": 23466688,
+ "per_step": {
+  "timing_pilot": {
+   "cpu_s_per_step": [
+    0.00174,
+    0.00251
+   ],
+   "how": "process time of two 4000-step AdamW runs (eta 0.002) of r3_heldout configurations (field/tanh, latent/relu) on disjoint seeds 49990+, single-threaded BLAS, host load 17.6; includes fixed per-run overhead, so an upper value per step; nothing but time read"
+  },
+  "dev_adam2": {
+   "wall_s_per_step": 0.003277205173253233,
+   "how": "sum of per-run wall seconds (seconds_truth + seconds_pred) of the 48 dev_adam2 runs over their 12.8M steps on a loaded host; wall >= process time for a single-threaded run"
+  }
+ },
+ "projection_cpu_h": {
+  "central": 16.4,
+  "upper": 21.4
+ },
+ "reconcile": "Feasibility's 17.9 h for dev is the pool's wall time x 12 processes (5360 s x 12), which counts idle slots at the tail; the runs' own wall seconds sum to 11.65 h. Its 48 CPU-h scales 0.37 h per run to 128 runs, but r3_heldout's runs are shorter on average (sum T 23.5M over 128 runs = 183k steps, against dev's 12.8M over 48 = 267k). Scaling dev's per-run wall sum by steps gives 21.4 h; the process-time pilot gives 16.4 h.",
+ "bound_cpu_h": 30,
+ "launch": "after r2_heldout in the same job (never together), 8 processes, order by rep half then cell (results/e6/r3_heldout/run_order.json)"
+}

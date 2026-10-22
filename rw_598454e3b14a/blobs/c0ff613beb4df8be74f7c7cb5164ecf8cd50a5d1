@@ -1,0 +1,62 @@
+"""Rung 3 development check (not registered): is the AdamW arm's truth at eta = 0.02 a stable state or an unstable regime?
+The dev_adam diagnostic (configs 0, 1, 18, 40, 47 at eta = 0.02) shows the training loss rising 3-25 fold from 10% of T
+to T (tanh/field: 0.63 -> 15.5) and an embedding of full or near-full rank (truth ~26/32) that does not fall when
+averaged over the last 10% of T. This re-runs the same configurations at smaller eta with the same horizon in weight-decay
+e-folds (T = horizon / (eta lam)), recording at NCHK checks the loss, the embedding rank (#sv > THR), the W2 rank, and
+the rank of the embedding averaged over the last 10% of T, to choose the AdamW step size from stability, not from the
+criteria's fit. Seeds: the dev_adam seed (development data; no held-out configuration is touched).
+Usage: python3 code/checks/e6_r3_adam_eta.py OUTFILE NPROC ETA[,ETA...] ID[,ID...]"""
+import sys, os, json, time
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import numpy as np
+from multiprocessing import Pool
+import e6_r2 as R
+
+
+def run(a):
+    i, eta = a; t0 = time.time()
+    cfg = dict(R.configs("dev_adam")[i]); lam = cfg["lam"]
+    cfg["T"] = int(round(cfg["T"] * cfg["eta"] / eta)); cfg["eta"] = eta
+    Xc, Xt = R.sample(cfg); W1, W2, P = R.init(cfg); T, act = cfg["T"], cfg["act"]
+    b1, b2, ep = R.ADAM["b1"], R.ADAM["b2"], R.ADAM["eps"]
+    m = [np.zeros_like(W1), np.zeros_like(W2), np.zeros_like(P)]; v = [np.zeros_like(W1), np.zeros_like(W2), np.zeros_like(P)]
+    chk = set(np.linspace(0, T, R.NCHK + 1).astype(int)[1:].tolist())
+    rk = lambda M: int((R.svals(M - M.mean(0)) / np.sqrt(R.N) > R.THR).sum())
+    rec, avg, navg, lmax = [], None, 0, 0.0
+    for step in range(1, T + 1):
+        ac = Xc @ W1.T; hc = R.phi(ac, act); ht = R.phi(Xt @ W1.T, act)
+        zc = hc @ W2.T; zt = ht @ W2.T; E = zc @ P.T - zt
+        gP = E.T @ zc / R.N; gz = E @ P; gW2 = gz.T @ hc / R.N; gW1 = ((gz @ W2) * R.dphi(ac, hc, act)).T @ Xc / R.N
+        o = []
+        for k, (th, g) in enumerate(zip([W1, W2, P], [gW1, gW2, gP])):
+            m[k] = b1 * m[k] + (1 - b1) * g; v[k] = b2 * v[k] + (1 - b2) * g * g
+            o.append(th - eta * (m[k] / (1 - b1 ** step) / (np.sqrt(v[k] / (1 - b2 ** step)) + ep) + lam * th))
+        W1, W2, P = o
+        loss = float((E ** 2).mean())
+        if not np.isfinite(loss):
+            return dict(cfg=cfg, diverged=step, rec=rec, seconds=time.time() - t0)
+        if step > 0.5 * T:
+            lmax = max(lmax, loss)
+        if step > 0.9 * T:
+            Z = zc; avg = Z.copy() if avg is None else avg + Z; navg += 1
+        if step in chk:
+            rec.append(dict(step=step, loss=loss, emb=rk(zc), w2=int((R.svals(W2) > R.THR).sum()),
+                            emb_sv=np.round(R.svals(zc - zc.mean(0)) / np.sqrt(R.N), 4).tolist()))
+    return dict(cfg=cfg, rec=rec, avg_rank=rk(avg / navg), loss_max_second_half=lmax, seconds=time.time() - t0)
+
+
+if __name__ == "__main__":
+    out, nproc = sys.argv[1], int(sys.argv[2])
+    etas = [float(x) for x in sys.argv[3].split(",")]; ids = [int(x) for x in sys.argv[4].split(",")]
+    jobs = sorted([(i, e) for i in ids for e in etas], key=lambda a: a[1])   # longest (smallest eta) first
+    t0 = time.time()
+    with Pool(nproc) as p:
+        res = p.map(run, jobs, chunksize=1)
+    json.dump(res, open(out, "w"))
+    for r in res:
+        c = r["cfg"]; rc = r["rec"]
+        print(c["id"], c["act"], c["data"], c["lam"], c["eta"], c["T"], "div" if "diverged" in r else "",
+              "loss@10%,50%,T", [round(rc[k]["loss"], 4) for k in (1, 9, -1)] if len(rc) == R.NCHK else None,
+              "emb ranks", [x["emb"] for x in rc], "avg", r.get("avg_rank"), f"{r['seconds']:.0f}s")
+    print("HUTIAN_WAKE: r3 adam eta check done", f"{len(res)} runs in {time.time() - t0:.0f} s", flush=True)

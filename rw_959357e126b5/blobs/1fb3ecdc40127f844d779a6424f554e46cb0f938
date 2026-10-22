@@ -1,0 +1,7 @@
+import sys, json; import os; sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+import numpy as np, e6_r4_heldout as h, e6_r4 as r4, e6_r2 as r2
+cfg=r4.configs("smoke")[0]; Xc,Xt=r2.sample(cfg)
+a=r4.train(cfg,Xc,Xt); b=h.train_full(cfg,Xc,Xt)
+print({k:(a[k]==b[k]) for k in a if k!='snaps'}, set(a['snaps'])==set(b['snaps']), all(np.array_equal(a['snaps'][k],b['snaps'][k]) for k in a['snaps']))
+pa=r4.predict(cfg,Xc,Xt,a); pb=r4.predict(cfg,Xc,Xt,b); print(pa==pb)
+print(h.measured_rows(cfg,Xc,Xt,b['full']), a['rank'], len(b['full']))

@@ -1,0 +1,128 @@
+{
+ "source": "experiment-repo 0ce2e2b results/e1c/{prediction.json,e1c_runs.jsonl,summary.json}",
+ "runs": 144,
+ "diverged": 0,
+ "surv_sum_equals_rank_meas": true,
+ "rank_changed_t_end_to_2t_end": 0,
+ "forecast_vs_measured_t_end": {
+  "mode_disagree": 0,
+  "modes": 2304,
+  "run_rank_disagree": 0
+ },
+ "forecast_vs_measured_2t_end": {
+  "mode_disagree": 0,
+  "modes": 2304,
+  "run_rank_disagree": 0
+ },
+ "summary_check": {
+  "L=1": {
+   "depthL": {
+    "mine": {
+     "exact": 1.0,
+     "mae": 0.0,
+     "over": 0,
+     "under": 0,
+     "mode_acc": 1.0
+    },
+    "matches_summary": true
+   },
+   "depth1": {
+    "mine": {
+     "exact": 1.0,
+     "mae": 0.0,
+     "over": 0,
+     "under": 0,
+     "mode_acc": 1.0
+    },
+    "matches_summary": true
+   }
+  },
+  "L=2": {
+   "depthL": {
+    "mine": {
+     "exact": 0.8611111111111112,
+     "mae": 0.1388888888888889,
+     "over": 0,
+     "under": 5,
+     "mode_acc": 0.9913194444444444
+    },
+    "matches_summary": true
+   },
+   "depth1": {
+    "mine": {
+     "exact": 0.5,
+     "mae": 0.5,
+     "over": 18,
+     "under": 0,
+     "mode_acc": 0.96875
+    },
+    "matches_summary": true
+   }
+  },
+  "L=3": {
+   "depthL": {
+    "mine": {
+     "exact": 0.9722222222222222,
+     "mae": 0.027777777777777776,
+     "over": 0,
+     "under": 1,
+     "mode_acc": 0.9982638888888888
+    },
+    "matches_summary": true
+   },
+   "depth1": {
+    "mine": {
+     "exact": 0.3611111111111111,
+     "mae": 0.8055555555555556,
+     "over": 23,
+     "under": 0,
+     "mode_acc": 0.9496527777777778
+    },
+    "matches_summary": true
+   }
+  },
+  "L=4": {
+   "depthL": {
+    "mine": {
+     "exact": 0.6111111111111112,
+     "mae": 0.3888888888888889,
+     "over": 0,
+     "under": 14,
+     "mode_acc": 0.9756944444444444
+    },
+    "matches_summary": true
+   },
+   "depth1": {
+    "mine": {
+     "exact": 0.3611111111111111,
+     "mae": 0.8611111111111112,
+     "over": 23,
+     "under": 0,
+     "mode_acc": 0.9461805555555556
+    },
+    "matches_summary": true
+   }
+  },
+  "L>=2": {
+   "depthL_mae": 0.18518518518518517,
+   "depth1_mae": 0.7222222222222222,
+   "depthL_over": 0,
+   "depthL_under": 20
+  },
+  "depthL_missed_modes": {
+   "total": 20,
+   "by_L": {
+    "2": 5,
+    "3": 1,
+    "4": 14
+   },
+   "by_lam": {
+    "0.003": 3,
+    "0.006": 8,
+    "0.012": 2,
+    "0.024": 7
+   },
+   "false_survivals": 0
+  }
+ }
+}

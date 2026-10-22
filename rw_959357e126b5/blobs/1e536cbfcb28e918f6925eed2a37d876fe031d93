@@ -1,0 +1,9 @@
+\begin{abstract}
+Joint-embedding predictive architectures (JEPAs) avoid collapse through design heuristics, and existing theory bounds the rank they keep but does not predict it.
+In a linear JEPA with weight decay the collapsed point is stable, so a direction of the representation survives only by winning a race: it must grow large enough to take over the predictor before the predictor, shrunk by weight decay, leaves the range in which that direction can grow.
+This criterion has no fitted constants.
+On \EoneBAlignedRuns{} held-out runs with aligned statistics, registered in advance, it predicts the rank with a mean error of \EoneBAlignedMae{} directions, against \EoneBAlignedWindowMae{} for counting the directions that grow at initialisation and \EoneBAlignedBoundMae{} for the static fixed-point threshold.
+Registered tests mark its reach in linear models: modified forms predict the count under AdamW at a fixed horizon (not at convergence), with a layer-normalised target, and in deep linear encoders with aligned factors, while a model of weight-decay schedules fails.
+The race assumes that collapse is decided early; in an I-JEPA-style vision transformer this premise fails, since raising weight decay at epoch 20 of 50 still removes directions.
+In the linear models we test, under constant weight decay, collapse is a race against the predictor's decay; where it is not decided early, a criterion read early in training must take the remaining schedule into account.
+\end{abstract}

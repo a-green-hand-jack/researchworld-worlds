@@ -1,0 +1,14 @@
+# Study brief
+
+## Objective and frozen material
+The objective requires an ordinary-least-squares fit of `y = a + b x` to the 40 rows in `inputs/0/data.csv`, with 95% confidence intervals for both coefficients; `figure.png` and `reference.pdf` must be preserved byte-for-byte under `outputs/`; and `report/report.md` must be one page and include both coefficient intervals, residual standard deviation, and one sentence describing each supplied file.
+
+The data contain 40 observations at x = 0, 0.25, ..., 9.75. The supplied values show a positive, approximately linear association with visible scatter and some larger positive residuals at higher x; the planned analysis is the standard homoskedastic Gaussian-error OLS fit with residual degrees of freedom n-2=38, coefficient standard errors from the residual mean square, and t(38) 95% intervals. The residual standard deviation will be `sqrt(SSE/38)`.
+
+`figure.png` is a supplied raster figure and `reference.pdf` is a supplied PDF reference artifact. Both are inputs to preserve exactly; their descriptions in the final report will be based on direct inspection, not inferred from the regression alone. The data file is the numeric source for all reported estimates.
+
+## Analysis and checks
+Compute the fit directly from the frozen CSV, retain sufficient precision for auditability, verify n, hashes, residual degrees of freedom, and the OLS normal-equation identities. Report the intercept and slope with 95% t intervals and residual standard deviation, without adding unrequested inferential claims.
+
+## Deliverables and ownership
+The report owner supplies `report/report.md` and the exact copies under `outputs/`. This position supplies the fitted coefficients, intervals, residual standard deviation, provenance, and checks to that owner and to review. No required input could not be accessed; local PDF/image helper utilities were unavailable, so direct byte preservation and basic format inspection will be used while describing their visible content.

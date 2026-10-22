@@ -1,0 +1,188 @@
+{
+ "question": [
+  "Question: are the held-out \"round-off regrowth\" indices (amendment 1's exact check, 80 in noisy runs, 20 in population",
+  "runs, all at p0 = 1.5) and the p0 = 1.5 rank results float64 round-off, or the exact dynamics?"
+ ],
+ "inputs": [
+  "precision_heldout_runs.jsonl.gz",
+  "b3_heldout_runs.jsonl.gz"
+ ],
+ "f64_rerun_vs_delivered": {
+  "runs": 159,
+  "count_trajectory_identical": 159,
+  "diverged": {
+   "f32": [],
+   "f64": [
+    142
+   ],
+   "f80": [
+    142
+   ]
+  }
+ },
+ "cells": {
+  "p00.7_noisy": {
+   "f32": {
+    "runs": 60,
+    "roundoff_regrowth_indices": 0,
+    "runs_with_regrowth": 0,
+    "reescape_runs": 0,
+    "final_rank_mean": 7.95,
+    "deepest_log10_sv_rel_top_median": -9.69801349525584
+   },
+   "f64": {
+    "runs": 60,
+    "roundoff_regrowth_indices": 0,
+    "runs_with_regrowth": 0,
+    "reescape_runs": 0,
+    "final_rank_mean": 7.95,
+    "deepest_log10_sv_rel_top_median": -17.49242773610498
+   },
+   "f80": {
+    "runs": 60,
+    "roundoff_regrowth_indices": 0,
+    "runs_with_regrowth": 0,
+    "reescape_runs": 0,
+    "final_rank_mean": 7.95,
+    "deepest_log10_sv_rel_top_median": -18.83028344008043
+   }
+  },
+  "p00.7_pop": {
+   "f32": {
+    "runs": 20,
+    "roundoff_regrowth_indices": 0,
+    "runs_with_regrowth": 0,
+    "reescape_runs": 0,
+    "final_rank_mean": 8.5,
+    "deepest_log10_sv_rel_top_median": -13.587790930187756
+   },
+   "f64": {
+    "runs": 20,
+    "roundoff_regrowth_indices": 0,
+    "runs_with_regrowth": 0,
+    "reescape_runs": 0,
+    "final_rank_mean": 8.5,
+    "deepest_log10_sv_rel_top_median": -13.601841032358243
+   },
+   "f80": {
+    "runs": 20,
+    "roundoff_regrowth_indices": 0,
+    "runs_with_regrowth": 0,
+    "reescape_runs": 0,
+    "final_rank_mean": 8.5,
+    "deepest_log10_sv_rel_top_median": -13.6018410323583
+   }
+  },
+  "p01.5_noisy": {
+   "f32": {
+    "runs": 60,
+    "roundoff_regrowth_indices": 0,
+    "runs_with_regrowth": 0,
+    "reescape_runs": 0,
+    "final_rank_mean": 6.65,
+    "deepest_log10_sv_rel_top_median": -10.72615647340371
+   },
+   "f64": {
+    "runs": 59,
+    "roundoff_regrowth_indices": 80,
+    "runs_with_regrowth": 30,
+    "reescape_runs": 0,
+    "final_rank_mean": 5.372881355932203,
+    "deepest_log10_sv_rel_top_median": -18.62714193939104
+   },
+   "f80": {
+    "runs": 59,
+    "roundoff_regrowth_indices": 80,
+    "runs_with_regrowth": 30,
+    "reescape_runs": 0,
+    "final_rank_mean": 5.372881355932203,
+    "deepest_log10_sv_rel_top_median": -21.81466925195414
+   }
+  },
+  "p01.5_pop": {
+   "f32": {
+    "runs": 20,
+    "roundoff_regrowth_indices": 20,
+    "runs_with_regrowth": 10,
+    "reescape_runs": 0,
+    "final_rank_mean": 3.0,
+    "deepest_log10_sv_rel_top_median": -38.501182598669864
+   },
+   "f64": {
+    "runs": 20,
+    "roundoff_regrowth_indices": 20,
+    "runs_with_regrowth": 10,
+    "reescape_runs": 0,
+    "final_rank_mean": 3.0,
+    "deepest_log10_sv_rel_top_median": -45.03650560634537
+   },
+   "f80": {
+    "runs": 20,
+    "roundoff_regrowth_indices": 20,
+    "runs_with_regrowth": 10,
+    "reescape_runs": 0,
+    "final_rank_mean": 3.0,
+    "deepest_log10_sv_rel_top_median": -45.03650560634546
+   }
+  }
+ },
+ "agreement": {
+  "f64_vs_f80_p00.7": {
+   "runs": 80,
+   "identical_trajectory": 80,
+   "final_rank_differs": 0,
+   "checks_differing": {
+    "0": 80
+   }
+  },
+  "f64_vs_f80_p01.5": {
+   "runs": 79,
+   "identical_trajectory": 78,
+   "final_rank_differs": 0,
+   "checks_differing": {
+    "0": 78,
+    "1": 1
+   }
+  },
+  "f32_vs_f80_p00.7": {
+   "runs": 80,
+   "identical_trajectory": 78,
+   "final_rank_differs": 0,
+   "checks_differing": {
+    "0": 78,
+    "1": 2
+   }
+  },
+  "f32_vs_f80_p01.5": {
+   "runs": 79,
+   "identical_trajectory": 20,
+   "final_rank_differs": 57,
+   "checks_differing": {
+    "38": 22,
+    "37": 19,
+    "5": 2,
+    "0": 20,
+    "36": 11,
+    "35": 4,
+    "34": 1
+   }
+  }
+ },
+ "S4_delta_by_precision": {
+  "f32": {
+   "p00.7": -0.55,
+   "p01.5": 3.6779661016949152
+  },
+  "f64": {
+   "p00.7": -0.55,
+   "p01.5": 2.3728813559322033
+  },
+  "f80": {
+   "p00.7": -0.55,
+   "p01.5": 2.3728813559322033
+  }
+ },
+ "f64_first_check_at_roundoff_in_regrowth_runs": {
+  "0": 40
+ }
+}

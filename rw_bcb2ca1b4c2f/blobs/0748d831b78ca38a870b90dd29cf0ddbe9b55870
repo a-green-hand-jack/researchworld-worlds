@@ -1,0 +1,143 @@
+"""Independent check of E6 rung 1b held-out (experiment-repo 0639f79), internal-review-repo.
+A: re-run the held-out grid with the delivered code; B: compare raw runs; C: compare score json;
+D: independent scorer on the delivered runs; E: torch-autograd truth on 40 sampled base runs;
+F: own implementation of n1g_K (paper App. F formula) on the same runs."""
+import os, sys, json, gzip, subprocess, time, math
+import numpy as np
+from multiprocessing import Pool
+HERE = os.path.dirname(os.path.abspath(__file__)); EXP = os.path.join(HERE, "exp"); OUT = os.path.join(HERE, "rerun")
+DELIV = os.path.join(EXP, "results/e6/r1b_heldout")
+res = {}
+def load(p):
+    return {json.loads(l)["cfg"]["id"]: json.loads(l) for l in gzip.open(p, "rt")}
+# A
+t0 = time.time()
+if not os.path.exists(os.path.join(OUT, "r1b_heldout_runs.jsonl.gz")):
+    subprocess.run([sys.executable, "code/e6_r1b.py", "run", "heldout", OUT, "8"], cwd=EXP, check=True)
+res["A_seconds"] = time.time() - t0
+D = load(os.path.join(DELIV, "r1b_heldout_runs.jsonl.gz")); R = load(os.path.join(OUT, "r1b_heldout_runs.jsonl.gz"))
+# B
+diff = []
+for i in D:
+    a, b = D[i], R.get(i)
+    if b is None: diff.append((i, "missing")); continue
+    for k in ("cfg", "truth", "pred"):
+        if a[k] != b[k]: diff.append((i, k))
+res["B"] = dict(delivered=len(D), rerun=len(R), differing=len(diff), first=diff[:10])
+# C
+sd = json.load(open(os.path.join(DELIV, "r1b_heldout_score.json"))); sr = json.load(open(os.path.join(OUT, "r1b_heldout_score.json")))
+def walk(a, b, path=""):
+    out = []
+    if isinstance(a, dict):
+        for k in set(a) | set(b):
+            if k not in a or k not in b: out.append(path + "/" + k); continue
+            out += walk(a[k], b[k], path + "/" + k)
+    elif isinstance(a, list):
+        if len(a) != len(b): return [path]
+        for j, (x, y) in enumerate(zip(a, b)): out += walk(x, y, path + f"[{j}]")
+    elif a != b:
+        out.append(path)
+    return out
+cd = walk(sd, sr); res["C"] = dict(differing_fields=len(cd), first=cd[:10])
+# D: independent scorer
+base = [r for r in D.values() if not r["cfg"].get("pert")]; fl = [r for r in D.values() if r["cfg"].get("pert")]
+fin = {r["cfg"]["id"]: (r["truth"]["counts"] or [None])[-1] for r in base}
+frag = set()
+for r in fl:
+    if (r["truth"]["counts"] or [None])[-1] != fin[r["cfg"]["floor_of"]]: frag.add(r["cfg"]["floor_of"])
+def ev(r, k):
+    if k.startswith("early_"):
+        e = r["truth"]["early"]; key = k[6:]
+        if key in e: return e[key]
+        N = int(round(r["cfg"]["T"] / 0.1))
+        assert int(round(float(key) / 0.1)) == int(round(0.1 * N)), (k, r["cfg"]["T"])
+        return e["f0.10"]
+    return r["pred"][k]
+BASES = ["n1g_d1", "race_id", "static", "window_P0", "early_25.0", "early_50.0", "dvd", "dvd_signed", "dvd_sorted", "dvd_pq", "dvd_pq_signed", "dvd_exact", "dvd_nowd"]
+rng = np.random.default_rng(12345)
+def ci(x, B=4000):
+    x = np.asarray(x, float); idx = rng.integers(0, len(x), (B, len(x))); m = x[idx].mean(1)
+    return [float(np.quantile(m, .025)), float(np.quantile(m, .975))]
+cells = {}
+for arm in ("gauss", "nearid"):
+    for name, sel in (("M_ge2", lambda M: M >= 2), ("M2", lambda M: M == 2), ("M3", lambda M: M == 3), ("M4", lambda M: M == 4)):
+        S = [r for r in base if r["cfg"]["arm"] == arm and sel(r["cfg"]["M"])]
+        nf = sum(1 for r in S if not r["truth"].get("counts")); S2 = [r for r in S if r["truth"].get("counts")]
+        tru = np.array([r["truth"]["counts"][-1] for r in S2]); ep = np.abs(np.array([r["pred"]["n1g_K"] for r in S2]) - tru)
+        c = dict(runs=len(S), nonfinite=nf, mae=float(ep.mean()), within1=float((ep <= 1).sum() / len(S)), failed=[], lo={})
+        for k in BASES:
+            e = np.abs(np.array([ev(r, k) for r in S2]) - tru); lo = ci(e - ep)[0]; c["lo"][k] = round(lo, 3)
+            if not lo > 0: c["failed"].append(k)
+        e10 = np.abs(np.array([ev(r, "early_f0.10") for r in S2]) - tru); c["early10_mae"] = float(e10.mean()); c["early10_minus_ci"] = ci(e10 - ep)
+        c["pass"] = bool(c["within1"] >= 0.9 and nf == 0 and not c["failed"])
+        c["fragile_share"] = float(np.mean([r["cfg"]["id"] in frag for r in S2]))
+        c["delivered_pass"] = sd[f"{arm}_{name}"]["pass"]; c["delivered_mae"] = sd[f"{arm}_{name}"]["n1g_K"]["mae"]
+        c["delivered_failed"] = sd[f"{arm}_{name}"]["failed_against"]
+        cells[f"{arm}_{name}"] = c
+res["D"] = dict(fragile=len(frag), fragile_delivered=len(sd["fragile"]), cells=cells,
+                T_values=sorted({r["cfg"]["T"] for r in base}), early_collisions=sum(1 for r in base if "50.0" not in r["truth"]["early"]))
+json.dump(res, open(os.path.join(HERE, "check_partial.json"), "w"), indent=1)
+# E, F on 40 sampled base runs
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e6_r1b as X
+samp = sorted(np.random.default_rng(7).choice([r["cfg"]["id"] for r in base if r["truth"].get("counts")], 40, replace=False).tolist())
+def torch_truth(cfg):
+    import torch
+    torch.set_num_threads(1)
+    W0, Qs0 = X.init(cfg); c, s = X.stats(X.GRIDS[cfg["grid"]])
+    S11 = torch.tensor(np.diag(s)); S21 = torch.tensor(np.diag(c)); lam = X.lam_truth(cfg); eta = 0.1
+    W = torch.tensor(W0, requires_grad=True); Qs = [torch.tensor(q, requires_grad=True) for q in Qs0]
+    N = int(round(cfg["T"] / eta)); out = {}
+    for k in range(N):
+        P = Qs[0]
+        for q in Qs[1:]: P = q @ P
+        Wt = W.detach()
+        # population loss 1/2 E|P W x - Wt x'|^2 with E[xx^T]=S11, E[x'x^T]=S21 (diag), stop-gradient target
+        L = 0.5 * torch.trace(P @ W @ S11 @ W.T @ P.T) - torch.trace(P @ W @ S21.T @ Wt.T)
+        g = torch.autograd.grad(L, [W] + Qs)
+        with torch.no_grad():
+            W -= eta * (g[0] + lam * W)
+            for q, gq in zip(Qs, g[1:]): q -= eta * cfg["alpha"] * (gq + lam * q)
+        if (k + 1) in (250, 500, int(round(0.1 * N)), N):
+            out[k + 1] = int((np.linalg.svd(W.detach().numpy(), compute_uv=False) > 0.05).sum())
+    return out
+def own_n1gK(cfg):
+    W0, Qs = X.init(cfg); c, s = X.stats(X.GRIDS[cfg["grid"]]); S11, S21 = np.diag(s), np.diag(c)
+    lam, M, eta = cfg["lam"], cfg["M"], 0.1; N = int(round(cfg["T"] / eta)); r1 = 1 - eta * cfg["alpha"] * lam
+    P0 = np.eye(16)
+    for q in Qs: P0 = q @ P0
+    W = W0.copy(); ls = 0.0; best = 0
+    for t in range(N + 1):
+        m = np.abs(W).max(); W /= m; ls += math.log(m)
+        P = r1 ** (M * t) * P0
+        if t % 10 == 0:
+            U, sv, Vt = np.linalg.svd(W); sv = sv * math.exp(min(ls, 700))
+            Qt = [r1 ** t * q for q in Qs]; cnt = 0
+            for i in range(16):
+                u, v = U[:, i], Vt[i]
+                p = u @ P @ u; qq = np.sum((P @ u) ** 2); ci_ = v @ S21 @ v; si = v @ S11 @ v
+                K = 0.0
+                for j in range(M):            # factor j (0-based) = Q_{j+1}
+                    hi = np.eye(16); lo = np.eye(16)
+                    for qf in Qt[j + 1:]: hi = qf @ hi
+                    for qf in Qt[:j]: lo = qf @ lo
+                    K += np.sum((hi.T @ u) ** 2) * np.sum((lo @ u) ** 2)
+                if p * ci_ - qq * si - lam > 0 and ci_ - p * si > 0 and sv[i] ** 2 * (ci_ - p * si) * K >= M * lam * abs(p):
+                    cnt += 1
+            best = max(best, cnt)
+        if t == N: break
+        W = W + eta * (P.T @ (W @ S21 - P @ W @ S11) - lam * W / 1.0)
+    return best
+def job(i):
+    cfg = D[i]["cfg"]; tt = torch_truth(cfg); nk = own_n1gK(cfg)
+    N = int(round(cfg["T"] / 0.1))
+    return dict(id=i, M=cfg["M"], arm=cfg["arm"], T=cfg["T"], torch_final=tt[N], delivered_final=D[i]["truth"]["counts"][-1],
+                torch_f10=tt[int(round(0.1 * N))], delivered_f10=D[i]["truth"]["early"]["f0.10"],
+                own_n1gK=nk, delivered_n1gK=D[i]["pred"]["n1g_K"])
+with Pool(8) as pool:
+    ef = pool.map(job, samp, chunksize=1)
+res["E_F"] = dict(runs=ef, truth_final_mismatch=sum(r["torch_final"] != r["delivered_final"] for r in ef),
+                  truth_f10_mismatch=sum(r["torch_f10"] != r["delivered_f10"] for r in ef),
+                  n1gK_mismatch=sum(r["own_n1gK"] != r["delivered_n1gK"] for r in ef))
+json.dump(res, open(os.path.join(HERE, "check.json"), "w"), indent=1)
+print("HUTIAN_WAKE: r1b check done", json.dumps({k: res[k] for k in ("B", "C")}), res["E_F"]["truth_final_mismatch"], res["E_F"]["n1gK_mismatch"], flush=True)

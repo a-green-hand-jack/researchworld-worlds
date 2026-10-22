@@ -1,0 +1,94 @@
+"""B3 post hoc check (not registered): does the final rank depend on the arithmetic precision of the state?
+At p0 = 1.5 the whole of W first collapses (the top singular value falls to ~1e-21 at the first check) and the weaker
+directions reach <= 1e-13 of the top, at or below float64 resolution (eps 2.2e-16 relative to |W|), before their
+windows open and they regrow. If their regrowth starts from float64 round-off (L3's mechanism) rather than from their
+exact amplitude, the rank at T depends on the precision of the state. This re-runs every held-out configuration with
+the same sample path (drawn in float64 from the same seed, cast) in float32, float64 and longdouble (80-bit), and reads
+the singular values with a one-sided Jacobi SVD in longdouble (high relative accuracy for graded matrices), so the
+state precision is the only difference.
+Usage: python3 code/checks/e5_b3_precision.py GRID OUTDIR [NPROC] [P0]"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import numpy as np
+from multiprocessing import Pool
+import e5_b3 as b3
+
+DT = {"f32": np.float32, "f64": np.float64, "f80": np.longdouble}
+
+
+def jacobi_sv(A, sweeps=30):
+    """Singular values by one-sided (Hestenes) Jacobi in longdouble, sorted descending."""
+    U = np.array(A, dtype=np.longdouble); n = U.shape[1]; tol = np.finfo(np.longdouble).eps * n
+    for _ in range(sweeps):
+        rot = 0
+        for i in range(n - 1):
+            for j in range(i + 1, n):
+                a = U[:, i] @ U[:, i]; b = U[:, j] @ U[:, j]; g = U[:, i] @ U[:, j]
+                if a == 0 or b == 0 or abs(g) <= tol * np.sqrt(a * b):
+                    continue
+                rot += 1
+                z = (b - a) / (2 * g); t = np.sign(z) / (abs(z) + np.sqrt(1 + z * z)) if z != 0 else np.longdouble(1)
+                c = 1 / np.sqrt(1 + t * t); s = c * t
+                ui = U[:, i].copy(); U[:, i] = c * ui - s * U[:, j]; U[:, j] = s * ui + c * U[:, j]
+        if rot == 0:
+            break
+    return np.sort(np.sqrt((U * U).sum(0)))[::-1]
+
+
+def truth(cfg, prec):
+    dt = DT[prec]
+    G = b3.GRIDS[cfg["grid"]]; c, s = b3.stats(G); n = G["n"]; rho = c / s
+    lam, eta, B = dt(cfg["lam"]), dt(cfg["eta"]), cfg["B"]
+    r = np.random.default_rng(cfg["seed"])
+    Q, _ = np.linalg.qr(r.standard_normal((n, n)))
+    W = (b3.W0 * Q).astype(dt); P = (cfg["p0"] * np.eye(n)).astype(dt)
+    S11, S21 = np.diag(s).astype(dt), np.diag(c).astype(dt)
+    sd_c = np.sqrt(s); sd_e = np.sqrt(s * (1 - rho ** 2))
+    N = int(round(cfg["T"] / cfg["eta"]))
+    chk = set(np.linspace(0, N, b3.NCHK + 1).astype(int)[1:].tolist())
+    kE = int(round(b3.EARLY_F * N)); tiny = dt(1e-150) if prec != "f32" else dt(0)
+    counts, svt, early = [], [], None
+    for k in range(1, N + 1):
+        if B:
+            xc = r.standard_normal((B, n)) * sd_c
+            xt = xc * rho + r.standard_normal((B, n)) * sd_e
+            A11 = (xc.T @ xc / B).astype(dt); A21 = (xt.T @ xc / B).astype(dt)
+        else:
+            A11, A21 = S11, S21
+        R = P @ W @ A11 - W @ A21
+        gW = P.T @ R; gP = R @ W.T
+        W = W - eta * (gW + lam * W); P = P - eta * (gP + lam * P)
+        if k % 50 == 0:
+            if prec != "f32":
+                W[np.abs(W) < tiny] = 0; P[np.abs(P) < tiny] = 0
+            if not (np.isfinite(W).all() and np.abs(W).max() < 1e8):
+                return dict(counts=None, diverged=k)
+        if k == kE:
+            early = int((jacobi_sv(W) > b3.THR).sum())
+        if k in chk:
+            sv = jacobi_sv(W)
+            counts.append(int((sv > b3.THR).sum())); svt.append([float(x) for x in sv])
+    return dict(counts=counts, early=early, sv=svt, **b3.reescape(svt, cfg["T"]))
+
+
+def one(a):
+    cfg, prec = a; t0 = time.time()
+    return dict(cfg=cfg, prec=prec, truth=truth(cfg, prec), seconds=time.time() - t0)
+
+
+if __name__ == "__main__":
+    grid, out = sys.argv[1], sys.argv[2]; nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    p0 = float(sys.argv[4]) if len(sys.argv) > 4 else None
+    os.makedirs(out, exist_ok=True)
+    cf = [c for c in b3.configs(grid) if p0 is None or c["p0"] == p0]
+    jobs = sorted([(c, p) for c in cf for p in DT], key=lambda a: -a[0]["T"] / a[0]["eta"])
+    t0 = time.time()
+    with Pool(nproc) as pool:
+        res = pool.map(one, jobs, chunksize=1)
+    res.sort(key=lambda r: (r["cfg"]["id"], r["prec"]))
+    with gzip.open(os.path.join(out, f"precision_{grid}_runs.jsonl.gz"), "wt") as f:
+        for r in res:
+            f.write(json.dumps(r) + "\n")
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), f"B3 precision {grid}: {len(res)} runs in {time.time() - t0:.0f} s",
+          flush=True)

@@ -1,0 +1,18 @@
+"""Recompute the step-0 rule predictor of every E7 production run from its raw step-0 force export with the
+delivered code/e3_grid.py horizon_rule, and compare with the delivered per-run rows."""
+import sys, os, json, glob
+sys.path.insert(0, "exp/code")
+from e3_grid import horizon_rule
+D = json.load(open("score_rows.json")); mism = []; n = 0
+for rd in sorted(glob.glob("runs7/*/s*/")):
+    name = rd.split("/")[1]; cfg = json.load(open(rd + "config.json"))
+    L = [json.loads(l) for l in open(rd + "log.jsonl")]
+    F = [x for x in L if "d_eig_drive" in x and x.get("step") == 0]
+    H = {"e20": 20 * cfg["steps_per_epoch"], "e50": cfg["total_full"]}
+    row = [x for x in D[name] if x["seed"] == cfg["seed"]][0]
+    for h, t in H.items():
+        v = horizon_rule(cfg, F[0], t)["count"]; n += 1
+        if v != row[h]["step0"]:
+            mism.append((name, cfg["seed"], h, v, row[h]["step0"]))
+json.dump(dict(compared=n, mismatches=mism), open("/hutian/repo/checks/e7_prod/step0.json", "w"), indent=1)
+print(n, "compared;", len(mism), "mismatches", mism[:5])

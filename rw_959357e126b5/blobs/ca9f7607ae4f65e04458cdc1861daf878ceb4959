@@ -1,0 +1,36 @@
+\section{Introduction}
+\label{sec:intro}
+
+\begin{wrapfigure}{r}{0.5\linewidth}
+  \vspace{-12pt}
+  \centering
+  \IfFileExists{figures/fig1b_race_window.pdf}{\includegraphics[width=\linewidth]{fig1b_race_window}}{\includegraphics[width=\linewidth]{fig1_drive_vs_decay}}
+  \caption{The race (illustrative statistics). Net growth rate $g_k(p)$ of three directions and their windows (bars); the gain $p(t)=p_0e^{-\alpha\lambda_Pt}$ moves left through every window, and a direction must capture the predictor before its window closes.}
+  \label{fig:drive-decay}
+  \vspace{-10pt}
+\end{wrapfigure}
+Joint-embedding predictive architectures (JEPAs) learn a representation by predicting, in embedding space, the representation of a target part of an input from that of a context part~\citep{lecun2022path,assran2023ijepa,bardes2024vjepa}.
+Unlike masked autoencoders~\citep{he2022mae} they reconstruct no pixels, and unlike contrastive methods they use no negatives, so their objective admits trivial minimisers: a constant encoder, or a representation that spans only a few directions, a dimensional collapse~\citep{jing2022dimensional} that degrades downstream performance~\citep{garrido2023rankme}.
+JEPAs and related methods~\citep{grill2020byol,chen2021simsiam,caron2021dino,baevski2022data2vec} avoid collapse through design choices: predictor depth, width and learning rate, masking, a stop-gradient with an exponential moving average (EMA) target, and weight decay.
+
+Theory explains parts of this but does not predict the outcome of training.
+Analyses of linear BYOL, SimSiam and optimal predictors~\citep{tian2021understanding,wang2021directset,ponce2025dual,arbel2026peira} characterise the fixed points: a direction can survive only if its signal exceeds a static threshold set by weight decay.
+With weight decay, however, the collapsed point is itself stable~\citep{tian2021understanding}, so the fixed points say which end states exist, not which one training reaches.
+A recent analysis counts the directions that grow at initialisation, with the predictor held fixed~\citep{demelocosta2026drive}.
+Neither predicts the rank that training ends with: on our held-out linear runs (\cref{sec:heldout}) the static threshold overestimates it by \EoneBAlignedBoundMae{} directions on average, and the measured rank exceeds the stability count, stated as an upper bound, in \DvdAlignedOver{} of runs (\cref{app:related}).
+
+
+We argue that the missing ingredient is the decay of the predictor.
+At a standard initialisation the encoder is small and the predictor of order one, and each direction $k$ of representation space grows at a net rate $g_k(p)$, drive minus decay, that is positive only while the predictor's gain $p$ lies in a window (\cref{fig:drive-decay}).
+Weight decay moves the gain through and out of each window, and a direction survives only if it grows large enough to take over the predictor (capture) first.
+This race has no fitted constants, and it predicts what the static picture misses: directions are lost at a weight decay far below the static threshold, the rank can rise and then fall with weight decay, and without predictor weight decay no direction survives.
+It rests on one hypothesis, that collapse is decided early, near the collapsed solution; we test this premise too, and it holds in the linear models under constant weight decay but fails in a vision transformer.
+
+Our contributions are:
+\begin{itemize}[leftmargin=*,nosep]
+\item \textbf{The race criterion} (\cref{def:race}), new, built on near-collapse dynamics known in substance~\citep{tian2021understanding}, with a critical weight decay $\lambda_k^{\mathrm{race}}\approx h_k(p_0)/\log(p_0/a_0)$ far below the static threshold (\cref{sec:theory}).
+\item \textbf{Registered held-out tests in linear JEPAs} (\cref{sec:experiments}): rank error \EoneBAlignedMae{}, against \EoneBAlignedWindowMae{} for counting the directions that grow at initialisation and \EoneBAlignedBoundMae{} for the static threshold, and \EtwoCycMae{} under masking; misses for deep predictors (corrected post hoc, re-tested), the EMA sign and nonlinear encoders under random masks.
+\item \textbf{The reach of the account} (\cref{sec:ext}): modified forms that pass registered tests under AdamW (at a fixed horizon, not at convergence), with a layer-normalised target, in deep linear encoders with aligned factors and in a two-layer encoder under gradient descent, and failures elsewhere.
+\item \textbf{A vision transformer} (\cref{sec:e8}): a race read early in training predicts the registered critical weight decays and their fall with training length, though not individual runs better than a step-0 rule, and weight-decay switches show that collapse in this ViT is not decided early.
+\end{itemize}
+\Cref{tab:summary} summarises the registered tests with their errors, best baselines and verdicts.

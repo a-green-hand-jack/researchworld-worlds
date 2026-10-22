@@ -1,0 +1,46 @@
+{
+ "source": "experiment-repo 3e1e6d9 code/e4_dev.py run_one (float64, eps 1e-8), 480 configs x 24 directions",
+ "numpy": "2.3.2",
+ "directions": 11520,
+ "no_burst_by_T": 21,
+ "with_burst": 11499,
+ "above_1e3_at_K": 4060,
+ "above_1e3_at_K_share": 0.3531,
+ "above_1e3_at_K_tau_meas_eq_K_plus_10": 4060,
+ "claim_set_outside_window_below_1e3_at_K": 7352,
+ "below_1e3_at_K_inside_window": 87,
+ "median_criterion_note": "with a share f of scored directions trivially within 0.05, the median <= 0.05 holds once (0.5 - f)/(1 - f) of the rest are within 0.05",
+ "rest_needed_for_median": 0.227,
+ "claim_set_by_beta2": {
+  "0.999": {
+   "n": 3675,
+   "wait_quantiles_5_25_50_75_95": [
+    560.0,
+    2250.0,
+    3400.0,
+    5530.0,
+    9999.0
+   ],
+   "constant_wait_baseline": {
+    "wait": 3400,
+    "median_err": 0.414,
+    "p90_err": 1.186
+   }
+  },
+  "0.99": {
+   "n": 3677,
+   "wait_quantiles_5_25_50_75_95": [
+    160.0,
+    230.0,
+    360.0,
+    550.0,
+    1010.0
+   ],
+   "constant_wait_baseline": {
+    "wait": 360,
+    "median_err": 0.219,
+    "p90_err": 0.538
+   }
+  }
+ }
+}

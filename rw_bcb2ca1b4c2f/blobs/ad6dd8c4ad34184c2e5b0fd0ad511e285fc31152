@@ -1,0 +1,106 @@
+"""Referee check of the E1c pre-registration (experiment-repo b84e38e, results/e1c/prediction.json, code/e1c.py),
+made before its results exist.  E1c tests the depth-L capture nullcline a^2 = lam p^(2/L-1)/(c - p s) on new aligned
+statistics (n = d = 16, sigma = linspace(2, 0.6), c = sigma 0.88^k), L in {1..4}, identity factors, copy target.
+  1. recomputation: my own depth-L race score (same p(t) = p0 exp(-L alpha lam t), F, horizon) against pred_depthL,
+     and linjepa.escape_score (depth-1 nullcline) against pred_depth1;
+  2. discrimination: L >= 2 runs where the two pre-registered ranks differ;
+  3. forecast: the exact per-mode reduction of simulate() (orthogonal columns, identity factors stay diagonal in the
+     column basis; Euler eta = 0.1, simulate()'s update order and 1e-150 flush every 50 steps) to t_end, 2 t_end and
+     T_LONG; both pre-registered predictors scored against it with e1c.py's criteria.  The forecast is my reduced flow,
+     not E1c's measurement; it is what E1c's measured labels can be checked against when they land.
+Usage: python3 checks/e1c_prereg.py PREDICTION_JSON LINJEPA_PY
+"""
+import sys, json, importlib.util
+import numpy as np
+
+pred_path, lin_path = sys.argv[1:3]
+spec = importlib.util.spec_from_file_location("linjepa", lin_path); lin = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(lin)
+D = json.load(open(pred_path)); R = D["runs"]; N = len(R)
+n = d = 16; SIG = np.linspace(2.0, 0.6, n); C = SIG * 0.88 ** np.arange(n); ETA = 0.1; THR = 0.05; W0 = 1e-3
+JIT = 0.1; T_LONG = 40000.0
+
+
+def init_norms(seed):
+    rng = np.random.default_rng(seed); rng.standard_normal((d, n))
+    return W0 * np.exp(JIT * rng.standard_normal(n))
+
+
+def score_depthL(c, s, lam_, p0, logw0, L_, t_end, ngrid=6000):
+    pm, _ = lin.window(np.asarray(c, float), np.asarray(s, float), lam_)
+    if not np.isfinite(pm) or pm >= p0:
+        return -np.inf
+    rate = L_ * lam_
+    logp = np.linspace(np.log(p0), np.log(pm), ngrid); dt = (logp[0] - logp[1]) / rate; p = np.exp(logp)
+    t = np.arange(ngrid) * dt; g = lin.growth_rate(p, c, s, lam_, None)
+    F = np.concatenate([[0.0], np.cumsum(0.5 * (g[1:] + g[:-1]) * dt)]); gap = c - p * s
+    thr = np.where(gap > 0, 0.5 * np.log(lam_ * p ** (2.0 / L_ - 1.0) / np.maximum(gap, 1e-300)), np.inf)
+    v = (logw0 + F - thr)[t <= t_end]
+    return float(v.max()) if v.size else -np.inf
+
+
+A0 = np.array([init_norms(r["seed"]) for r in R])
+predL = np.array([r["pred_depthL"] for r in R], bool); pred1 = np.array([r["pred_depth1"] for r in R], bool)
+mineL = np.array([[score_depthL(C[k], SIG[k], r["lam"], r["p0"], np.log(A0[j, k]), r["depth"], r["t_end"]) >= 0
+                   for k in range(n)] for j, r in enumerate(R)], bool)
+mine1 = np.array([[lin.escape_score(C[k], SIG[k], r["lam"], r["lam"], 1.0, r["p0"], np.log(A0[j, k]), t_end=r["t_end"],
+                                    depth=r["depth"]) >= 0 for k in range(n)] for j, r in enumerate(R)], bool)
+Lc = np.array([r["depth"] for r in R]); lam = np.array([r["lam"] for r in R])[:, None]; L = Lc[:, None].astype(float)
+out = dict(source="experiment-repo b84e38e results/e1c/prediction.json, code/linjepa.py", runs=N,
+           recompute=dict(depthL_mode_disagree=int((mineL != predL).sum()), depth1_mode_disagree=int((mine1 != pred1).sum()),
+                          modes=int(predL.size)),
+           discrimination={f"L={v}": dict(runs=int((Lc == v).sum()),
+                                           runs_rank_differs=int((predL[Lc == v].sum(1) != pred1[Lc == v].sum(1)).sum()),
+                                           modes_differ=int((predL[Lc == v] != pred1[Lc == v]).sum()))
+                           for v in (1, 2, 3, 4)})
+
+# exact per-mode reduction of simulate() (copy target, identity factors, alpha = 1)
+T_end = np.array([int(round(r["t_end"] / ETA)) for r in R])
+marks = {"t_end": T_end, "2t_end": np.array([int(round(2 * r["t_end"] / ETA)) for r in R]),
+         "T_long": np.full(N, int(T_LONG / ETA))}
+snap = {k: np.zeros((N, n)) for k in marks}
+a = A0.copy(); q = np.broadcast_to(np.array([r["p0"] ** (1.0 / r["depth"]) for r in R])[:, None], A0.shape).copy()
+qmin = q.copy()
+for t in range(int(T_LONG / ETA)):
+    p = q ** L
+    da = -(p * p * SIG * a - p * C * a) - lam * a
+    dq = -(q ** (L - 1) * (p * SIG * a - C * a) * a + lam * q)
+    a = a + ETA * da; q = q + ETA * dq
+    if t % 50 == 0:
+        a[np.abs(a) < 1e-150] = 0.0; q[np.abs(q) < 1e-150] = 0.0
+    qmin = np.minimum(qmin, q)
+    for k, Tm in marks.items():
+        hit = Tm == t + 1
+        if hit.any():
+            snap[k][hit] = a[hit]
+S = {k: np.abs(v) > THR for k, v in snap.items()}
+out["forecast_finality"] = {k: dict(runs_rank_differs_from_t_end=int((S[k].sum(1) != S["t_end"].sum(1)).sum()))
+                            for k in ("2t_end", "T_long")}
+out["forecast_finality"]["t_end_capped_runs"] = int(sum(r["t_end"] >= 4000.0 for r in R))
+
+
+def stats(P, M):
+    err = P.sum(1) - M.sum(1)
+    return dict(runs=int(len(err)), mode_acc=float((P == M).mean()), exact=float((err == 0).mean()),
+                mae=float(np.abs(err).mean()), over=int((err > 0).sum()), under=int((err < 0).sum()))
+
+
+fc = {}
+for ref in ("t_end", "T_long"):
+    M = S[ref]; e = {}
+    for v in (1, 2, 3, 4):
+        h = Lc == v
+        e[f"L={v}"] = dict(measured_mean_rank=float(M[h].sum(1).mean()), depthL=stats(predL[h], M[h]),
+                           depth1=stats(pred1[h], M[h]), bound=float(np.abs(np.array([r["rank_bound"] for r in R])[h]
+                                                                             - M[h].sum(1)).mean()))
+    h = Lc >= 2
+    sL, s1 = stats(predL[h], M[h]), stats(pred1[h], M[h])
+    e["criterion L>=2"] = dict(depthL=sL, depth1=s1,
+                               passes=bool(sL["mode_acc"] >= 0.95 and sL["mae"] <= 0.5 and sL["mae"] < s1["mae"]))
+    h = Lc == 1
+    e["criterion L=1"] = dict(identical=bool((predL[h] == pred1[h]).all()), mode_acc=float((predL[h] == M[h]).mean()),
+                              passes=bool((predL[h] == pred1[h]).all() and (predL[h] == M[h]).mean() >= 0.95))
+    fc[ref] = e
+out["forecast_scoring"] = fc
+print(json.dumps(out, indent=1))
+json.dump(out, open("checks/e1c_prereg.json", "w"), indent=1)

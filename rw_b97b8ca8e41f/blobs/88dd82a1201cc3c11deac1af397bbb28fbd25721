@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Annotate completed ViT rows with the settled Bernoulli masking protocol."""
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+from pathlib import Path
+
+import run_vit_experiments as runner
+
+
+SUMMARY_FIELDS = {
+    "mask_sampler": runner.MASK_SAMPLER,
+    "mask_geometry": runner.MASK_GEOMETRY,
+    "mask_fraction_semantics": runner.MASK_FRACTION_SEMANTICS,
+    "training_mask_policy": runner.TRAINING_MASK_POLICY,
+    "rank_evaluation_mask_policy": runner.RANK_EVALUATION_MASK_POLICY,
+    "rank_evaluation_mask_sampler": runner.MASK_SAMPLER,
+}
+PROTOCOL = {
+    "mask_sampler": runner.MASK_SAMPLER,
+    "mask_geometry": runner.MASK_GEOMETRY,
+    "mask_fraction_semantics": runner.MASK_FRACTION_SEMANTICS,
+    "training_mask_policy": runner.TRAINING_MASK_POLICY,
+    "rank_evaluation_mask_policy": runner.RANK_EVALUATION_MASK_POLICY,
+    "rank_evaluation_mask_sampler": runner.MASK_SAMPLER,
+}
+MASKING = {
+    "sampler": runner.MASK_SAMPLER,
+    "geometry": runner.MASK_GEOMETRY,
+    "fraction_semantics": runner.MASK_FRACTION_SEMANTICS,
+    "training_policy": runner.TRAINING_MASK_POLICY,
+    "rank_evaluation_policy": runner.RANK_EVALUATION_MASK_POLICY,
+    "rank_evaluation_sampler": runner.MASK_SAMPLER,
+}
+
+
+def annotate_csv(path: Path, additions: dict[str, str]) -> None:
+    with path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+        fields = list(rows[0].keys()) if rows else []
+    for field, value in additions.items():
+        if field not in fields:
+            fields.append(field)
+        for row in rows:
+            existing = row.get(field)
+            compatible = existing in {None, "", value}
+            if field == "rank_evaluation_mask_policy" and existing == "one fixed context mask reused at every checkpoint":
+                compatible = True
+            if not compatible:
+                raise RuntimeError(f"protocol mismatch in {path}: {field}={existing!r}")
+            row[field] = value
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def annotate_json(path: Path, key: str, value: dict[str, str]) -> None:
+    with path.open(encoding="utf-8") as handle:
+        record = json.load(handle)
+    if key == "protocol":
+        existing = record.get(key)
+        if existing is not None and existing != value:
+            raise RuntimeError(f"protocol mismatch in {path}: {existing!r}")
+    elif key == "masking":
+        existing = record.get(key)
+        if existing is not None and existing != value:
+            raise RuntimeError(f"masking mismatch in {path}: {existing!r}")
+    record[key] = value
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(record, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root", type=Path, default=Path("results/raw/vit_runs"))
+    args = parser.parse_args()
+    summary_count = trajectory_count = config_count = provenance_count = 0
+    for summary_path in sorted(args.root.glob("*/summary_seed*.csv")):
+        annotate_csv(summary_path, SUMMARY_FIELDS)
+        summary_count += 1
+    for config_path in sorted(args.root.glob("*/config_seed*.json")):
+        annotate_json(config_path, "protocol", PROTOCOL)
+        config_count += 1
+    for provenance_path in sorted(args.root.glob("*/data_provenance.json")):
+        annotate_json(provenance_path, "masking", MASKING)
+        provenance_count += 1
+    print(json.dumps({
+        "summaries": summary_count,
+        "configs": config_count,
+        "provenance": provenance_count,
+        "status": "PASS",
+    }, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

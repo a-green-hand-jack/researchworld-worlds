@@ -1,0 +1,27 @@
+import numpy as np
+rng=np.random.default_rng(2)
+def ode(s,c,lw,lp,p0,w0,alpha,T,dt=0.01):
+    w=w0;p=p0
+    for _ in range(int(T/dt)):
+        dw=w*(p*s-p*p*c-lw); dp=alpha*(w*w*(s-p*c)-lp*p)
+        w+=dt*dw;p+=dt*dp
+        if w>10: break
+    return w,p
+def F(s,c,lw,lp,p0,w0,alpha,T):
+    pmin=max(p0*np.exp(-alpha*lp*T),1e-12); hi=min(p0,s/c)
+    if hi<=pmin: return -np.inf
+    p=np.geomspace(pmin,hi*(1-1e-9),4000)
+    G=(s*(p0-p)-c*(p0**2-p**2)/2-lw*np.log(p0/p))/(alpha*lp)
+    return np.max(np.log(w0)+G-0.5*np.log(lp*p/(s-p*c)))
+res=[]
+for k in range(400):
+    c=10**rng.uniform(-1.5,0.5); s=rng.uniform(0.1,1.0)*c
+    lw=10**rng.uniform(-3,-1.3); lp=lw*10**rng.uniform(-0.5,0.5); p0=10**rng.uniform(-1,0.5)
+    w0=10**rng.uniform(-4,-2); alpha=10**rng.uniform(-0.5,0.5); T=4000
+    w,p=ode(s,c,lw,lp,p0,w0,alpha,T); a=w>1e-3
+    f=F(s,c,lw,lp,p0,w0,alpha,T); res.append((a,f>0,f,w,s*s/c>4*lw))
+r=np.array([(x[0],x[1],x[4]) for x in res])
+print('closed-form F agree',(r[:,0]==r[:,1]).sum(),'/',len(r),'; fp-bound agree',(r[:,0]==r[:,2]).sum(), '; surviving frac',r[:,0].mean())
+for x in res:
+    if x[0]!=x[1]: print('mismatch F=%.3f w=%.2e'%(x[2],x[3]))
+print('F>0 & bound agree',sum((x[0]==((x[1]) and x[4])) for x in res))

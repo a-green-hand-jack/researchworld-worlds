@@ -1,0 +1,343 @@
+"""E6 / rung 1b of direction C (plan v2.12 Sec. 3 C, limitation L6): the race with a deep predictor of random,
+non-identity factors P = Q_M ... Q_1 (weight decay on every factor), depth-1 linear encoder W (d x n), copy target,
+population gradient descent. Theory: theory/ext_C_ladder.md, "Rung 1b".
+
+The delivered capture correction for depth-M predictors (E1c; linjepa.escape_score depth_nullcline=True) was derived
+and re-tested only for identity-initialised factors q I, where p = q^M and dp/dt = alpha M [p^(2-2/M)(c - p s) a^2 -
+lam p]. For general factors the drive on p_u = u^T P u along a latent direction u is
+    dp_u/dt = alpha [(c - p_u s) a^2 K_u - M lam p_u],   K_u = sum_j |Q_{>j}^T u|^2 |Q_{<j} u|^2
+(Q_{>j} = Q_M ... Q_{j+1}, Q_{<j} = Q_{j-1} ... Q_1; K_u = M p^(2-2/M) for identity factors), so capture needs
+    a^2 (c - p_u s) K_u >= M lam p_u                                                  ('n1g_K', the candidate)
+Every criterion integrates the same near-collapse linear system as the delivered N1-general (linjepa.n1_general):
+W' = P(t)^T W S21 - P(t)^T P(t) W S11 - lam W with each factor decaying under its own weight decay only (A1,
+P(t) = (1 - eta alpha lam)^(M step) P0), from the actual W0 and factors; at every check each singular triplet
+(s_i, u_i, v_i) of the linear W gets p_i = u_i^T P u_i, q_i = |P u_i|^2, c_i, sig_i (as N1-general), growth
+g_i = p_i c_i - q_i sig_i - lam, and counts if g_i > 0, c_i > p_i sig_i and it is captured by the rule:
+    n1g_K    s_i^2 (c_i - p_i sig_i) K_i >= M lam |p_i|      (general factors; K_i from the decayed factors)
+    n1g_pL   s_i^2 (c_i - p_i sig_i) >= lam |p_i|^(2/M - 1)   (E1c's identity-factor correction with p_i)
+    n1g_d1   s_i^2 (c_i - p_i sig_i) >= lam |p_i|             (the delivered N1-general, E1b; = linjepa.n1_general)
+The predicted rank is the maximum count over checks, as in N1-general.
+Baselines: race_id (the delivered depth-M race treating P0 as q I with the nominal gain p0: escape_score with
+depth_nullcline=True on each column's log norm), static (#{c^2 >= 4 lam s}, the encoder's fixed point, unchanged by
+predictor depth), window_P0 (#{data modes whose top eigenvalue of sym(c P0^T - s P0^T P0) exceeds lam}), the mu
+variants of 2610.02344 on P0 (code/baselines/dvd_mu.py; P2), and the count read early in the run (EARLY_F of T and
+the fixed times EARLY_T).
+Arms: 'gauss' (factors with iid N(0, q^2/d) entries, q = p0^(1/M)); 'nearid' (factors q (I + EPS G/sqrt(d)),
+G iid N(0, 1)). W0 has orthogonal columns of norm ~ w0 (jitter 0.1), as in E1c.
+Truth: rank = #singular values of W above THR at T (values below 1e-150 flushed), also at NCHK checks and EARLY_T.
+Usage: python3 code/e6_r1b.py list GRID | pilot GRID ID | run GRID OUTDIR [NPROC] | score GRID OUTDIR"""
+import sys, os, json, time, itertools, gzip, hashlib, math
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+from linjepa import escape_score, race_end_time, growth_rate, n1_general, predictor_product
+from baselines.dvd_mu import variants as mu_variants
+
+THR = 0.05
+ETA = 0.1
+T_CAP = 4000.0
+NCHK = 20
+EARLY_T = (25.0, 50.0)
+EARLY_F = 0.10
+EPS = 0.5
+W0 = 1e-3
+JIT = 0.1
+CHECK_EVERY = 10
+GRIDS = {"dev": dict(n=16, s=(1.8, 0.6), ratio=0.90, M=[1, 2, 3], p0=[0.6, 1.0, 1.4],
+                     lam=[0.004, 0.008, 0.016, 0.032], arms=["gauss", "nearid"], seeds=[400, 401, 402]),
+         # held-out (results/e6/prediction_r1b.json): statistics, values and seeds disjoint from dev; adds M = 4;
+         # every base run has two truth-floor re-runs (pert 'w0': W0 columns times 1 + d_k, d_k ~ U(-1e-3, 1e-3);
+         # pert 'lam': lam times 1 +- 0.005; rng seed + 7919), truth only
+         "heldout": dict(n=16, s=(1.6, 0.5), ratio=0.87, M=[1, 2, 3, 4], p0=[0.8, 1.2, 1.7],
+                         lam=[0.005, 0.011, 0.023], arms=["gauss", "nearid"], seeds=[410, 411, 412, 413, 414],
+                         floor=True)}
+PRED = ["n1g_K", "n1g_pL", "n1g_d1", "race_id", "static", "window_P0"]
+MU = ["dvd", "dvd_signed", "dvd_sorted", "dvd_pq", "dvd_pq_signed", "dvd_exact", "dvd_nowd"]
+
+
+def stats(G):
+    s = np.linspace(G["s"][0], G["s"][1], G["n"])
+    return G["ratio"] ** np.arange(G["n"]) * s, s
+
+
+def horizon(c, s, lam, p0, M):
+    return float(math.ceil(min(3.0 * race_end_time(c, s, lam, lam, 1.0, p0, M) + 300.0, T_CAP) / 10) * 10)
+
+
+def configs(grid):
+    G = GRIDS[grid]; c, s = stats(G); out = []
+    for arm, M, p0, lam, seed in itertools.product(G["arms"], G["M"], G["p0"], G["lam"], G["seeds"]):
+        base = dict(id=len(out), grid=grid, arm=arm, M=M, p0=p0, lam=lam, alpha=1.0, seed=seed,
+                    T=horizon(c, s, lam, p0, M))
+        out.append(base)
+        if G.get("floor"):
+            for pert in ("w0", "lam"):
+                out.append(dict(base, id=len(out), pert=pert, floor_of=base["id"]))
+    return out
+
+
+def lam_truth(cfg):
+    if cfg.get("pert") != "lam":
+        return cfg["lam"]
+    return cfg["lam"] * (1.0 + 0.005 * (1 if np.random.default_rng(cfg["seed"] + 7919).random() < 0.5 else -1))
+
+
+def init(cfg):
+    G = GRIDS[cfg["grid"]]; n = d = G["n"]; M = cfg["M"]; r = np.random.default_rng(cfg["seed"])
+    Q, _ = np.linalg.qr(r.standard_normal((d, n)))
+    W = W0 * Q * np.exp(JIT * r.standard_normal(n))
+    q = cfg["p0"] ** (1.0 / M)
+    if cfg["arm"] == "gauss":
+        Qs = [q * r.standard_normal((d, d)) / np.sqrt(d) for _ in range(M)]
+    else:
+        Qs = [q * (np.eye(d) + EPS * r.standard_normal((d, d)) / np.sqrt(d)) for _ in range(M)]
+    if cfg.get("pert") == "w0":
+        W = W * (1.0 + np.random.default_rng(cfg["seed"] + 7919).uniform(-1e-3, 1e-3, n))[None, :]
+    return W, Qs
+
+
+def truth(cfg, W, Qs):
+    G = GRIDS[cfg["grid"]]; c, s = stats(G); S11, S21 = np.diag(s), np.diag(c); lam, a = lam_truth(cfg), cfg["alpha"]
+    M = len(Qs); W = W.copy(); Qs = [X.copy() for X in Qs]; N = int(round(cfg["T"] / ETA))
+    chk = {int(x): None for x in np.linspace(0, N, NCHK + 1).astype(int)[1:]}
+    ech = {int(round(te / ETA)): str(te) for te in EARLY_T}
+    ech[int(round(EARLY_F * N))] = "f%.2f" % EARLY_F
+    counts, early = [], {}
+    rk = lambda: int((np.linalg.svd(W, compute_uv=False) > THR).sum())
+    for k in range(N):
+        P = predictor_product(Qs)
+        R = P @ W @ S11 - W @ S21
+        gW = P.T @ R; GP = R @ W.T; gQ = []
+        for j in range(M):
+            left = np.eye(G["n"])
+            for X in Qs[j + 1:]:
+                left = X @ left
+            right = np.eye(G["n"])
+            for X in Qs[:j]:
+                right = X @ right
+            gQ.append(left.T @ GP @ right.T)
+        W = W - ETA * (gW + lam * W)
+        Qs = [X - ETA * a * (g + lam * X) for X, g in zip(Qs, gQ)]
+        if k % 50 == 0:
+            for X in [W] + Qs:
+                X[np.abs(X) < 1e-150] = 0.0
+            if not all(np.isfinite(X).all() and np.abs(X).max() < 1e10 for X in [W] + Qs):
+                return dict(counts=None, diverged=(k + 1) * ETA)
+        if (k + 1) in ech:
+            early[ech[k + 1]] = rk()
+        if (k + 1) in chk:
+            counts.append(rk())
+    return dict(counts=counts, early=early)
+
+
+def n1g_rules(S11, S21, W0_, Qs, lam, alpha, eta, T):
+    """One integration of the near-collapse linear system (as linjepa.n1_general, stop-gradient, depth M decay)
+    with three capture rules; returns the maximum count over checks for each."""
+    M = len(Qs); P0 = predictor_product(Qs); n = P0.shape[0]
+    W = W0_.copy(); logscale = 0.0; dec1 = 1 - eta * alpha * lam
+    best = {"n1g_K": 0, "n1g_pL": 0, "n1g_d1": 0}
+    for step in range(T + 1):
+        nrm = np.abs(W).max()
+        if nrm > 1e30 or (0 < nrm < 1e-30):
+            W = W / nrm; logscale += np.log(nrm)
+        r = dec1 ** step                                  # each factor's decay; P = r^M P0
+        P = r ** M * P0
+        if step % CHECK_EVERY == 0:
+            m = np.abs(W).max(); W[np.abs(W) < 1e-150 * m] = 0.0
+            U, sv, Vt = np.linalg.svd(W, full_matrices=False)
+            sv = sv * np.exp(min(logscale, 700.0))
+            PU = P @ U
+            p = np.einsum("ij,ij->j", U, PU); q = (PU ** 2).sum(0)
+            c = np.einsum("ij,jk,ik->i", Vt, S21, Vt); sg = np.einsum("ij,jk,ik->i", Vt, S11, Vt)
+            g = p * c - q * sg - lam; gap = c - p * sg
+            K = np.zeros(n)
+            for j in range(M):
+                hi = np.eye(n)
+                for X in Qs[j + 1:]:
+                    hi = X @ hi
+                lo = np.eye(n)
+                for X in Qs[:j]:
+                    lo = X @ lo
+                K += (((r ** (M - 1 - j) * hi).T @ U) ** 2).sum(0) * (((r ** j * lo) @ U) ** 2).sum(0)
+            base = (g > 0) & (gap > 0); drive = sv ** 2 * np.maximum(gap, 1e-300); ap = np.abs(p)
+            for key, ok in (("n1g_K", drive * K >= M * lam * ap),
+                            ("n1g_pL", drive >= lam * np.maximum(ap, 1e-300) ** (2.0 / M - 1.0)),
+                            ("n1g_d1", drive >= lam * ap)):
+                best[key] = max(best[key], int((base & ok).sum()))
+        if step == T:
+            break
+        G = W @ S21 - P @ W @ S11
+        W = W + eta * (P.T @ G - lam * W)
+    return best
+
+
+def predict(cfg, W, Qs):
+    G = GRIDS[cfg["grid"]]; c, s = stats(G); S11, S21 = np.diag(s), np.diag(c)
+    lam, p0, M, T = cfg["lam"], cfg["p0"], cfg["M"], cfg["T"]; P0 = predictor_product(Qs)
+    out = n1g_rules(S11, S21, W, Qs, lam, cfg["alpha"], ETA, int(round(T / ETA)))
+    logw = np.log(np.linalg.norm(W, axis=0))
+    out["race_id"] = int(sum(escape_score(c[k], s[k], lam, lam, cfg["alpha"], p0, logw[k], t_end=T, depth=M,
+                                          depth_nullcline=True) >= 0 for k in range(c.size)))
+    out["static"] = int((c * c >= 4 * lam * s).sum())
+    out["window_P0"] = int(sum(np.linalg.eigvalsh(0.5 * (ck * (P0 + P0.T)) - sk * P0.T @ P0)[-1] > lam
+                               for ck, sk in zip(c, s)))
+    mu = mu_variants(S11, S21, P0, lam)
+    out.update({k: int(mu[k]) for k in MU}); out["ass32"] = mu["ass32"]
+    return out
+
+
+def run_one(cfg):
+    t0 = time.time(); W, Qs = init(cfg)
+    pr = None if cfg.get("pert") else predict(cfg, W, Qs); t1 = time.time(); tr = truth(cfg, W, Qs)
+    P0 = predictor_product(Qs); sv = np.linalg.svd(P0, compute_uv=False)
+    return dict(cfg=cfg, P0_sv=[float(sv.max()), float(sv.min())], P0_nonnormal=float(np.abs(P0 @ P0.T - P0.T @ P0).max()),
+                truth=tr, pred=pr, seconds_pred=t1 - t0, seconds_truth=time.time() - t1)
+
+
+def md5(path):
+    return hashlib.md5(open(path, "rb").read()).hexdigest()
+
+
+def cmd_run(grid, outdir, nproc=8):
+    os.makedirs(outdir, exist_ok=True); cf = configs(grid); t0 = time.time()
+    with Pool(int(nproc)) as pool:
+        res = pool.map(run_one, sorted(cf, key=lambda r: -r["T"] * (r["M"] + 1)), chunksize=1)
+    res.sort(key=lambda r: r["cfg"]["id"])
+    with gzip.open(os.path.join(outdir, f"r1b_{grid}_runs.jsonl.gz"), "wt") as f:
+        for r in res:
+            f.write(json.dumps(r) + "\n")
+    here = os.path.dirname(os.path.abspath(__file__))
+    meta = dict(grid=grid, runs=len(res), seconds=time.time() - t0, numpy=np.__version__,
+                md5={p: md5(os.path.join(here, p)) for p in ["e6_r1b.py", "linjepa.py", "baselines/dvd_mu.py"]},
+                config=GRIDS[grid], THR=THR, ETA=ETA, EPS=EPS, W0=W0, EARLY_T=EARLY_T, EARLY_F=EARLY_F)
+    json.dump(meta, open(os.path.join(outdir, f"r1b_{grid}_meta.json"), "w"), indent=1)
+    cmd_score(grid, outdir)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), f"rung 1b {grid}: {len(res)} runs in {time.time() - t0:.0f} s", flush=True)
+
+
+def boot_ci(x, B=2000, seed=0):
+    x = np.asarray(x, float); r = np.random.default_rng(seed)
+    m = x[r.integers(0, x.size, (B, x.size))].mean(1)
+    return [float(np.quantile(m, 0.025)), float(np.quantile(m, 0.975))]
+
+
+def _val(r, k):
+    """A row's value for criterion k. Scorer fix after the held-out run, before any score was produced: when the early
+    time EARLY_T = 50 falls on the same step as EARLY_F of T (T = 500), truth() stored that step's count once, under
+    'f0.10' (dict key collision); it is the count at that same step, so it is read from there."""
+    if not k.startswith("early_"):
+        return r["pred"][k]
+    e = r["truth"]["early"]
+    if k[6:] not in e and k[6:] != "f%.2f" % EARLY_F:
+        N = int(round(r["cfg"]["T"] / ETA))
+        if int(round(float(k[6:]) / ETA)) == int(round(EARLY_F * N)):
+            return e["f%.2f" % EARLY_F]
+    return e[k[6:]]
+
+
+def summarize(rows, primary="n1g_K"):
+    tru = np.array([r["truth"]["counts"][-1] for r in rows])
+    keys = PRED + MU + ["early_" + k for k in rows[0]["truth"]["early"]]
+    val = _val
+    err = {k: np.abs(np.array([val(r, k) for r in rows]) - tru) for k in keys}
+    out = dict(runs=len(rows), truth_mean=float(tru.mean()), zero_share=float((tru == 0).mean()))
+    for k in keys:
+        pk = np.array([val(r, k) for r in rows])
+        out[k] = dict(mae=float(err[k].mean()), within1=float((err[k] <= 1).mean()), exact=float((err[k] == 0).mean()),
+                      bias=float((pk - tru).mean()), exceed=float((tru > pk).mean()))
+        if k != primary:
+            out[k]["minus_primary_ci"] = boot_ci(err[k] - err[primary])
+    return out
+
+
+def cmd_score(grid, outdir):
+    rows = [json.loads(l) for l in gzip.open(os.path.join(outdir, f"r1b_{grid}_runs.jsonl.gz"), "rt")]
+    if GRIDS[grid].get("floor"):
+        return cmd_score_heldout(grid, outdir, rows)
+    div = [r["cfg"]["id"] for r in rows if r["truth"]["counts"] is None]
+    rows = [r for r in rows if r["truth"]["counts"] is not None]
+    out = dict(grid=grid, diverged=div, all=summarize(rows))
+    for arm in GRIDS[grid]["arms"]:
+        A = [r for r in rows if r["cfg"]["arm"] == arm]
+        out[arm] = summarize(A)
+        for M in GRIDS[grid]["M"]:
+            S = [r for r in A if r["cfg"]["M"] == M]
+            if S:
+                out[f"{arm}_M{M}"] = summarize(S)
+        S = [r for r in A if r["cfg"]["M"] >= 2]
+        out[f"{arm}_M_ge2"] = summarize(S)
+    json.dump(out, open(os.path.join(outdir, f"r1b_{grid}_score.json"), "w"), indent=1)
+    return out
+
+
+TOL_BASE = ["n1g_d1", "race_id", "static", "window_P0", "early_25.0", "early_50.0"] + MU
+
+
+def score_cell(R, frag):
+    """results/e6/r1b_tolerance.json on one group of base runs; frag: set of fragile base ids. A non-finite base run
+    counts as a miss of the primary in within-1 and pass; MAEs are over the finite runs."""
+    n_all = len(R); R = [r for r in R if r["truth"].get("counts")]; nf = n_all - len(R)
+    if not R:
+        return dict(runs=n_all, nonfinite=nf, pass_=False)
+    tru = np.array([r["truth"]["counts"][-1] for r in R])
+    val = _val
+    ep = np.abs(np.array([r["pred"]["n1g_K"] for r in R]) - tru)
+    out = dict(runs=n_all, nonfinite=nf, zero_share=float((tru == 0).mean()),
+               n1g_K=dict(mae=float(ep.mean()), mae_ci=boot_ci(ep), within1=float((ep <= 1).sum() / n_all),
+                          exact=float((ep == 0).mean()), bias=float((np.array([r["pred"]["n1g_K"] for r in R]) - tru).mean())))
+    base = {}
+    for k in TOL_BASE:
+        v = np.array([val(r, k) for r in R]); e = np.abs(v - tru); d = e - ep
+        base[k] = dict(mae=float(e.mean()), minus_primary=float(d.mean()), minus_primary_ci=boot_ci(d),
+                       exceed=float((tru > v).mean()))
+    out["baselines"] = base
+    out["reported"] = {}
+    for k in ["n1g_pL", "early_f%.2f" % EARLY_F]:          # beside the verdict, not in it
+        v = np.array([val(r, k) for r in R]); e = np.abs(v - tru); d = e - ep
+        out["reported"][k] = dict(mae=float(e.mean()), minus_primary_ci=boot_ci(d))
+    out["trajectory"] = []
+    for j in (0, 1, 2, 3, 5, 9):
+        e = np.abs(np.array([r["truth"]["counts"][j] for r in R]) - tru)
+        out["trajectory"].append(dict(frac=(j + 1) / NCHK, mae=float(e.mean()), minus_primary_ci=boot_ci(e - ep)))
+    out["pass"] = bool(out["n1g_K"]["within1"] >= 0.90 and nf == 0 and all(b["minus_primary_ci"][0] > 0 for b in base.values()))
+    out["failed_against"] = [k for k, b in base.items() if not b["minus_primary_ci"][0] > 0]
+    fr = np.array([r["cfg"]["id"] in frag for r in R])
+    out["floor"] = dict(fragile=int(fr.sum()), share=float(fr.mean()), ill_posed=bool(fr.mean() > 0.05))
+    out["miss"] = int((ep > 0).sum()); out["miss_on_fragile"] = int(((ep > 0) & fr).sum())
+    inf = tru > 0
+    if inf.any() and (~inf).any():
+        out["informative"] = dict(runs=int(inf.sum()), n1g_K_mae=float(ep[inf].mean()),
+                                  minus_primary_ci={k: boot_ci((np.abs(np.array([val(r, k) for r in R]) - tru) - ep)[inf])
+                                                    for k in TOL_BASE})
+    return out
+
+
+def cmd_score_heldout(grid, outdir, rows):
+    base = [r for r in rows if not r["cfg"].get("pert")]; fl = [r for r in rows if r["cfg"].get("pert")]
+    fin = {r["cfg"]["id"]: (r["truth"]["counts"] or [None])[-1] for r in base}
+    frag = {r["cfg"]["floor_of"] for r in fl if (r["truth"]["counts"] or [None])[-1] != fin[r["cfg"]["floor_of"]]}
+    G = GRIDS[grid]; out = dict(grid=grid, base_runs=len(base), floor_runs=len(fl), fragile=sorted(frag))
+    for arm in G["arms"]:
+        A = [r for r in base if r["cfg"]["arm"] == arm]
+        out[f"{arm}_M1_control"] = score_cell([r for r in A if r["cfg"]["M"] == 1], frag)
+        out[f"{arm}_M_ge2"] = score_cell([r for r in A if r["cfg"]["M"] >= 2], frag)
+        for M in G["M"][1:]:
+            out[f"{arm}_M{M}"] = score_cell([r for r in A if r["cfg"]["M"] == M], frag)
+    out["verdict"] = {k: v["pass"] for k, v in out.items() if isinstance(v, dict) and "pass" in v and "control" not in k}
+    json.dump(out, open(os.path.join(outdir, f"r1b_{grid}_score.json"), "w"), indent=1)
+    return dict(all=out["verdict"])
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "list":
+        for c in configs(sys.argv[2]):
+            print(json.dumps(c))
+    elif cmd == "pilot":
+        cfg = configs(sys.argv[2])[int(sys.argv[3])]
+        print(json.dumps(run_one(cfg)))
+    elif cmd == "run":
+        cmd_run(*sys.argv[2:])
+    elif cmd == "score":
+        print(json.dumps(cmd_score(*sys.argv[2:4])["all"], indent=1))

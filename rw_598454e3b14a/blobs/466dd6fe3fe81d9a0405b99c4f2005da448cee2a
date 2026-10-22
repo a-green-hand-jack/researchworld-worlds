@@ -1,0 +1,61 @@
+"""Direction A, exploratory (development set): does the per-mode scalar AdamW reduction track the matrix AdamW
+flow per direction? Aligned init (W diagonal in the data basis, P = p0 I): the reduction should be exact, since
+AdamW acts coordinate-wise and off-diagonal entries have zero gradient. E1b init (random orthogonal W): Adam is not
+rotation-invariant, so the reduction is an approximation whose error is measured here.
+Usage: python3 code/checks/e4_reduction.py [T] > results/e4/explore/reduction.txt"""
+import sys, os, numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from e1b import SIG, C, n, d, SV_THR
+
+def matrix_adamw(W, P, lam, eta, T, b=(0.9, 0.999), eps=1e-8, every=1000):
+    S11, S21 = np.diag(SIG), np.diag(C)
+    m = [np.zeros_like(W), np.zeros_like(P)]; v = [np.zeros_like(W), np.zeros_like(P)]; out = []
+    for t in range(1, T + 1):
+        R = P @ W @ S11 - W @ S21
+        g = [P.T @ R, R @ W.T]; x = [W, P]
+        for i in range(2):
+            m[i] = b[0] * m[i] + (1 - b[0]) * g[i]; v[i] = b[1] * v[i] + (1 - b[1]) * g[i] ** 2
+            x[i] = x[i] * (1 - eta * lam) - eta * (m[i] / (1 - b[0] ** t)) / (np.sqrt(v[i] / (1 - b[1] ** t)) + eps)
+        W, P = x
+        if t % 50 == 0:
+            W[np.abs(W) < 1e-150] = 0.0
+        if t % every == 0:
+            out.append((t, np.linalg.norm(W, axis=0), np.linalg.svd(W, compute_uv=False)))
+    return out
+
+def scalar_adamw(a0, p0, lam, eta, T, b=(0.9, 0.999), eps=1e-8, every=1000):
+    """All n modes at once, each an independent scalar AdamW on (a_k, p_k)."""
+    a = a0.astype(float).copy(); p = np.full(n, float(p0)); ma = np.zeros(n); va = np.zeros(n); mp = np.zeros(n); vp = np.zeros(n); out = []
+    for t in range(1, T + 1):
+        ga = -a * (p * C - p * p * SIG); gp = -a * a * (C - p * SIG)
+        ma = b[0] * ma + (1 - b[0]) * ga; va = b[1] * va + (1 - b[1]) * ga ** 2
+        mp = b[0] * mp + (1 - b[0]) * gp; vp = b[1] * vp + (1 - b[1]) * gp ** 2
+        bc1, bc2 = 1 - b[0] ** t, 1 - b[1] ** t
+        a = a * (1 - eta * lam) - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps)
+        p = p * (1 - eta * lam) - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+        if t % 50 == 0:
+            a[np.abs(a) < 1e-150] = 0.0
+        if t % every == 0:
+            out.append((t, np.abs(a).copy(), p.copy()))
+    return out
+
+if __name__ == "__main__":
+    T = int(sys.argv[1]) if len(sys.argv) > 1 else 20000
+    eta = 0.02
+    for p0, lam, w0 in [(0.5, 0.005, 1e-4), (0.5, 0.05, 1e-4), (2.0, 0.005, 1e-4), (2.0, 0.05, 1e-4), (1.0, 0.02, 1e-2)]:
+        rng = np.random.default_rng(0)
+        Q, _ = np.linalg.qr(rng.standard_normal((d, n))); jit = np.exp(0.1 * rng.standard_normal(n))
+        a0 = w0 * jit
+        red = scalar_adamw(a0, p0, lam, eta, T)
+        ali = matrix_adamw(np.diag(a0), p0 * np.eye(d), lam, eta, T)
+        rot = matrix_adamw(w0 * Q * jit, p0 * np.eye(d), lam, eta, T)
+        print(f"p0={p0} lam={lam} w0={w0}  rank(sv>{SV_THR}) reduced / aligned-matrix / orthogonal-matrix; max|log10 ratio| alive modes")
+        for (t, ar, pr), (_, na, sa), (_, nr, sr) in zip(red, ali, rot):
+            if t % (T // 10):
+                continue
+            alive = ar > SV_THR
+            ea = np.max(np.abs(np.log10((na[alive] + 1e-300) / ar[alive]))) if alive.any() else 0
+            er = np.max(np.abs(np.log10((nr[alive] + 1e-300) / ar[alive]))) if alive.any() else 0
+            dis = int(((nr > SV_THR) != alive).sum())
+            print(f"  t={t:6d} rank {int(alive.sum()):2d} / {int((sa > SV_THR).sum()):2d} / {int((sr > SV_THR).sum()):2d}"
+                  f"  aligned err {ea:.1e}  orth err {er:.2f}  orth per-mode disagreements {dis}", flush=True)

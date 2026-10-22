@@ -1,0 +1,77 @@
+"""E5/B1d post-loss split (development grid, raw runs e5__b1dev__b1_dev_runs.jsonl.gz, experiment tree 83e5918 for
+code/e5_b1.py and code/e5_theory.py, md5 69b75150 / 0518e2fc, unchanged at 1953779 for e5_theory.py). Same pairs and
+comparators as checks/e5_b1_dev_v2_check.py (post-loss = alive earlier, dead now in the truth; all runs, as summ_v2
+pools), without the stage_model_qs re-run: ln(|p_truth| / v) for v = sqrt(lam_W/lam_P) |w_truth| (the slaved relation on
+the truth's own w), sqrt(lam_W/lam_P) |W_stage| (the comparator 'slaved' in sched.json and summ_v2) and the own decay
+from the last alive checkpoint; split by variant, kind, alpha, rho, lam_W == lam_P, p0 and stage-model state.
+Usage: python3 checks/e5_b1_postloss_split.py EXPERIMENT_TREE RUNS.jsonl.gz OUT.json"""
+import sys, os, json, gzip
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+EXP = sys.argv[1]
+sys.path.insert(0, os.path.join(EXP, "code")); sys.path.insert(0, os.path.join(EXP, "code", "checks"))
+import e5_b1 as B, e5_theory as th
+import e5_b1_sched as S
+
+
+def one(line):
+    rec = json.loads(line); cfg, tr, pr = rec["cfg"], rec["truth"], rec["pred"]
+    t = np.array(tr["t"]); A = np.array(tr["a"], float); Pt = np.array(tr["p"], float); am = A > S.THR
+    was = np.maximum.accumulate(am, axis=0); dead = was & ~am
+    if not dead.any():
+        return None
+    n = A.shape[1]
+    lW = th.lam_of(cfg["kW"], t); lP = th.lam_of(cfg["kP"], t)
+    rr = np.sqrt(lW / np.maximum(lP, 1e-300))[:, None]
+    LamP = np.concatenate([[0.0], np.cumsum(0.5 * (lP[1:] + lP[:-1]) * np.diff(t))]) + lP[0] * t[0]
+    own = np.full(Pt.shape, np.nan); la = np.full(n, -1)
+    for j in range(t.size):
+        la = np.where(am[j], j, la); ok = la >= 0
+        own[j, ok] = np.abs(Pt[la[ok], np.nonzero(ok)[0]]) * np.exp(-cfg["alpha"] * (LamP[j] - LamP[la[ok]]))
+    W = np.array(pr["W"], float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        lg = lambda v: np.log(np.abs(Pt[dead]) / np.maximum(v[dead], 1e-300))
+        d = dict(truth_w=lg(rr * np.abs(A)), stage=lg(rr * np.abs(W)), own=lg(own))
+    same = bool(np.allclose(lW, lP))
+    lab = dict(variant=cfg["variant"], kind=cfg["kind"], alpha=cfg["alpha"], rho=cfg.get("rho") or 1.0,
+               same_lam=same, p0=cfg["p0"], sched=cfg["ts"] is not None)
+    return lab, {k: v.tolist() for k, v in d.items()}, (W[dead] > S.THR).astype(int).tolist(), int(cfg["id"])
+
+
+def stats(v):
+    v = np.asarray(v, float)
+    if not v.size:
+        return dict(pairs=0)
+    return dict(pairs=int(v.size), median_abs=float(np.nanmedian(np.abs(v))), median_signed=float(np.nanmedian(v)),
+                share_above=float(np.nanmean(v > 0)), share_within_1e_3=float(np.nanmean(np.abs(v) < 1e-3)),
+                share_within_0p5=float(np.nanmean(np.abs(v) <= 0.5)), q10=float(np.nanquantile(v, 0.1)), q90=float(np.nanquantile(v, 0.9)))
+
+
+if __name__ == "__main__":
+    lines = list(gzip.open(sys.argv[2], "rt"))
+    with Pool(8) as pool:
+        R = [r for r in pool.imap_unordered(one, lines, chunksize=8) if r is not None]
+    R.sort(key=lambda r: r[3])
+    res = dict(source=f"{EXP} code/e5_b1.py, code/e5_theory.py, code/checks/e5_b1_sched.py (THR); runs {sys.argv[2]}", runs=len(R))
+    def group(keyf):
+        g = {}
+        for lab, d, sa, _ in R:
+            k = keyf(lab); e = g.setdefault(k, dict(truth_w=[], stage=[], own=[], sa=[], runs=0))
+            for c in ("truth_w", "stage", "own"):
+                e[c] += d[c]
+            e["sa"] += sa; e["runs"] += 1
+        out = {}
+        for k, e in sorted(g.items(), key=lambda kv: str(kv[0])):
+            sa = np.array(e["sa"], bool); st = np.array(e["stage"])
+            out[str(k)] = dict(runs=e["runs"], truth_w=stats(e["truth_w"]), own=stats(e["own"]), stage=stats(st),
+                               stage_alive_share=float(sa.mean()), stage_when_dead=stats(st[~sa]), stage_when_alive=stats(st[sa]))
+        return out
+    res["all"] = group(lambda l: "all")
+    res["schedule_runs_only"] = group(lambda l: l["sched"])
+    res["by_variant"] = group(lambda l: l["variant"])
+    res["by_alpha_rho_samelam"] = group(lambda l: (l["alpha"], l["rho"], l["same_lam"]))
+    res["by_kind"] = group(lambda l: l["kind"])
+    res["by_p0"] = group(lambda l: l["p0"])
+    json.dump(res, open(sys.argv[3], "w"), indent=1)
+    print("done", len(R))

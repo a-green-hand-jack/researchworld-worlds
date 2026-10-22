@@ -1,0 +1,102 @@
+# Feasibility assessment: study plan revision 2 (JEPA collapse study)
+
+Owner: `idea-review-repo` (feasibility). Judged object: `story-repo` `PLAN.md` at
+`73136cd076ac94c45f13b0eca9b97269e0208ac8` ("plan revision 2", the revision that added the
+weight-decay calibration, prior-account matched-limit checks, required Tier C real-data test with
+linear probe, and the two presentation outputs), with the assignment at
+`abd1c974400c665bbeeb22115f499e1fdb1adfa1` and the requirement-aware update `3babc2b`/`b35f1ba`.
+Basis: measured CPU envelope (`compute_envelope.md`, extended this turn) + the resource limits in the
+world contract. Requested by `story-repo` in `idea-review-repo#3`.
+
+New measurements this turn (raw: `bench_conc4_*.json`, `bench_tierb.json`):
+- **4 concurrent `local-compute` jobs:** 3.04, 2.76, 0.74, 1.95 st/s → **aggregate 8.49 st/s**
+  (2.37× a solo job). Contention is *uneven* (one job ran at 0.74) — plan with the aggregate and
+  expect stragglers, not with per-job rates.
+- **Tier-B-scale anchor:** ViT d128/L4 on synthetic 16×16 (16 patches, 0.82 M params): 2.21 st/s —
+  *slower* than the larger d192/L6 workhorse (3.58 st/s). Small dims hit worse CPU kernels, so
+  "smaller model ⇒ cheaper" is false on CPU; per-run costs must come from measured points, and the
+  d192/L6 workhorse is *already* near the cost sweet spot.
+- `numpy 2.4.6` released 2026-05-18 (pre-cutoff) — R8-clean alongside `torch 2.13.0+cpu`
+  (2026-07-08, the last pre-cutoff release).
+
+## Verdict
+
+**The plan revision 2 is feasible as written, within the concrete bounds below. No required element
+needs a documented reduction.** The plan's own Tier B cap (≤ 24 configs) is exactly consistent with
+its full intended grid: one-factor sweeps (9 distinct cells: reference + 2 per factor) plus all three
+paired heuristic×decay slices (4 new cells each, sharing rows/columns with the one-factor sweeps)
+= **21 distinct Tier B configurations** — under the cap with room for 3 spare cells (e.g. a VICReg
+reference or a shuffled-view control). The preservation list (linear check, three one-factor
+contrasts, decay calibration, held-out rank prediction, ≥ 3 seeds, one real-data check with probe)
+fits comfortably; it becomes the *fallback* only if wall-clock slips.
+
+## Concrete bounds (the numbers the plan asked for)
+
+| Quantity | Bound (feasible as written) | Basis |
+|---|---|---|
+| Tier B model | workhorse ViT d192/L6 (2.77 M, 64 patches) on generated controlled data | measured 3.58 st/s; smaller measured *slower* |
+| Tier B configurations | ≤ 24 (intended grid = 21; 3 spare) | grid arithmetic above |
+| Tier B run length | **≤ 6 000 steps per run**; late checkpoint defined within it | theory says early-decided; pilot fixes exact count |
+| Tier B seeds | 3 everywhere; 5 on ≤ 4 cells (reference + primary boundary) | 8 extra runs ≈ 1.9 h wall |
+| Tier C model/data | workhorse ViT d192/L6, CIFAR-10 via pinned HF parquet | 55 s/epoch; data access measured |
+| Tier C configurations | ≤ 6, ≥ 3 seeds (≤ 18 runs) | per plan cap |
+| Tier C epochs | **≤ 60** (50 default; 30 if rank is stable — the budget doubles) | 55 s/epoch × 196 st/ep |
+| Nonlinear depth/width variants | predictor depth/scale: free (predictor ≈ 0.05 M params). Encoder depth (L12) or width (d256): 2–3× cost — spot checks only, not grid cells | measured 1.81 / 1.67 st/s |
+| Concurrency | ≤ 4 jobs in flight; aggregate 8.49 st/s | measured |
+| Total nonlinear runs | ~71 Tier B + 18 Tier C ≈ **89 ≤ 100** | arithmetic below |
+| Total wall-clock | **≈ 20 h** (Tier B ≈ 14 h, Tier C ≈ 6 h) across turns | 8.49 st/s aggregate |
+| Spectral logging | eigenvalues every checkpoint (cheap); full eigenvectors only at early-window boundaries + late checkpoint; principal-angle summaries between | storage: raw per-step eigenvector dumps over ~89 runs would exceed deliverable size |
+| Tier A (linear) + matched-limit prior checks | effectively free (224–307 st/s); dense boundary scans, many seeds, DirectPred-style limit checks all affordable | measured |
+| Pilot | a few reduced-step runs, minutes | measured |
+
+Grid arithmetic behind the totals: Tier B 21 configs × 3 seeds = 63 runs + 8 (four 5-seed cells) =
+71 runs × ≤ 6 k steps ≈ 426 k steps ÷ 8.49 st/s ≈ 14 h wall. Tier C 18 runs × 50 epochs × 196
+steps ≈ 176 k steps ≈ 5.8 h wall. Jobs outlive turns, so this wall-clock does not consume turn or
+model-time budget (world budget at assessment time: 5 902 s / 2 M model seconds, 29 / 5 000 turns —
+ample); it does consume ~6–8 wake-ups at 4-job batches of ~2.5 h.
+
+## Element-by-element (additions of revision 2)
+
+1. **Weight-decay calibration (zero/reference/strong + paired slices).** Feasible as written; the
+   three 3×3 heuristic×decay slices are exactly what fits in the 24-config cap (see arithmetic).
+   Recommended overlay: predicted threshold curve on the measured rank colormap, per the plan.
+2. **Matched-limit checks against the closest pre-cutoff spectral accounts** (DirectPred-style
+   eigenmode thresholds, deep-linear JEPA implicit bias, etc.). Feasible as written — Tier-A-scale
+   linear simulation, effectively free.
+3. **Required Tier C nonlinear real-data JEPA with frozen-backbone linear probe.** Feasible as
+   written with the epoch bound (≤ 60; 50 default). The probe itself is seconds–minutes
+   (logistic regression on frozen features). CIFAR-10 acquisition is settled (HF parquet, pinned:
+   119 705 255 bytes, 50 000 rows); `cs.toronto.edu` is blocked (403) and must not be the pinned
+   source.
+4. **Presentation outputs (rate scatter, prior-comparison table).** No compute cost; feasible.
+
+Risks to carry (not blockers, named so the plan can watch them):
+- **Wall-clock is the binding resource**, not model time. If the pilot or analysis turns out slower
+  than bounded, the documented-reduction ladder is: 5-seed cells → 3 seeds; Tier C 60 → 50 → 30
+  epochs; drop the *third* paired slice (target×decay) before any one-factor contrast; never drop
+  the linear check, the three one-factor contrasts, the decay calibration, a held-out condition per
+  heuristic, the rank-prediction test, or the real-data check (the plan's own preservation list).
+- **Straggler variance under concurrency** (one of four measured jobs at 0.74 st/s): batch sizing
+  should use one config per job (3 seeds sequential, ~2 h) so a straggler delays one config, not a
+  slice.
+- **Numerical-rank threshold calibration vs held-out separation** is a study-validity question
+  (experiment-repo); computationally it costs nothing extra.
+- **Novelty risk vs `tian2021understanding`/`littwin2024jepa`** is idea-repo's context finding
+  (related_work.md §3), not a feasibility bound — flagged here so the theory owner sees it was
+  carried, not forgotten.
+- **Storage:** results/ must hold per-seed/per-step values for ~89 runs; eigenvalues-per-checkpoint
+  plus boundary eigenvectors fits easily; full per-step eigenvector dumps would not. Aggregate in the
+  training loop, not after.
+
+## What is ruled out (unchanged from the envelope)
+
+ImageNet-scale or larger ViTs, video JEPAs (weeks on CPU); `torch ≥ 2.14` (post-cutoff);
+`cs.toronto.edu` as data source. The paper must state the scale limit, per idea-repo BRIEF.md §6.
+
+## Judgement against the objective
+
+Within the bounds above, the planned study can meet R1–R8: the theory and its quantitative checks
+(Tier A, free), the controlled empirical tests of all three heuristics with decay calibration
+(Tier B, ~14 h wall), the real-data transfer check with probe (Tier C, ~6 h), and the full
+NeurIPS-package deliverables owned elsewhere. A feasibility judgement never manufactures evidence:
+nothing here asserts the theory will hold — only that testing it is within the resources.

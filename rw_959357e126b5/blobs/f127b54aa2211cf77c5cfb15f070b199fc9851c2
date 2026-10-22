@@ -1,0 +1,51 @@
+"""Post hoc intervals for the E2 MLP retrospective (code/checks/e2_mlp_rdecay.py), from its per-run table
+e2_mlp_rdecay_rows.csv only; the frozen script and its e2_mlp_rdecay.json are unchanged (review E2R-1/2).
+
+E2R-1  With 3 seed clusters of 36 runs each, the seed-cluster bootstrap mean takes at most 10 values and its 2.5% /
+       97.5% quantiles are the lowest / highest single-seed means: minus_r_decay_ci_seed is the range of the three
+       seed means, not a 95% interval. Reported here as the three per-seed differences (and their range).
+E2R-2  All configurations with the same seed share W1(0), W2(0) (e2.mlp_init(seed, p0, w0); p0, w0 fixed in the arm)
+       and the Monte Carlo stream 10^6 + seed, so configuration clusters are seed-correlated.
+       two_way: configurations (fam x r x lam) and seeds resampled independently, each run weighted by the product of
+       its configuration's and its seed's draw counts (pigeonhole / two-way random-effects bootstrap); B = 10000.
+       config_given_inits: the delivered configuration-cluster interval, conditional on the three initialisations.
+Difference = err(baseline) - err(r_decay), err = |count - truth|; positive = r_decay better.
+Usage: python3 code/checks/e2_mlp_rdecay_ci.py ROWS_CSV OUT_JSON"""
+import sys, csv, json
+import numpy as np
+
+KEYS = ["r_init", "dvd_signed", "dvd_exact", "dvd_pq"]
+B = 10000
+
+
+def block(rows, seed=0):
+    tru = np.array([r["truth"] for r in rows], float)
+    cl = sorted({(r["fam"], r["r"], r["lam"]) for r in rows}); sd = sorted({r["seed"] for r in rows})
+    ci = np.array([cl.index((r["fam"], r["r"], r["lam"])) for r in rows]); si = np.array([sd.index(r["seed"]) for r in rows])
+    rng = np.random.default_rng(seed)
+    wc = rng.multinomial(len(cl), np.full(len(cl), 1 / len(cl)), B)       # B x configs
+    ws = rng.multinomial(len(sd), np.full(len(sd), 1 / len(sd)), B)       # B x seeds
+    W = wc[:, ci] * ws[:, si]                                             # B x runs
+    ok = W.sum(1) > 0
+    out = dict(runs=len(rows), configurations=len(cl), seeds=sd)
+    ed = np.abs(np.array([r["r_decay"] for r in rows], float) - tru)
+    for k in KEYS:
+        d = np.abs(np.array([r[k] for r in rows], float) - tru) - ed
+        m = (W[ok] * d).sum(1) / W[ok].sum(1)
+        per_seed = {str(s): float(d[si == j].mean()) for j, s in enumerate(sd)}
+        out[k] = dict(minus_r_decay=float(d.mean()), per_seed=per_seed,
+                      seed_range=[min(per_seed.values()), max(per_seed.values())],
+                      ci_two_way=[float(np.quantile(m, 0.025)), float(np.quantile(m, 0.975))], n_ok=int(ok.sum()))
+    return out
+
+
+rows = []
+for r in csv.DictReader(open(sys.argv[1])):
+    rows.append(dict(fam=r["fam"], r=float(r["r"]), lam=float(r["lam"]), seed=int(r["seed"]), truth=float(r["truth"]),
+                     converged=r["converged"] == "True", **{k: float(r[k]) for k in KEYS + ["r_decay"]}))
+res = dict(definition=__doc__, label="post hoc intervals for a retrospective (truths known)",
+           pooled=block(rows), per_family={f: block([r for r in rows if r["fam"] == f]) for f in ("bern", "block")},
+           per_lam={str(l): block([r for r in rows if r["lam"] == l]) for l in sorted({r["lam"] for r in rows})},
+           converged_only=block([r for r in rows if r["converged"]]))
+json.dump(res, open(sys.argv[2], "w"), indent=1)
+print(json.dumps({k: {kk: res["pooled"][k][kk] for kk in ("minus_r_decay", "seed_range", "ci_two_way")} for k in KEYS}, indent=1))

@@ -1,0 +1,79 @@
+{
+ "experiment": "E5 / B1 and B2, revision 2 of the tolerances (before the held-out registration)",
+ "status": "written after the development grid and its registered v1 scoring (results/e5/b1dev, all v1 dev tolerances pass) and after the internal review's early check of the registration, and BEFORE the output of the schedule-affected rescoring of the development grid (code/checks/e5_b1_sched.py, running when this file was committed) was read. The held-out grid is scored once against this file; the v1 statistics (b1_tolerance.json) are reported beside it unchanged. The model scored is the one frozen in results/e5/prediction.json (the delivered stage_model or the development revision stage_model_qs of code/e5_theory.py; the choice is made on the development grid and recorded there).",
+ "why": {
+  "B1a_B1b_v1": "pooled over all pairs and all events, v1 is dominated by the constant-lambda race before the first schedule knot (on a sample of the dev grid about 4% of pairs change state after the first knot and 79% of events precede it), so it scores B-i/B-ii rather than the post-capture claim B-iii it was meant to test, and it has no time-resolved baseline",
+  "floor": "v1 had no truth-floor or well-posedness rule; dev values sat 5-10% from a static threshold (lam_lo 0.004 vs lam*_19 0.00382; lam_hi 0.03 vs lam*_11 0.0272)"
+ },
+ "definitions": {
+  "first_knot": "t1 = the first schedule knot after 0 (ts for step/ramp/pulse); constant schedules have none and are not in B1a'/B1b'",
+  "scored_set": "truth, the frozen model, and the time-resolved baselines below; fixed here",
+  "schedule_affected_pairs": "per non-constant run, the (direction, checkpoint) pairs with checkpoint > t1 at which the truth OR any member of the scored set is in a different alive state than at the last checkpoint <= t1. One subset per run, common to all predictors (symmetric: it does not condition on the truth's changes only), so per-run differences are paired",
+  "post_knot_events": "debounced events (v1 definition) with time >= t1, in truth and in each predictor alike; i-th to i-th matching per direction and type as v1; timing error |ln((t_p - t_ref)/(t_m - t_ref))| as v1; unmatched = sum |n_pred - n_meas| over direction and type, as a share of sum max(n_pred, n_meas)",
+  "subcapture_pairs": "truth alive with |p| < c/(2s): the direction is held on the saddle side of the window (below the captured branch)",
+  "post_loss_pairs": "checkpoints at which a direction that was alive earlier is dead in the truth"
+ },
+ "baselines_time_resolved": {
+  "capture_static": "the frozen model's own capture times, then alive iff lam_W(t) <= c^2/(4s): losses and regains exactly at the crossings, no post-capture dynamics. The ablation of the slaved/quasi-steady post-capture claim",
+  "static_now": "alive iff lam_W(t) <= c^2/(4s)",
+  "race_frozen0": "the frozen model with the schedule frozen at its initial values",
+  "race_frozenT": "the same at its final values",
+  "stage_v1": "the delivered stage_model, when the frozen model is stage_model_qs (and stage_model_qs when it is stage_model)"
+ },
+ "statements": {
+  "B1a_prime": {
+   "claim": "the alive state after the first knot follows the model",
+   "metric": "agreement share on the schedule-affected pairs",
+   "tolerance": ">= 0.90 over the non-constant schedules and >= 0.80 in every (kind x variant) cell with at least 100 such pairs; and the model's per-run disagreement lower than capture_static's and every other time-resolved baseline's, paired bootstrap 95% CI of (baseline - model) above 0"
+  },
+  "B1b_prime": {
+   "claim": "which directions are gained, lost and regained after the first knot, and when",
+   "metric": "post-knot events",
+   "tolerance": "median timing error <= 0.10, 90th percentile <= 0.30, unmatched <= 5%; and the model's unmatched share lower than capture_static's"
+  },
+  "B1d": {
+   "claim": "the predictor after a loss",
+   "metric": "median over post-loss pairs of |ln(|p_truth| / p_model)|",
+   "tolerance": "<= 0.5 (a factor 1.65); the slaved relation p = w sqrt(lam_W/lam_P) and the predictor's own decay from the last alive checkpoint are reported beside it"
+  },
+  "B1e": {
+   "claim": "regrowth after a loss and revival of sub-capture directions",
+   "metric": "directions lost then alive again (regains) and directions alive with |p| < c/(2s) (sub-capture): truth count, model count, overlap; agreement share on sub-capture pairs",
+   "tolerance": "reported, not scored (the development grid had no regain); the held-out grid includes cells where the mechanisms differ (below)"
+  }
+ },
+ "B2": {
+  "B2a_warmup": {
+   "claim": "a warm-up (lo during the race, hi from ts) ends at most at the constant-hi race count when ts is before the low-lambda race completes, and can end below it",
+   "cells": "step_up paired with const_hi at the same (pair, p0, variant, seed), ts at 0.25, 0.5, 1 and 2 times the low-lambda race end time",
+   "statistic": "D = final count(step_up) - final count(const_hi), measured, per pair of runs; the model predicts sign(D)",
+   "tolerance": "sign(D) agreement >= 0.90; in the (cell, ts) groups where the model predicts D < 0 on every seed, mean measured D < 0 with bootstrap 95% CI below 0"
+  },
+  "B2b_increasing_bound": {
+   "claim": "for increasing schedules the final rank is at most the static count at the final lambda",
+   "cells": "step_up and ramp_up",
+   "statistic": "number of runs with measured final count > #{c^2 >= 4 s lam_final}",
+   "tolerance": "0 such runs outside the truth floor"
+  },
+  "B2c_late_decrease": {
+   "claim": "a decrease after the race is over revives only what the model predicts (v1 claim: nothing)",
+   "cells": "step_down, ramp_down and the end of a pulse, with the decrease time t_d after the race end time at the lambda before the decrease",
+   "statistic": "R = number of directions alive at T and dead at t_d, measured and predicted, per run",
+   "tolerance": "share of runs with predicted R = measured R >= 0.90; the share with measured R = 0 (v1's claim) and the runs with R > 0 are reported"
+  },
+  "B2d_early_decrease": {
+   "claim": "an early decrease acts as the lower constant",
+   "cells": "step_down and ramp_down with t_d before the race end at lam_hi",
+   "statistic": "|final(step_down) - final(const_lo)| at the same (pair, p0, variant, seed)",
+   "tolerance": "within-1 share >= 0.90"
+  }
+ },
+ "floor_and_well_posedness": {
+  "design": "every plateau value of the held-out schedules (lo, hi) satisfies |ln(lam / lam*_k)| >= 0.10 for every direction k, lam*_k = c_k^2/(4 s_k); ramps cross thresholds by design",
+  "truth_floor": "every held-out run is re-run twice in 80-bit: (i) w0_k multiplied by 1 + d_k, d_k ~ U(-1e-3, 1e-3); (ii) lam_W and lam_P multiplied by 1 + e, e = +-0.005 (signs and d from default_rng(seed + 7919)). A pair, event or final count is fragile if either re-run differs from the truth",
+  "use": "the floor (share of fragile pairs, events, final counts) is reported beside every statistic; tolerances are applied on all items unchanged, and the statistic is also reported on the non-fragile items; a model miss on a fragile item is labelled within the floor. A (kind x variant) cell whose floor exceeds half the allowed error of a statement (e.g. > 5% of schedule-affected pairs for B1a') is reported as ill-posed for that statement instead of pass/fail"
+ },
+ "held_out_cells_for_mechanisms": "beyond the v1 kinds: a short high pulse (hi duration 0.5, 1 and 2 times the bottleneck loss delay at lam_hi), rho in {0.25, 0.5, 2}, alpha in {0.5, 2}, so that slaved, quasi-steady and own-decay predictors and the regrowth rule make different predictions",
+ "exit": "as v1: if B1a'/B1b' fail on the held-out grid, the post-capture claim B-iii is reported as failed and the design rules derived from B are dropped",
+ "amendment_2026-10-18": "see results/e5/prediction.json amendment_2 (before any held-out score): the absolute B1a' bars sit on the truth-or-model subset; pass/fail is always reported for every cell and ill-posed is a flag beside it, listed with its floor, not a replacement for pass/fail; nonzero B2a/B2c shares reported beside the statistics"
+}

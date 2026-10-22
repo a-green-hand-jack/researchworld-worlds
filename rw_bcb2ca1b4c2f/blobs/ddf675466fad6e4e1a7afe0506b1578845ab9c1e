@@ -1,0 +1,32 @@
+"""E2 post-hoc diagnostic (not pre-registered): when do the sampled-data arms (sgd, tanh, mlp) depart from the
+near-collapse prediction? From the 20 rank checkpoints each run records (results/e2/e2_runs.jsonl `rank_t`), the
+rank MAE to the pre-registered prediction at every checkpoint fraction t / t_end, per arm and mask family, and the
+fraction of runs whose rank is still rising over the last quarter of the run.
+Usage: python3 code/checks/e2_rank_over_time.py   -> results/checks/e2_rank_over_time.json"""
+import os, json, csv
+import numpy as np
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+C = {int(r["id"]): r for r in csv.DictReader(open(os.path.join(ROOT, "results/e2/e2_runs.csv")))}
+J = {r["id"]: r for r in map(json.loads, open(os.path.join(ROOT, "results/e2/e2_runs.jsonl")))}
+S = dict(note=__doc__.split("Usage")[0].strip(), groups={})
+for exp in ["pop", "sgd", "tanh", "mlp"]:
+    for fam in ["bern", "block"]:
+        rr = [(C[i], J[i]) for i in C if C[i]["exp"] == exp and C[i]["fam"] == fam and J[i].get("rank_t") and C[i]["rank_pred"] != ""]
+        if not rr:
+            continue
+        K = min(len(j["rank_t"]) for _, j in rr)
+        frac = [float(rr[0][1]["rank_t"][k][0] / rr[0][1]["t_end"]) for k in range(K)]
+        err = np.array([[j["rank_t"][k][1] - int(c["rank_pred"]) for k in range(K)] for c, j in rr])
+        late_rise = [j["rank_t"][-1][1] > j["rank_t"][int(0.75 * (K - 1))][1] for _, j in rr]
+        by_lam = {}
+        for lam in sorted({c["lam"] for c, _ in rr}, key=float):
+            m = np.array([c["lam"] == lam for c, _ in rr])
+            by_lam[lam] = dict(mae_first=float(np.abs(err[m, 0]).mean()), mae_end=float(np.abs(err[m, -1]).mean()),
+                               bias_end=float(err[m, -1].mean()))
+        S["groups"][f"{exp}/{fam}"] = dict(runs=len(rr), t_frac=frac, mae_vs_t=np.abs(err).mean(0).round(3).tolist(),
+                                           bias_vs_t=err.mean(0).round(3).tolist(), still_rising_last_quarter=float(np.mean(late_rise)),
+                                           by_lam=by_lam)
+json.dump(S, open(os.path.join(ROOT, "results/checks/e2_rank_over_time.json"), "w"), indent=1)
+for k, v in S["groups"].items():
+    print(k, v["runs"], "MAE first/mid/end", v["mae_vs_t"][0], v["mae_vs_t"][len(v["mae_vs_t"]) // 2], v["mae_vs_t"][-1],
+          "rising", round(v["still_rising_last_quarter"], 2), {l: (round(b["mae_first"], 2), round(b["mae_end"], 2)) for l, b in v["by_lam"].items()})

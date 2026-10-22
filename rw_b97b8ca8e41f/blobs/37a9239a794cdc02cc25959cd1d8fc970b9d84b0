@@ -1,0 +1,30 @@
+"""Compile every delivered figure and table inside the NeurIPS 2026 template
+(venue-repo template/neurips_2026.sty, copied here) and render page previews
+to tools/out/page*.png. Also lists the fonts of each figure PDF (no Type 3)."""
+import os, pathlib, shutil, subprocess
+import pymupdf
+
+root = pathlib.Path(__file__).resolve().parents[1]
+out = root / "tools" / "out"
+shutil.rmtree(out, ignore_errors=True); out.mkdir(parents=True)
+shutil.copy(root / "tools" / "neurips_2026.sty", out)
+(out / "figures").symlink_to(root / "figures"); (out / "tables").symlink_to(root / "tables")
+body = [r"\documentclass{article}\usepackage{neurips_2026}",
+        r"\usepackage{booktabs,amsmath,amssymb,xcolor,multirow,graphicx}",
+        r"\usepackage[capitalize,noabbrev]{cleveref}\begin{document}"]  # as in paper-repo paper.tex; cites/refs render as ?
+for f in sorted((root / "figures").glob("*.pdf")):
+    body.append(r"\begin{figure}[h]\centering\includegraphics[width=\linewidth]{figures/%s}\caption{%s}\end{figure}" % (f.name, f.stem.replace("_", r"\_")))
+    for font in pymupdf.open(f)[0].get_fonts():
+        print(f.name, font[1], font[2], font[3])
+for t in sorted((root / "tables").glob("*.tex")):
+    body.append(r"\begin{table}[h]\caption{%s}\centering\small\input{tables/%s}\end{table}" % (t.stem.replace("_", r"\_"), t.name))
+body.append(r"Body text at 10pt for scale.\end{document}")
+(out / "check.tex").write_text("\n".join(body))
+env = dict(os.environ, PATH="/opt/texlive/2026/bin/x86_64-linux:" + os.environ["PATH"])
+r = subprocess.run(["pdflatex", "-interaction=nonstopmode", "check.tex"], cwd=out, env=env, capture_output=True, text=True)
+log = (out / "check.log").read_text(errors="replace")
+print("\n".join(l for l in log.splitlines() if l.startswith("!") or "Overfull" in l) or "no errors/overfull boxes")
+d = pymupdf.open(out / "check.pdf")
+for i, p in enumerate(d):
+    p.get_pixmap(dpi=120).save(out / f"page{i}.png")
+print(len(d), "pages")

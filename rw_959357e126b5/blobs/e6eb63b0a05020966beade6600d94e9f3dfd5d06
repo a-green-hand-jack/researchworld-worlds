@@ -1,0 +1,492 @@
+"""E7 scorer (registration: results/e7/prediction.json). Reads the run directories written by code/e7_grid.py.
+
+Measured: the target-token count (log.jsonl target_tok count_1e3, the E8 statistic) at epoch 20 (step 20 x steps per
+epoch) and at the end of the 50-epoch run; the online-token count is reported beside it.
+Predictors of each run's count at each horizon T (all from the run's own early record, nothing fitted):
+  headroom_<t_r>  the headroom race (code/checks/e7_dev_headroom.py): #{log(e_k(t_r)/e_max(t_r)) - 2 sum_{t_r<=t<T}
+                  lr(t) wd(t) >= log 1e-3} on the target-token spectrum logged at t_r (latest logged step <= t_r);
+                  t_r = 200 primary, 400 reported;
+  early_<t_r>     the count read at t_r;
+  step0           the delivered step-0 horizon rule (code/e3_grid.py horizon_rule) on the step-0 force export;
+  mu_diag, mu_wd  the 2610.02344 mu count (code/baselines/vit_mu.py): index-paired, and with the decay floor (SGD
+                  only); the native count over all mode pairs is reported (off the count's scale).
+Transition lam_c(T) on the C5 rows: the weight decay at which the seed-mean count first falls below half the seed-mean
+init count of the C5 rows (step-0 target-token count), log-linear between adjacent rows (lam_cross); the same rule on
+each predictor's seed-mean counts. Bootstrap (2000) over seeds within rows gives its 95% CI; a resample in which the
+count never crosses is counted as 'no crossing' and the share reported.
+Horizon ratio lam_c(50)/lam_c(20) with a joint bootstrap (horizon_ratio).
+Amendment 2 of the registration (before any production run) adds, without changing the rows above:
+  mu_tight_run    the paper's own count r~_tight with Prop. J.1's decay floor in run units (vit_mu.py r_tight_run), the
+                  registered mu baseline; mu_tight (no floor) and mu_tight_vitmu reported;
+  mu_k2           a count we build on their App. K.2 signed drive (vit_mu.py k2_reading): the decay side, floor and
+                  count are ours (their K.2 reads the drive only, paired between predictors, and claims no count);
+                  the init-time counts are their Sec. 5 tabular estimator transferred, which their App. K.1 reports
+                  null on images (amendment 3 relabels; values unchanged);
+  trend_200       a log-eigenvalue trend null: per sorted index, log(e_k/e_max) extrapolated linearly in steps from its
+                  slope between the latest logged steps <= 100 and <= 200 to the horizon, counted >= log 1e-3;
+  counts at 1e-2 and 1e-4 (measured, headroom_200, early_200) with lam_c at each (H1 sensitivity rows);
+  censored crossings: lam_cross_c tells 'below_grid' (count already below half at the lowest row) from 'above_grid'
+  (never below half up to the top row); no-crossing shares > 2.5% are reported as censored, CI conditional;
+  run status: non-finite, diverged (non-finite loss) or short runs are excluded and counted per row, and every
+  verdict is recomputed with their measured count set to 0 (sensitivity); a verdict the two disagree on is undetermined;
+  H2 paired CIs by a seed-cluster bootstrap (seeds 20-24 share initialisation and data order across rows);
+  verdict words (verdicts()), per-row MAE, GPU mix per row, per-run provenance, and the toggle statistic (toggles()).
+Amendment 3 (before any production result is read): H2 calls pass (or fail) only where both the seed-cluster
+bootstrap and a t interval (4 df at five seeds) on the per-seed mean differences exclude 0; every lam_c CI
+(transition, joint_ratio, horizon_ratio) resamples whole seeds across rows; a band pass whose CI crosses a band edge
+says so; exclusion is decided per horizon on the record up to that horizon; each predictor is scored on the runs where
+it is defined; exploratory AdamW rows mu_tight_run_wd / mu_k2_wd (decay floor lambda = wd) and mu_k2_sched (the K.2
+steps on the run's own warm-up schedule) are reported beside mu_tight_run / mu_k2.
+Usage: python3 code/e7_score.py RUNS_DIR DATA_DIR OUT.json [--from-rows]
+"""
+import os, sys, json, glob
+import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "checks"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "baselines"))
+from e3_grid import schedules, horizon_rule
+from e7_dev_headroom import headroom, lam_cross, logrel
+from e7_grid import grid
+import vit_mu as M
+
+TR = (200, 400)
+PRED = ["headroom_200", "headroom_400", "early_200", "early_400", "step0", "mu_diag", "mu_wd",
+        "mu_tight_run", "mu_k2", "trend_200", "mu_tight", "mu_tight_vitmu", "trend_200_logt",
+        "mu_tight_run_wd", "mu_k2_wd", "mu_k2_sched"]
+SCOPE = ("H2's mu rows test counts built from 2610.02344's linear criterion: mu_tight_run is their Sec. 5 estimator at "
+         "initialisation, which their App. K.1 reports null on images; mu_k2 is a count we build on their K.2 signed "
+         "drive (decay side, floor and count ours). A headroom win over the mu rows does not contradict 2610.02344, "
+         "which makes no count claim on images.")
+H2_VS = ["step0", "early_200", "mu_tight_run", "mu_k2", "trend_200", "mu_wd", "mu_diag"]
+THRS = {"1e-2": 1e-2, "1e-4": 1e-4}
+CENSOR = 0.025
+BAND = {"e50": (0.00135, 0.0054), "e20": (0.0035, 0.0142)}
+NB = 2000
+HORIZONS = {"e20": 20, "e50": None}     # epochs; None = the end of the full schedule
+
+
+def finite_eig(x):
+    return x is not None and all(np.isfinite(x["target_tok"]["eig"]))
+
+
+def count_at(e, thr, budget=0.0):
+    return int((logrel(e) - 2.0 * budget >= np.log(thr)).sum())
+
+
+def trend(T, st1, st2, t_end, logt=False):
+    a, b = logrel(T[st1]["target_tok"]["eig"]), logrel(T[st2]["target_tok"]["eig"])
+    if logt:
+        x1, x2, xe = np.log1p(st1), np.log1p(st2), np.log1p(t_end)
+    else:
+        x1, x2, xe = st1, st2, t_end
+    return int((b + (b - a) / (x2 - x1) * (xe - x2) >= np.log(1e-3)).sum())
+
+
+def provenance(rd, cfg):
+    pv = json.load(open(os.path.join(rd, "provenance.json"))) if os.path.exists(os.path.join(rd, "provenance.json")) else {}
+    import hashlib
+    gpu = cfg.get("gpu") or pv.get("gpu")
+    toks = [t for t in (gpu or "cpu").replace("-", " ").split() if any(ch.isdigit() for ch in t)]
+    return dict(gpu=gpu, gpu_family=toks[0] if toks else (gpu or "cpu"),
+                torch=cfg.get("torch"), commit=pv.get("code_commit"), vit_jepa_md5=pv.get("vit_jepa_md5"),
+                env_hash=hashlib.md5(str(pv.get("pip_freeze")).encode()).hexdigest()[:12] if pv else None, seed=cfg["seed"])
+
+
+def score_run(rd, X):
+    cfg = json.load(open(os.path.join(rd, "config.json")))
+    L = [json.loads(l) for l in open(os.path.join(rd, "log.jsonl"))]
+    T = {x["step"]: x for x in L if "target_tok" in x}
+    F = [x for x in L if "d_eig_drive" in x and x.get("step") == 0]
+    spe = cfg["steps_per_epoch"]; H = {h: (ep * spe if ep else cfg["total_full"]) for h, ep in HORIZONS.items()}
+    lr, wd = schedules(cfg, cfg["total_full"])
+    m = M.mu_of(cfg, X); k2 = M.k2_reading(cfg, X)
+    if cfg["opt"] != "sgd" or cfg.get("sched") != "const":
+        k2["n_k2_sched"] = M.k2_reading(cfg, X, k2_lr="schedule")["n_k2"]
+    losses = [(x.get("step", 0), x["loss"]) for x in L if "loss" in x and isinstance(x["loss"], (int, float))]
+
+    def diverged_by(t):
+        """non-finite loss or spectrum in the record up to step t (amendment 3: exclusion decided per horizon)"""
+        return (any(not np.isfinite(v) for st, v in losses if st <= t)
+                or any(not finite_eig(x) for k, x in T.items() if k <= t))
+    diverged = diverged_by(float("inf"))
+    e0 = T[0]["target_tok"]["eig"]
+    r = dict(seed=cfg["seed"], wd=cfg["wd"][0], init=T[0]["target_tok"]["count_1e3"], steps=max(T),
+             init_thr={k: count_at(e0, v) for k, v in THRS.items()},
+             mu_native=m["n_mu"], mu_modes=m["n_modes"], context_ratio=m["context_ratio"],
+             k2_positive_drive=k2["k2_positive_drive"], diverged=diverged, final=os.path.exists(os.path.join(rd, "final.json")),
+             provenance=provenance(rd, cfg), status={})
+    for h, t_end in H.items():
+        dh = diverged_by(t_end)
+        if t_end not in T or not finite_eig(T[t_end]) or dh:
+            r[h] = None
+            r["status"][h] = "diverged" if dh else ("non_finite" if t_end in T else "short")
+            # predictors defined from the early record (or at init) are kept for the measured = 0 sensitivity
+            r[h + "_pred_only"] = predictors(cfg, T, F, m, k2, lr, wd, t_end,
+                                             early_ok=max(T) >= 200 and not diverged_by(200))
+            continue
+        r["status"][h] = "ok"
+        d = dict(measured=T[t_end]["target_tok"]["count_1e3"], measured_online=T[t_end]["online_tok"]["count_1e3"])
+        d.update(predictors(cfg, T, F, m, k2, lr, wd, t_end))
+        st = max(k for k in T if k <= 200); e = T[st]["target_tok"]["eig"]; bud = float((lr[st:t_end] * wd[st:t_end]).sum())
+        d["thr"] = {k: dict(measured=count_at(T[t_end]["target_tok"]["eig"], v), early_200=count_at(e, v),
+                            headroom_200=count_at(e, v, bud)) for k, v in THRS.items()}
+        r[h] = d
+    return r
+
+
+def predictors(cfg, T, F, m, k2, lr, wd, t_end, early_ok=True):
+    d = {}
+    for t in TR:
+        if max(T) < t or not early_ok:
+            d[f"headroom_{t}"] = d[f"early_{t}"] = None; continue
+        st = max(k for k in T if k <= t)
+        e = T[st]["target_tok"]["eig"]
+        d[f"headroom_{t}"] = headroom(e, float((lr[st:t_end] * wd[st:t_end]).sum()))
+        d[f"early_{t}"] = T[st]["target_tok"]["count_1e3"]
+    if early_ok and max(T) >= 200:
+        s1, s2 = max(k for k in T if k <= 100), max(k for k in T if k <= 200)
+        d["trend_200"] = trend(T, s1, s2, t_end); d["trend_200_logt"] = trend(T, s1, s2, t_end, logt=True)
+    else:
+        d["trend_200"] = d["trend_200_logt"] = None
+    d["step0"] = horizon_rule(cfg, F[0], t_end)["count"] if F else None
+    d["mu_diag"] = m["n_mu_diag"]
+    d["mu_wd"] = list(m["n_mu_wd"].values())[0] if m["n_mu_wd"] else None
+    d["mu_tight"], d["mu_tight_run"], d["mu_tight_vitmu"] = m["r_tight"], m["r_tight_run"], m["r_tight_vitmu"]
+    d["mu_k2"] = k2["n_k2"]
+    adam = cfg["opt"] != "sgd"
+    d["mu_tight_run_wd"] = m["r_tight_run_wd"] if adam else None
+    d["mu_k2_wd"] = k2["n_k2_wd"] if adam else None
+    d["mu_k2_sched"] = k2.get("n_k2_sched")
+    return d
+
+
+def lam_cross_c(lams, counts, half):
+    """lam_cross with the censoring kind: (lam_c, 'cross' | 'below_grid' | 'above_grid')."""
+    v = lam_cross(lams, counts, half)
+    if v is not None:
+        return v, "cross"
+    return None, ("below_grid" if counts[0] < half else "above_grid")
+
+
+def get(r, h, key, thr=None):
+    d = r[h]
+    if thr:
+        return d["thr"][thr][key] if key in d["thr"][thr] else None
+    return d[key]
+
+
+def sens_rows(rows, h):
+    """measured = 0 sensitivity: excluded runs re-enter with measured 0 (and their early-record predictors, if any)."""
+    out = []
+    for r in rows:
+        if r[h] is not None:
+            out.append(r); continue
+        rr = dict(r); d = {k: None for k in PRED}; d.update(r.get(h + "_pred_only") or {}); d["measured"] = 0
+        d["thr"] = {k: dict(measured=0, early_200=None, headroom_200=None) for k in THRS}
+        rr[h] = d; out.append(rr)
+    return out
+
+
+def seed_cluster_ci(rows, h, base, ref="headroom_200"):
+    """95% CI of mean(|base - measured| - |ref - measured|) over runs, resampling whole seeds (all rows of a seed)."""
+    rows = [r for r in rows if r[h] and r[h][base] is not None and r[h][ref] is not None]
+    seeds = sorted({r["seed"] for r in rows})
+    by = {s: [abs(r[h][base] - r[h]["measured"]) - abs(r[h][ref] - r[h]["measured"]) for r in rows if r["seed"] == s] for s in seeds}
+    if not seeds:
+        return None
+    pt = float(np.mean([x for s in seeds for x in by[s]]))
+    rng = np.random.default_rng(11); bs = []
+    for _ in range(NB):
+        pick = rng.choice(seeds, len(seeds))
+        bs.append(np.mean([x for s in pick for x in by[s]]))
+    # amendment 3: t interval on the per-seed mean differences (the percentile bootstrap undercovers at 5 clusters)
+    sm = np.array([np.mean(by[s]) for s in seeds]); n = len(seeds)
+    if n > 1:
+        from scipy.stats import t as tdist
+        hw = float(tdist.ppf(0.975, n - 1) * sm.std(ddof=1) / np.sqrt(n)); tci = [float(sm.mean() - hw), float(sm.mean() + hw)]
+    else:
+        tci = None
+    return dict(diff=pt, ci=[float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))], ci_t=tci,
+                seed_mean_diff=float(sm.mean()), n_seeds=n, n_runs=len(rows),
+                coverage_note="percentile bootstrap over %d seed clusters covers ~83%% at nominal 95%% at n=5 (review sim); "
+                              "t interval with %d df beside it" % (n, n - 1))
+
+
+def seed_resample(by, rng, tally=None):
+    """Amendment 3: one resample of whole seeds (seeds share initialisation and data order across rows): draw the seeds
+    with replacement once and take every row's runs of the drawn seeds (with multiplicity); a row left empty keeps
+    its full set. Amendment 4: when a tally dict is passed, it counts the draws and the draws that left some row
+    empty; each caller reports that share as empty_row_share."""
+    seeds = sorted({r["seed"] for v in by.values() for r in v})
+    pick = rng.choice(seeds, len(seeds)); out = {}; empty = False
+    for w, v in by.items():
+        sel = [r for s in pick for r in v if r["seed"] == s]
+        out[w] = sel if sel else v; empty = empty or not sel
+    if tally is not None:
+        tally["draws"] = tally.get("draws", 0) + 1; tally["empty"] = tally.get("empty", 0) + int(empty)
+    return out
+
+
+def empty_share(tally):
+    return tally["empty"] / tally["draws"] if tally.get("draws") else None
+
+
+def transition(rows, key, h, half, rng, thr=None):
+    wds = sorted({r["wd"] for r in rows})
+    by = {w: [r for r in rows if r["wd"] == w and r[h] and get(r, h, key, thr) is not None] for w in wds}
+    wds = [w for w in wds if by[w]]; by = {w: by[w] for w in wds}
+    if len(wds) < 2:
+        return None
+    pt, kind = lam_cross_c(wds, [np.mean([get(r, h, key, thr) for r in by[w]]) for w in wds], half)
+    bs = []; tally = {}
+    for _ in range(NB):
+        sel = seed_resample(by, rng, tally)
+        bs.append(lam_cross_c(wds, [np.mean([get(r, h, key, thr) for r in sel[w]]) for w in wds], half))
+    ok = [b for b, _ in bs if b is not None]
+    share = {k: sum(1 for _, kk in bs if kk == k) / NB for k in ("below_grid", "above_grid")}
+    nc = 1 - len(ok) / NB
+    return dict(lam_c=pt, kind=kind, ci=[float(np.percentile(ok, 2.5)), float(np.percentile(ok, 97.5))] if ok else None,
+                no_crossing_share=nc, no_crossing_kinds=share, censored=nc > CENSOR,
+                ci_note="conditional on a crossing" if nc > 0 else None, rows=wds,
+                n_per_row={str(w): len(by[w]) for w in wds}, empty_row_share=empty_share(tally))
+
+
+def joint_ratio(rows, key_a, h_a, key_b, h_b, half, rng):
+    """lam_c(key_a at h_a) / lam_c(key_b at h_b) on the same rows, one seed resample per row for both."""
+    rows = [r for r in rows if r[h_a] and r[h_b] and r[h_a][key_a] is not None and r[h_b][key_b] is not None]
+    wds = sorted({r["wd"] for r in rows}); by = {w: [r for r in rows if r["wd"] == w] for w in wds}
+
+    def ratio(sel):
+        a = lam_cross(wds, [np.mean([r[h_a][key_a] for r in sel[w]]) for w in wds], half)
+        b = lam_cross(wds, [np.mean([r[h_b][key_b] for r in sel[w]]) for w in wds], half)
+        return a / b if a and b else None
+    if len(wds) < 2:
+        return None
+    tally = {}; pt = ratio(by); bs = [ratio(seed_resample(by, rng, tally)) for _ in range(NB)]
+    ok = [b for b in bs if b is not None]
+    return dict(ratio=pt, ci=[float(np.percentile(ok, 2.5)), float(np.percentile(ok, 97.5))] if ok else None,
+                undefined_share=1 - len(ok) / NB, censored=1 - len(ok) / NB > CENSOR, empty_row_share=empty_share(tally))
+
+
+def band_verdict(tr, lo, hi, grid_lo, grid_hi):
+    """pass: point in the band and CI no wider than the band (ratio hi/lo); fail: point outside; else undetermined.
+    A point below the lowest row is outside a band that starts above it (fail); a point above the top row is
+    outside a band that ends below it (fail), else undetermined."""
+    if tr is None:
+        return "undetermined", "no rows"
+    if tr["kind"] == "below_grid":
+        return ("fail", "lam_c below the lowest row") if lo > grid_lo else ("undetermined", "below the grid")
+    if tr["kind"] == "above_grid":
+        return ("fail", "lam_c above the top row") if hi < grid_hi else ("undetermined", "no crossing by the top row")
+    v = tr["lam_c"]
+    if not lo <= v <= hi:
+        return "fail", "point outside the band"
+    ci = tr["ci"]
+    if ci and ci[1] / ci[0] <= hi / lo:
+        edge = (" (CI crosses the band edge: %s)" % ", ".join(e for e, x in (("lower", ci[0] < lo), ("upper", ci[1] > hi)) if x)
+                if ci[0] < lo or ci[1] > hi else " (CI inside the band)")
+        return "pass", ("point in band, CI no wider than the band (the pass tests the CI's width, not its position)" + edge
+                        + (" (CI conditional, censored)" if tr["censored"] else ""))
+    return "undetermined", "point in band, CI wider than the band"
+
+
+def verdicts(sc, grid_lo, grid_hi):
+    """Verdict words of amendment 2 on one scoring (primary or measured-0 sensitivity)."""
+    V = {}
+    for h, nm in (("e50", "H1_transition_50"), ("e20", "H1_transition_20")):
+        tr = sc.get(h, {}).get("transition", {}).get("measured")
+        lo, hi = BAND[h]
+        v, why = band_verdict(tr, lo, hi, grid_lo, grid_hi)
+        if h == "e20" and tr and tr["kind"] == "above_grid":
+            v, why = "undetermined", "no crossing by the top row at epoch 20 (H1_20 and the ratio undetermined)"
+        V[nm] = dict(verdict=v, why=why)
+    hr = sc.get("horizon_ratio", {}).get("measured")
+    e20 = sc.get("e20", {}).get("transition", {}).get("measured")
+    if not hr or hr["ratio"] is None or (e20 and e20["kind"] != "cross"):
+        V["H1_horizon"] = dict(verdict="undetermined", why="ratio undefined (a horizon without a crossing)")
+    elif hr["ratio"] >= 1:
+        V["H1_horizon"] = dict(verdict="fail", why="ratio >= 1")
+    elif hr["ci"] and hr["ci"][1] < 1:
+        V["H1_horizon"] = dict(verdict="pass", why="ratio < 1 and CI below 1" + (" (CI conditional, censored)" if hr["censored"] else ""))
+    else:
+        V["H1_horizon"] = dict(verdict="undetermined", why="ratio < 1 but CI reaches 1")
+    for h in ("e20", "e50"):
+        x = sc.get(h)
+        if not x:
+            continue
+        h2 = {}
+        for b, c in x["headroom200_vs_cluster"].items():
+            if b not in H2_VS or c is None:
+                continue
+            t = c.get("ci_t") or [-np.inf, np.inf]
+            h2[b] = ("pass" if c["ci"][0] > 0 and t[0] > 0 else
+                     "fail (baseline better, both CIs below 0)" if c["ci"][1] < 0 and t[1] < 0 else
+                     "undetermined at n=%d (bootstrap %s, t %s)" % (c["n_seeds"], "excludes 0" if c["ci"][0] > 0 or c["ci"][1] < 0
+                                                                   else "spans 0", "excludes 0" if t[0] > 0 or t[1] < 0 else "spans 0"))
+        V[f"H2_{h}"] = h2
+        V[f"H2_{h}_decay_budget_claim"] = "kept" if h2.get("early_200") == "pass" else "dropped (headroom_200 does not beat early_200)"
+        jr = x.get("h3_ratio"); tm = x["transition"].get("measured"); th = x["transition"].get("headroom_200")
+        if tm and th and tm["kind"] == "cross" and th["kind"] != "cross" and (
+                (th["kind"] == "above_grid" and tm["lam_c"] * 1.5 < grid_hi) or (th["kind"] == "below_grid" and tm["lam_c"] / 1.5 > grid_lo)):
+            V[f"H3_{h}"] = dict(verdict="fail", why=f"headroom count does not cross inside the grid ({th['kind']}), beyond x1.5 of measured")
+        elif not jr or jr["ratio"] is None:
+            V[f"H3_{h}"] = dict(verdict="undetermined", why="a transition without a crossing")
+        elif not 1 / 1.5 <= jr["ratio"] <= 1.5:
+            V[f"H3_{h}"] = dict(verdict="fail", why="headroom lam_c outside x1.5 of measured")
+        elif jr["ci"] and jr["ci"][1] / jr["ci"][0] <= 1.5 ** 2:
+            V[f"H3_{h}"] = dict(verdict="pass", why="within x1.5, CI no wider than the band (x1.5 is finer than the grid step x1.41 only by 6%)")
+        else:
+            V[f"H3_{h}"] = dict(verdict="undetermined", why="within x1.5, CI wider than the band")
+    return V
+
+
+def score_set(c5, half, rng):
+    out = {}
+    for h in HORIZONS:
+        rr = [r for r in c5 if r[h]]
+        if not rr:
+            continue
+        # amendment 3: each predictor scored on the runs where it is defined (n_runs per predictor reported)
+        keys = [k for k in PRED if any(r[h].get(k) is not None for r in rr)]
+        dfn = {k: [r for r in rr if r[h].get(k) is not None] for k in keys}
+        err = {k: [abs(r[h][k] - r[h]["measured"]) for r in dfn[k]] for k in keys}
+        rows = sorted({r["wd"] for r in rr})
+
+        def pair(k):
+            both = [r for r in rr if r[h].get(k) is not None and r[h].get("headroom_200") is not None]
+            return paired_ci([abs(r[h]["headroom_200"] - r[h]["measured"]) for r in both],
+                             [abs(r[h][k] - r[h]["measured"]) for r in both], rng) if both else None
+        out[h] = dict(runs=len(rr), n_runs={k: len(dfn[k]) for k in keys}, mae={k: float(np.mean(v)) for k, v in err.items()},
+                      mae_per_row={k: {str(w): (float(np.mean([abs(r[h][k] - r[h]["measured"]) for r in dfn[k] if r["wd"] == w]))
+                                                if any(r["wd"] == w for r in dfn[k]) else None)
+                                       for w in rows} for k in keys},
+                      headroom200_vs=({k: pair(k) for k in keys if k != "headroom_200"} if "headroom_200" in keys else {}),
+                      headroom200_vs_cluster={k: seed_cluster_ci(rr, h, k) for k in keys if k != "headroom_200"},
+                      transition={k: transition(rr, k, h, half["1e-3"], rng) for k in ["measured"] + keys},
+                      transition_thr={t: {k: transition(rr, k, h, half[t], rng, thr=t) for k in ("measured", "headroom_200", "early_200")}
+                                      for t in THRS if all("thr" in r[h] for r in rr)})
+        if "headroom_200" in keys:
+            out[h]["h3_ratio"] = joint_ratio(rr, "headroom_200", h, "measured", h, half["1e-3"], rng)
+    if all(h in out for h in ("e20", "e50")):
+        out["horizon_ratio"] = {k: horizon_ratio(c5, k, half["1e-3"], rng) for k in ["measured", "headroom_200", "step0", "mu_tight_run", "trend_200"]}
+    return out
+
+
+def toggles(runs, G):
+    """Per seed: toggle error - reference (T_wd0.0034) error, for headroom_200 and early_200, at the last horizon;
+    'borne out' needs |mean difference| >= 2 sd of the C5 reference row's seed-to-seed headroom error in the predicted
+    direction (breaks: toggle worse; holds: within 2 sd). Exploratory; a toggle shows sufficiency to break, not cause."""
+    hl = list(HORIZONS)[-1]; out = {}
+    direction = {"T_ema": "holds", "T_pln": "holds", "T_tln": "holds", "T_nodn": "breaks", "T_adamw": None}
+    for n, v in runs.items():
+        if G[n][1] != "toggle":
+            continue
+        refrow = runs.get(f"T_wd{G[n][2]}", [])
+        sd = float(np.std([abs(r[hl]["headroom_200"] - r[hl]["measured"]) for r in refrow if r[hl]], ddof=1)) if sum(1 for r in refrow if r[hl]) > 1 else None
+        res = dict(sd_ref_headroom_error=sd, per_seed={}, gpu_families=sorted({r["provenance"]["gpu_family"] for r in v}),
+                   ref_gpu_families=sorted({r["provenance"]["gpu_family"] for r in refrow}))
+        res["gpu_family_differs_from_reference"] = res["gpu_families"] != res["ref_gpu_families"]
+        for k in ("headroom_200", "early_200"):
+            diffs = []
+            for r in v:
+                ref = [x for x in refrow if x["seed"] == r["seed"] and x[hl]]
+                if r[hl] and ref and r[hl][k] is not None:
+                    diffs.append(abs(r[hl][k] - r[hl]["measured"]) - abs(ref[0][hl][k] - ref[0][hl]["measured"]))
+                    res["per_seed"].setdefault(str(r["seed"]), {})[k] = diffs[-1]
+            res[f"mean_error_diff_{k}"] = float(np.mean(diffs)) if diffs else None
+        res["measured"] = {str(r["seed"]): r[hl]["measured"] if r[hl] else None for r in v}
+        res["reference_measured"] = {str(r["seed"]): r[hl]["measured"] if r[hl] else None for r in refrow if r["seed"] in {x["seed"] for x in v}}
+        m, d = res["mean_error_diff_headroom_200"], direction.get(n)
+        if m is None or sd is None or d is None:
+            res["hypothesis"] = "no direction registered" if d is None else "not scorable"
+        elif d == "breaks":
+            res["hypothesis"] = "borne out" if m >= 2 * sd else "not borne out"
+        else:
+            res["hypothesis"] = "borne out" if abs(m) < 2 * sd else "not borne out"
+        res["hypothesis_rule"] = f"predicted '{d}'; 2 sd = {2 * sd if sd else None}"
+        out[n] = res
+    out["scope"] = ("exploratory, 3 seeds; a toggle that breaks shows the change is sufficient to break the readout, not "
+                    "the cause; untested reverse toggles (e.g. removing decay on the norm gains from a row that otherwise "
+                    "keeps T_nodn's other settings, an EMA row without decay on the gains) are a limitation")
+    return out
+
+
+def paired_ci(a, b, rng):
+    """95% bootstrap CI of mean(b - a) over runs (b = baseline error, a = headroom error)."""
+    d = np.asarray(b, float) - np.asarray(a, float)
+    bs = [d[rng.integers(0, len(d), len(d))].mean() for _ in range(NB)]
+    return [float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))]
+
+
+def horizon_ratio(rows, key, half, rng):
+    """lam_c(50 epochs) / lam_c(20 epochs) on the C5 rows, with a 95% bootstrap CI that resamples the seeds of each
+    row once for both horizons (the two horizons are read from the same runs)."""
+    rows = [r for r in rows if r["e20"] and r["e50"] and r["e20"][key] is not None]
+    wds = sorted({r["wd"] for r in rows}); by = {w: [r for r in rows if r["wd"] == w] for w in wds}
+
+    def lam(sel, h):
+        return lam_cross(wds, [np.mean([r[h][key] for r in sel[w]]) for w in wds], half)
+
+    def ratio(sel):
+        a, b = lam(sel, "e50"), lam(sel, "e20")
+        return a / b if a and b else None
+    pt = ratio(by); bs = []; tally = {}
+    for _ in range(NB):
+        bs.append(ratio(seed_resample(by, rng, tally)))
+    ok = [b for b in bs if b is not None]
+    # amendment 5: the censored flag verdicts() reads (as joint_ratio returns it); no rng draw changes
+    return dict(ratio=pt, ci=[float(np.percentile(ok, 2.5)), float(np.percentile(ok, 97.5))] if ok else None,
+                undefined_share=1 - len(ok) / NB, censored=1 - len(ok) / NB > CENSOR, empty_row_share=empty_share(tally))
+
+
+def main():
+    rdir, data, outp = sys.argv[1:4]
+    G = grid(); rng = np.random.default_rng(7)
+    X, _ = M.V.load(data, "train"); X = X[:M.N_IMG]
+    runs = {}
+    rows_path = outp[:-5] + "_rows.json" if outp.endswith(".json") else outp + "_rows.json"
+    if len(sys.argv) > 4 and sys.argv[4] == "--from-rows":
+        # amendment 5: reuse the per-run rows a previous pass of this scorer checkpointed (no recomputation)
+        runs = json.load(open(rows_path))
+    else:
+        for name in G:
+            for rd in sorted(glob.glob(os.path.join(rdir, name, "s*", ""))):
+                if os.path.exists(os.path.join(rd, "log.jsonl")):
+                    runs.setdefault(name, []).append(score_run(rd, X))
+                    print(name, runs[name][-1]["seed"], runs[name][-1]["status"], flush=True)
+        # amendment 5: per-run rows checkpointed before any aggregate or verdict is computed
+        json.dump(runs, open(rows_path, "w"), default=lambda o: o.tolist() if hasattr(o, "tolist") else str(o))
+    out = dict(definition=__doc__, scope=SCOPE, rows={n: [dict(r) for r in v] for n, v in runs.items()})
+    c5 = [r for n, v in runs.items() if G[n][1] == "c5" for r in v]
+    half = {"1e-3": 0.5 * float(np.mean([r["init"] for r in c5]))} if c5 else None
+    if c5:
+        half.update({t: 0.5 * float(np.mean([r["init_thr"][t] for r in c5])) for t in THRS})
+    out["half_init"] = half
+    out["excluded_per_row"] = {n: {h: {st: sum(1 for r in v if r["status"].get(h) == st) for st in ("diverged", "non_finite", "short")}
+                                   for h in HORIZONS} for n, v in runs.items()}
+    out["gpu_mix"] = {n: {f: sum(1 for r in v if r["provenance"]["gpu_family"] == f) for f in sorted({r["provenance"]["gpu_family"] for r in v})}
+                      for n, v in runs.items()}
+    out["provenance_distinct"] = {k: sorted({str(r["provenance"][k]) for v in runs.values() for r in v}) for k in ("torch", "commit", "env_hash", "vit_jepa_md5")}
+    grid_lo, grid_hi = min(G[n][2] for n in G if G[n][1] == "c5"), max(G[n][2] for n in G if G[n][1] == "c5")
+    if c5:
+        out.update(score_set(c5, half, rng))
+        out["verdicts"] = verdicts(out, grid_lo, grid_hi)
+        excl = any(r[h] is None for r in c5 for h in HORIZONS)
+        if excl:
+            sens = {h: sens_rows(c5, h) for h in HORIZONS}
+            c5s = [dict(r, **{h: sens[h][i][h] for h in HORIZONS}) for i, r in enumerate(c5)]
+            out["sensitivity_measured0"] = score_set(c5s, half, np.random.default_rng(7))
+            out["sensitivity_measured0"]["verdicts"] = vs = verdicts(out["sensitivity_measured0"], grid_lo, grid_hi)
+            out["verdicts_final"] = {k: (v if vs.get(k) == v else
+                                         (dict(verdict="undetermined", why="primary and measured-0 scorings disagree") if isinstance(v, dict) and "verdict" in v
+                                          else {"primary": v, "measured0": vs.get(k), "verdict": "undetermined where they differ"}))
+                                     for k, v in out["verdicts"].items()}
+        else:
+            out["verdicts_final"] = out["verdicts"]
+    out["toggles"] = toggles(runs, G)
+    json.dump(out, open(outp, "w"), indent=1, default=str)
+    print(json.dumps({k: out.get(k) for k in ["half_init", "excluded_per_row", "gpu_mix", "verdicts_final"]}, indent=1)[:6000])
+
+
+if __name__ == "__main__":
+    main()

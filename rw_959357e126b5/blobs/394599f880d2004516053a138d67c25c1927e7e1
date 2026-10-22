@@ -1,0 +1,25 @@
+import sys, json, time, numpy as np
+sys.path.insert(0, "code")
+import e6_r4_heldout as H, e6_r4 as r4, e6_r2 as r2
+out = {}
+# 1) initial LN regime: |Pi z_t|^2/d against eps for every held-out base config
+cf = [c for c in H.configs() if "floor" not in c]
+ratios = []
+for c in cf:
+    Xc, Xt = r2.sample(c); W1, W2, P = r2.init(c)
+    zt = r2.phi(Xt @ W1.T, c["act"]) @ W2.T
+    pz = zt @ r4.PI
+    ratios.append(float(((pz ** 2).mean(1)).mean() / 1e-5))
+ratios = np.array(ratios)
+out["init_msq_over_eps"] = dict(min=float(ratios.min()), median=float(np.median(ratios)), max=float(ratios.max()))
+print(out, flush=True)
+# 2) train_full vs e6_r4.train on the smoke config (and a short held-out config)
+for c in [r4.configs("smoke")[0], dict(cf[0], T=600), ]  # a third config (cf[90]) was cut by the shell timeout:
+    Xc, Xt = r2.sample(c)
+    t0 = time.time(); a = r4.train(c, Xc, Xt); b = H.train_full(c, Xc, Xt)
+    a.pop("snaps", None); sa = b.pop("snaps"); b.pop("full"); [b.pop(k) for k in ("w1_ratio", "hid_rank")]
+    same = json.dumps(a, sort_keys=True) == json.dumps(b, sort_keys=True)
+    out.setdefault("equiv", []).append(dict(cfg={k: c[k] for k in ("data", "act", "s1", "lam", "T", "seed")}, identical=same,
+                                            rank=a.get("rank"), s=time.time() - t0))
+    print(out["equiv"][-1], flush=True)
+json.dump(out, open("check.json", "w"), indent=1)

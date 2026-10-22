@@ -1,0 +1,30 @@
+import numpy as np, time, sys
+sys.path.insert(0, "code")
+from linjepa import simulate, race_exponent, window
+n = d = 32
+c = 0.9 ** np.arange(n); s = np.ones(n)
+S11, S21 = np.diag(s), np.diag(c)
+rows = []
+t0 = time.time()
+for lam in [0.003, 0.01, 0.03, 0.05]:
+    for p0 in [0.2, 0.5, 1.0, 1.5]:
+        for w0 in [1e-4, 1e-2]:
+            for seed in range(2):
+                out = simulate(S11, S21, d, lam, lam, p0=p0, w0=w0, eta=0.1, T=int(min(3 / lam, 1000) / 0.1), seed=seed)
+                F, tm, pm = race_exponent(c, s, lam, lam, 1.0, p0)
+                w_init = np.linalg.norm(out["W_init"], axis=0)
+                surv = out["mode_norms"] > 0.05
+                for k in range(n):
+                    rows.append((lam, p0, w0, seed, k, F[k], np.log(w_init[k]), surv[k], out["mode_norms"][k]))
+print("time", time.time() - t0)
+R = np.array(rows, float)
+score = R[:, 5] + R[:, 6]
+surv = R[:, 7] > 0
+fin = np.isfinite(score)
+print("survivors score range", score[surv].min(), score[surv].max())
+print("dead score range (finite)", score[~surv & fin].min(), score[~surv & fin].max())
+# best threshold
+ths = np.linspace(-15, 5, 401)
+acc = [((score >= th) == surv).mean() for th in ths]
+j = int(np.argmax(acc)); print("best threshold", ths[j], "acc", acc[j])
+np.save("pilot/race_rows.npy", R)

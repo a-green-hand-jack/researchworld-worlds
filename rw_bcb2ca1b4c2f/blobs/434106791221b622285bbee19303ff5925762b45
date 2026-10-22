@@ -1,0 +1,63 @@
+"""Referee check of experiment-repo E1 (883c59deff1c, results/e1/e1_runs.jsonl), race sub-experiment,
+orthogonal init (where the per-mode reduction, Prop. 1, is exact).  Own Euler implementation of the reduced
+flow (same step eta = 0.1 as the GD runs), same initial mode norms (same RNG calls as code/linjepa.py),
+run to a long horizon T_LONG, to ask whether the E1 labels (sv > 0.05 at t_end <= 1500) are final ranks.
+
+Usage: python3 checks/e1_long_horizon.py E1_RUNS_JSONL LINJEPA_PY
+"""
+import sys, json, importlib.util, collections
+import numpy as np
+
+runs_path, lin_path = sys.argv[1], sys.argv[2]
+spec = importlib.util.spec_from_file_location("linjepa", lin_path); lin = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(lin)
+n = d = 32; C = 0.9 ** np.arange(n); S = np.ones(n); ETA = 0.1; T_LONG = 40000.0; THR = 0.05
+R = [json.loads(l) for l in open(runs_path)]
+R = [r for r in R if r["exp"] == "race" and r["init"] == "orthogonal"]
+
+def init_norms(seed, w0):
+    rng = np.random.default_rng(seed)
+    Q, _ = np.linalg.qr(rng.standard_normal((d, n)))
+    return w0 * np.exp(0.1 * rng.standard_normal(n))          # column norms of w0 * Q * exp(...)
+
+A0 = np.array([init_norms(r["seed"], r["w0"]) for r in R])
+lam = np.array([r["lam"] for r in R])[:, None]; p0 = np.array([r["p0"] for r in R])[:, None]
+alpha = np.array([r["alpha"] for r in R])[:, None]
+a = A0.copy(); p = np.broadcast_to(p0, a.shape).copy()
+snap = {}
+steps = int(T_LONG / ETA)
+for i in range(1, steps + 1):
+    da = a * (p * C - p ** 2 * S - lam)
+    dp = alpha * ((C - p * S) * a ** 2 - lam * p)
+    a += ETA * da; p += ETA * dp
+    a[a < 1e-150] = 0.0
+    if i * ETA in (1500.0, 10000.0, 20000.0, T_LONG):
+        snap[i * ETA] = a.copy()
+long_surv = snap[T_LONG] > THR
+stable = np.array_equal(snap[20000.0] > THR, long_surv)
+e1_surv = np.array([r["surv"] for r in R], bool); e1_pred = np.array([r["pred"] for r in R], bool)
+# race criterion without the finite horizon, and the static window (asymptotically exact at lam = 0)
+inf_pred = np.array([[lin.escape_score(C[k], S[k], r["lam"], r["lam"], r["alpha"], r["p0"], np.log(A0[j, k]),
+                                       t_end=np.inf) >= 0 for k in range(n)] for j, r in enumerate(R)])
+window = (p0 * C - p0 ** 2 * S - lam) > 0
+groups = collections.OrderedDict()
+fin = np.array([r["race_finished"] and r["t_end"] < 1500 for r in R])
+groups["lam=0"] = (lam[:, 0] == 0)
+groups["lam>0, race finished before t_end"] = (lam[:, 0] > 0) & np.array([r["race_finished"] for r in R])
+groups["lam>0, race not finished by t_end=1500"] = (lam[:, 0] > 0) & ~np.array([r["race_finished"] for r in R])
+groups["all"] = np.ones(len(R), bool)
+out = dict(source="experiment-repo 883c59deff1c results/e1/e1_runs.jsonl, code/linjepa.py", T_long=T_LONG,
+           labels_stable_20000_to_40000=bool(stable), groups={})
+for name, g in groups.items():
+    L = long_surv[g]; rk = L.sum(1)
+    ent = dict(runs=int(g.sum()),
+               e1_label_vs_long_mode_disagree=int((e1_surv[g] != L).sum()),
+               e1_rank_meas_vs_long_rank_differs_runs=int((e1_surv[g].sum(1) != rk).sum()))
+    for nm, P in [("race_pred_as_in_E1", e1_pred[g]), ("race_pred_t_end_inf", inf_pred[g]), ("static_window", window[g])]:
+        err = P.sum(1) - rk
+        ent[nm] = dict(mode_acc_vs_long=float((P == L).mean()), rank_exact_vs_long=float((err == 0).mean()),
+                       rank_mae_vs_long=float(np.abs(err).mean()),
+                       rank_mae_vs_e1_label=float(np.abs(P.sum(1) - e1_surv[g].sum(1)).mean()))
+    out["groups"][name] = ent
+print(json.dumps(out, indent=1))
+json.dump(out, open("checks/e1_long_horizon.json", "w"), indent=1)

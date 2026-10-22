@@ -1,0 +1,62 @@
+"""Summarise E3 pilot runs (code/e3_ijepa.py outputs) into one table: config differences from the baseline,
+measured cost (sec/step, device), and at the first and last full evaluation the target/online token and pooled
+embedding total variance, centred RankMe, eigenvalue count > 1e-3 and loss; the linear probe where run; and the
+force decomposition at its first and last recorded step (number of embedding-covariance eigen-directions whose
+first-order change under drive + self-prediction + weight decay is positive, i.e. measured drive > decay).
+Usage: python3 code/e3_pilot_summary.py OUT_DIR RUN_DIR [RUN_DIR ...]  -> OUT_DIR/summary.json, OUT_DIR/summary.csv"""
+import sys, os, json, csv
+import numpy as np
+
+BASE = dict(width=128, depth=4, pred_width=64, pred_depth=3, pred_init_scale=1.0, enc_out_scale=1.0, n_targets=4,
+            target_scale=[0.15, 0.2], context_scale=[0.85, 1.0], target="ema", ema=[0.996, 1.0], target_ln=1,
+            opt="adamw", lr=3e-4, sched="cosine", wd=[0.04, 0.4], pred_lr_mult=1.0, loss="mse", batch=256, pred_norm=1,
+            decay_norm=0)
+
+
+def summarise(d):
+    cfg = json.load(open(os.path.join(d, "config.json")))
+    fin = json.load(open(os.path.join(d, "final.json"))) if os.path.exists(os.path.join(d, "final.json")) else {}
+    L = [json.loads(l) for l in open(os.path.join(d, "log.jsonl"))]
+    full = [r for r in L if r.get("full") and "target_tok" in r]
+    force = [r for r in L if r.get("force")]
+    nonfinite = any(r.get("nonfinite") for r in L)
+    out = dict(run=os.path.basename(os.path.normpath(d)), dir=d,
+               diff={k: cfg.get(k) for k, v in BASE.items() if cfg.get(k, v) != v},
+               epochs=cfg["epochs"], full_epochs=cfg["full_epochs"], warmup_frac=cfg.get("warmup_frac"),
+               device=cfg.get("device", "cpu"), gpu=cfg.get("gpu"), threads=cfg.get("threads"),
+               steps_logged=max((r["step"] for r in L), default=0), finished=bool(fin), nonfinite=nonfinite,
+               sec_per_step=fin.get("sec_per_step"), seconds=fin.get("seconds"))
+    for tag, r in [("first", full[0] if full else None), ("last", full[-1] if full else None)]:
+        if r is None:
+            continue
+        out[tag] = dict(step=r["step"], loss=r.get("loss"),
+                        **{f"{m}_{q}": r[m][q] for m in ["target_tok", "online_tok", "target_pool"] if m in r
+                           for q in ["total_var", "rankme_c", "rankme_raw", "count_1e3", "std"]})
+        for m in ["online_probe", "target_probe"]:
+            if m in r:
+                out[tag][m] = r[m]["probe_acc"]
+    if force:
+        for tag, r in [("force_first", force[0]), ("force_last", force[-1])]:
+            net = np.array(r["d_eig_drive"]) + np.array(r["d_eig_selfpred"]) + np.array(r["d_eig_wd"])
+            out[tag] = dict(step=r["step"], n_dirs=len(net), n_net_growth=int((net > 0).sum()),
+                            n_drive_gt_selfpred=int((np.array(r["d_eig_drive"]) + np.array(r["d_eig_selfpred"]) > 0).sum()),
+                            top8_net=[float(x) for x in net[:8]])
+    return out
+
+
+if __name__ == "__main__":
+    od = sys.argv[1]; runs = [summarise(d) for d in sys.argv[2:]]
+    json.dump(dict(note=__doc__.split("Usage")[0].strip(), baseline=BASE, runs=runs, command=" ".join(sys.argv)),
+              open(os.path.join(od, "summary.json"), "w"), indent=1)
+    cols = ["run", "diff", "device", "epochs", "full_epochs", "steps_logged", "sec_per_step", "nonfinite"]
+    met = ["step", "loss", "target_tok_total_var", "target_tok_rankme_c", "target_tok_count_1e3", "online_tok_total_var",
+           "target_pool_total_var", "target_pool_rankme_c", "target_probe"]
+    with open(os.path.join(od, "summary.csv"), "w", newline="") as f:
+        w = csv.writer(f); w.writerow(cols + [f"{t}_{m}" for t in ["first", "last"] for m in met] + ["force_last_step", "force_last_n_net_growth"])
+        for r in runs:
+            w.writerow([json.dumps(r[c]) if c == "diff" else r.get(c) for c in cols]
+                       + [r.get(t, {}).get(m) for t in ["first", "last"] for m in met]
+                       + [r.get("force_last", {}).get("step"), r.get("force_last", {}).get("n_net_growth")])
+    for r in runs:
+        print(r["run"], r["diff"], r.get("sec_per_step"), {k: (round(v, 3) if isinstance(v, float) else v) for k, v in r.get("last", {}).items()},
+              r.get("force_first", {}).get("n_net_growth"), r.get("force_last", {}).get("n_net_growth"))

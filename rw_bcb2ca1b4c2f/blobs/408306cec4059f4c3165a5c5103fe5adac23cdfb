@@ -1,0 +1,94 @@
+"""M2 masking statistics for the E3 mask distributions (the pre-registered masking prediction of E3, P5).
+For each E3 mask setting, the actual sampler of code/e3_ijepa.py (MultiBlockMask, 8x8 token grid) is drawn
+NM times to estimate G_ij = Pr(i, j in context) and F_ij = E[#target blocks containing i, j in context] / n_targets,
+and the measured fraction of tokens masked (1 - context tokens / 64) and in targets. With a scalar token field
+x_i = patch-mean luminance of CIFAR-10 train images (4x4 patches, standardised, covariance Sigma estimated over the
+train set), the linear masked JEPA of E2 has S11 = Sigma o G and S21 = Sigma o F (o: elementwise). The grid is not
+a torus, so the statistics are not circulant: directions are the eigenvectors u_k of S11 (sigma_k = eigenvalue,
+c_k = u_k^T sym(S21) u_k), and the predicted rank is N1 per direction and N1-general on the full matrices
+(code/linjepa.py n1_general, identity predictor p0 I, orthogonal W0 = w0 I, E2's step and horizon rule), at
+several (lam, p0). This is a linear proxy: E3 registers only the ORDER of the mask settings by predicted rank, and
+only where that order is the same at every (lam, p0) evaluated.
+Usage: python3 code/e3_mask_stats.py results/e3   -> results/e3/mask_stats.json"""
+import sys, os, json, itertools
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np, torch
+torch.set_num_threads(1)
+sys.path.insert(0, os.path.dirname(__file__))
+from e3_ijepa import MultiBlockMask
+from linjepa import escape_score, race_end_time, growth_rate, n1_general
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+G_ = 8; N = G_ * G_; NM = 40000; BATCH = 256
+MASKS = {"base": dict(n_targets=4, t_scale=(0.15, 0.2), c_scale=(0.85, 1.0)),
+         "targets1": dict(n_targets=1, t_scale=(0.15, 0.2), c_scale=(0.85, 1.0)),
+         "ctx0.4": dict(n_targets=4, t_scale=(0.15, 0.2), c_scale=(0.4, 0.5)),
+         "tscale_hi": dict(n_targets=4, t_scale=(0.3, 0.4), c_scale=(0.85, 1.0)),
+         "tscale_lo": dict(n_targets=4, t_scale=(0.05, 0.1), c_scale=(0.85, 1.0))}
+LAMS = [1e-3, 3e-3, 1e-2]; P0S = [0.25, 0.5, 1.0]; W0 = 1e-3; ETA = 0.05; T_CAP = 4000.0
+
+
+def cifar_sigma(data):
+    z = np.load(os.path.join(data, "train.npz"))
+    x = z["x"].astype(np.float64)            # N x 32 x 32 x 3 or N x 3 x 32 x 32
+    if x.shape[-1] == 3:
+        x = x.transpose(0, 3, 1, 2)
+    lum = x.mean(1)                          # N x 32 x 32
+    p = lum.reshape(-1, G_, 4, G_, 4).mean((2, 4)).reshape(-1, N)
+    p = (p - p.mean(0)) / p.std()
+    S = p.T @ p / p.shape[0]
+    return S / np.mean(np.diag(S))
+
+
+def mask_stats(m, seed=0):
+    g = torch.Generator().manual_seed(seed)
+    mk = MultiBlockMask(G_, m["n_targets"], m["t_scale"], (0.75, 1.5), m["c_scale"], 4)
+    Gm = np.zeros((N, N)); Fm = np.zeros((N, N)); ctx_frac = []; tgt_frac = []
+    draws = 0
+    while draws < NM:
+        ctx, tgt = mk(BATCH, g)
+        C = np.zeros((BATCH, N)); np.put_along_axis(C, ctx.numpy(), 1.0, axis=1)
+        T = np.zeros((BATCH, N)); U = np.zeros((BATCH, N))
+        for blk in tgt:
+            Tb = np.zeros((BATCH, N)); np.put_along_axis(Tb, blk.numpy(), 1.0, axis=1); T += Tb; U = np.maximum(U, Tb)
+        Gm += C.T @ C; Fm += (T / m["n_targets"]).T @ C
+        ctx_frac += C.mean(1).tolist(); tgt_frac += U.mean(1).tolist()
+        draws += BATCH
+    return Gm / draws, Fm / draws, float(1 - np.mean(ctx_frac)), float(np.mean(tgt_frac))
+
+
+def predict(S11, S21, lam, p0):
+    s, U = np.linalg.eigh(S11); s, U = s[::-1], U[:, ::-1]
+    c = np.einsum("ik,ij,jk->k", U, (S21 + S21.T) / 2, U)
+    t_end = float(min(3.0 * race_end_time(c, s, lam, lam, 1.0, p0) + 300.0, T_CAP))
+    sc = np.array([escape_score(c[k], s[k], lam, lam, 1.0, p0, np.log(W0), t_end=t_end) for k in range(N)])
+    n1g = n1_general(S11, S21, W0 * np.eye(N), p0 * np.eye(N), lam, 1.0, ETA, int(t_end / ETA))
+    return dict(lam=lam, p0=p0, t_end=t_end, rank_N1=int((sc >= 0).sum()), rank_N1general=int(n1g),
+                rank_bound=int(((c > 0) & (c ** 2 >= 4 * lam * s)).sum()),
+                rank_window=int((growth_rate(p0, c, s, lam) > 0).sum()), n_cpos=int((c > 0).sum()))
+
+
+if __name__ == "__main__":
+    out_dir = sys.argv[1]
+    data = os.environ.get("CIFAR_DIR", "data/cifar10")
+    Sig = cifar_sigma(data)
+    res = dict(note=__doc__.split("Usage")[0].strip(), NM=NM, W0=W0, ETA=ETA, masks={}, sigma_top_eig=np.linalg.eigvalsh(Sig)[::-1][:8].tolist())
+    for name, m in MASKS.items():
+        Gm, Fm, masked, tfrac = mask_stats(m)
+        S11, S21 = Sig * Gm, Sig * Fm
+        preds = [predict(S11, S21, lam, p0) for lam, p0 in itertools.product(LAMS, P0S)]
+        res["masks"][name] = dict(cfg={k: list(v) if isinstance(v, tuple) else v for k, v in m.items()},
+                                  frac_masked=masked, frac_in_targets=tfrac, preds=preds)
+        print(name, round(masked, 3), round(tfrac, 3), [(p["lam"], p["p0"], p["rank_N1general"], p["rank_N1"], p["rank_bound"]) for p in preds], flush=True)
+    names = list(MASKS)
+    orders = {}
+    for key in ["rank_N1general", "rank_N1"]:
+        per = [[res["masks"][nm]["preds"][i][key] for nm in names] for i in range(len(LAMS) * len(P0S))]
+        # pairwise order vs base, consistent across all (lam, p0)?
+        orders[key] = {nm: ("higher" if all(p[j] > p[0] for p in per) else "lower" if all(p[j] < p[0] for p in per)
+                            else "equal" if all(p[j] == p[0] for p in per) else "undetermined")
+                       for j, nm in enumerate(names) if j > 0}
+    res["order_vs_base"] = orders
+    res["command"] = " ".join(sys.argv); res["numpy"] = np.__version__; res["torch"] = torch.__version__
+    json.dump(res, open(os.path.join(out_dir, "mask_stats.json"), "w"), indent=1)
+    print(orders)
