@@ -1,0 +1,34 @@
+"""Development only: the frozen v3 phase model scored with the A1 metrics on a development grid (dev2 or dev3).
+Usage: python3 code/checks/e4_dev_v3_on_grid.py dev2|dev3 > results/e4/<grid>/v3_dev_score.txt"""
+import sys, os, json, gzip, time; os.environ["OMP_NUM_THREADS"]="1"
+sys.path.insert(0,'code'); import numpy as np, e4_a1 as A, e4_dev as dev, e4_theory as th
+G = sys.argv[1]
+from multiprocessing import Pool
+if G == 'dev2':
+    A.STATS = dict(dev.STATS)
+else:
+    import e4_dev3  # sets A.STATS
+def f(r):
+    c, s = A.stats(r["stats"]); stK = {k: np.array(v) for k, v in r["state_K"].items()}
+    o = th.phase_model_hybrid(c, s, stK, A.K, r["lam"], r["eta"], A.T, b1=r["b1"], b2=r["b2"], checks=A.CHECKS)
+    fl = lambda x: [None if not np.isfinite(v) else float(v) for v in x]
+    r.update(pred_burst=fl(o["burst"]), pred_alive_from=fl(o["alive_from"]), pred_alive=[o["alive"][t].tolist() for t in A.CHECKS]); return r
+runs=[json.loads(l) for l in gzip.open(f'results/e4/{G}/{G}_runs.jsonl.gz','rt')]
+t=time.time()
+with Pool(8) as p: runs=p.map(f, runs)
+res=A.score(runs); print('seconds', round(time.time()-t, 1))
+print(json.dumps({k:res[k] for k in ('runs','nonfinite_runs','subnormal_runs')}), json.dumps({k:{a:b for a,b in res[k].items() if a in ('median','p90','miss_share','pass')} for k in ('A1b','A1c')}))
+print(json.dumps({k:round(v,4) for k,v in res['A1d']['error_rate'].items()}), json.dumps({k:round(v,4) for k,v in res['A1d']['rank_within_1_failure'].items()}))
+with gzip.open(f'/tmp/{G}_v3.jsonl.gz','wt') as g:
+    for r in runs: g.write(json.dumps(r)+'\n')
+# second collapse (S: dead at a checkpoint after the per-step first crossing) by factor
+by = {}
+for r in runs:
+    Al = np.array(r['alive'], bool); P = np.array(r['pred_alive'], bool)
+    tm = np.array([np.inf if x is None else x for x in r['alive_from']]); tm[np.abs(np.array(r['state_K']['a'])) > A.THR] = A.K
+    sec = (tm[None, :] <= np.array(A.CHECKS)[:, None]) & ~Al
+    for key in [('all', ''), ('stats', r['stats']), ('b1', r['b1']), ('b2', r['b2']), ('lam', r['lam']), ('eta', r['eta'])]:
+        d = by.setdefault(key, [0, 0, 0, 0]); d[0] += sec.any(0).sum(); d[1] += Al.shape[1]
+        d[2] += (np.abs(P.sum(1) - Al.sum(1)) > 1).sum(); d[3] += Al.shape[0]
+for k, v in sorted(by.items(), key=str):
+    print(k, 'second_collapse_S %.3f' % (v[0] / v[1]), 'rank_err_gt1 %.3f' % (v[2] / v[3]))

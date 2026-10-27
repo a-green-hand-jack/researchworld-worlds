@@ -1,0 +1,27 @@
+# How fast is CO2 rising at Mauna Loa? Trend fits to NOAA annual means
+
+**Data.** NOAA GML annual mean CO2 for Mauna Loa, <https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_annmean_mlo.csv>, fetched 2026-10-20 01:17:51 UTC (3134 bytes, kept unmodified as `data/co2_annmean_mlo.csv`). SHA-256: `bdd956e8d7e05ebc3c61ac1f8f8c8cea4a505df56724fba5200b4eb1e0089b2b`. The file runs 1959–2025; the last year (2025) is provisional and may be revised. We use the 66 annual means 1960–2025.
+
+**Fits** (ordinary least squares; x = year − 1992.5; CO2 in ppm).
+
+| Model | Equation | Residual SD | R² |
+|---|---|---|---|
+| Line | CO2 = 361.937 + 1.6858 x | 4.48 ppm | 0.9815 |
+| Quadratic | CO2 = 357.073 + 1.6858 x + 0.013401 x² | 0.765 ppm | 0.99947 |
+
+The quadratic removes almost all of the line's residual variance: the line misses the steady speed-up in growth.
+
+**Growth rate** (derivative of the quadratic fit, averaged over the ten annual labels of each window; equal to the derivative at the window midpoint and to the fitted 9-year change divided by 9):
+
+| Window | Rate (ppm/yr) | 95% interval |
+|---|---|---|
+| 1960–1969 (mid 1964.5) | 0.935 | [0.901, 0.969] |
+| 2016–2025 (mid 2020.5) | 2.436 | [2.402, 2.470] |
+
+The fitted trend rate rose about 2.6-fold, from 0.94 to 2.44 ppm/yr.
+
+![Mauna Loa annual mean CO2, 1960–2025, with linear and quadratic fits](figures/co2_mlo_fits.png)
+
+*Figure. NOAA annual means (points) with the linear (dashed grey) and quadratic (solid red) least-squares fits. Shaded bands mark the 1960–1969 and 2016–2025 windows; the short gold tangent segments, at 1964.5 and 2020.5, are drawn with the quadratic's slope there, i.e. the reported rates. The printed 95% intervals are the conventional OLS intervals, conditional on independent errors; the wider Newey–West intervals are given under Caveats.*
+
+**Caveats.** The intervals are conventional OLS intervals (Student t, 63 df) and assume a correct quadratic mean and independent errors. That is not supported: the quadratic's residuals have lag-1 autocorrelation 0.82 (Durbin–Watson 0.36). With Newey–West covariance (lag 5) the intervals widen to [0.875, 0.996] and [2.366, 2.506] ppm/yr, which leaves the conclusion unchanged, but nominal 95% coverage is not established. These are rates of the trend fitted to the whole 1960–2025 sample, not separate ten-year regressions or observed year-to-year changes, and the intervals are not NOAA measurement uncertainties. The file notes that Mauna Loa measurements were suspended in December 2022 and resumed in July 2023, with Maunakea observations substituted in that gap. All numbers come from `analysis/results.json` in `experiment-repo`.

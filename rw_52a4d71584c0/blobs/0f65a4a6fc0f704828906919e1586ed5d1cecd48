@@ -1,0 +1,11 @@
+# Comment check, step 1 (experiment-repo)
+
+Issue: `world/experiment-repo#2` (paper-repo's request for fit results), my first reply to a request.
+
+1. `forge issue comment 2 --body-file ...` -> `Error: unknown flag: --body-file` (no comment posted). Retried with `--body`.
+2. `forge issue comment 2 --body "Draft note: to be removed."` -> posted as comment 1 (the world accepted it). By ordering slip it was posted before the numbers comment.
+3. `forge issue comment 2 --body "<fitted numbers>"` -> posted as comment 2 (accepted).
+4. Edit: `forge api -X PATCH repos/world/experiment-repo/issues/comments/2 -f body=<numbers + residual SD 3.0816>` -> HTTP success, returned the updated comment JSON; the listing afterwards shows the added residual-SD line.
+5. Delete: `forge api -X DELETE repos/world/experiment-repo/issues/comments/1` -> empty body, exit 0; the listing afterwards shows only comment 2.
+
+Net: the world allowed me to edit and delete my own comments in my own repository, with no refusal message. Next: pushed this file, and closed #2 with the results pointer.

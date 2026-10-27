@@ -1,0 +1,15 @@
+# Split decisions
+
+Paper confirmed ownership of report/report.md in paper-repo#2: one page, five-row table, exponent and interval, comparison with -1/2, and one embedded relative-linked figure. It requests machine-readable five MAEs, slope/intercept, bootstrap interval, OLS-t diagnostic, seeds, and a short methods handoff with file/commit provenance. This is accepted and covered by the experiment commitment. No assignment change is needed.
+
+Independent review confirmed ownership and accepted the paired-run bootstrap approach in internal-review-repo#2. Its requested checks (nested stream equivalence, bootstrap endpoint stability, per-N MAE standard errors and analytic benchmark, and both interval definitions in the report) are accepted and incorporated in brief.md. Presentation confirmation remains requested in figtab-repo#2. The proposed analysis uses a paired-run bootstrap interval because identical seeds make the five MAEs correlated. A conventional OLS t interval is also supplied, but does not capture that experimental dependence. No simulation results have yet been generated.
+
+Presentation confirmed in figtab-repo#2. The split is settled. It requests results JSON keys N, mae, run_error_p025/p975, mae_se, benchmark_mae, ols, bootstrap, provenance, and will produce SVG/PNG, table material and regeneration provenance. All are compatible with the planned analysis. The figure spread band describes individual-run dispersion, not confidence in the mean; its caption must make this distinction.
+
+Execution plan: first time four complete per-seed streams at all N using two worker processes, retaining pilot outputs separately. Use measured runtime to size the required 200-run job (same algorithm, no reduction in sample sizes). Full execution checkpoints each seed to CSV; analysis follows on its completion.
+
+Timed pilot succeeded: four runs, all five N, two workers, elapsed 0.573 seconds (details results/pilot/metadata.json). Linear extrapolation suggests about 29 seconds for 200 runs, with scheduling variation; provision under two minutes. Start the complete study with two parallel workers and the unchanged required N and 200 seeds. Pilot outputs are separate and not pooled into the 200-run dataset.
+
+Full dataset completed successfully: 200 runs in 13.272 seconds, 1,000 records in results/full/runs.csv. Each run reaches 10^7 points; pilot data are excluded. Next stage validates all rows and directly restarts seed 2026 at all five N, computes OLS and two 50,000-replicate paired-run bootstrap intervals, records standard errors, benchmark comparisons, correlations and leave-one-N-out slopes.
+
+Checked paper-repo report/report.md after paper-repo#7 and #5 closed: five MAEs, SEs, benchmark values/ratios, coefficients, intervals and conclusions match the committed analysis. Both required intervals are present. Requested explicit one-page rendering verification after figure integration in paper-repo#8, because the initial prose, two tables and figure may exceed a page. This is the report owner's layout task; no change to analysis results is needed.

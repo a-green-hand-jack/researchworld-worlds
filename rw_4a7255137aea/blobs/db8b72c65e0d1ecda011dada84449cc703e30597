@@ -1,0 +1,6 @@
+# Results
+
+1. `researchworld continue rw_fb7877809dad --checkpoint c0 --config cfg.json` succeeded (rc=0) and created world `rw_957c9271e33c`.
+   `cfg.json` is the `effective` object of `researchworld config show rw_fb7877809dad` (saved whole in `show.json`), unchanged; `resources` was already `[]`.
+   Full output: `cont.out`. The new world was not driven; `researchworld stop rw_957c9271e33c` returned rc=0 (`stop.out`).
+2. `sleep 900` as one foreground command with timeout 900000 ms: it did NOT return in the foreground. The tool capped the foreground timeout at 600 s and moved the command to the background ("did not complete within its 600s timeout").

@@ -1,0 +1,99 @@
+"""Shared loading and interval code for the report's figure and table."""
+import csv
+import json
+import os
+from pathlib import Path
+
+import numpy as np
+from scipy import stats
+
+HERE = Path(__file__).resolve().parent
+DEFAULT_RESULTS = HERE.parent / "results"
+OUT_FIG = HERE.parent / "figures"
+OUT_TAB = HERE.parent / "tables"
+
+REQUIRED = ["repetition", "fold", "n_train", "n_test", "acc_lr", "acc_knn", "k_knn"]
+
+
+def results_dir():
+    return Path(os.environ.get("FIGTAB_RESULTS", DEFAULT_RESULTS))
+
+
+def load_per_fold(path):
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+    missing = [c for c in REQUIRED if c not in rows[0]]
+    if missing:
+        raise SystemExit(f"{path}: missing columns {missing}")
+    cols = {c: np.array([float(r[c]) for r in rows]) for c in REQUIRED}
+    cols["repetition"] = cols["repetition"].astype(int)
+    cols["fold"] = cols["fold"].astype(int)
+    return cols
+
+
+def corrected_ci(x, n_test, n_train, level=0.95):
+    """Nadeau-Bengio / Bouckaert-Frank corrected repeated-CV t interval."""
+    x = np.asarray(x, float)
+    n = len(x)
+    m = x.mean()
+    var = x.var(ddof=1)
+    se = np.sqrt((1.0 / n + n_test / n_train) * var)
+    t = stats.t.ppf(0.5 + level / 2, n - 1)
+    return m, m - t * se, m + t * se
+
+
+def summarize(d):
+    n_test, n_train = d["n_test"][0], d["n_train"][0]
+    diff = d["acc_lr"] - d["acc_knn"]
+    out = {}
+    for key, x in [("lr", d["acc_lr"]), ("knn", d["acc_knn"]), ("diff", diff)]:
+        m, lo, hi = corrected_ci(x, n_test, n_train)
+        out[key] = {"mean": m, "ci_low": lo, "ci_high": hi}
+    out["wins"] = int((diff > 0).sum())
+    out["ties"] = int((diff == 0).sum())
+    out["losses"] = int((diff < 0).sum())
+    k = d["k_knn"].astype(int)
+    out["k_median"] = float(np.median(k))
+    out["k_min"], out["k_max"] = int(k.min()), int(k.max())
+    out["n_folds"] = len(diff)
+    out["n_rep"] = int(d["repetition"].max() + 1)
+    return out
+
+
+def check_against_summary(s, results):
+    """Fail loudly if experiment-repo's summary.json disagrees with the per-fold recomputation."""
+    p = Path(results) / "summary.json"
+    if not p.exists():
+        return False
+    ref = json.loads(p.read_text())
+    for key in ("lr", "knn", "diff"):
+        for f in ("mean", "ci_low", "ci_high"):
+            r = ref[key][f]
+            if abs(r - s[key][f]) > 1e-9:
+                raise SystemExit(f"summary.json {key}.{f}={r} != recomputed {s[key][f]}")
+    return True
+
+
+def load_runs(results):
+    """Primary run (local) and, if present, the Ibex run and reproducibility record."""
+    results = Path(results)
+    local = load_per_fold(results / "local" / "per_fold.csv")
+    ibex_p = results / "ibex" / "per_fold.csv"
+    ibex = load_per_fold(ibex_p) if ibex_p.exists() else None
+    rp = results / "reproducibility.json"
+    repro = json.loads(rp.read_text()) if rp.exists() else None
+    identical = None
+    max_abs = None
+    if ibex is not None:
+        max_abs = max(float(np.max(np.abs(local[c] - ibex[c]))) for c in ("acc_lr", "acc_knn", "k_knn"))
+        identical = max_abs == 0.0
+        if repro is not None and bool(repro.get("identical")) != identical:
+            raise SystemExit("reproducibility.json 'identical' disagrees with the per-fold files")
+    return local, ibex, repro, identical, max_abs
+
+
+def tex_num(x, signed=False, nd=3):
+    s = f"{abs(x):.{nd}f}"
+    if x < 0 and float(s) != 0:
+        return "$-$" + s
+    return ("+" + s) if signed else s

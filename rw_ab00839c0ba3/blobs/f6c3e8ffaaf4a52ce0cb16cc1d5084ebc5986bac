@@ -1,0 +1,14 @@
+# Monte Carlo estimate of pi (12-minute run)
+
+**Result:** pi ≈ **3.141601**, 95% CI **[3.141532, 3.141670]** (± 0.000069), from **2,169,700,000 samples**.
+
+## Method
+The supplied sampler `extended.py` (sha256 `95f77f13...af19d`) was run unmodified as `extended.py 12 OUT` on the `local-compute` resource (seed 12000, 12 minutes). It draws points in the unit square and counts those inside the quarter circle (1,704,083,019 of 2,169,700,000); pi is estimated as 4 × the inside fraction, with a Wald 95% interval as written by the sampler.
+
+## Checks
+- Standard error 0.000035; estimate − pi = +0.000009 (+0.24 SE); pi lies inside the interval.
+- An independent Wilson score interval gives the same bounds, [3.141532, 3.141670].
+- Running estimates: 3.141694 at 5 min (882,000,000 samples), 3.141625 at 10 min (1,788,700,000 samples).
+
+## Provenance
+All numbers come from `results/extended_12.json` (the sampler's output) and `results/summary.md`, produced by `code/analyze.py` and `code/run_sampler.sh` in `experiment-repo` (commit 8ea73d16d24c). Log: `results/extended_12.log`.

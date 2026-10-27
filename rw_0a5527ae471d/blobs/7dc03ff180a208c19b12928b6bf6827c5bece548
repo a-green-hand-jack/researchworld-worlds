@@ -1,0 +1,16 @@
+{
+  "analysis_repository": "world/experiment-repo",
+  "analysis_commit": "a899298be19bc4c63649f0014e33e0ae366cdfd0",
+  "inputs": {
+    "data.csv": "3ec88baa3847e56db2754965cb5f1720a760e671a26c550ea8248755608a27be",
+    "residuals.csv": "3264bf2bc35ea4ecbda197bf7d0219730392b5e1f7ade961e92df00aa3a533d1",
+    "results.json": "a3a60a2b8490a2f78e830e14fe85e4a5d2d436d758936d1cd7b6522148a40d99"
+  },
+  "versions": {
+    "numpy": "2.4.6",
+    "matplotlib": "3.11.2"
+  },
+  "interval_construction": "estimate +/- t(0.975, 38) * model-based SE (scale estimated from residuals); statsmodels conf_int",
+  "weights_B": "1/(0.5+0.15x)^2",
+  "rendering": "No fitting or inference is performed. Lines use selected coefficients; residuals use committed OLS residuals; table reads chosen ci95 values."
+}

@@ -1,0 +1,29 @@
+"""Referee check of experiment-repo 0ce2e2b results/checks/e1b_small_eta.json: E1b's 30 diverged runs (random depth-2
+predictors, p0 = 2) re-run at Euler step 0.025.  The delivered check rescores the pre-registered randpred/noncomm
+criterion with N1-general recomputed at the new step (26 of 30 predictions change).  Here the same criterion is also
+scored with the predictions as pre-registered (prediction.json, step 0.1) against the re-run measurements.
+Usage: python3 checks/e1b_small_eta.py PREDICTION_JSON E1B_RUNS_JSONL SMALL_ETA_JSON
+"""
+import sys, json
+import numpy as np
+
+P = json.load(open(sys.argv[1]))["runs"]; M = {r["id"]: r for r in map(json.loads, open(sys.argv[2]))}
+D = json.load(open(sys.argv[3]))["per_run"]
+base = [(c["rank_pred"], M[c["id"]]["rank_meas"], c["rank_bound"]) for c in P
+        if c["exp"] in ("randpred", "noncomm") and M[c["id"]]["rank_meas"] is not None]
+
+
+def crit(rr):
+    a = np.array(rr, float); e = a[:, 0] - a[:, 1]; b = a[:, 2] - a[:, 1]
+    return dict(runs=len(rr), mae=float(np.abs(e).mean()), exact=float((e == 0).mean()), mae_bound=float(np.abs(b).mean()),
+                over=int((e > 0).sum()), under=int((e < 0).sum()),
+                passed=bool(np.abs(e).mean() <= 1.0 and (e == 0).mean() >= 0.5 and np.abs(e).mean() < np.abs(b).mean()))
+
+
+pre = [(r["rank_pred_eta0p1"], r["rank_meas"], r["rank_bound"]) for r in D if r["exp"] in ("randpred", "noncomm")]
+new = [(r["rank_pred"], r["rank_meas"], r["rank_bound"]) for r in D if r["exp"] in ("randpred", "noncomm")]
+out = dict(source="experiment-repo 0ce2e2b results/e1b/{prediction.json,e1b_runs.jsonl}, results/checks/e1b_small_eta.json",
+           without=crit(base), with_recomputed=crit(base + new), with_preregistered=crit(base + pre),
+           rerun_recomputed=crit(new), rerun_preregistered=crit(pre))
+print(json.dumps(out, indent=1))
+json.dump(out, open("checks/e1b_small_eta.json", "w"), indent=1)

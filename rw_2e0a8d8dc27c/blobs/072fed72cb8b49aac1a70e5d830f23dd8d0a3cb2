@@ -1,0 +1,21 @@
+# Run from a directory containing results/summary.csv (from experiment-repo); writes figures/loglog_runtime.png
+import pandas as pd, numpy as np, matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+d=pd.read_csv("results/summary.csv")
+sl=pd.read_csv("results/slopes.csv")
+fig,ax=plt.subplots(figsize=(6.5,4.5))
+ref={"insertion":lambda n:n**2,"merge":lambda n:n*np.log2(n)}
+col={"insertion":"tab:blue","merge":"tab:orange"}
+nn=np.array([1000,16000.])
+for a,g in d.groupby("algorithm"):
+    r1,r2=[sl[(sl.algorithm==a)&(sl.min_n==m)].iloc[0] for m in (1000,2000)]
+    ax.errorbar(g.n,g.mean_s,yerr=g.sd_s,marker="o",capsize=3,color=col[a],
+      label=f"{a} sort, slope {r2.slope:.2f} [{r2.ci95_lo:.2f},{r2.ci95_hi:.2f}] (n>=2000); {r1.slope:.2f} all n")
+    c=g.mean_s.iloc[-1]/ref[a](g.n.iloc[-1])
+    ax.plot(nn,c*ref[a](nn),"--",color=col[a],alpha=.6,
+      label="reference "+("$n^2$" if a=="insertion" else "$n\\log n$")+" (anchored at n=16000)")
+ax.set_xscale("log");ax.set_yscale("log")
+ax.set_xlabel("input size n (random integers)");ax.set_ylabel("running time (s), mean ± sd of 5 repeats")
+ax.legend(fontsize=7.5);ax.grid(True,which="both",alpha=.25)
+fig.tight_layout();fig.savefig("figures/loglog_runtime.png",dpi=160)

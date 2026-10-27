@@ -1,0 +1,178 @@
+"""Score E1b against its pre-registration (results/e1b/prediction.json, committed before the runs).
+Usage: python3 code/e1b.py analyze results/e1b   (or python3 code/e1b_analyze.py results/e1b)
+Writes e1b_runs.csv (one row per run: config, measured, predictions side by side), summary.json (metrics with
+bootstrap 95% CIs over runs, per arm; each pre-registered criterion with pass/fail), traj_rates.json
+(measured vs predicted early per-mode growth exponents from trajectories.json)."""
+import sys, os, json, csv
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+from e1b import C as C_STAT, SIG, ETA
+
+rng = np.random.default_rng(0)
+
+
+def boot(x, B=2000):
+    x = np.asarray(x, float)
+    if x.size == 0:
+        return [float("nan")] * 3
+    m = rng.integers(0, x.size, (B, x.size))
+    bs = x[m].mean(1)
+    return [float(x.mean()), float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))]
+
+
+def main(d):
+    P = json.load(open(os.path.join(d, "prediction.json")))
+    M = {r["id"]: r for r in map(json.loads, open(os.path.join(d, "e1b_runs.jsonl")))}
+    rows = []
+    for p in P["runs"]:
+        m = M[p["id"]]
+        r = dict(p); r.update({k: m.get(k) for k in ["rank_meas", "rankme", "converged", "p_final", "surv", "steps", "diverged"]})
+        r["rank_t"] = m.get("rank_t")
+        rows.append(r)
+    # runs whose Euler iteration blew up (numerical instability of the step size, not a JEPA outcome) have no
+    # measured rank: they are listed and counted, and excluded from every rank metric below
+    diverged = [r for r in rows if r["diverged"] is not None]
+    all_rows, rows = rows, [r for r in rows if r["diverged"] is None]
+    cfg_cols = ["id", "exp", "regime", "lam", "p0", "alpha", "w0", "kappa", "depth", "width", "pred_init", "optimizer",
+                "eta", "batch", "sseed", "seed", "t_end", "steps"]
+    out_cols = ["diverged", "rank_meas", "rankme", "converged", "p_final", "rank_pred", "rank_closed", "rank_cor3a", "rank_window",
+                "rank_bound", "mode_acc"]
+    for r in rows:
+        if "pred" in r and r["exp"] not in ("randpred", "noncomm") and r["surv"] is not None:
+            r["mode_acc"] = float(np.mean(np.array(r["pred"]) == np.array(r["surv"])))
+    with open(os.path.join(d, "e1b_runs.csv"), "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cfg_cols + out_cols, extrasaction="ignore")
+        w.writeheader()
+        for r in all_rows:
+            w.writerow({k: r.get(k) for k in cfg_cols + out_cols})
+
+    S = {"_note": "means with bootstrap 95% CIs over runs [mean, lo, hi]; rank = #singular values of W > 0.05; "
+                  "diverged runs (Euler iteration blew up) are excluded from all metrics and listed under 'diverged'",
+         "diverged": dict(count=len(diverged), runs=[{k: r.get(k) for k in ["id", "exp", "depth", "width", "p0", "lam", "seed",
+                                                                            "diverged", "rank_pred", "rank_bound"]}
+                                                     for r in diverged])}
+    def arm(sel, name):
+        rr = [r for r in rows if sel(r)]
+        e = dict(runs=len(rr), converged=boot([r["converged"] for r in rr]))
+        for key in ["rank_pred", "rank_closed", "rank_cor3a", "rank_window", "rank_bound"]:
+            err = np.array([r["rank_meas"] - r[key] for r in rr if r.get(key) is not None], float)
+            if err.size:
+                e[key] = dict(n=int(err.size), exact=boot(err == 0), mae=boot(np.abs(err)), bias=float(err.mean()))
+        acc = [r["mode_acc"] for r in rr if "mode_acc" in r]
+        if acc:
+            e["mode_acc"] = boot(acc)
+            surv = np.concatenate([r["surv"] for r in rr if "mode_acc" in r]); pred = np.concatenate([r["pred"] for r in rr if "mode_acc" in r])
+            e["mode_false_pos"] = int(((pred == 1) & (surv == 0)).sum()); e["mode_false_neg"] = int(((pred == 0) & (surv == 1)).sum())
+        e["collapse_acc"] = boot([(r["rank_meas"] == 0) == (r["rank_pred"] == 0) for r in rr])
+        e["mean_rank_meas"] = boot([r["rank_meas"] for r in rr])
+        S[name] = e
+        return rr
+    for ex in ["grid", "ema_alpha", "depth", "balanced", "nosg", "nopred", "randpred", "noncomm", "adam", "batch"]:
+        arm(lambda r, ex=ex: r["exp"] == ex, ex)
+    arm(lambda r: r["exp"] == "grid" and r["lam"] > 0, "grid(lam>0)")
+    arm(lambda r: r["exp"] == "randpred" and r["depth"] == 1, "randpred(depth1)")
+    arm(lambda r: r["exp"] == "randpred" and r["depth"] == 2, "randpred(depth2)")
+    arm(lambda r: r["exp"] in ("grid", "ema_alpha", "depth"), "N1_aligned_all")
+
+    # cell tables (mean over seeds) for phase diagrams and knob trends
+    def cells(ex, keys):
+        out = {}
+        for r in rows:
+            if r["exp"] != ex:
+                continue
+            k = "|".join(f"{a}={r.get(a)}" for a in keys)
+            out.setdefault(k, []).append(r)
+        return {k: dict(n=len(v), rank_meas_mean=float(np.mean([r["rank_meas"] for r in v])),
+                        rank_meas_sd=float(np.std([r["rank_meas"] for r in v])),
+                        rank_pred_mean=float(np.mean([r["rank_pred"] for r in v])),
+                        rank_bound=float(np.mean([r["rank_bound"] for r in v]))) for k, v in out.items()}
+    S["cells"] = dict(grid=cells("grid", ["p0", "lam"]), ema_alpha=cells("ema_alpha", ["regime", "alpha", "kappa"]),
+                      depth=cells("depth", ["depth", "lam", "p0"]), balanced=cells("balanced", ["p0", "lam"]),
+                      randpred=cells("randpred", ["depth", "width", "p0", "lam"]), noncomm=cells("noncomm", ["sseed", "p0", "lam"]),
+                      adam=cells("adam", ["p0", "lam", "w0"]), batch=cells("batch", ["batch", "p0"]))
+
+    # pre-registered criteria
+    C = {}
+    a = S["N1_aligned_all"]
+    C["grid/ema_alpha/depth (N1)"] = dict(
+        mode_acc=a["mode_acc"][0], rank_mae=a["rank_pred"]["mae"][0], bound_mae=a["rank_bound"]["mae"][0],
+        window_mae=a["rank_window"]["mae"][0],
+        passed=bool(a["mode_acc"][0] >= 0.95 and a["rank_pred"]["mae"][0] <= 0.5 and
+                    a["rank_pred"]["mae"][0] < min(a["rank_bound"]["mae"][0], a["rank_window"]["mae"][0])))
+    b = S["balanced"]
+    C["balanced"] = dict(basin_exact=b["rank_pred"]["exact"][0], cor3a_exact=b["rank_cor3a"]["exact"][0],
+                         passed=bool(b["rank_pred"]["exact"][0] >= 0.9 and b["rank_cor3a"]["exact"][0] >= 0.9))
+    z = [r["rank_meas"] for r in rows if r["exp"] in ("nosg", "nopred")]
+    C["nosg/nopred"] = dict(max_rank=int(max(z)), passed=bool(max(z) == 0))
+    g = [r for r in rows if r["exp"] in ("randpred", "noncomm")]
+    eg = np.array([r["rank_meas"] - r["rank_pred"] for r in g]); eb = np.array([r["rank_meas"] - r["rank_bound"] for r in g])
+    C["randpred/noncomm (N1-general)"] = dict(rank_mae=float(np.abs(eg).mean()), exact=float((eg == 0).mean()),
+                                             bound_mae=float(np.abs(eb).mean()),
+                                             passed=bool(np.abs(eg).mean() <= 1.0 and (eg == 0).mean() >= 0.5 and np.abs(eg).mean() < np.abs(eb).mean()))
+    # EMA sign test
+    ema = S["cells"]["ema_alpha"]; pairs = []; kap = [None, 1.0, 0.3, 0.1, 0.03]
+    for reg in ["inside", "above"]:
+        for al in [0.25, 1.0, 4.0]:
+            for k1, k2 in zip(kap[:-1], kap[1:]):
+                c1 = ema[f"regime={reg}|alpha={al}|kappa={k1}"]; c2 = ema[f"regime={reg}|alpha={al}|kappa={k2}"]
+                dp = c2["rank_pred_mean"] - c1["rank_pred_mean"]
+                if abs(dp) >= 1:
+                    dm = c2["rank_meas_mean"] - c1["rank_meas_mean"]
+                    pairs.append(dict(regime=reg, alpha=al, kappa=[k1, k2], pred_change=dp, meas_change=dm, agree=bool(np.sign(dm) == np.sign(dp))))
+    C["ema_alpha signs"] = dict(pairs=pairs, agree=int(sum(p["agree"] for p in pairs)), of=len(pairs),
+                                passed=bool(all(p["agree"] for p in pairs)))
+    # Adam
+    ad = S["cells"]["adam"]; diffs = []
+    for p0 in [0.5, 1.0, 2.0]:
+        for lam in [0.005, 0.01, 0.02, 0.05]:
+            lo = ad[f"p0={p0}|lam={lam}|w0=0.0001"]["rank_meas_mean"]; hi = ad[f"p0={p0}|lam={lam}|w0=0.01"]["rank_meas_mean"]
+            diffs.append(dict(p0=p0, lam=lam, rank_w0_small=lo, rank_w0_large=hi, diff=hi - lo))
+    ar = [r for r in rows if r["exp"] == "adam"]
+    mae_b = float(np.mean([abs(r["rank_meas"] - r["rank_bound"]) for r in ar])); mae_n = float(np.mean([abs(r["rank_meas"] - r["rank_pred"]) for r in ar]))
+    C["adam (Sec. 8, directional)"] = dict(w0_insensitivity=diffs, max_abs_diff=float(max(abs(x["diff"]) for x in diffs)),
+                                           mae_to_static_bound=mae_b, mae_to_N1_sgd_clock=mae_n,
+                                           passed_i=bool(max(abs(x["diff"]) for x in diffs) <= 1), passed_ii=bool(mae_b < mae_n))
+    bt = S["cells"]["batch"]; mono = []
+    for p0 in [0.5, 1.0]:
+        v = [bt[f"batch={B}|p0={p0}"]["rank_meas_mean"] for B in [8, 32, 128]]
+        mono.append(dict(p0=p0, rank_by_batch=v, pred_population=bt[f"batch=128|p0={p0}"]["rank_pred_mean"]))
+    C["batch (Sec. 8, directional)"] = dict(cells=mono, passed=bool(all(m["rank_by_batch"][0] <= m["rank_by_batch"][1] <= m["rank_by_batch"][2]
+                                                                     and abs(m["rank_by_batch"][2] - m["pred_population"]) <= 1 for m in mono)))
+    S["criteria"] = C
+    json.dump(S, open(os.path.join(d, "summary.json"), "w"), indent=1)
+
+    # early growth rates from trajectories: measured slope of log amplitude over [0, t1] vs predicted (A1) F_k(t1)/t1
+    tr = json.load(open(os.path.join(d, "trajectories.json")))
+    out = []
+    for T in tr:
+        t = np.array(T["t"]); amp = np.array(T["amp"]); pr = np.array(T["pred_logamp_A1"])
+        for t1 in [10.0, 30.0]:
+            i = int(np.searchsorted(t, t1))
+            meas = (np.log(amp[i]) - np.log(amp[0])) / t[i]; pred = (pr[i] - pr[0]) / t[i]
+            ok = amp[i] < 0.05     # still in the near-collapse regime
+            ss = ((meas - pred) ** 2)[ok].sum(); st = ((meas - meas[ok].mean()) ** 2)[ok].sum()
+            # post-hoc diagnostic (not pre-registered): the same A1 rate for the Euler map actually iterated,
+            # per-step factor 1 + eta g(t) instead of exp(eta g(t)); matters where eta |g| is not small (large p0)
+            c = T["cfg"]; tt = t[:i + 1]
+            if c["kappa"] is None:
+                pt = c["p0"] * np.exp(-c["alpha"] * c["lam"] * tt)
+                g = pt[:, None] * C_STAT[None] - pt[:, None] ** 2 * SIG[None] - c["lam"]
+                gd = np.log(np.maximum(1 + ETA * g, 1e-300)) / ETA
+                pd_ = (0.5 * (gd[1:] + gd[:-1]) * np.diff(tt)[:, None]).sum(0) / t[i]
+                ssd = ((meas - pd_) ** 2)[ok].sum()
+                disc = dict(pred_euler=pd_.tolist(), r2_euler=float(1 - ssd / st) if st > 0 else None,
+                            max_abs_err_euler=float(np.abs(meas - pd_)[ok].max()))
+            else:
+                disc = {}
+            out.append(dict(cfg=T["cfg"], t1=float(t[i]), meas=meas.tolist(), pred=pred.tolist(), near_collapse=ok.tolist(),
+                            r2=float(1 - ss / st) if st > 0 else None, max_abs_err=float(np.abs(meas - pred)[ok].max()), **disc))
+    json.dump(out, open(os.path.join(d, "traj_rates.json"), "w"), indent=1)
+    for k, v in C.items():
+        print(k, {a: b for a, b in v.items() if a not in ("pairs", "w0_insensitivity", "cells")})
+    for x in out:
+        print("traj", x["cfg"]["p0"], x["cfg"]["lam"], x["cfg"]["alpha"], x["cfg"]["kappa"], "t1", x["t1"], "R2", x["r2"],
+              "maxerr", x["max_abs_err"], "R2_euler", x.get("r2_euler"), "maxerr_euler", x.get("max_abs_err_euler"))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1])

@@ -1,0 +1,32 @@
+# Trapezoid, Simpson, Gauss-Legendre 4 and Romberg errors on [0, 1]
+
+Composite rules, n = 2^k panels of width 1/n, k = 1..10 (trapezoid: 1 interval per panel; Simpson: endpoints and midpoint per panel (2n subintervals); Gauss: 4 nodes per panel; Romberg: `scipy.integrate.romb` on the n+1 equispaced samples, so tableau depth grows with k), on exp(-x^2) (smooth) and x^(1/3) (singular at 0). Float64 absolute errors vs `mpmath.quad` references (`mp.dps = 40`, mpmath 1.4.1 from PyPI), from a `local-compute` job (`results/errors.csv`).
+
+## References (mpmath 1.4.1, 40 digits)
+
+| function | reference value on [0, 1] |
+|---|---|
+| exp(-x^2) | 0.7468241328124270253994674361318530053545 |
+| x^(1/3) | 0.75 |
+
+## Fitted convergence order
+
+Order = minus the slope of log(error) vs log(n) over points with error > 1e-14.
+
+| function | trapezoid | Simpson | Gauss-Legendre 4 | Romberg |
+|---|---|---|---|---|
+| exp(-x^2) | 2.0008 (10 pts) | 3.9970 (8 pts) | 8.2358 (2 pts)* | 7.6760 (5 pts)** |
+| x^(1/3) | 1.3246 (10 pts) | 1.3333 (10 pts) | 1.3333 (10 pts) | 1.3465 (10 pts) |
+
+\* two-point estimate, no residual degrees of freedom; insufficient to establish asymptotic behavior. ** Romberg (R^2 0.980): the error falls faster than a power law as the tableau deepens, so this is an empirical slope over increasing extrapolation levels (n = 2..32), not a fixed-order asymptotic result.
+
+<table><tr><td><img src="compact/exp_neg_x2.png" width="335" alt="exp(-x^2): absolute error vs n, log-log"></td><td><img src="compact/x_cube_root.png" width="335" alt="x^(1/3): absolute error vs n, log-log"></td></tr></table>
+
+Left: exp(-x^2); right: x^(1/3). Filled markers: in fit; open: excluded; legend: fitted order. Data: `results/errors.csv`, `fits.csv`; code `report/compact/make_compact.py`.
+
+## Findings
+
+- Smooth: trapezoid and Simpson reach orders 2 and 4. Gauss-Legendre 4 hits the 1e-14 floor by n = 8 (5.7e-15), leaving n = 2, 4; their fit gives 8.2358, consistent with 8 but a two-point estimate (see footnote).
+- Romberg on exp(-x^2) reaches the 1e-14 floor from n = 64 (1.5e-16 at n = 1024); Gauss-Legendre 4 reaches it earlier (n = 8) but uses 4 evaluations per panel.
+- Singular: all rules show order about 4/3 (Romberg 1.3465, close to but not equal to 4/3), set by the x^(1/3) endpoint singularity. Constants differ: at n = 1024 the errors are 2.68e-5 (trapezoid), 1.15e-5 (Romberg), 5.26e-6 (Simpson), 1.89e-7 (Gauss), i.e. Simpson and Gauss are 5x and 140x below trapezoid at equal panel count, though cost per panel also differs (about 1, 2, 4 new evaluations).
+- Float64 errors; the 1e-14 cutoff keeps fits clear of rounding. Orders are empirical fits over k = 1..10, not proofs.

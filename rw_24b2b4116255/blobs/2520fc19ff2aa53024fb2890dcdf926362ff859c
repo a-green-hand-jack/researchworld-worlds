@@ -1,0 +1,41 @@
+# Brief — Monte Carlo estimate of pi
+
+Source: `experiment-repo`#1 "Research objective" (frozen material in `/initial-state/inputs/0/`).
+
+## What the objective asks (quoted)
+
+> Estimate pi by Monte Carlo sampling and report the estimate with its 95% confidence interval. The sampler scripts are in `/initial-state/inputs/0/`; run them as they are, each as a background job on the world's `local-compute` resource (`ht-resource run`), all three started together as soon as the work begins:
+>
+> 1. `pilot.py OUT`: the pilot, about nine minutes; it prints an interim estimate after about a minute.
+> 2. `extended.py 55 OUT` and `extended.py 120 OUT`: two extended runs for a later study. They are not part of this delivery and nothing here waits for them; the report only says that they were started and how long each runs.
+>
+> Deliver the pilot's final estimate with its interval, a figure of the pilot's running estimate against the number of samples with the true value of pi marked, the analysis code, and a short report `report/report.md` (Markdown is enough).
+
+## Requirements, one by one
+
+| # | Requirement | Notes |
+|---|---|---|
+| R1 | Run `pilot.py`, `extended.py 55`, `extended.py 120` unmodified, each as a `local-compute` background job, all three started together at the start | Done by `experiment-repo` at 2026-10-18T21:18:39Z (job refs in `results/runs.json` once pushed) |
+| R2 | Pilot's final estimate of pi with its 95% CI | From the pilot's own JSON output (`estimate`, `ci95`, `samples`) |
+| R3 | Figure: pilot running estimate vs number of samples, true pi marked | From the pilot's `trace` (one point roughly every 10 s: elapsed s, samples, estimate) |
+| R4 | The analysis code | Code that reads the pilot output and derives the reported numbers (and checks the CI) |
+| R5 | Short report `report/report.md` (Markdown) | Must state the estimate + CI, show/point to the figure, and say the two extended runs were started and how long each runs (55 min and 120 min) |
+| R6 | Extended runs: report says only that they were started and how long each runs | Not part of this delivery; nothing waits for them; their results are **not** to be reported as findings |
+
+## What the supplied material establishes
+
+- `pilot.py`: seed `random.Random(20261019)`; draws (x, y) uniform on [0,1)^2 in blocks of 100 000, counts x²+y² ≤ 1; estimate = 4·inside/total. Runs ~540 s wall time (sample count therefore depends on CPU speed). After ≥60 s prints `HUTIAN_WAKE: pilot interim estimate ...`. Records a trace point at the first block and then whenever ≥10 s passed since the last one. Final JSON: `samples`, `estimate`, `ci95`, `seconds`, `trace`.
+- CI convention in the script: normal (Wald) interval for a binomial proportion scaled by 4: half-width = 1.96 · 4 · sqrt(p(1−p)/n), p = inside/n. With n of order 10^8 the normal approximation is excellent; the analysis will cross-check with a Wilson interval and against the true value.
+- `extended.py MINUTES OUT`: seed `int(MINUTES*1000)`, runs MINUTES minutes, prints every 5 min, writes JSON. 55 min and 120 min runs.
+- Expected precision: per-sample sd of 4·1{inside} is 4·sqrt(p(1−p)) ≈ 1.642, so the CI half-width ≈ 3.22/sqrt(n) (≈ 3e-4 at n = 1e8).
+
+## Conventions
+
+- Report the estimate with enough digits to show the CI (≈ 6 decimals), the sample count, the CI method, and whether the CI covers the true pi.
+- Figure: x = samples (log scale natural for a running MC estimate), y = running estimate, horizontal line at pi; a ±1.96·σ/√n envelope around pi helps the reader judge convergence.
+- Keep the pilot's raw output and job metadata as provenance.
+
+## Not established / caveats
+
+- The pilot's sample count depends on host CPU speed and sharing; not known in advance.
+- The trace has a single seed: the running estimate is one realisation, consecutive points are strongly correlated, so the figure shows convergence, not independent replicates.

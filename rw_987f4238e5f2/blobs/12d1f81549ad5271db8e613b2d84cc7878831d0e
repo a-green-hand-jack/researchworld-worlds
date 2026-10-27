@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Photon light curve explorer</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:1.5em;color:#222;max-width:1000px}
+#ctl{margin:.6em 0}canvas{border:1px solid #ddd;width:100%;height:auto}
+small{color:#666}
+</style></head><body>
+<h2>Photon arrival times: light curve</h2>
+<p><small>__N__ simulated photons on [0, 1200) s. Counts are embedded in 0.1 s base bins (last bin includes t = 1200 s) and summed here into wider bins; no external requests. Supported bin widths: every multiple of 0.1 s that divides 1200 s exactly (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1, 1.2, &hellip;, 600, 1200 s).</small></p>
+<div id="ctl">Bin width: <input id="w" type="range" min="0" max="600" value="10" step="1">
+<b id="wl"></b> &nbsp; <label><input id="rate" type="checkbox" checked> show rate (photons/s)</label></div>
+<canvas id="c" width="1000" height="460"></canvas>
+<p id="info"><small></small></p>
+<script>
+const BASE=0.1, C=__COUNTS__;
+const cv=document.getElementById('c'), g=cv.getContext('2d');
+const W=document.getElementById('w'), WL=document.getElementById('wl'), R=document.getElementById('rate');
+// slider index -> bin width: a 1-2-5-like set of divisors of 12000 base bins
+const widths=[];for(let k=1;k<=12000;k++)if(12000%k===0)widths.push(k);
+W.max=widths.length-1; W.value=widths.indexOf(10);
+function nice(lo,hi,n){const s=(hi-lo)/n,p=Math.pow(10,Math.floor(Math.log10(s))),m=s/p,st=(m<1.5?1:m<3.5?2:m<7.5?5:10)*p;const t=[];for(let v=Math.ceil(lo/st)*st;v<=hi+1e-9;v+=st)t.push(v);return t;}
+function draw(){
+ const k=widths[+W.value], bw=k*BASE, rate=R.checked; WL.textContent=(+bw.toFixed(1))+' s';
+ const n=12000/k, y=new Float64Array(n);
+ for(let i=0;i<12000;i++)y[Math.floor(i/k)]+=C[i];
+ if(rate)for(let j=0;j<n;j++)y[j]/=bw;
+ let ymax=0;for(const v of y)ymax=Math.max(ymax,v);ymax*=1.08;
+ const L=80,Rm=20,T=20,B=50,PW=cv.width-L-Rm,PH=cv.height-T-B;
+ g.clearRect(0,0,cv.width,cv.height);g.font='13px system-ui';g.fillStyle='#222';g.strokeStyle='#ccc';g.lineWidth=1;
+ const X=x=>L+x/1200*PW, Y=v=>T+PH-v/ymax*PH;
+ g.textAlign='right';g.textBaseline='middle';
+ for(const v of nice(0,ymax,6)){g.beginPath();g.moveTo(L,Y(v));g.lineTo(L+PW,Y(v));g.stroke();g.fillText(v>=1e4?v.toExponential(1):String(+v.toFixed(2)),L-6,Y(v));}
+ g.textAlign='center';g.textBaseline='top';
+ for(const v of nice(0,1200,12)){g.fillText(String(v),X(v),T+PH+6);}
+ g.fillText('Arrival time (s)',L+PW/2,T+PH+26);
+ g.save();g.translate(18,T+PH/2);g.rotate(-Math.PI/2);g.fillText(rate?'Rate (photons / s)':'Photons per '+(+bw.toFixed(1))+' s bin',0,0);g.restore();
+ g.strokeStyle='#2a5d9f';g.lineWidth=1.2;g.beginPath();g.moveTo(X(0),Y(0));
+ for(let j=0;j<n;j++){g.lineTo(X(j*bw),Y(y[j]));g.lineTo(X((j+1)*bw),Y(y[j]));}
+ g.lineTo(X(1200),Y(0));g.stroke();
+ g.strokeStyle='#222';g.strokeRect(L,T,PW,PH);
+ let tot=0;for(const v of C)tot+=v;
+ document.querySelector('#info small').textContent=n+' bins of '+(+bw.toFixed(1))+' s; total photons '+tot.toLocaleString('en');
+}
+W.oninput=draw;R.onchange=draw;draw();
+</script></body></html>

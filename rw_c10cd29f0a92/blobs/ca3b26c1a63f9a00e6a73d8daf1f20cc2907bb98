@@ -1,0 +1,108 @@
+"""Shared analysis tools: integrated autocorrelation time, Binder cumulant from pooled moments, curve crossings."""
+from pathlib import Path
+
+import numpy as np
+
+TC_EXACT = 2 / np.log(1 + np.sqrt(2))   # 2.269185...
+U_STAR_LIT = 0.61069                    # Binder cumulant at T_c, square lattice, periodic (Salas & Sokal 2000)
+
+
+def autocorr(x):
+    """Normalised autocorrelation function rho(t) of a 1-d series (FFT, zero-padded)."""
+    x = np.asarray(x, float) - np.mean(x)
+    n = len(x)
+    f = np.fft.rfft(x, 2 * n)
+    acf = np.fft.irfft(f * np.conj(f))[:n]
+    return acf / acf[0]
+
+
+def tau_int(x, c=6.0):
+    """Integrated autocorrelation time with Sokal's automatic window: the smallest W with W >= c * tau(W).
+
+    tau = 1/2 + sum_{t=1}^{W} rho(t), in sweeps (so N_eff = N / (2 tau)). Returns (tau, W, err) where err is
+    the Madras-Sokal estimate tau * sqrt(2 (2W + 1) / N). If no window satisfies the criterion within N/4
+    the last value is returned with W = -1 (the series is too short to determine tau).
+    """
+    rho = autocorr(x)
+    n = len(x)
+    taus = 0.5 + np.cumsum(rho[1:])
+    for W in range(1, n // 4):
+        if W >= c * taus[W - 1]:
+            t = taus[W - 1]
+            return float(t), W, float(t * np.sqrt(2 * (2 * W + 1) / n))
+    t = taus[n // 4 - 1]
+    return float(t), -1, float('nan')
+
+
+def binder(m2, m4):
+    return 1 - m4 / (3 * m2 ** 2)
+
+
+def fit_curves(temps, U, deg=3):
+    """Polynomial fits U_L(T) (one row of U per size) in x = T - mean(T). Returns list of np.poly1d and x0."""
+    x0 = float(np.mean(temps))
+    return [np.poly1d(np.polyfit(np.asarray(temps) - x0, u, deg)) for u in U], x0
+
+
+def pair_crossing(temps, ua, ub, method='linear'):
+    """Crossing of the Binder curves of a smaller (ua) and a larger (ub) size.
+
+    The crossing is the first sign change of d = ua - ub from negative to positive with increasing T (below T_c
+    the larger size has the larger U, above it the smaller). Located in the bracketing grid interval
+    [T_k, T_k+1] by: 'linear' interpolation of d; 'pchip' monotone cubic interpolation of each curve over the
+    whole grid; 'cubic4' a cubic through the four grid points T_k-1 .. T_k+2 of each curve (quadratic through
+    three at the grid edge). Returns (T, U) or (nan, nan) if there is no such sign change.
+    """
+    from scipy.interpolate import PchipInterpolator
+    t = np.asarray(temps, float)
+    d = np.asarray(ua) - np.asarray(ub)
+    ks = np.nonzero((d[:-1] < 0) & (d[1:] >= 0))[0]
+    if not len(ks):
+        return np.nan, np.nan
+    k = int(ks[0])
+    if method == 'linear':
+        f = d[k] / (d[k] - d[k + 1])
+        tc = t[k] + f * (t[k + 1] - t[k])
+        return float(tc), float(ua[k] + f * (ua[k + 1] - ua[k]))
+    if method == 'pchip':
+        fa, fb = PchipInterpolator(t, ua), PchipInterpolator(t, ub)
+    else:
+        sl = slice(max(0, k - 1), min(len(t), k + 3))
+        deg = min(3, len(t[sl]) - 1)
+        fa = np.poly1d(np.polyfit(t[sl] - t[k], np.asarray(ua)[sl], deg))
+        fb = np.poly1d(np.polyfit(t[sl] - t[k], np.asarray(ub)[sl], deg))
+        fa, fb = (lambda x, f=fa: f(x - t[k])), (lambda x, f=fb: f(x - t[k]))
+    x = np.linspace(t[k], t[k + 1], 2001)
+    dd = fa(x) - fb(x)
+    j = np.nonzero((dd[:-1] < 0) & (dd[1:] >= 0))[0]
+    j = int(j[0]) if len(j) else int(np.argmin(np.abs(dd)))
+    tc = x[j] - dd[j] * (x[j + 1] - x[j]) / (dd[j + 1] - dd[j]) if j + 1 < len(x) else x[j]
+    return float(tc), float(fa(tc))
+
+
+def crossings(temps, U, method='linear'):
+    """Pairwise crossings of all size pairs (rows of U ordered by increasing L) and the combined crossing:
+    the mean of the pairwise crossing temperatures and of their U values."""
+    k = len(U)
+    pairs = {(i, j): pair_crossing(temps, U[i], U[j], method) for i in range(k) for j in range(i + 1, k)}
+    ts = np.array([v[0] for v in pairs.values()])
+    us = np.array([v[1] for v in pairs.values()])
+    return pairs, (float(np.mean(ts)), float(np.mean(us)))
+
+
+def load_series(folder, L, T, seed):
+    """Per-sweep (|m|, e) of one run as float64, bit-identical to what ising.py --series wrote.
+
+    The delivered series are stored losslessly compacted by code/compact_series.py as
+    L{L}-T{T:.4f}-s{seed}.npz with integer totals M = |m| L^2 and E = e L^2; the program's own
+    L{L}-T{T:.4f}-s{seed}-{m,e}.npy files are read if present. Returns None if neither exists.
+    """
+    folder = Path(folder)
+    stem = f'L{L}-T{T:.4f}-s{seed}'
+    if (folder / f'{stem}.npz').exists():
+        z = np.load(folder / f'{stem}.npz')
+        n = int(z['L']) ** 2
+        return z['M'] / n, z['E'] / n
+    if (folder / f'{stem}-m.npy').exists():
+        return np.load(folder / f'{stem}-m.npy'), np.load(folder / f'{stem}-e.npy')
+    return None

@@ -1,0 +1,14 @@
+# Review standard (internal-review-repo)
+
+Source: `Research objective` issue #1 in this repository.
+
+The assembled delivery is approved only if all of the following hold, checked on the delivered files at the approved revisions:
+
+1. **Data generation** matches the objective exactly: x = 0..39 (40 points), y = 2.5 + 0.8x + e, e ~ N(0, 3²) drawn with `numpy.random.default_rng(217)`; the code shows this.
+2. **Estimates**: slope and intercept by ordinary least squares, each with a 95% confidence interval from the t distribution with n−2 = 38 degrees of freedom (or a clearly stated, justified alternative). Numbers must reproduce when the delivered code is run, and agree with the independent reference in `review/reference_check.out` (to the precision reported).
+3. **Uncertainty is interpreted correctly**: e.g. whether the CIs cover the true values 0.8 and 2.5 is stated accurately; no claim exceeds what one sample of 40 points supports.
+4. **Figure**: exactly the data (40 points) and the fitted line, with labelled axes, legend or caption, readable rendering; opened and inspected, not just its provenance. Blank/placeholder/unlabelled is a defect.
+5. **Report** `report/report.md`: one page, presents slope and intercept with 95% CIs, references the figure (which must resolve), states method, and every number in it traces to code that sits next to it in the delivery and produces it.
+6. **Code next to the report**: the code that produced every number and the figure is in the delivery, runs, and its outputs match the report.
+7. **Comment-check steps** of the objective: each named position's `comment-check.md` exists in its repository recording command, world answer, and next action. Mine records step 3.
+8. Additional requested items that are added (e.g. R² requested by paper-repo's note) are correct if reported.

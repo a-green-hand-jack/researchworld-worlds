@@ -1,0 +1,44 @@
+#!/bin/bash
+#SBATCH --job-name=jepa-e8ref
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=6
+#SBATCH --mem=40G
+#SBATCH --nice=1000
+#SBATCH --time=02:00:00
+#SBATCH --output=%x_%A_%a.out
+#SBATCH --array=0-3
+cd "$SLURM_SUBMIT_DIR"
+nvidia-smi --query-gpu=name --format=csv
+prov() { venv/bin/python - "$1" <<'PY'
+import json, sys, subprocess, hashlib, os, socket
+json.dump(dict(code_commit=os.environ.get('CODE_COMMIT'), vit_jepa_md5=hashlib.md5(open('vit_jepa.py','rb').read()).hexdigest(),
+               pip_freeze=subprocess.run([sys.executable, '-m', 'pip', 'freeze'], capture_output=True, text=True).stdout.split(),
+               node=socket.gethostname(), gpu=os.environ.get('GPU'), slurm_job=os.environ.get('SLURM_JOB_ID'),
+               array=os.environ.get('SLURM_ARRAY_JOB_ID'), task=os.environ.get('SLURM_ARRAY_TASK_ID')),
+          open(os.path.join(sys.argv[1], 'provenance.json'), 'w'), indent=1)
+PY
+}
+GPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1); export GPU
+export CODE_COMMIT=fabd62c106709b2c357829647f091a938aa55573
+case "$SLURM_ARRAY_TASK_ID" in
+0)
+  if [ ! -f runs8/PR_c04/s0/final.json ]; then mkdir -p runs8/PR_c04/s0; prov runs8/PR_c04/s0; venv/bin/python -u vit_jepa.py --out runs8/PR_c04/s0 --data data --seed 0 --epochs 50 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 0.4 0.4 > runs8/PR_c04/s0.log 2>&1 & fi
+  if [ ! -f runs8/PR_c04/s1/final.json ]; then mkdir -p runs8/PR_c04/s1; prov runs8/PR_c04/s1; venv/bin/python -u vit_jepa.py --out runs8/PR_c04/s1 --data data --seed 1 --epochs 50 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 0.4 0.4 > runs8/PR_c04/s1.log 2>&1 & fi
+  if [ ! -f runs8/PR_c04/s2/final.json ]; then mkdir -p runs8/PR_c04/s2; prov runs8/PR_c04/s2; venv/bin/python -u vit_jepa.py --out runs8/PR_c04/s2 --data data --seed 2 --epochs 50 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 0.4 0.4 > runs8/PR_c04/s2.log 2>&1 & fi
+  ;;
+1)
+  if [ ! -f runs8/PR_c04/s3/final.json ]; then mkdir -p runs8/PR_c04/s3; prov runs8/PR_c04/s3; venv/bin/python -u vit_jepa.py --out runs8/PR_c04/s3 --data data --seed 3 --epochs 50 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 0.4 0.4 > runs8/PR_c04/s3.log 2>&1 & fi
+  if [ ! -f runs8/PR_c04/s4/final.json ]; then mkdir -p runs8/PR_c04/s4; prov runs8/PR_c04/s4; venv/bin/python -u vit_jepa.py --out runs8/PR_c04/s4 --data data --seed 4 --epochs 50 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 0.4 0.4 > runs8/PR_c04/s4.log 2>&1 & fi
+  if [ ! -f runs8/PR_ramp/s0/final.json ]; then mkdir -p runs8/PR_ramp/s0; prov runs8/PR_ramp/s0; venv/bin/python -u vit_jepa.py --out runs8/PR_ramp/s0 --data data --seed 0 --epochs 50 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 0.04 0.4 > runs8/PR_ramp/s0.log 2>&1 & fi
+  ;;
+2)
+  if [ ! -f runs8/PR_ramp/s1/final.json ]; then mkdir -p runs8/PR_ramp/s1; prov runs8/PR_ramp/s1; venv/bin/python -u vit_jepa.py --out runs8/PR_ramp/s1 --data data --seed 1 --epochs 50 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 0.04 0.4 > runs8/PR_ramp/s1.log 2>&1 & fi
+  if [ ! -f runs8/PR_ramp/s2/final.json ]; then mkdir -p runs8/PR_ramp/s2; prov runs8/PR_ramp/s2; venv/bin/python -u vit_jepa.py --out runs8/PR_ramp/s2 --data data --seed 2 --epochs 50 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 0.04 0.4 > runs8/PR_ramp/s2.log 2>&1 & fi
+  if [ ! -f runs8/PR_ramp/s3/final.json ]; then mkdir -p runs8/PR_ramp/s3; prov runs8/PR_ramp/s3; venv/bin/python -u vit_jepa.py --out runs8/PR_ramp/s3 --data data --seed 3 --epochs 50 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 0.04 0.4 > runs8/PR_ramp/s3.log 2>&1 & fi
+  ;;
+3)
+  if [ ! -f runs8/PR_ramp/s4/final.json ]; then mkdir -p runs8/PR_ramp/s4; prov runs8/PR_ramp/s4; venv/bin/python -u vit_jepa.py --out runs8/PR_ramp/s4 --data data --seed 4 --epochs 50 --full-epochs 50 --threads 2 --probe-every 10 --instrument 1 --force-steps --wd 0.04 0.4 > runs8/PR_ramp/s4.log 2>&1 & fi
+  ;;
+esac
+wait
+echo e8ref task $SLURM_ARRAY_TASK_ID done

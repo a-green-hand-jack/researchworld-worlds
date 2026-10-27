@@ -1,0 +1,20 @@
+import numpy as np
+rng=np.random.default_rng(0)
+D=d=20; lam=np.logspace(0,-2,D); sig2=0.05; s=lam; c=lam+sig2
+def full(p0,wd,steps=60000,eta=0.01,w0=1e-3):
+    W=w0*rng.standard_normal((d,D))/np.sqrt(d); P=p0*np.eye(d)
+    for t in range(steps):
+        E=P@W*c - W*s
+        gW=P.T@E; gP=(P@W*c)@W.T - (W*s)@W.T
+        W-=eta*(gW+wd*W); P-=eta*(gP+wd*P)
+    return np.linalg.norm(W,axis=0)  # per input mode amplitude
+def ode(p0,wd,steps=60000,eta=0.01,w0=1e-3):
+    w=np.full(D,w0); p=np.full(D,p0)
+    for t in range(steps):
+        dw=w*(p*s-p*p*c-wd); dp=w*w*(s-p*c)-wd*p
+        w+=eta*dw; p+=eta*dp
+    return w
+for p0 in [0.25,0.5,1.0,1.5]:
+  for wd in [0.003,0.01,0.03]:
+    a=full(p0,wd); b=ode(p0,wd)
+    print(f"p0={p0} wd={wd} full={int((a>1e-2).sum())} ode={int((b>1e-2).sum())} fp={int((s*s/c>4*wd).sum())} lin={int((p0*s-p0**2*c>wd).sum())}")

@@ -1,0 +1,26 @@
+{
+  "source": "Zenodo",
+  "url": "https://zenodo.org/",
+  "start_utc": "2026-10-19T21:30:14.327062+00:00",
+  "end_utc": "2026-10-19T21:30:15.161936+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/zenodo.headers",
+    "-o",
+    "/tmp/tmp8epxmabp/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://zenodo.org/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html; charset=utf-8\n",
+  "stderr": "",
+  "first200": "\n\n\n\n\n<!DOCTYPE html>\n<html lang=\"en\" dir=\"ltr\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\">\n    <meta name=\"viewport\" content=\"width=device-width, ini",
+  "body_bytes": 66236
+}

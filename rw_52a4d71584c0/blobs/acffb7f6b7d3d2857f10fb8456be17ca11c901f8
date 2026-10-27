@@ -1,0 +1,45 @@
+"""OLS straight-line fit to the objective's synthetic data; writes results/data.csv and results/fit.json."""
+import json
+import sys
+import numpy as np
+import scipy
+from scipy import stats
+
+TRUE_INTERCEPT, TRUE_SLOPE, SIGMA, N, SEED = 2.5, 0.8, 3.0, 40, 216
+
+rng = np.random.default_rng(SEED)
+x = np.arange(N, dtype=float)
+y = TRUE_INTERCEPT + TRUE_SLOPE * x + rng.normal(0.0, SIGMA, size=N)
+
+xm, ym = x.mean(), y.mean()
+sxx = np.sum((x - xm) ** 2)
+slope = np.sum((x - xm) * (y - ym)) / sxx
+intercept = ym - slope * xm
+fitted = intercept + slope * x
+resid = y - fitted
+dof = N - 2
+s = np.sqrt(np.sum(resid ** 2) / dof)
+se_slope = s / np.sqrt(sxx)
+se_int = s * np.sqrt(1.0 / N + xm ** 2 / sxx)
+tcrit = stats.t.ppf(0.975, dof)
+
+# cross-check against scipy
+lr = stats.linregress(x, y)
+assert np.isclose(lr.slope, slope) and np.isclose(lr.intercept, intercept)
+assert np.isclose(lr.stderr, se_slope) and np.isclose(lr.intercept_stderr, se_int)
+
+out = {
+    "n": N, "seed": SEED, "dof": dof, "t_crit_975": tcrit,
+    "slope": slope, "slope_se": se_slope,
+    "slope_ci95": [slope - tcrit * se_slope, slope + tcrit * se_slope],
+    "intercept": intercept, "intercept_se": se_int,
+    "intercept_ci95": [intercept - tcrit * se_int, intercept + tcrit * se_int],
+    "residual_sd": s, "r_squared": lr.rvalue ** 2,
+    "versions": {"python": sys.version.split()[0], "numpy": np.__version__, "scipy": scipy.__version__},
+    "true_slope": TRUE_SLOPE, "true_intercept": TRUE_INTERCEPT, "true_sigma": SIGMA,
+}
+with open("results/fit.json", "w") as f:
+    json.dump(out, f, indent=2)
+np.savetxt("results/data.csv", np.column_stack([x, y, fitted]), delimiter=",",
+           header="x,y,fitted", comments="", fmt="%.10g")
+print(json.dumps(out, indent=2))

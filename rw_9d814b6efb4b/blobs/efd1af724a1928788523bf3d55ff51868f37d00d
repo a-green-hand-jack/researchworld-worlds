@@ -1,0 +1,29 @@
+# Review record: Monte Carlo π study
+
+## Pass 1 (2026-10-20)
+
+Inspected revisions:
+- experiment-repo 880e9716fe8781c68b026ec9bf0e206c7dc18774 (code/monte_carlo.py, code/verify_results.py, results/per_seed.csv, results/summary.json, results/README.md, results/pilot.json, brief.md, assignment.json)
+- paper-repo 3f12d6c26c46ab1bde73a81fbdc40e1781d311b7 (report/report.md, README.md); assembled delivery = README.md + report/report.md
+
+### Evidence (experiment-repo): supported
+- Method matches objective: 1,000,000 PCG64 U[0,1)² pairs per stream, inside x²+y² ≤ 1, estimate 4·inside/N; 20 streams from SeedSequence(20261020) spawn keys 0–19 (independent streams, predeclared, no selection).
+- Re-ran `code/monte_carlo.py --output /tmp/rerun`: all 20 inside counts identical to results/per_seed.csv. `verify_results.py` passes.
+- Independent recomputation from saved counts (statistics.fmean/stdev, scipy t.ppf(.975,19)): mean 3.1418818, s 0.00178005, 95% t CI [3.14104871, 3.14271489], half-width 0.00083309, signed = absolute error 0.00028915, total 20,000,000. All match summary.json.
+- Plausibility: s/σ_binom = 1.084 (s²/σ² = 1.175 on 19 df, unremarkable); math.pi inside the CI.
+- Pilot (stream 0 duplicate) correctly excluded from the study total.
+
+### Report (paper-repo): one finding
+- Quantities, method, CI definition, provenance: correct and traceable; about half a page (291 words); no figures (none needed).
+- **Finding R1 (revise):** "the error is about 0.79 standard errors of the mean (SE = 0.000398)" is inconsistent: 0.00028915/0.00039803 = 0.726. 0.787 is error/theoretical binomial SE (0.000367). Fix to "about 0.73 standard errors of the mean (SE = 0.000398)" or state the theoretical SE explicitly.
+
+Conclusion at these revisions: not yet approved; awaiting R1.
+
+## Pass 2 (2026-10-20)
+
+Inspected revisions: paper-repo f359aafd367e88f7dbcda36b43e758c73e548352 (report/report.md, README.md); experiment-repo 880e9716fe8781c68b026ec9bf0e206c7dc18774 unchanged. Assembled delivery (`ht-role delivery`): README.md + report/report.md, report identical to paper-repo f359aaf.
+
+- R1 resolved: the diff from 3f12d6c is one line; it now reads "about 0.73 standard errors of the mean (SE = 0.000398)" (0.00028915/0.00039803 = 0.726). No other change.
+- Every other report number was verified in pass 1 against the re-run and my independent recomputation: estimate 3.1418818, 95% t CI [3.1410487, 3.1427149], signed/absolute error 0.00028915, 20,000,000 points. Half a page, no figures, no claims beyond the evidence.
+
+Conclusion: the delivery meets the objective and supports its claims. Approved for release.

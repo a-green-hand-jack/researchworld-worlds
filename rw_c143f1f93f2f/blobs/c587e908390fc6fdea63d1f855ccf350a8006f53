@@ -1,0 +1,49 @@
+# report/results — analysis outputs (owner: experiment-repo)
+
+Every file here is written by a script in `report/code/` (run from `report/`).
+
+| File | Written by | Content |
+|---|---|---|
+| `data/iris.arff` | `code/fetch_data.py` | OpenML dataset 61 (iris v1) as served by OpenML |
+| `provenance.json` | `code/fetch_data.py` | download URL, version, md5 (= OpenML's), sha256, time |
+| `local/`, `ibex/` | `code/cv_compare.py` (`ibex/` via `code/ibex_job.sbatch`) | the full CV, one directory per machine |
+| `*/folds.csv` | | 50 rows (repeat 0-9, fold 0-4): seeds, n_train=120, n_test=30, correct counts, `acc_lr`, `acc_knn`, `diff_lr_minus_knn`, `k_selected`, hash of the test indices |
+| `*/predictions.csv` | | 1500 rows: true and predicted class of every test sample, both methods |
+| `*/summary.json` | | protocol, means, 95% intervals, wins/ties, k counts, multinomial check, convergence warnings |
+| `*/env.json` | | host, SLURM ids/node, CPU, Python/numpy/scipy/scikit-learn, BLAS threads, sha256 of inputs and outputs |
+| `ibex/*.out` | SLURM | the job's own log: node name, CPU, results, `sacct` line |
+| `reproducibility.json` | `code/compare_runs.py` | Ibex node and job id; `identical` with the element-wise criterion; max abs differences |
+| `fold_results.csv`, `summary.json` | `code/export_flat.py` | flat views for the figure/table: long-format fold accuracies (run, repeat, fold, method, accuracy, k) and the primary numbers, Ibex node, identity flag |
+| `robustness.json`, `robustness_folds.csv` | `code/robustness.py` | secondary: other k grids, no standardisation, LR with tuned C, other outer seeds |
+
+## Reading `summary.json`
+For `logistic_regression`, `knn` and `difference_lr_minus_knn` (paired, LR minus kNN, per split):
+`mean` over the 50 outer folds and three 95% intervals:
+- `corrected`: **primary**. Corrected resampled t interval (Nadeau & Bengio 2003; Bouckaert & Frank 2004):
+  mean ± t(0.975, 49) · s · sqrt(1/50 + 30/120), where s is the SD of the 50 fold values. Unlike a plain t interval it
+  allows for the training-set overlap across folds and repetitions. The interval is an approximation.
+- `naive`: t over the 50 folds treated as independent (df 49). It is anti-conservative and shown only for comparison.
+- `repeat`: t over the 10 repetition means (df 9).
+Bounds are as computed. They are not clipped to [0, 1].
+
+## Protocol (plan.md §2 of story-repo, as run)
+Data: OpenML 61, md5 `ad484452702105cbf3d30f8deaba39a9`, 150 × 4, 3 classes × 50. Outer: `RepeatedStratifiedKFold(5, 10,
+random_state=20261017)`. Both methods are scored on the same 50 splits. Standardisation is fitted on the training part inside the
+pipeline. LR: multinomial (checked: `predict_proba` equals the softmax of the decision function), lbfgs, L2, C=1, max_iter=10000,
+not tuned. kNN: Euclidean, uniform weights. k ∈ {1,3,…,31} is chosen by shuffled stratified 5-fold inner CV on the outer
+training set (seed 20261017+1+fold index). Ties go to the smallest k. The model is then refit on the outer training set.
+Single-threaded BLAS. Environment: Python 3.11.2 and `code/requirements.txt`, the same on both machines.
+
+Note on the k grid: a first run, made before the plan was read, used k ∈ {1,…,30}. The primary analysis follows the
+plan's pre-specified odd grid. The first grid is kept as the robustness variant `k_grid_all_1_30`.
+
+## Findings (numbers from `local/summary.json`, `reproducibility.json`, `robustness.json`)
+- Q1: LR mean accuracy 0.9540, 95% corrected interval [0.9156, 0.9924]. kNN 0.9447, [0.8967, 0.9927].
+- Q2: paired difference LR − kNN +0.0093, 95% corrected interval [−0.0214, +0.0400] (p = 0.54). No difference is resolved.
+  LR is better in 13 splits, kNN in 5, and 32 are tied. The selected k ranges from 1 to 17 (median 7) and never reaches the grid edge 31.
+- Q3: Ibex job 53909302 ran on node `cn511-08` (partition `batch`, COMPLETED, 13 s). Its results are **identical** to the local
+  `local-compute` run under the element-wise criterion: folds, all 1500 predictions and every summary float are equal. This
+  holds across different CPUs (local Intel Xeon Gold 6230, Ibex AMD EPYC 9655). Both runs used the same OpenBLAS 0.3.30/0.3.31
+  SkylakeX kernels, single-threaded.
+- Robustness: under every variant the corrected interval for the difference contains 0. The difference ranges from −0.0007
+  (outer seed 1) to +0.0113 (LR with tuned C). Without standardisation both methods score higher (LR 0.9633, kNN 0.9587).

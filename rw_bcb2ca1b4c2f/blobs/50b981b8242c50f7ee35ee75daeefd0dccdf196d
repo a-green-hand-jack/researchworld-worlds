@@ -1,0 +1,44 @@
+"""Check of the aligned-statistics assumption under masking.
+When is Sigma_tc = E[M_t Sigma M_c] symmetric and commuting with Sigma_c = E[M_c Sigma M_c]?
+Stationary cyclic 1D signal, Sigma_ij = rho^{d(i,j)}, n = 32, rho = 0.8; masks enumerated exactly over placements.
+Writes results/checks/mask_symmetry.json. Usage: python3 code/checks/mask_symmetry.py [OUT.json]"""
+import json, sys
+import numpy as np
+
+n, rho = 32, 0.8
+i = np.arange(n); D = np.minimum(np.abs(i[:, None] - i[None]), n - np.abs(i[:, None] - i[None]))
+S = rho ** D
+
+
+def block(start, L):
+    m = np.zeros(n); m[(start + np.arange(L)) % n] = 1; return m
+
+
+def blk(start, L):
+    m = np.zeros(n); m[start:start + L] = 1; return m
+
+
+def stats(pairs):
+    Sc = np.mean([np.outer(c, c) * S for t, c in pairs], 0)
+    Stc = np.mean([np.outer(t, c) * S for t, c in pairs], 0)
+    asym = np.abs(Stc - Stc.T).max() / np.abs(Stc).max()
+    comm = np.abs(Sc @ Stc - Stc @ Sc).max() / (np.abs(Sc).max() * np.abs(Stc).max() * n)
+    return float(asym), float(comm)
+
+
+cases = {
+    "cyclic_block": ("target block of 6, context block of 20 minus target, cyclic domain, random placement",
+                     [(block(a, 6), np.clip(block(b, 20) - block(a, 6), 0, 1)) for a in range(n) for b in range(n)]),
+    "one_sided_context": ("context block (14) always to the right of the target (6), cyclic (no reflection symmetry)",
+                          [(block(a, 6), block(a + 6, 14)) for a in range(n)]),
+    "noncyclic_block": ("as cyclic_block but blocks must fit inside [0, n) (boundaries)",
+                        [(blk(a, 6), np.clip(blk(b, 20) - blk(a, 6), 0, 1)) for a in range(n - 5) for b in range(n - 19)]),
+}
+out = dict(n=n, rho=rho, definition="rel_asymmetry = max|S_tc - S_tc^T| / max|S_tc|; "
+           "rel_commutator = max|[S_c, S_tc]| / (max|S_c| max|S_tc| n)", cases={})
+for key, (desc, pairs) in cases.items():
+    a, c = stats(pairs)
+    out["cases"][key] = dict(description=desc, placements=len(pairs), rel_asymmetry=a, rel_commutator=c)
+    print(f"{desc}: rel. asymmetry {a:.3g}; rel. commutator {c:.3g}")
+path = sys.argv[1] if len(sys.argv) > 1 else "results/checks/mask_symmetry.json"
+json.dump(out, open(path, "w"), indent=1)

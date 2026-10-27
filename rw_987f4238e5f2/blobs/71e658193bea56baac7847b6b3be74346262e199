@@ -1,0 +1,14 @@
+import numpy as np
+T0, T1 = 0.0, 1200.0
+def load(path):
+    t = np.fromfile(path, dtype="<f4")
+    assert t.size == 30_000_000, t.size
+    return t
+def counts(t, width=1.0):
+    """Bins [0,w), ..., [1200-w, 1200]: NumPy's last bin is right-inclusive, so float32 times
+    rounded to exactly 1200 s stay counted (reviewed endpoint convention)."""
+    n = int(round((T1 - T0) / width))
+    c, edges = np.histogram(t, bins=n, range=(T0, T1))
+    out = int(np.sum((t < T0) | (t > T1)))
+    assert out == 0, f"{out} photons outside [0, 1200]"
+    return edges, c

@@ -1,0 +1,58 @@
+# Review standard for objective #1 (LR vs kNN on Iris)
+
+Recorded before any delivery exists. Each verdict checks the assembled delivery
+(`ht-role delivery`) at its exact revisions against every item below. Items are
+derived from the objective (`internal-review-repo`#1); none prescribes a result.
+
+## D. Data
+- D1 Iris is OpenML dataset id 61, downloaded from OpenML by the delivered code
+  (not a bundled sklearn/UCI copy). Provenance recorded: URL/API used, dataset
+  version, file checksum.
+- D2 Loaded data checked: 150 instances, 4 numeric features, 3 classes (50 each).
+
+## S. Study design
+- S1 Multinomial logistic regression (multinomial loss explicit or default
+  stated with library version); hyperparameters stated.
+- S2 kNN with k chosen by inner cross-validation inside each outer training
+  fold only; the k grid, inner CV scheme and the chosen k per fold recorded.
+- S3 Any preprocessing (e.g. standardization) fitted inside the pipeline on
+  training folds only; no leakage from outer test folds.
+- S4 10 repetitions of stratified 5-fold CV = 50 outer folds; both methods
+  evaluated on identical splits (paired); seeds recorded.
+
+## T. Statistics
+- T1 Mean accuracy per method with a 95% interval.
+- T2 Paired difference (stated direction, e.g. LR - kNN) with a 95% interval.
+- T3 Interval method stated and justified. Fold accuracies from repeated CV
+  are correlated (shared training data), so a naive t-interval over 50 folds
+  is anti-conservative; the report must use a method that accounts for this
+  (e.g. Nadeau-Bengio corrected resampled t, or a t-interval over the 10
+  repetition means with its limitation stated) or explicitly discuss it.
+- T4 Claims about which method is better are no stronger than the intervals
+  allow (an interval covering 0 is not reported as a difference).
+
+## R. Reproducibility runs
+- R1 Full CV run once as a CPU job on the Ibex SLURM cluster: job script, job
+  id, node name obtained from inside the job (e.g. `hostname`/`SLURMD_NODENAME`)
+  and the job log delivered.
+- R2 Full CV run once locally with the same code.
+- R3 Per-fold outputs of the two runs compared (exact equality / hash) and the
+  report states whether they are identical; if not, the difference and its
+  likely cause (library versions, BLAS threads) are stated. Software versions
+  of both environments recorded.
+- R4 The report names the Ibex node.
+
+## P. Paper
+- P1 `report/report.pdf` exists, compiled from LaTeX in the official NeurIPS
+  2026 template (style file from neurips.cc), submission (anonymous) mode.
+- P2 At most 2 pages in total (PDF page count).
+- P3 Exactly one figure and one table.
+- P4 LaTeX source and the code that produced every number delivered next to
+  the PDF (under `report/` or an assignment path it references), and the PDF
+  rebuilds from the delivered source.
+- P5 Every number in text, table and figure matches a delivered result file
+  produced by the delivered code.
+- P6 The figure is opened and inspected: real data, labeled axes and units,
+  legible at print size, shows what the text says it shows; the table is
+  consistent with the text.
+- P7 Bibliography entries real and resolvable; no fabricated citations.

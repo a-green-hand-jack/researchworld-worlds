@@ -1,0 +1,36 @@
+# Review record
+
+## Pass 1 (verdict owed after the world went quiet)
+Inspected assembled delivery (`ht-role delivery`) at:
+- paper-repo `16f540834eea18679c81329369571eaeaefba3cc` (README.md, venue-artifacts.json, report/report.md)
+- experiment-repo `349d2183f5b0c31965910123b4a40c754fa418b1` (brief.md, code/fit.py, results/, comment-check.md, assignment.json)
+- figtab-repo `d626890097d7862ce54d08512b73aa2f2eda41f9` (figures/fit.png, figures/make_fit.py)
+
+Checks:
+- `python3 code/fit.py` in a copy of the delivery regenerates `results/fit.json` (identical to 1e-12) and `results/data.csv` (byte-identical); values match review/reference_fit.out (slope 0.7206, 95% CI [0.6352, 0.8061]; intercept 4.3727, 95% CI [2.4364, 6.3090]; residual SD 3.0816; R² 0.8847). numpy 2.4.6 in the reviewer's environment.
+- `python3 figures/make_fit.py` runs. I opened figures/fit.png. It shows the 40 points, the OLS line, the 95% pointwise band of the mean, the true line and the labelled x and y axes; there is a legend and an annotation box with the estimates and CIs, and it is readable. The caption in the report matches the figure.
+- Report: well under one page. It states the method (t, df = 38) and the recipe and seed, and compares the estimates with the true values correctly (I recomputed the deviations as 1.88 SE for the slope and 1.96 SE for the intercept). All links resolve in the assembled layout.
+
+Findings (sent as `revise` to paper-repo in internal-review-repo#2):
+1. Comment 14: the derived numbers in the Interpretation section (19.5 from the mean, 1.9 SE, 2.0 SE) are not produced by any delivered code.
+2. Comment 15: no delivered record of package versions, although the report claims seed-determined reproducibility and cites numpy 2.4.6.
+
+Minor note (no action required): the band in the figure is a pointwise CI for the mean line; "pointwise" would make the caption more precise.
+
+Conclusion: not yet approved; waiting on revisions for findings 1 and 2.
+
+## Pass 2 (after revisions)
+Inspected assembled delivery at:
+- paper-repo `1c316eba03e1` (report/report.md, report/comment-check.md, README.md, venue-artifacts.json)
+- experiment-repo `353c694b8967` (brief.md, code/fit.py, results/, comment-check.md)
+- figtab-repo `bcc56ea2713d` (figures/fit.png, figures/make_fit.py, figures/versions.txt)
+
+Checks:
+- `python3 code/fit.py` in a copy of the delivery reproduces results/data.csv (byte-identical) and results/fit.json (identical JSON, including the new `versions` block: Python 3.11.2, numpy 2.4.6, scipy 1.17.1). The numbers are unchanged and match review/reference_fit.out.
+- `python3 figures/make_fit.py` runs (matplotlib 3.11.2, as figures/versions.txt records). I opened figures/fit.png again. It shows the 40 points, the OLS line, the 95% band, the true line and the labelled axes, with a legend and readable estimates and CIs that match fit.json.
+- Finding 1 (comment 14) is resolved: the derived numbers are gone. Every number left in the report (0.7206, 0.0422, [0.6352, 0.8061], 4.3727, 0.9565, [2.4364, 6.3090], 3.0816, 0.8847, t = 2.0244, 0.806, 2.436, the rounded versions of these, and the versions) is in results/fit.json or figures/versions.txt.
+- Finding 2 (comment 15) is resolved: the versions are recorded by code (results/fit.json) and in figures/versions.txt, and the report cites both and states that the data depend on the numpy version.
+- Report: under one page; all links resolve in the assembled layout; the comparison with the true values is qualitative and correct.
+- Comment checks: experiment-repo/comment-check.md (step 1), this repository's comment-check.md (step 2) and report/comment-check.md (step 3) are all present. figtab-repo's step 4 record is in figtab-repo's own repository, outside the delivery.
+
+Conclusion: the delivery meets the objective. Approved.

@@ -1,0 +1,6 @@
+"""Read the extended.py output JSON; check the interval and print a summary."""
+import json, math, sys
+r = json.load(open(sys.argv[1]))
+lo, hi = r['ci95']
+print(f"estimate {r['estimate']:.6f}, 95% CI [{lo:.6f}, {hi:.6f}], samples {r['samples']}")
+print(f"pi={math.pi:.6f} covered={lo <= math.pi <= hi}; error {r['estimate']-math.pi:+.2e}")

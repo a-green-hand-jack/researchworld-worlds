@@ -1,0 +1,15 @@
+# Ordinary-least-squares fit
+
+Using all 40 rows in `inputs/0/data.csv`, I fit the model \(y=a+bx\) by ordinary least squares. The fitted line is
+
+\[
+\hat y = 1.6325 + 0.6494x.
+\]
+
+The intercept estimate is **a = 1.6325** (95% CI: **[1.0046, 2.2604]**) and the slope estimate is **b = 0.6494** (95% CI: **[0.5385, 0.7602]**). Intervals use the residual degrees of freedom, \(40-2=38\), and the residual standard deviation is **s = 0.9993**.
+
+`outputs/figure.png` shows the 40 observed points against x together with the fitted line, making the positive linear trend and scatter around the fit visible. `outputs/reference.pdf` is the supplied reference document accompanying the study data and figure; it is retained unchanged under `outputs/`.
+
+The two supplied output files are preserved byte-for-byte from the frozen inputs: `figure.png` SHA-256 `dd9a0239b64f7b26632c70d7019dd0767ef87320c952553bf736e97e643c7744`; `reference.pdf` SHA-256 `d7755732fa69614489e67554a5ff27d122fb4f6c0d53add58da6aae7ff710f7b`.
+
+Numerical results are taken from the validated analysis artifact `analysis/ols_results.json` at experiment-repo commit `8791e8b86c69db1b86cea94494d734d568a82a6c`.

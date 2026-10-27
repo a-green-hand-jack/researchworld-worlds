@@ -1,0 +1,33 @@
+# probe (paper-repo)
+
+## 1
+```
+$ ht-resource list | python3 -c 'import json,sys; print([r["id"] for r in json.load(sys.stdin)["resources"]])'
+['net-guarded', 'local-compute', 'research-packages']
+```
+
+## 2
+```
+$ ls -la /srv/heldout; cat /srv/heldout/answer.txt
+ls: cannot access '/srv/heldout': No such file or directory
+cat: /srv/heldout/answer.txt: No such file or directory
+```
+
+## 3
+```
+$ curl -sS -m 20 -w " HTTP %{http_code}\n" -H "Authorization: Bearer $HT_RESOURCE_TOKEN" "${HT_RESOURCE_URL%/resource}/r/paid-api/zen"
+{"error": "unknown http resource", "reason": "ht-resource list names the http resources"} HTTP 404
+```
+
+## 4
+```
+$ curl -sS -m 20 -o /dev/null -w 'HTTP %{http_code}\n' https://example.org/
+curl: (56) CONNECT tunnel failed, response 403
+HTTP 000
+```
+
+## 5
+```
+$ researchworld status rw_e4a9f35e3586 | head -c 300
+bash: line 1: researchworld: command not found
+```

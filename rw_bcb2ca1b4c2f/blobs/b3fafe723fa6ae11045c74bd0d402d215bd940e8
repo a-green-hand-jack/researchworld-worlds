@@ -1,0 +1,113 @@
+{
+ "experiment": "E6 / rung 1a of direction C: held-out registration",
+ "status": "registered before the held-out grid is run; the scores below are produced once by the command given, against results/e6/r1_tolerance_v2.json",
+ "frozen_model_commit": "8835010f3db8c2aa536eddbe96f58aaae70b2094",
+ "md5": {
+  "code/e6_r1.py": "201e8d7e37cf8b704c6e349a5d665313",
+  "code/linjepa.py": "e7d569d4a3537aa3883ddfe847b3df66"
+ },
+ "prediction": "race_deep_A1, unchanged from the registration (commit d23f8d9) and the development grid: the development rule allowed a change, none was made. On the generic arm A1 uses the end-to-end a0_k of an unbalanced initialisation; on the development grid it was one direction off in about 14% of runs and lost to the count measured at 10% of T. That located failure is expected to persist and is scored as registered, now against the fixed early times",
+ "tolerance": "results/e6/r1_tolerance_v2.json (per arm, at L = 2, L = 3 and pooled over L >= 2; L = 1 control; early at t = 25 and 50; truth floor; well-posedness)",
+ "grid": {
+  "n": 16,
+  "s": [
+   1.5,
+   0.5
+  ],
+  "ratio": 0.88,
+  "L": [
+   1,
+   2,
+   3
+  ],
+  "a0": [
+   0.02,
+   0.05,
+   0.2
+  ],
+  "p0": [
+   0.7,
+   1.5
+  ],
+  "lam_per_L": {
+   "1": [
+    0.00632,
+    0.01281,
+    0.02498,
+    0.04985
+   ],
+   "2": [
+    0.006,
+    0.01197,
+    0.02498,
+    0.04659
+   ],
+   "3": [
+    0.006,
+    0.01197,
+    0.02498,
+    0.04985
+   ]
+  },
+  "seeds_aligned": [
+   300,
+   301,
+   302,
+   303,
+   304
+  ],
+  "seeds_generic": [
+   310,
+   311,
+   312
+  ],
+  "eta": 0.05,
+  "T": "min(3 t_race + 300, 3000), as development",
+  "runs": 504,
+  "floor_runs": 1008,
+  "disjoint_from_dev": "statistics (s 1.5-0.5, ratio 0.88 against 1.4-0.6, 0.90), a0, p0, lam and seeds all differ from development",
+  "well_posedness": "every (L, lam) has min_k |ln(lam / lam*_{L,k})| >= 0.10 (asserted in configs)"
+ },
+ "pilots": "a smoke test of 12 held-out configs (ids 45-47, 105-107, 165-167, 1107-1109: four base runs and their floor re-runs, all with T <= 530) was run in the sandbox to check the code path and the v2 scorer; its outputs were looked at (counts and predictions of those four runs) and are not kept. Those runs are part of the held-out grid and are re-run by the job",
+ "command": "python3 code/e6_r1.py run heldout results/e6/r1heldout 8",
+ "note_2026-10-18": {
+  "date": "2026-10-18T04:21:43Z (the time of the commit that carries it, 9da9a3c; the date written there before, 04:45Z, was wrong). The held-out score was produced at 03:49Z, before this note",
+  "timing": "written AFTER the held-out score: results/e6/r1heldout/r1_heldout_score.json was produced at 03:49Z by the registered command, before the internal review's request for this note (03:55Z) was read. The tolerance and the registered verdict are unchanged",
+  "dev_values_of_the_v2_baselines": {
+   "source": "internal review, dev grid re-run to t = 50 with the frozen code; recomputed here in results/e6/r1heldout/posthoc/post.json dev_fixed_early",
+   "aligned_L_ge2": {
+    "A1": 0.054,
+    "early_25": 1.421,
+    "early_50": 0.642,
+    "v1_early_10pct": 0.096
+   },
+   "generic_L_ge2": {
+    "A1": 0.16,
+    "early_25": 0.549,
+    "early_50": 0.267,
+    "early_50_minus_A1_ci": [
+     0.028,
+     0.198
+    ],
+    "v1_early_10pct": 0.049,
+    "v1_minus_A1_ci": [
+     -0.163,
+     -0.059
+    ]
+   },
+   "generic_L2": {
+    "A1": 0.194,
+    "early_50": 0.306
+   },
+   "generic_L3": {
+    "A1": 0.125,
+    "early_50": 0.229
+   }
+  },
+  "corrected_expectation": "the registration said the generic-arm failure located on dev (A1 one direction off in about 14% of runs, losing to the count at 10% of T) 'is expected to persist ... now against the fixed early times'. That did not follow from dev: t = 25 and 50 are about 2% and 4% of T there, where the measured count still includes directions that started above threshold and have not yet decayed, so on dev the fixed-time rule alone passes the generic arm pooled over L >= 2 (early_50 - A1 = +0.107, CI [0.028, 0.198]); the correct expectation was a generic pass by v2 with a loss by v1",
+  "held_out_outcome": "the generic arm FAILS v2 on the held-out grid (A1 MAE 0.090 against early_50 0.076, CI of early_50 - A1 [-0.069, 0.042]); the aligned arm passes. So the case this note guards against (a generic v2 pass read as 'A1 beats measurement') did not arise",
+  "reading_rule": "a v2 pass on either arm is reported together with the v1 reading (count at 10% of T) and the trajectory (results/e6/r1heldout/posthoc/post.json: measured-count MAE at each of the 20 checkpoints against A1's, and the earliest fraction of T from which the measurement matches A1), never as 'A1 beats measurement' alone. The claim the evidence can carry is of the form 'A1 gives at t = 0 the count a measurement gives only from about f* of T', f* from that file",
+  "nonfinite": "code/e6_r1.py score_v2 now counts a non-finite (diverged) base run as an A1 miss in within-1 and pass, with the count per group; the held-out grid had 0 non-finite runs, so its score is unchanged (re-scored in post.json heldout_rescored)",
+  "seeds": "deviation from the commitment (>= 5 seeds per linear setting): the registered generic arm has 3 seeds (310-312). Seeds 313-314 (grid heldout_g45, same configs, with floor re-runs) were run after the score; the 5-seed generic result is reported beside the registered 3-seed verdict in post.json and does not replace it"
+ }
+}

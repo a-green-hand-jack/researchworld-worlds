@@ -1,0 +1,23 @@
+import numpy as np
+from scipy import stats
+x = np.arange(40.0)
+rng = np.random.default_rng(221)
+sd = {"A": np.full(40, 3.0), "B": 0.5 + 0.15 * x}
+y = {s: 2.5 + 0.8 * x + rng.normal(0, sd[s]) for s in "AB"}   # dict order: A first, then B
+X = np.column_stack([np.ones(40), x])
+t = stats.t.ppf(0.975, 38)
+def fit(yy, w):                       # weighted LS; w = 1 for OLS; classical SE with estimated scale
+    cov = np.linalg.inv((X.T * w) @ X)
+    b = cov @ (X.T * w) @ yy
+    r = yy - X @ b
+    se = np.sqrt((w * r**2).sum() / 38 * np.diag(cov))
+    return b, np.c_[b - t * se, b + t * se], r
+for s in "AB":
+    for name, w in [("OLS", np.ones(40)), ("WLS", 1 / sd[s] ** 2)]:
+        b, ci, r = fit(y[s], w)
+        print(f"{s} {name}: intercept {b[0]:.3f} [{ci[0,0]:.2f}, {ci[0,1]:.2f}]  slope {b[1]:.3f} [{ci[1,0]:.3f}, {ci[1,1]:.3f}]")
+    r = fit(y[s], np.ones(40))[2]                              # residual check on OLS residuals
+    F = np.var(r[20:], ddof=2) / np.var(r[:20], ddof=2)
+    bp = stats.chi2.sf(40 * np.corrcoef(x, r**2)[0, 1] ** 2, 1)  # Breusch-Pagan, LM = n R^2
+    rho, p = stats.spearmanr(x, np.abs(r))
+    print(f"  {s}: resid sd {r[:20].std(ddof=2):.2f} -> {r[20:].std(ddof=2):.2f}, GQ F {F:.2f} p={stats.f.sf(F,18,18):.3f}, BP p={bp:.4f}, Spearman {rho:.2f} p={p:.3f}")

@@ -1,0 +1,71 @@
+"""Render committed error samples and fitted-order results; no fitting occurs here."""
+import csv,json,shutil
+from pathlib import Path
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.ticker import LogLocator, NullLocator
+root=Path(__file__).resolve().parents[1]; inputs=root/'presentation/inputs'
+for folder in ['report/figures','report/tables']:
+    (root/folder).mkdir(parents=True,exist_ok=True)
+rows=list(csv.DictReader((inputs/'errors.csv').open()))
+fits=json.loads((inputs/'fits.json').read_text())['main_10eps']; threshold=fits['threshold']
+plt.rcParams.update({'font.size':8,'axes.titlesize':10,'axes.labelsize':8,'xtick.labelsize':8,'ytick.labelsize':8,'legend.fontsize':8,'font.family':'DejaVu Sans','axes.linewidth':.6})
+functions=[('exp(x)','exp',r'$e^x$'),('1/(1+25x^2)','rational',r'$1/(1+25x^2)$'),('sqrt(x)','sqrt',r'$\sqrt{x}$')]
+rules=[('trapezoid','Trapezoid','#0072B2','o'),('simpson','Simpson','#D55E00','s'),('gauss4','GL4','#009E73','^')]
+captions={}
+for fun,slug,title in functions:
+    fig,ax=plt.subplots(figsize=(3.2,2.4),dpi=300)
+    fig.subplots_adjust(left=.20,right=.98,bottom=.22,top=.88)
+    zero={}; fit_info={}
+    for rule,label,color,marker in rules:
+        rr=[r for r in rows if r['function']==fun and r['rule']==rule]
+        n=np.array([int(r['n']) for r in rr]); e=np.array([float(r['abs_error']) for r in rr]); included=e>threshold
+        f=fits['fits'][fun+'|'+rule]
+        assert sum(included)==f['npts']
+        if 'mask' in f: assert included.tolist()==f['mask']
+        ax.plot(n,np.where(e>0,e,np.nan),color=color,lw=.9,label=label)
+        for mask,face in [(included,color),((e>0)&~included,'white')]:
+            ax.plot(n[mask],e[mask],linestyle='none',marker=marker,ms=3.2,mec=color,mfc=face,mew=.65)
+        zero[label]=n[e==0].tolist()
+        fit_info[label]={'k_range':[f['kmin'],f['kmax']],'n_points':f['npts'],'order':f['order'],'ci95':[f['lo'],f['hi']]}
+    ax.set_xscale('log',base=2); ax.set_yscale('log'); ax.set_xlim(1.6,5100)
+    ax.set_xticks([2,8,32,128,512,2048]); ax.set_xticklabels(['2','8','32','128','512','2048'])
+    ax.xaxis.set_minor_locator(NullLocator()); ax.yaxis.set_minor_locator(NullLocator())
+    if slug!='sqrt':
+        ax.set_ylim(1e-17,1e-1); ax.set_yticks([1e-2,1e-6,1e-10,1e-14])
+        ax.axhline(threshold,color='.4',ls='--',lw=.7,zorder=0)
+        ax.text(2,threshold*2.2,r'$10\epsilon$',fontsize=8,color='.3')
+    else:
+        ax.set_ylim(1e-10,1e-1); ax.set_yticks([1e-2,1e-4,1e-6,1e-8,1e-10])
+    # Reference slopes are arbitrarily normalized visual guides, not fits.
+    guide_n=np.array([16.,32.]) if slug!='sqrt' else np.array([16.,64.])
+    for order in ([2,4,8] if slug!='sqrt' else [1.5]):
+        amplitude={2:.06,4:.008,8:(.000008 if slug=="rational" else .0008),1.5:.01}[order]
+        guide_e=amplitude*(guide_n/guide_n[0])**(-order)
+        ax.plot(guide_n,guide_e,':',color='.35',lw=.8)
+        ax.text(36 if slug!='sqrt' else 70,guide_e[-1],rf'$n^{{-{order}}}$',fontsize=8,color='.3',va='center')
+    ax.set_xlabel('Panel count, n',labelpad=2); ax.set_ylabel('Absolute error',labelpad=2); ax.set_title(title,pad=4)
+    ax.grid(axis='y',color='.9',lw=.5); ax.legend(loc='upper right',frameon=True,framealpha=.93,edgecolor='none',handlelength=1.2,labelspacing=.25,borderpad=.25)
+    fig.savefig(root/f'report/figures/{slug}.png',dpi=300); plt.close(fig)
+    venue_name={'exp':'fig_exp','rational':'fig_runge','sqrt':'fig_sqrt'}[slug]
+    shutil.copyfile(root/f'report/figures/{slug}.png',root/f'report/figures/{venue_name}.png')
+    captions[slug]={'function':fun,'fits':fit_info,'zero_errors_omitted_at_n':zero,'threshold':threshold}
+(root/'report/figures/captions.json').write_text(json.dumps(captions,indent=2)+'\n')
+lines=['| Function | Rule | Order | 95% interval | Points (k) |','|---|---|---:|---|---|']
+orders=list(csv.DictReader((inputs/'orders.csv').open()))
+for r in orders:
+    name={'exp(x)':'exp(x)','1/(1+25x^2)':'1/(1+25x²)','sqrt(x)':'√x'}[r['function']]
+    rule={'trapezoid':'Trap.','simpson':'Simp.','gauss4':'GL4'}[r['rule']]
+    ci=f"[{r['ci95_lo']}, {r['ci95_hi']}]" if r['ci95_lo'] else 'Unavailable'
+    lines.append(f"| {name} | {rule} | {r['order']} | {ci} | {r['n_points']} ({r['k_range']}) |")
+lines+=['','Orders are minus the fitted log–log slopes, using errors > 10ε (ε = 2⁻⁵²). Intervals are nominal OLS 95% t-intervals; they describe fit residuals, not stochastic integration uncertainty. Two points cannot provide an interval. Bounds are rounded to four decimals; equal displayed endpoints do not imply zero uncertainty. The rational-function fits mix convergence regimes, so their intervals are descriptive rather than reliable precision statements.','']
+(root/'report/tables/orders.md').write_text('\n'.join(lines)); shutil.copyfile(inputs/'orders.csv',root/'report/tables/orders.csv')
+notes=['# Figure captions','', 'All three plots show absolute errors on [0,1], n=2^k, k=1,…,12. Solid colored lines connect sampled values; they are not fitted curves. Gray dotted segments show labeled reference slopes with arbitrary normalization (not fits). Filled markers enter the fit; open markers are positive errors excluded by the >10ε cutoff. Dashed horizontal line: 10ε = 2.22×10⁻¹⁵. The √x plot uses a narrower vertical range; its errors all exceed the cutoff, which is below its axis. All quantities are dimensionless. Trapezoid uses n panels, Simpson uses a three-point rule per panel, and GL4 uses four Gauss–Legendre nodes per panel. See orders.md for slopes, intervals and fit ranges.','']
+for slug,c in captions.items():
+    zeros='; '.join(f"{rule}: n = {', '.join(map(str,ns))}" for rule,ns in c['zero_errors_omitted_at_n'].items() if ns) or 'none'
+    venue_name={"exp":"fig_exp","rational":"fig_runge","sqrt":"fig_sqrt"}[slug]
+    notes.append(f"- **{venue_name}.png:** {c['function']}. Zero computed errors omitted from the logarithmic axis: {zeros}. Zero means equality to the double-precision reference, not demonstrated exact integration.")
+(root/'report/figures/captions.md').write_text('\n'.join(notes)+'\n')
+print('Rendered three 960×720 figures and the order table.')

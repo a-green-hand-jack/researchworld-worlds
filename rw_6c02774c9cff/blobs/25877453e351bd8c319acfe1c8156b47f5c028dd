@@ -1,0 +1,16 @@
+\begin{table}[t]
+\caption{10$\times$5 stratified CV (50 folds), 95\% corrected repeated-CV $t$ intervals ($\mathrm{df}=49$). Last column: chosen $k$ ($k$-NN); folds won/tied/lost by LR. Bottom row: Ibex vs.\ local run.}
+\label{tab:main}
+\centering\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+Quantity & Mean & 95\% interval & $k$ / W/T/L \\
+\midrule
+Logistic regression & 0.954 & [0.916, 0.992] & -- \\
+$k$-NN & 0.951 & [0.906, 0.996] & median 7 (range 1--21) \\
+Difference (LR $-$ $k$-NN) & +0.003 & [$-$0.029, +0.036] & 13/25/12 \\
+\midrule
+\multicolumn{4}{l}{Ibex CPU job 53910855 on node \texttt{cn504-26} vs.\ local run: identical} \\
+\bottomrule
+\end{tabular}
+\end{table}

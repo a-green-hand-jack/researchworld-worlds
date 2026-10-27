@@ -1,0 +1,26 @@
+{
+  "source": "NCBI",
+  "url": "https://www.ncbi.nlm.nih.gov/",
+  "start_utc": "2026-10-19T21:30:14.331366+00:00",
+  "end_utc": "2026-10-19T21:30:15.148702+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/ncbi.headers",
+    "-o",
+    "/tmp/tmp5cjz156v/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://www.ncbi.nlm.nih.gov/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html\n",
+  "stderr": "",
+  "first200": "<!DOCTYPE html>\n\n<html lang=\"en\">\n\n<head>\n    <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"/>\n    <script type=\"text/javascript\">\n        if (document.location.href.match(/\\/(home",
+  "body_bytes": 39223
+}

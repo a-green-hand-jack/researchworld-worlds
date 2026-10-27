@@ -1,0 +1,28 @@
+# Analysis handoff
+
+All five required sizes have 200 point-based estimates from seeds 2026 through 2225. `runs.csv` retains every integer count, estimate and absolute error. `summary.csv` supplies the table, per-mean standard errors, fitted values and theoretical reference. `fit.json` supplies the power-law intercept, exponent, confidence intervals, residuals, R-squared, bootstrap stability and leave-one-size-out diagnostics. `simulation_metadata.json` records runtime and environment. No pilot estimates replace production results.
+
+The measured exponent is -0.5011584082. Its primary 95% paired-bootstrap interval is [-0.5161593980, -0.4861054235] (50,000 replicates, seed 20261018). The conventional t interval, with 3 degrees of freedom, is [-0.5191719876, -0.4831448287]. Both include -1/2. The exponent differs from -1/2 by -0.0011584; report consistency, not exact confirmation. R-squared is 0.99961745.
+
+The experiment generates interleaved uniform (x,y) point pairs using `default_rng(2026+r)`, r=0,...,199, and counts x*x+y*y <= 1. Sharing prefixes is exactly equivalent to resetting the generator to the same run seed at each N. Within each N the 200 runs are independent; across N the estimates with the same run index are dependent. Bootstrap entire five-error run vectors, not separate sizes. The primary interval captures finite-run sampling uncertainty conditional on the five sizes. The t interval assumes independent residuals and is only a sensitivity check here. Log-log residuals and R-squared describe fit, but cannot prove an asymptotic law.
+
+Robustness: a second 10,000-replicate bootstrap (seed 20261019) gives [-0.5159562264, -0.4857630142], changing the primary endpoints by less than 0.00035. Omitting one size gives slopes between -0.50963 and -0.49530. These checks do not change the consistency conclusion. The theoretical MAE is sqrt(32*p*(1-p)/pi)/sqrt(N), p=pi/4, approximately 1.310272755/sqrt(N); deviations are at most 1.736 measured standard errors. This is an asymptotic normal approximation, not an exact finite-N mean.
+
+Validation: checked 1000 unique run-size records, correct seeds and all five sizes, count bounds and increments, and exact reconstruction of estimates and errors. Pilot checked chunk equivalence against fresh full-array paired draws at N=1000,10000,100000. Simulation completed in 25.86 seconds, below the pilot serial estimate of 32.48 seconds. The host was oversubscribed, so production used one worker.
+
+Reproduce from the repository root:
+
+```
+python3 code/simulate.py --workers 1
+python3 code/analyze.py
+```
+
+Simulation uses Python 3.11.2 and NumPy 2.4.6; analysis also uses SciPy 1.17.1 and pandas 3.0.6. The code revision and SHA-256 of the raw input are embedded in `fit.json`. Generated artifacts were made from the committed analysis code; a subsequent commit adds them. Source provenance in the final report may cite experiment-repo code and these results at the handoff revision.
+
+## Independent validation
+
+The independent review owner closed internal-review-repo issue #4 after checking the handoff: all five MAEs, OLS exponent and t interval matched its separate implementation; its independently seeded paired-bootstrap interval agreed; raw records were internally consistent and their hash matched. The durable review record is `review/evidence-check.md` in internal-review-repo. This validates the numerical supply; approval of the assembled report and figure remains the review owner's responsibility.
+
+## Presentation interface
+
+The confirmed figure outputs are `report/figures/error_scaling.png` and `.svg`, with their generator and provenance owned by figtab-repo. The report owner writes the table inline from `summary.csv`. For the figure generator, the supplied schema uses `standard_error` (the SEM), `slope_ci95` (primary paired-bootstrap interval), `regression_t_ci95` (sensitivity interval), `bootstrap_replicates`, and `asymptotic_mae_coefficient`. These map respectively to the presentation owner's proposed names `sem`, `interval_95`, `interval_95_t`, `n_bootstrap`, and `theoretical_coefficient`. Numbers in the CSV are written to 17 significant digits.

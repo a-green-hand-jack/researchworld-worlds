@@ -1,0 +1,35 @@
+# report/
+
+Build: from `report/`, `latexmk -pdf report.tex` (pdflatex + bibtex, TeX Live 2026).
+Regenerate every number first with `bash code/make_all.sh` (see `code/README.md`), then the
+figure and table with the script in `figures/`.
+
+| Path | What | Delivered by |
+|---|---|---|
+| `report.pdf`, `report.tex`, `references.bib`, `report.bbl` | the paper and its LaTeX source (DOIs/URLs of all references are in `references.bib`, fields `xdoi`/`xurl`) | paper-repo |
+| `neurips_2026.sty` | NeurIPS 2026 style, unmodified (sha256 `c3fc2894e83d2517ca18b66741d6c595986d97957dc08ec08bb2125a7ec4555a`), default anonymous option | paper-repo (from venue-repo's kit) |
+| `pending.tex` | prints `[pending]` for any macro `results/numbers.tex` does not define; inert once it does | paper-repo |
+| `code/` | data fetch, cross-validation, summaries, identity check, macro generator | experiment-repo |
+| `results/` | raw per-fold outputs of both runs, `summary.json`, `identity.json`, `data_provenance.json`, `numbers.tex` | experiment-repo |
+| `figures/` | Figure 1, Table 1 and the script rendering them from `results/` | figtab-repo |
+
+## Number → script → result file
+
+Every number in `report.tex` is a macro from `results/numbers.tex`, written by
+`code/make_numbers.py`. Macro → source field:
+
+| Paper item (macros) | Script | Result file → field |
+|---|---|---|
+| LR / kNN mean accuracy and 95% interval (`\LRMean \LRLo \LRHi`, `\KNNMean \KNNLo \KNNHi`) | `code/run_cv.py` → `code/summarize.py` | `results/summary.json` → `quantities.{LR,kNN}.corrected_t.{mean,lo,hi}` (from `results/run_local/folds.csv`) |
+| Paired difference LR − kNN and interval, p (`\DiffMean \DiffLo \DiffHi \DiffP \CorrDF`) | `code/summarize.py` | `results/summary.json` → `quantities.LR_minus_kNN.corrected_t` |
+| Naive-t comparison interval (`\DiffNaiveLo \DiffNaiveHi`) | `code/summarize.py` | `results/summary.json` → `quantities.LR_minus_kNN.naive_t` |
+| Fold SD and win/tie/loss counts (`\DiffFoldSD \FoldsLRBetter \FoldsTie \FoldsKNNBetter`) | `code/summarize.py` | `results/summary.json` → `quantities.LR_minus_kNN.fold_sd`, `paired_fold_counts` |
+| Selected k (`\KGrid \KMin \KMax \KMedian \KMode \KModeCount`) | `code/run_cv.py` → `code/summarize.py` | `results/summary.json` → `k_selected`; per fold `results/run_local/folds.csv` → `k_selected` |
+| Design constants (`\NFolds \NRepeats \NTrain \NTest \OuterSeed`) | `code/run_cv.py` | `results/run_local/run_info.json` |
+| Robustness checks outside the plan (`\SensDiffRaw* \SensDiffTuned*`) | `code/sensitivity.py` | `results/sensitivity.json` |
+| Data (`\DataID \DataName \DataVersion \DataSHAShort`, md5 match) | `code/fetch_data.py` | `results/data_provenance.json`; file `results/data/iris.arff` |
+| Ibex job, node, CPU, Python (`\IbexJobID \IbexNode \IbexCPU \IbexPython`) | `code/ibex_job.sbatch` → `code/run_cv.py` | `results/identity.json` → `info_b`; job log `results/run_ibex/ibex-<jobid>.out`; `results/run_ibex/run_info.json` |
+| Local CPU, Python, package versions (`\LocalCPU \LocalPython \VerNumpy \VerScipy \VerSklearn`) | `code/run_local.sh` → `code/run_cv.py` | `results/run_local/run_info.json`; `code/requirements.lock` |
+| Second-node replicate (`\OtherIbexJobID \OtherIbexNode \OtherIbexCPU \OtherIbexBLAS \OtherMaxAbsDiffProb`) | `code/ibex_job.sbatch` → `code/compare_runs.py` | `results/ibex_other_node/` (see `results/README.md`) |
+| Identity verdict and diagnostics (`\IdenticalVerdict \MaxAbsDiffAcc \MaxAbsDiffProb`, BLAS `\LocalBLAS`) | `code/compare_runs.py` | `results/identity.json` → `identical`, `L1_raw_identical`, `L2_printed_identical`, `diagnostics` |
+| Table 1, Figure 1 | script in `figures/` | from `results/summary.json`, `results/folds_long.csv` |

@@ -1,0 +1,31 @@
+# Feasibility of the requested Monte Carlo study
+
+**Judgement: feasible within the available CPU and memory resources**, conditional on chunked generation and execution on local-compute. No reduction of the five sample sizes or 200 runs is needed. This is a pre-result feasibility judgement, not validation of measured results or a runtime benchmark.
+
+## Basis and scope
+
+Reviewed the complete Research objective (idea-review-repo issue #1), context brief at idea-repo revision `f177b55c4a235a6c060fb2af85ca7a4f36c81156`, and PLAN.md plus assignment.json at story-repo revision `257ed703fae6e9d362e9566f271fc02bc9ae74f7`. The settled plan specifies run indices 0–199, default_rng(2026+i), nested prefixes at N = 10^3, 10^4, 10^5, 10^6, 10^7, ordinary least squares on log(MAE), a residual-t headline 95% interval and a paired-bootstrap interval reported alongside as the dependence-aware check. The assigned feasibility package is this file; analysis, figure, manuscript and final review remain with their owners.
+
+## Resource bounds (calculated, not measured)
+
+Generating separate arrays for every (run,N) would require 2,222,200,000 points in total. Reusing nested prefixes requires exactly 200 × 10^7 = 2,000,000,000 points, or 4,000,000,000 uniform scalar draws, while retaining all 1,000 requested estimates. This is a computational saving that preserves the specified seeded samples if draw order is fixed as interleaved (x,y) pairs.
+
+At float64 precision a full largest-run coordinate array occupies 160 MB before temporary arrays. Keeping all 200 such arrays would require 32 GB and exceed the 4 GB memory ceiling. Instead retain only a chunk, cumulative integer counts, and the 200 × 5 results. A chunk of 100,000 two-coordinate points is 1.6 MB; ordinary vectorized squaring/summing and masks add only a few MB. The estimates or errors alone occupy 8,000 bytes each as float64. Chunk boundaries must preserve all five exact sample-count checkpoints, with no overshoot included in a smaller-N count.
+
+A single sequential worker is sufficient; multiprocessing across all runs is unnecessary and risks shared-host memory pressure. Runtime is not measured here. Illustrative throughput assumptions of 1–10 million points/second imply 2,000–200 seconds for 2 billion points, excluding overhead; these are conditional planning scenarios, not promises. The available local-compute resource has no listed spend cap and can outlive a turn. Run the complete computation there, record elapsed time and versions, and save counts/results as runs complete so an interruption does not require restarting completed work.
+
+## Statistical feasibility and interpretation limits
+
+Distinct run seeds provide the required 200 pseudorandom replicates at each N. Reusing each stream across N creates dependence among the five MAEs. Interleaved pair generation must be recorded: separately drawing all x and all y does not preserve the same point prefixes. Chunking interleaved draws is compatible with exact prefix reuse.
+
+The settled paired bootstrap provides the dependence-aware uncertainty assessment: resample 200 run indices jointly across the five columns, recompute the five MAEs, then refit the same ordinary least-squares slope. Preserve the unresampled OLS slope as the point estimate. A fixed bootstrap seed and a declared replicate count and interval construction make this inexpensive step reproducible. For example, 10,000 resamples involve roughly 10 million absolute-error values; batches avoid needless memory allocation. This yields an approximate 95% interval, not an exact coverage guarantee.
+
+The residual-based t interval has only three residual degrees of freedom and assumes a regression error structure that cross-N dependence does not satisfy. Its nominal 95% coverage is not established for this design. The objective requires least-squares fitting and a 95% interval; it does not mandate a t interval. The plan owner has resolved the reporting priority as t headline with paired bootstrap alongside, and removed conflicting protocol text. That presentation is feasible provided both intervals and their comparison with −1/2 are reported, the dependence limitation remains explicit, and any disagreement is disclosed. My statistical preference remains the paired bootstrap for interpreting uncertainty; choosing the t interval as headline does not establish its coverage.
+
+The analytical normal approximation E|pi_hat−pi| ≈ sqrt(2(4−pi)/N) explains the asymptotic −1/2 reference. It is not an exact finite-N power law for binomial absolute error. With 200 runs, the half-normal approximation gives about 5.3% relative standard error for each MAE; observed values will fluctuate. Do not require an arbitrary closeness to theoretical MAE or inclusion of −1/2 as a pass condition, and do not rerun seeds to obtain agreement. An interval covering −1/2 supports consistency over the tested range, not proof of an exact scaling law. An interval excluding it is a reportable result, not a reason to omit data.
+
+## Bounds needed for completion
+
+Retain all five N and all 200 runs, actual quarter-circle point sampling, math.pi as the error reference, and one log-log least-squares fit. A binomial-count simulator or theoretical MAE table would not replace the requested experiment. Before downstream delivery, the analysis owner should check 1,000 result entries, seed/index and draw-order provenance, exact count denominators, reproducible MAE aggregation, and joint bootstrap resampling. These checks are implementation and analysis obligations, not evidence supplied by this assessment.
+
+The requested five-row table, fitted exponent and interval, short comparison with −1/2, and one figure fit a concise one-page report. Keep detailed code, bootstrap diagnostics and provenance in analysis/; report only the methods and limitations needed to interpret the displayed claim. No external data, literature search or GPU is needed. The remaining risk is implementation correctness and consistent interval labelling, not an inherent resource or design barrier.

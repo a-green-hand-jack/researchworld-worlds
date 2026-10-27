@@ -1,0 +1,48 @@
+"""Monte Carlo estimate of pi from points in the unit square, in 90 independent chunks.
+
+Usage: python3 -u simulate.py --out results.json [--chunks 90]
+
+Each chunk draws its own points from random.Random(227 + chunk) and estimates pi as
+4 x (share of points inside the quarter circle). The estimate is the mean of the
+chunk estimates, with a 95% interval from their standard error. It prints one line
+per chunk and takes 15 to 20 minutes on one CPU.
+"""
+import argparse
+import json
+import math
+import random
+import statistics
+import time
+
+SAMPLES = 60_000_000
+
+
+def chunk(index):
+    draw = random.Random(227 + index).random
+    inside = 0
+    for _ in range(SAMPLES):
+        x, y = draw(), draw()
+        inside += x * x + y * y < 1.0
+    return 4.0 * inside / SAMPLES
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--out', required=True)
+    parser.add_argument('--chunks', type=int, default=90)
+    args = parser.parse_args()
+    started, estimates = time.time(), []
+    for index in range(args.chunks):
+        estimates.append(chunk(index))
+        print(f'chunk {index + 1}/{args.chunks}: {estimates[-1]:.6f} ({time.time() - started:.0f} s)', flush=True)
+    mean = statistics.fmean(estimates)
+    half = 1.96 * statistics.stdev(estimates) / math.sqrt(len(estimates))
+    result = {'estimate': mean, 'ci95': [mean - half, mean + half], 'chunks': len(estimates),
+              'samples_per_chunk': SAMPLES, 'seconds': round(time.time() - started, 1)}
+    with open(args.out, 'w') as stream:
+        json.dump(result, stream, indent=2)
+    print(json.dumps(result), flush=True)
+
+
+if __name__ == '__main__':
+    main()

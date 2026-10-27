@@ -1,0 +1,17 @@
+"""Render every figure/table whose inputs exist. Usage: python code/figures/render_all.py  (from repo root; reads results/, writes paper/figures, paper/tables)."""
+import os, sys, importlib
+here = os.path.dirname(os.path.abspath(__file__)); root = os.path.abspath(os.path.join(here, "..", ".."))
+sys.path.insert(0, here)
+FIGS = ["fig1_drive_vs_decay", "fig2_e1_pred_vs_meas", "fig3_e1_knobs", "fig4_e1_trajectories", "fig5_e1b_phase", "fig6_e2_masking", "fig7_e2_appendix", "fig8_e3_main", "fig9_e3_factors", "fig10_e3_interventions", "fig11_e3_dynamics", "fig12_ext_main", "fig13_ext_a2p", "fig14_ext_e8"]  # results/ via $RESULTS_DIR, default <root>/results
+for m in FIGS:
+    importlib.import_module(m).make(os.path.join(root, "paper", "figures"))
+    print("rendered", m)
+import tab_heuristics, tab_accuracy, tab_e1b, tab_e2, tab_e3, tab_dvd, tab_ext_tests
+tabdir = os.path.join(root, "paper", "tables")
+tab_heuristics.make(None, tabdir); print("rendered tab_heuristics")
+tab_accuracy.make(None, tabdir); print("rendered tab_accuracy")
+tab_e1b.make(None, tabdir); print("rendered tab_e1b")
+tab_e2.make(None, tabdir); print("rendered tab_e2, tab_e2_arms")
+tab_e3.make(None, tabdir); print("rendered tab_e3")
+tab_dvd.make(None, tabdir); print("rendered tab_dvd")
+tab_ext_tests.make(None, tabdir); print("rendered tab_ext_tests")

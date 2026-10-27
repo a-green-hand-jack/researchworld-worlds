@@ -1,0 +1,82 @@
+"""Generate the photon arrival-time data for the photon-burst study.
+
+Objective (paper-repo issue #1): generate exactly 30,000,000 photon arrival
+times in seconds with numpy.random.default_rng(205): 24,000,000 background
+photons uniform on [0, 1200) and 6,000,000 burst photons from a normal
+distribution with mean 600 and standard deviation 30; concatenate, sort, and
+write them as raw little-endian float32 with no header, photons.f32
+(120,000,000 bytes). The file is never committed to a repository; it is
+published as a release asset with its SHA-256 in photons.sha256.
+
+Run: python3 code/generate_photons.py OUTDIR
+Writes OUTDIR/photons.f32, OUTDIR/photons.sha256, OUTDIR/generation-stats.json.
+"""
+
+import hashlib
+import json
+import platform
+import sys
+
+import numpy as np
+
+
+def main(outdir: str) -> None:
+    rng = np.random.default_rng(205)
+
+    background = rng.uniform(0.0, 1200.0, 24_000_000)
+    burst = rng.normal(600.0, 30.0, 6_000_000)
+
+    times = np.concatenate([background, burst])
+    times.sort()
+
+    f32 = times.astype("<f4")
+
+    path = f"{outdir}/photons.f32"
+    f32.tofile(path)
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    hexsha = digest.hexdigest()
+
+    with open(f"{outdir}/photons.sha256", "w") as fh:
+        fh.write(f"{hexsha}  photons.f32\n")
+
+    stats = {
+        "generator": {
+            "seed": 205,
+            "background_draws": 24_000_000,
+            "background_law": "numpy Generator.uniform(0.0, 1200.0)",
+            "burst_draws": 6_000_000,
+            "burst_law": "numpy Generator.normal(600.0, 30.0)",
+            "order": "background drawn first, then burst; concatenated; sorted ascending as float64; cast to little-endian float32 for writing",
+            "python": platform.python_version(),
+            "numpy": np.__version__,
+            "platform": platform.platform(),
+        },
+        "counts": {
+            "total": int(f32.size),
+            "float64_min": float(times.min()),
+            "float64_max": float(times.max()),
+            "float32_min": float(f32.min()),
+            "float32_max": float(f32.max()),
+            "float32_exactly_1200": int(np.count_nonzero(f32 == 1200.0)),
+            "float32_below_0": int(np.count_nonzero(f32 < 0.0)),
+            "float32_above_1200": int(np.count_nonzero(f32 > 1200.0)),
+        },
+        "file": {
+            "path": "photons.f32",
+            "bytes": 120_000_000,
+            "sha256": hexsha,
+        },
+    }
+    with open(f"{outdir}/generation-stats.json", "w") as fh:
+        json.dump(stats, fh, indent=2)
+        fh.write("\n")
+
+    print(json.dumps(stats, indent=2))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1] if len(sys.argv) > 1 else ".")

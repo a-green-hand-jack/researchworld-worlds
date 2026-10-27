@@ -1,0 +1,515 @@
+{
+ "status": "post hoc, beside the registered scoring; no verdict changes",
+ "inputs": [
+  "runs8",
+  "results/e8/grid/counts.csv"
+ ],
+ "bootstrap_distinct_resamples_n5": 126,
+ "arms": {
+  "T": {
+   "lr_share_left": {
+    "2": 0.96,
+    "5": 0.9,
+    "10": 0.8,
+    "20": 0.6
+   },
+   "count_max_epoch50": 42.0,
+   "lo2hi": {
+    "2": {
+     "f": 1.0114285714285713,
+     "f_fieller95": [
+      0.9796237507852523,
+      1.04349526093572
+     ],
+     "lr_share_left": 0.96,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "P100-PCIE-16GB",
+      "GTX 1080 Ti",
+      "GTX 1080 Ti",
+      "GTX 1080 Ti",
+      "GTX 1080 Ti"
+     ],
+     "f_probe_last": 0.7677387846228982
+    },
+    "5": {
+     "f": 1.0171428571428571,
+     "f_fieller95": [
+      0.9853738966953063,
+      1.049304620886152
+     ],
+     "lr_share_left": 0.9,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "V100-SXM2-32GB",
+      "V100-SXM2-32GB",
+      "V100-SXM2-32GB"
+     ],
+     "f_probe_last": 0.5136398520895835
+    },
+    "10": {
+     "f": 1.0342857142857145,
+     "f_fieller95": [
+      0.9954205221112916,
+      1.0739365130516254
+     ],
+     "lr_share_left": 0.8,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB"
+     ],
+     "f_probe_last": 0.5231982139119515
+    },
+    "20": {
+     "f": 1.0,
+     "f_fieller95": [
+      1.0,
+      1.0
+     ],
+     "lr_share_left": 0.6,
+     "pre_switch_max_count_diff_vs_start_row": 3.0,
+     "gpus": [
+      "GTX 1080 Ti",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB"
+     ],
+     "f_probe_last": 0.4723365659666503
+    }
+   },
+   "hi2lo": {
+    "2": {
+     "f": 0.5028571428571429,
+     "f_fieller95": [
+      0.43208037405791183,
+      0.5851561416648694
+     ],
+     "lr_share_left": 0.96,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB"
+     ],
+     "f_probe_last": 0.8354845461522363
+    },
+    "5": {
+     "f": 0.2571428571428571,
+     "f_fieller95": [
+      0.20836182182188873,
+      0.311815941899988
+     ],
+     "lr_share_left": 0.9,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "RTX 2080 Ti",
+      "RTX 2080 Ti",
+      "RTX 2080 Ti",
+      "GTX 1080 Ti",
+      "GTX 1080 Ti"
+     ],
+     "f_probe_last": 0.687783436824112
+    },
+    "10": {
+     "f": 0.05714285714285714,
+     "f_fieller95": [
+      0.051646234046434564,
+      0.06394882455842694
+     ],
+     "lr_share_left": 0.8,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "GTX 1080 Ti",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB"
+     ],
+     "f_probe_last": 0.5514546849926742
+    },
+    "20": {
+     "f": 0.0057142857142857195,
+     "f_fieller95": [
+      -0.010188124607373897,
+      0.02174763046786006
+     ],
+     "lr_share_left": 0.6,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB"
+     ],
+     "f_probe_last": 0.5918509732784483
+    }
+   },
+   "gpus_constant_rows": {
+    "T_lo": [
+     "GTX 1080 Ti",
+     "GTX 1080 Ti",
+     "GTX 1080 Ti",
+     "GTX 1080 Ti",
+     "GTX 1080 Ti"
+    ],
+    "T_hi": [
+     "GTX 1080 Ti",
+     "GTX 1080 Ti",
+     "GTX 1080 Ti",
+     "GTX 1080 Ti",
+     "GTX 1080 Ti"
+    ]
+   }
+  },
+  "P": {
+   "lr_share_left": {
+    "2": 0.9880307692307692,
+    "5": 0.9250769230769231,
+    "10": 0.7340814050866308,
+    "20": 0.37304503559937263
+   },
+   "count_max_epoch50": 127.0,
+   "lo2hi": {
+    "2": {
+     "f": 0.9904076738609111,
+     "f_fieller95": [
+      0.9322990149129108,
+      1.0497464534931946
+     ],
+     "lr_share_left": 0.9880307692307692,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "GTX 1080 Ti",
+      "GTX 1080 Ti"
+     ],
+     "f_probe_last": 0.9678958785249462
+    },
+    "5": {
+     "f": 0.9448441247002397,
+     "f_fieller95": [
+      0.9054663132887947,
+      0.9853954652874899
+     ],
+     "lr_share_left": 0.9250769230769231,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB"
+     ],
+     "f_probe_last": 0.8208242950108475
+    },
+    "10": {
+     "f": 0.8489208633093525,
+     "f_fieller95": [
+      0.7904025368562941,
+      0.9084935789203678
+     ],
+     "lr_share_left": 0.7340814050866308,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "A100-SXM4-80GB",
+      "A100-SXM4-80GB",
+      "A100-SXM4-80GB",
+      "A100-SXM4-80GB",
+      "A100-SXM4-80GB"
+     ],
+     "f_probe_last": 0.835140997830804
+    },
+    "20": {
+     "f": 0.4532374100719424,
+     "f_fieller95": [
+      0.35442317929672446,
+      0.5526145774314932
+     ],
+     "lr_share_left": 0.37304503559937263,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB"
+     ],
+     "f_probe_last": 0.30238611713666064
+    }
+   },
+   "hi2lo": {
+    "2": {
+     "f": 0.9904076738609111,
+     "f_fieller95": [
+      0.9709825659783211,
+      1.0098208677417162
+     ],
+     "lr_share_left": 0.9880307692307692,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "A100-SXM4-80GB",
+      "A100-SXM4-80GB",
+      "A100-SXM4-80GB",
+      "A100-SXM4-80GB",
+      "A100-SXM4-80GB"
+     ],
+     "f_probe_last": 0.9214750542299335
+    },
+    "5": {
+     "f": 0.8321342925659473,
+     "f_fieller95": [
+      0.7215037341422224,
+      0.9425563559584376
+     ],
+     "lr_share_left": 0.9250769230769231,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "GTX 1080 Ti",
+      "GTX 1080 Ti",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB",
+      "P100-PCIE-16GB"
+     ],
+     "f_probe_last": 0.9444685466377415
+    },
+    "10": {
+     "f": 0.2613908872901679,
+     "f_fieller95": [
+      0.16694479264608764,
+      0.3549196037968166
+     ],
+     "lr_share_left": 0.7340814050866308,
+     "pre_switch_max_count_diff_vs_start_row": 0.0,
+     "gpus": [
+      "RTX 2080 Ti",
+      "RTX 2080 Ti",
+      "RTX 2080 Ti",
+      "A100-SXM4-80GB",
+      "A100-SXM4-80GB"
+     ],
+     "f_probe_last": 0.45162689804772094
+    },
+    "20": {
+     "f": 0.07194244604316546,
+     "f_fieller95": [
+      0.030005426570610942,
+      0.11272678584303814
+     ],
+     "lr_share_left": 0.37304503559937263,
+     "pre_switch_max_count_diff_vs_start_row": 1.0,
+     "gpus": [
+      "GTX 1080 Ti",
+      "GTX 1080 Ti",
+      "GTX 1080 Ti",
+      "GTX 1080 Ti",
+      "GTX 1080 Ti"
+     ],
+     "f_probe_last": 0.11409978308025995
+    }
+   },
+   "gpus_constant_rows": {
+    "P_lo": [
+     "GTX 1080 Ti",
+     "GTX 1080 Ti",
+     "GTX 1080 Ti",
+     "GTX 1080 Ti",
+     "GTX 1080 Ti"
+    ],
+    "P_hi": [
+     "GTX 1080 Ti",
+     "GTX 1080 Ti",
+     "GTX 1080 Ti",
+     "GTX 1080 Ti",
+     "GTX 1080 Ti"
+    ]
+   }
+  }
+ },
+ "gpu_per_row": {
+  "PR_c04": [
+   "V100-SXM2-32GB",
+   "V100-SXM2-32GB",
+   "V100-SXM2-32GB",
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB"
+  ],
+  "PR_ramp": [
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB",
+   "V100-SXM2-32GB"
+  ],
+  "P_hi": [
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti"
+  ],
+  "P_hi2lo_e10": [
+   "RTX 2080 Ti",
+   "RTX 2080 Ti",
+   "RTX 2080 Ti",
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB"
+  ],
+  "P_hi2lo_e2": [
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB"
+  ],
+  "P_hi2lo_e20": [
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti"
+  ],
+  "P_hi2lo_e5": [
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB"
+  ],
+  "P_lo": [
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti"
+  ],
+  "P_lo2hi_e10": [
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB",
+   "A100-SXM4-80GB"
+  ],
+  "P_lo2hi_e2": [
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti"
+  ],
+  "P_lo2hi_e20": [
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB"
+  ],
+  "P_lo2hi_e5": [
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB"
+  ],
+  "T_hi": [
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti"
+  ],
+  "T_hi2lo_e10": [
+   "GTX 1080 Ti",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB"
+  ],
+  "T_hi2lo_e2": [
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB"
+  ],
+  "T_hi2lo_e20": [
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB"
+  ],
+  "T_hi2lo_e5": [
+   "RTX 2080 Ti",
+   "RTX 2080 Ti",
+   "RTX 2080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti"
+  ],
+  "T_lo": [
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti"
+  ],
+  "T_lo2hi_e10": [
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB"
+  ],
+  "T_lo2hi_e2": [
+   "P100-PCIE-16GB",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti",
+   "GTX 1080 Ti"
+  ],
+  "T_lo2hi_e20": [
+   "GTX 1080 Ti",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB"
+  ],
+  "T_lo2hi_e5": [
+   "P100-PCIE-16GB",
+   "P100-PCIE-16GB",
+   "V100-SXM2-32GB",
+   "V100-SXM2-32GB",
+   "V100-SXM2-32GB"
+  ]
+ },
+ "gpu_grid_total": {
+  "GTX 1080 Ti": 37,
+  "RTX 2080 Ti": 6,
+  "A100-SXM4-80GB": 12,
+  "P100-PCIE-16GB": 42,
+  "V100-SXM2-32GB": 3
+ },
+ "probe_last_row_means_P": {
+  "P_hi": 0.47742000000000007,
+  "P_hi2lo_e10": 0.49824,
+  "P_hi2lo_e2": 0.5199,
+  "P_hi2lo_e20": 0.48268000000000005,
+  "P_hi2lo_e5": 0.52096,
+  "P_lo": 0.5235200000000001,
+  "P_lo2hi_e10": 0.48502,
+  "P_lo2hi_e2": 0.47890000000000005,
+  "P_lo2hi_e20": 0.50958,
+  "P_lo2hi_e5": 0.48568
+ }
+}

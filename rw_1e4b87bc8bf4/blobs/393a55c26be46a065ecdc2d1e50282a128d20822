@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Multinomial logistic regression vs k-nearest neighbours on Iris (OpenML 61).
+
+Outer protocol: 10 repetitions x stratified 5-fold CV (RepeatedStratifiedKFold,
+fixed seed); both methods see exactly the same outer folds.
+kNN: k chosen on each outer training set by inner stratified 5-fold CV
+(grid k = 1..30, accuracy, ties -> smallest k).
+LR: multinomial (softmax) logistic regression, lbfgs, L2 with C = 1.
+Both pipelines standardise features with statistics of the training part only.
+
+Writes, into --out:
+  folds.csv        one row per (repetition, fold): accuracies, chosen k, sizes
+  inner_scores.csv inner-CV mean accuracy for every k on every outer fold
+  run_info.json    host, SLURM ids, versions, data checksum, timing
+Run `summarize.py` on the folds.csv to obtain intervals.
+"""
+import argparse
+import hashlib
+import json
+import os
+import platform
+import socket
+import sys
+import time
+
+import numpy as np
+import pandas as pd
+import scipy
+import sklearn
+from scipy.io import arff
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+SEED = 20261017
+N_SPLITS, N_REPEATS = 5, 10
+K_GRID = list(range(1, 31))
+EXPECTED_MD5 = "ad484452702105cbf3d30f8deaba39a9"  # md5_checksum in OpenML metadata of dataset 61
+
+
+def load_iris_arff(path):
+    raw = open(path, "rb").read()
+    md5 = hashlib.md5(raw).hexdigest()
+    if md5 != EXPECTED_MD5:
+        sys.exit(f"checksum mismatch: {md5} != {EXPECTED_MD5}")
+    data, meta = arff.loadarff(path)
+    df = pd.DataFrame(data)
+    target = "class"
+    y_raw = df[target].map(lambda v: v.decode() if isinstance(v, bytes) else v)
+    X = df.drop(columns=[target]).to_numpy(dtype=np.float64)
+    classes = sorted(y_raw.unique())
+    y = y_raw.map({c: i for i, c in enumerate(classes)}).to_numpy()
+    assert X.shape == (150, 4) and len(classes) == 3, (X.shape, classes)
+    return X, y, classes, md5, hashlib.sha256(raw).hexdigest()
+
+
+def make_lr():
+    return make_pipeline(StandardScaler(),
+                         LogisticRegression(C=1.0, solver="lbfgs", max_iter=10000))
+
+
+def make_knn(inner_seed):
+    inner = StratifiedKFold(n_splits=5, shuffle=True, random_state=inner_seed)
+    pipe = make_pipeline(StandardScaler(), KNeighborsClassifier())
+    return GridSearchCV(pipe, {"kneighborsclassifier__n_neighbors": K_GRID},
+                        cv=inner, scoring="accuracy", n_jobs=1, refit=True)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data", default=os.path.join(os.path.dirname(__file__), "..", "data", "iris.arff"))
+    ap.add_argument("--out", required=True)
+    args = ap.parse_args()
+    os.makedirs(args.out, exist_ok=True)
+    t0 = time.time()
+    X, y, classes, md5, sha256 = load_iris_arff(args.data)
+
+    outer = RepeatedStratifiedKFold(n_splits=N_SPLITS, n_repeats=N_REPEATS, random_state=SEED)
+    rows, inner_rows = [], []
+    for i, (tr, te) in enumerate(outer.split(X, y)):
+        rep, fold = divmod(i, N_SPLITS)
+        lr = make_lr().fit(X[tr], y[tr])
+        acc_lr = float(np.mean(lr.predict(X[te]) == y[te]))
+        knn = make_knn(inner_seed=SEED + 1 + i).fit(X[tr], y[tr])
+        acc_knn = float(np.mean(knn.predict(X[te]) == y[te]))
+        k = int(knn.best_params_["kneighborsclassifier__n_neighbors"])
+        rows.append(dict(repetition=rep, fold=fold, n_train=len(tr), n_test=len(te),
+                         acc_lr=acc_lr, acc_knn=acc_knn, diff_lr_minus_knn=acc_lr - acc_knn,
+                         k_chosen=k, n_correct_lr=int(round(acc_lr * len(te))),
+                         n_correct_knn=int(round(acc_knn * len(te))),
+                         test_idx_sha1=hashlib.sha1(np.sort(te).tobytes()).hexdigest()[:12]))
+        for kk, s in zip(K_GRID, knn.cv_results_["mean_test_score"]):
+            inner_rows.append(dict(repetition=rep, fold=fold, k=kk, inner_mean_acc=float(s)))
+        print(f"rep {rep} fold {fold}: LR {acc_lr:.4f} kNN {acc_knn:.4f} (k={k})", flush=True)
+
+    pd.DataFrame(rows).to_csv(os.path.join(args.out, "folds.csv"), index=False, float_format="%.17g")
+    pd.DataFrame(inner_rows).to_csv(os.path.join(args.out, "inner_scores.csv"), index=False,
+                                    float_format="%.17g")
+    info = dict(
+        hostname=socket.gethostname(),
+        slurm_job_id=os.environ.get("SLURM_JOB_ID"),
+        slurmd_nodename=os.environ.get("SLURMD_NODENAME"),
+        slurm_job_nodelist=os.environ.get("SLURM_JOB_NODELIST"),
+        cpu=platform.processor() or platform.machine(),
+        python=sys.version.split()[0], numpy=np.__version__, scipy=scipy.__version__,
+        sklearn=sklearn.__version__, pandas=pd.__version__, platform=platform.platform(),
+        data_md5=md5, data_sha256=sha256, classes=classes, seed=SEED,
+        n_splits=N_SPLITS, n_repeats=N_REPEATS, k_grid=[K_GRID[0], K_GRID[-1]],
+        wall_seconds=round(time.time() - t0, 2),
+        started_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)),
+    )
+    with open(os.path.join(args.out, "run_info.json"), "w") as f:
+        json.dump(info, f, indent=1)
+    print(json.dumps(info), flush=True)
+
+
+if __name__ == "__main__":
+    main()

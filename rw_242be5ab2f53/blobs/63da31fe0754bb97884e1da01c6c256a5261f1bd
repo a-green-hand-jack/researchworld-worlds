@@ -1,0 +1,51 @@
+<img src="cover.png" alt="decorative cover" width="100%">
+
+*Cover: decorative, carries no data. Generated with the world's image-generation resource (gpt-image-2) and cropped to a 6.5:1 banner by figtab-repo (`presentation/`).*
+
+# Convergence orders of composite trapezoid, Simpson and Gauss–Legendre quadrature
+
+**Question.** How fast do three quadrature rules converge, and does the observed order match theory (2, 4, 8)?
+
+## Method
+
+We integrate exp(x), 1/(1+25x²) and √x on [0, 1] (exact values e−1, atan(5)/5, 2/3, in double precision) with the composite trapezoid rule, the composite Simpson rule (one 3-point Simpson application per panel) and composite 4-node Gauss–Legendre (`numpy.polynomial.legendre.leggauss(4)` on each panel), for n = 2^k panels, k = 1…12, and record the absolute error (`results/errors.csv`). For each function and rule we fit log(error) against log(n) by ordinary least squares over the points with error > 10·ε (ε = 2.22·10⁻¹⁶, i.e. error > 2.2·10⁻¹⁵); the order is minus the slope, with a 95 % t‑interval (df = m − 2, m = points used). With fewer than 3 points no interval exists. All numbers come from experiment-repo `results/orders.csv`, `results/fits.json` and `results/README.md` (commit 9a9b92a22be3; code `code/quad.py`).
+
+## Fitted orders
+
+| Function | Rule (theory 2 / 4 / 8) | Order | 95% interval | Points (k) |
+|---|---|---:|---|---|
+| exp(x) | Trap. | 1.9997 | [1.9994, 2.0000] | 12 (1-12) |
+| exp(x) | Simp. | 3.9969 | [3.9941, 3.9997] | 9 (1-9) |
+| exp(x) | GL4 | 7.9961 | n/a (2 points) | 2 (1-2) |
+| 1/(1+25x²) | Trap. | 2.2890 | [2.0244, 2.5536] | 12 (1-12) |
+| 1/(1+25x²) | Simp. | 5.3906 | [4.5721, 6.2090] | 9 (1-9) |
+| 1/(1+25x²) | GL4 | 8.7629 | [2.9281, 14.5977] | 4 (1-4) |
+| √x | Trap. | 1.4833 | [1.4772, 1.4894] | 12 (1-12) |
+| √x | Simp. | 1.5000 | [1.4999, 1.5000] | 12 (1-12) |
+| √x | GL4 | 1.5000 | [1.5000, 1.5000] | 12 (1-12) |
+
+*Orders are minus the fitted log–log slopes, using errors > 10ε (ε = 2⁻⁵²). Intervals are nominal OLS 95% t-intervals; they describe fit residuals, not stochastic integration uncertainty. Two points cannot provide an interval. Bounds are rounded to four decimals; equal displayed endpoints do not imply zero uncertainty. The rational-function fits mix convergence regimes, so their intervals are descriptive rather than reliable precision statements.*
+
+<table><tr>
+<td><img src="figures/exp.png" width="100%"></td>
+<td><img src="figures/rational.png" width="100%"></td>
+<td><img src="figures/sqrt.png" width="100%"></td>
+</tr></table>
+
+*Figures (left to right: exp(x), 1/(1+25x²), √x): absolute error against panel count n = 2^k, k = 1…12, for trapezoid, Simpson and GL4. Lines connect samples and are not fitted curves. Gray dotted segments are labelled reference slopes (n⁻², n⁻⁴, n⁻⁸; n⁻¹·⁵ for √x) with arbitrary vertical normalization, not fits. Filled markers enter the fit; open markers are positive errors excluded by the 10ε cutoff (dashed line, 2.2·10⁻¹⁵). Computed zero errors cannot be drawn on the log axis and are omitted (exp: Simpson n = 2048, 4096; GL4 n = 8, 16, 32, 256, 2048, 4096; 1/(1+25x²): Simpson n = 4096; GL4 n = 32, 64). The √x panel uses a narrower vertical range; all its errors exceed the cutoff. Made by figtab-repo from `results/errors.csv`.*
+
+## Where and why the order departs from theory
+
+**exp(x) (smooth).** The trapezoid and Simpson fits match 2 and 4; the Simpson interval ends at 3.9997 because its last fitted points (k = 8–9) sit near the rounding floor (local order 3.97). Gauss–Legendre reaches rounding error after k = 2, leaving two points above 10·ε. Its "7.996" is therefore a two-point slope with no uncertainty estimate: it is consistent with 8 but is a weak check, not a confirmation with an interval.
+
+**1/(1+25x²) (poles at ±i/5).** The fitted orders exceed theory (2.29, 5.39, 8.76) and the intervals are wide. The reason is a pre-asymptotic regime: while the panel width h = 1/n is not small compared with the distance 1/5 to the poles, the error does not follow C·hᵖ. Local orders log₂(e_k/e_{k+1}) show this (`fits.json`): trapezoid 3.8, 5.8, 1.5, then exactly 2.0 from k = 4; Simpson 3.3, 7.2, 11.0, 4.1, then 4.0 from k = 5; Gauss–Legendre 7.7, 5.3, 14.5, then the rounding floor. The global fit mixes pre-asymptotic and asymptotic points, so its slope is not an asymptotic order. Because the log–log relation is not linear over the fitted range (structured residuals), these intervals are not valid precision statements; the asymptotic orders are the theoretical 2 and 4, and for Gauss–Legendre only 4 points exist, too few to test 8.
+
+**Threshold sensitivity.** The choice of 10·ε matters where few points remain: Simpson on exp(x) gives 3.98 (10 points, threshold ε) or 3.999 (8 points, threshold 10⁻¹³); Simpson on 1/(1+25x²) gives 5.17 (ε) or 6.01 (7 points, 10⁻¹³); Gauss–Legendre on exp(x) has fewer than 2 points at 10⁻¹³. Only the 10·ε fits are tabulated.
+
+## Discussion: √x
+
+√x has an endpoint singularity: f′ is unbounded at x = 0 (f ~ x^{1/2}), so the smoothness assumed by the 2/4/8 error bounds fails. The error is dominated by the first panel and scales as h^{3/2} for every rule, so the order is 3/2 whatever the rule: Gauss–Legendre with 4 nodes gives 1.5000, not 8, and Simpson gives 1.5000, not 4. A higher‑order rule only lowers the constant, not the rate. Simpson and Gauss–Legendre show 1.5 from k = 1, where the singular part already dominates. The trapezoid fit (1.4833) approaches 1.5 from below, with local order 1.43 at k = 1, because its smooth O(h²) error term is still not negligible at coarse n, so its 12-point interval [1.4772, 1.4894] lies just below 1.5 and far from 2. Recovering the nominal orders would need a graded mesh or a change of variables (x = t²), which we did not test.
+
+## Conclusions and limits
+
+Observed orders match theory for smooth exp(x) (trapezoid, Simpson), are inflated by pre-asymptotic behaviour for 1/(1+25x²) but reach the theoretical local orders 2 and 4 from k = 4 (trapezoid) and k = 5 (Simpson), and collapse to 3/2 for all rules on √x. The Gauss–Legendre order 8 is not verified with an interval on any function (2 and 4 points above rounding error on the smooth ones). Results depend on the 10·ε cut-off for the sparse fits (see above).

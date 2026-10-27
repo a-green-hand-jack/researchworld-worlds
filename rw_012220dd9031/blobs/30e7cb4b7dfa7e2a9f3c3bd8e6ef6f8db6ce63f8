@@ -1,0 +1,108 @@
+# Brief: logistic regression vs. k-nearest neighbours on Iris
+
+Owner: `story-repo` (context, plan). Source: `story-repo`#1 "Research objective".
+The objective wins over this brief wherever they differ. The study plan that answers it is `plan.md`;
+who delivers what is `assignment.json` (`ht-role assignment`).
+
+## 1. The objective, quoted in full
+
+> Logistic regression against k-nearest neighbours on the Iris data: a small comparison written up as a short paper.
+>
+> Data. Use the Iris dataset from OpenML (dataset id 61), downloaded from OpenML itself.
+>
+> Study. Compare multinomial logistic regression with k-nearest neighbours (choose k by inner cross-validation) by 10 repetitions of stratified 5-fold cross-validation. Report each method's mean accuracy with a 95% interval and the paired difference with its 95% interval. Run the full cross-validation once as a CPU job on the Ibex cluster and once locally, and report the node name of the Ibex job and whether the two runs give identical numbers.
+>
+> Paper. `report/report.pdf`, at most two pages in the NeurIPS 2026 submission template, compiled from LaTeX, with one figure, one table and the code that produced every number. Deliver the LaTeX source and the code next to the PDF.
+
+## 2. Requirements, one per line (each must end with a position; see `assignment.json`)
+
+| id | requirement (objective wording) |
+|----|---------------------------------|
+| R1 | Data: Iris, OpenML dataset id 61, "downloaded from OpenML itself" (not sklearn's bundled copy, not UCI). |
+| R2 | Method A: multinomial logistic regression. |
+| R3 | Method B: k-nearest neighbours, "choose k by inner cross-validation" (nested CV: k chosen inside each outer training set only). |
+| R4 | Evaluation: "10 repetitions of stratified 5-fold cross-validation" (50 outer folds). |
+| R5 | "each method's mean accuracy with a 95% interval". |
+| R6 | "the paired difference with its 95% interval" (paired: both methods on the same outer splits). |
+| R7 | "Run the full cross-validation once as a CPU job on the Ibex cluster" (the full 10x5 nested CV, not a pilot). |
+| R8 | "and once locally" (the same full CV in the world's local compute). |
+| R9 | "report the node name of the Ibex job". |
+| R10 | "and whether the two runs give identical numbers". |
+| R11 | Paper at `report/report.pdf`. |
+| R12 | "at most two pages" (the whole PDF; see section 5). |
+| R13 | "in the NeurIPS 2026 submission template", "compiled from LaTeX". |
+| R14 | "one figure" (exactly one). |
+| R15 | "one table" (exactly one). |
+| R16 | "the code that produced every number" (every number in the paper traceable to delivered code + its outputs). |
+| R17 | "Deliver the LaTeX source and the code next to the PDF" (under `report/`). |
+
+## 3. Supplied material and what it establishes
+
+**Iris, OpenML 61** (checked 2026-10-17 by `story-repo`):
+- Metadata: `https://www.openml.org/api/v1/json/data/61`; version 1, status active, licence "Public",
+  default target `class`, creator R.A. Fisher (1936), original source UCI.
+- ARFF: `https://www.openml.org/data/v1/download/61/iris.arff` (`https://openml.org/...` answers 301 to this URL;
+  follow redirects). Downloaded file MD5 `ad484452702105cbf3d30f8deaba39a9`, equal to the `md5_checksum` OpenML lists.
+  Parquet alternative: `https://data.openml.org/datasets/0000/0061/dataset_61.pq` (not checksummed by me).
+- Content (measured on that ARFF): 150 rows, 4 real features (`sepallength`, `sepalwidth`, `petallength`,
+  `petalwidth`, cm), target `class` with 3 classes x 50 rows (Iris-setosa, Iris-versicolor, Iris-virginica).
+- OpenML description: setosa is linearly separable from the other two; versicolor and virginica are not linearly
+  separable from each other; "an exceedingly simple domain".
+- Consequences for the study: with stratified 5-fold CV every test fold has 30 rows (10 per class), so every fold
+  accuracy is a multiple of 1/30; both methods are expected to be near the ceiling, so many paired fold differences
+  may be exactly 0 and the difference interval may well include 0. This is a property to report, not to avoid.
+  Iris contains duplicate feature rows, so kNN distance ties can occur (relevant to R10 reproducibility).
+
+**Template: NeurIPS 2026** (`https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip`,
+linked from `https://neurips.cc/Conferences/2026/CallForPapers`): contains `neurips_2026.sty` (dated 2026-01-29),
+`neurips_2026.tex`, `checklist.tex`. Loading `\usepackage{neurips_2026}` without options gives the anonymous
+submission mode (line numbers, anonymous author block); `final`/`preprint`/`nonanonymous` are camera-ready or
+preprint modes, not "submission". The template's own limit is nine content pages; the objective's two-page cap is stricter
+and governs.
+
+**Compute**: Ibex is a shared SLURM cluster (CPU and GPU nodes, jobs may queue); the world's instructions are to work
+under `/ibex/user/$USER/rw`, submit with `sbatch --job-name "$HT_RESOURCE_TAG-<what>"` and track the job id. Local
+compute is the world's `local-compute` container (8 CPUs, no network: fetch data before running).
+
+## 4. Related work and conventions the study should follow or compare against (all verified on Crossref)
+
+- Fisher (1936), "The use of multiple measurements in taxonomic problems", *Annals of Eugenics* 7:179-188,
+  doi:10.1111/j.1469-1809.1936.tb02137.x. The data source; cite it.
+- Vanschoren, van Rijn, Bischl, Torgo (2014), "OpenML: networked science in machine learning", *SIGKDD Explorations*
+  15:49-60, doi:10.1145/2641190.2641198. Data provenance.
+- Dietterich (1998), "Approximate statistical tests for comparing supervised classification learning algorithms",
+  *Neural Computation* 10:1895-1923, doi:10.1162/089976698300017197. Shows that naive t-tests over overlapping
+  resampled training sets are anti-conservative (too narrow intervals / inflated type I error).
+- Nadeau & Bengio (2003), "Inference for the generalization error", *Machine Learning* 52:239-281,
+  doi:10.1023/A:1024068626366. Corrected resampled t: variance factor (1/J + n_test/n_train).
+- Bouckaert & Frank (2004), "Evaluating the replicability of significance tests for comparing learning algorithms",
+  PAKDD, LNCS 3056:3-12, doi:10.1007/978-3-540-24775-3_3. The "corrected repeated k-fold CV" test: the
+  Nadeau-Bengio correction applied to r x k CV (here J = 50, n_test/n_train = 30/120), the field's usual convention
+  for exactly this 10x(stratified)5-fold design.
+- Varma & Simon (2006), "Bias in error estimation when using cross-validation for model selection",
+  *BMC Bioinformatics* 7:91, doi:10.1186/1471-2105-7-91. Hyperparameters (here k) must be chosen inside each
+  outer training fold (nested CV), otherwise the estimate is optimistically biased.
+- Bates, Hastie & Tibshirani (2024), "Cross-validation: what does it estimate and how well does it do it?",
+  *JASA* 119:1434-1445, doi:10.1080/01621459.2023.2197686. Naive CV intervals undercover; useful for discussing
+  what the intervals mean.
+- scikit-learn (Pedregosa et al. 2011, *JMLR* 12:2825-2830) is the conventional implementation if Python is used
+  (citation not Crossref-indexed; JMLR has no DOI).
+
+Conventions for reporting such a comparison: same outer splits for both methods (paired design); fixed and reported
+seeds; hyperparameter grid and selection rule stated; preprocessing fitted on training folds only; accuracy reported
+with the interval method named; software versions reported; figure shows per-fold values, not only means.
+
+## 5. What I could not establish (open questions and how the plan resolves them)
+
+- **"95% interval" method** is not specified. Plan: corrected repeated k-fold CV t-interval (Nadeau-Bengio /
+  Bouckaert-Frank) as the primary interval, naive t over the 50 folds reported alongside for comparison; the paper
+  names the method. Owner of the final choice: `experiment-repo` (analysis).
+- **Two-page limit scope**: the objective caps `report/report.pdf` at two pages; the template would allow references
+  and the checklist outside the content limit. Conservative reading adopted: the whole PDF has at most two pages
+  (references included). The NeurIPS checklist does not fit and is not part of the objective; `paper-repo` (venue)
+  decides and states its reading.
+- **Preprocessing, LR regularisation, k grid, inner-CV scheme** are not specified; the plan sets defaults that the
+  analysis owner may change with a stated reason.
+- **"identical numbers"**: the objective does not define identity. Plan: exact equality of every per-fold count of
+  correct predictions and chosen k, and of the printed summary numbers; if anything differs, report where and by how much.
+- **Authorship / anonymity**: the submission template is anonymous by default; no author names are supplied.

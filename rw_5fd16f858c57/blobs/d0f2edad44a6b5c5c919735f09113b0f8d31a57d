@@ -1,0 +1,104 @@
+# Independent review — revision requested
+
+Objective re-read from internal-review-repo issue #1; brief and assignment read at experiment-repo b299c521b5fbdf4b0776db49af75e182303a0819. Split accepted: numerical analysis belongs to experiment-repo, figures to figtab-repo, report to paper-repo, independent review here.
+
+Inspected analysis at b299c521b5fbdf4b0776db49af75e182303a0819: sweep.py, assignment.json, brief.md, results/errors.csv, results/reference.csv, results/fits.csv, results/PROVENANCE.md. Inspected report/report.md at paper-repo 4f014847d22e6e3c09f4857e8e7b3e6ea87f019a. Figures were not yet supplied; no visual approval given.
+
+Verified correct composite formulas including n Simpson panels / 2n subintervals, four-node Gauss mapping and weights, and mpmath.quad source at 40 dps. Provenance records mpmath 1.4.1 installed with pip and local-compute job job-b28af73dd4. Reference numbers have not yet been independently recomputed. Checked all 60 distinct function/rule/n cases; decimal subtraction of exact float64 values from references agrees with stored errors within 3.88e-7 relative rounding. All threshold classifications agree. Independently recomputed least-squares slopes from the CSV: 2.0007952766, 3.9969651687, 8.2358408175 (smooth); 1.3245765885, 1.3333018544, 1.3333333487 (singular), in trapezoid/Simpson/Gauss order.
+
+Findings sent as revise decisions:
+
+1. experiment-repo #2: fit the two eligible smooth Gauss4 points as the objective requires; explicitly qualify the resulting order as a two-point estimate without residual degrees of freedom. The added three-point restriction is not in the objective.
+2. experiment-repo #2: include results/ and sweep.py in the assembled delivery assignment, so the error CSV and numerical support cited by the report are delivered.
+3. paper-repo #2: replace the claim that Simpson and Gauss gain nothing for the singular function. Their empirical rates are similar but absolute errors are smaller; comparisons at equal panel counts do not establish equal evaluation cost.
+4. paper-repo #2: define Simpson panels and demonstrate a compact one-page layout with both readable figures. The current unrestricted stacked-image Markdown has no verified page layout.
+
+Pending: revised numerical/report artifacts; visual inspection and CSV agreement of all delivered figures; assembled path/link checks; final objective and commitment comparison at exact revisions. This record is not approval.
+
+## Follow-up inspection
+
+Assembled delivery inspected at paper-repo dae2f2308801325207b26947d2ec8b3f07092bcb and experiment-repo b6002933508f5b3f26b4a2a2973bd0a3dcdc7f31. Numerical artifacts are now assigned and present, resolving finding 2. Report states the Simpson convention and accurately distinguishes equal-panel accuracy from cost, resolving finding 3 and the convention part of finding 4. Figures remain absent at this assembly and their owner is still working; layout inspection remains pending.
+
+The revised report still incorrectly calls the two-point slope “not fittable” and says the prescribed fit requires more points. A further revise decision in paper-repo #2 asks that this be described as a valid two-point fit with limited inferential support. Meanwhile experiment-repo origin/main was fetched and its revised code inspected: it now permits two points, records n values and suppresses a misleading two-point fit-quality statistic. The next completed delivery must be checked for consistency across numerical output, report and figures.
+
+## Final numerical package check
+
+Inspected assembled numerical package at experiment-repo a56ccf8919b86dee2bf361d25cef6215d7033384 and report at paper-repo 05e05b8e9962eaba92380d46a8fd00c08d3ec18f. All six fitted orders and their explicit retained n lists independently verified from the CSV, including smooth Gauss4 order 8.2358. Installed mpmath 1.4.1 via pip in the reviewer environment and independently evaluated both integrals with quad at 40 dps; both reference strings match exactly. Findings 1 and 2 are resolved. The report now describes the two-point fit accurately with the requested caveat, resolving the follow-up wording finding. Numerical methods and claims meet the objective at these revisions.
+
+Approval still awaits the two figures and completed one-page layout. No new revision request is needed for these already open, in-progress requirements.
+
+## Figure inspection and remaining layout finding
+
+Objective re-read before this judgment. Assembled paper c2290abf59fe2d4749475bad70ff52b5af6b4f6e, figures a823597068aa3482a97032b3e1aa45c8a23c97de, analysis a56ccf8919b86dee2bf361d25cef6215d7033384 inspected. Both PNGs opened at full resolution and reduced to the report's 340px width. Full-resolution figures are nonempty, correctly labeled log-log plots with all six correct orders and proper included/excluded-point encoding. Data snapshots are byte-identical to the delivered numerical outputs. Inspected generator confirms direct CSV plotting and threshold-based fit selection; visible series agree with the numerical behavior. Both figure paths resolve.
+
+Remaining actionable finding sent to paper-repo #2: report-scale figure text is too small (roughly 4pt tick/legend text and 3pt provenance at print scale); the smooth legend also covers high-n trapezoid points. Request compact figure variants coordinated with their owner and an actually checked one-page rendering/layout. The scientific content is supported. No approval yet.
+
+A diagnostic Markdown-to-PDF attempt with Markdown 3.11.1 and WeasyPrint 70.0 failed on absent libpangoft2, so this review makes no measured page-count assertion. The diagnostic script and resized views live in notes/, outside delivery, and are not a substitute report.
+
+## Current-delivery verdict
+
+Re-read the objective and brief and inspected assembled paper-repo 038e1d95707a37ddb8cb7b609c9f6686d4b007ab. Analysis remains a56ccf8919b86dee2bf361d25cef6215d7033384 and figures remain a823597068aa3482a97032b3e1aa45c8a23c97de (same inspected image bytes). The revised 3x2 table preserves every correct order/count and saves space. It does not change figure scale or establish the one-page layout. Verdict: revise, sent to paper-repo #2 for the still-actionable report-layout requirement, with a system-library-free rendering route suggested. Numerical approval remains supported; release approval remains withheld until the page and figure readability requirement is met.
+
+## Page-check reproduction: clipping defect
+
+Inspected paper-repo 98b0fb66e264b51c7c1421a87dc95a543fd74bd6, with unchanged analysis and figure revisions. Reproduced its notes/render_check.py using xhtml2pdf 0.2.26, Markdown 3.11.1, pypdf 6.21.1; changed only the hard-coded image root to the assembled report directory and the PDF output location. The output has one page and two image objects, but opening the page rendered with PyMuPDF 1.28.2 reveals that adjacent img tags remain inline, so the second plot extends past the page's right edge and is severely clipped. The page-count-only check therefore does not demonstrate a complete one-page report. Sent a revise decision to paper-repo #2 asking for block-separated images, a fresh rendered/page-bounds check, and an inspectable rendering. Reviewer evidence is retained outside delivery in notes/pass8.pdf and notes/pass8-page1.png. Numerical results remain supported; approval withheld for this concrete layout defect.
+
+## Delivered PDF inspection
+
+Opened and rasterized the actual report/report.pdf at paper-repo 02142af13338cbd608ccf5cf2a9e393b15eb410f, not the previous revision. It has one A4 page, both full images within the page bounds, and all report text; clipping and the absence of a checked rendering are resolved. Image bounds are x=42.52..301.27 pt (258.75pt wide), y=324.58..482.71 and 492.16..650.28. The final tick/legend text is still approximately 4.2pt, since the render script's 0.75 multiplier is applied before the renderer's own CSS-pixel conversion. Requested the remaining compact/readable-figure correction through paper-repo, and correction of a new methods typo: “Simpson: midpoint rule per panel” must say endpoints and midpoint, since the midpoint rule is a different rule. All six numbers, reference values, caveat and interpretation remain correct. Current verdict: revise for these two remaining findings.
+
+## Methods correction verified; compact figures in progress
+
+Inspected paper-repo c91304a27e1f1ce801f8e7c93e3124f0bd2b2944, including the delivered PDF opened as a page image. The Simpson definition is correct again, resolving that finding. The PDF still has one complete page and both figures inside its bounds; image width is 255pt, so the outstanding figure-readability finding remains. The report owner explicitly confirms that readability awaits compact variants in its open figtab-repo #4 request, and the figure owner is actively working on that supply. No duplicate revision decision is sent for a dependency already being revised. Approval remains pending that supply and its final report rendering.
+
+## Quiet-world verdict on unchanged figure supply
+
+Live revisions remain paper c91304a27e1f1ce801f8e7c93e3124f0bd2b2944, figures a823597068aa3482a97032b3e1aa45c8a23c97de, analysis a56ccf8919b86dee2bf361d25cef6215d7033384. No changed artifact supersedes the visual inspection above. The figure owner has ended its turn without a new push. Verdict sent to paper-repo #2: finish the compact-figure supply through an actionable decision/request or agreed ownership transfer, then regenerate the PDF. Only final-scale figure readability remains; all numerical, methods, reference, completeness and page-clipping findings are resolved. Approval withheld pending that correction.
+
+## Verdict on disclosure revision
+
+Inspected paper c69e0aff7d0877a61d56cb9adbce0e1cee122b2e report.md and delivered report.pdf, opening the rasterized sole page. Its new disclosure points to full-resolution figures, but image rectangles remain 255pt wide, and the original tiny page-scale labels are unchanged. Figure and analysis revisions remain a823597068aa3482a97032b3e1aa45c8a23c97de and a56ccf8919b86dee2bf361d25cef6215d7033384. Disclosure does not complete the pending readability correction. Sent revise to paper-repo #2; all other requirements are satisfied, and approval awaits compact figures in the actual one-page report. No unsupported release approval is given.
+
+## Continuation objective #4: Romberg extension
+
+Re-read new objective internal-review-repo #4 and inherited brief/assignment at experiment-repo a56ccf8919b86dee2bf361d25cef6215d7033384. The objective extends, rather than replaces, the study with Romberg through 1025 points, using the same references and a resource job. Updated recorded review commitment accordingly. Numerical handoff requested in experiment-repo #5; updated report and presentation handoff requested in paper-repo #2. No Romberg results exist in this inspected baseline; no approval is given for the new objective.
+
+Checked the previously unanswered handoff at paper-repo 99e3a710d41134ed6ea0acdc4734b30430c2c469 using the assembled delivery. Opened both report/compact PNGs, inspected make_compact.py, and rasterized/opened report/report.pdf. The PDF has one complete A4 page, with image rectangles x=42.52..342.52 pt and y=324.58..478.47 / 487.92..641.80 pt. Both plots and external legends are visible, data are unobscured, and compact lettering materially improves the previous approximately 4pt labels. The old unchanged-art finding no longer describes this revision. Final page-scale readability will be checked again after the fourth series and table column are added. Archived baseline inspection image is notes/romberg-baseline.png (not a delivered report artifact).
+
+The new handoff must document the Romberg sample count, quadrature/extrapolation implementation, resource-job provenance, all 20 new rows and fit-support selection. Its order is an empirical regression across increasing Romberg levels, not automatically a fixed asymptotic order. Both final plots must include all four methods, and obsolete three-method presentation snapshots must be reconciled. Other owners are actively preparing these supplies; this is a review plan and baseline check, not a revision verdict on work not yet delivered.
+
+## Romberg numerical handoff verified
+
+Re-read objective #4 and checked the updated brief at experiment-repo 108a49046f192f4a2af69a0932fd18e7e5e3fff8 (numerical code/output first delivered at 19ef54b077c76b5f3cc2a1a71ad9ade800d2ef1f). Inspected sweep.py, results/errors.csv, reference.csv, fits.csv and PROVENANCE.md. scipy.integrate.romb receives n+1 uniformly spaced samples and dx=1/n for all ten dyadic grids through 1025 points. Live resource status confirms job-75f8449da6 succeeded, exit 0, with the sweep completion output. The reference CSV is byte-identical to the previously independently verified 40-digit mpmath references; all 60 original numerical rows are unchanged.
+
+Independent standard-library reviewer implementation builds a dyadic trapezoid hierarchy and Richardson tableau, without calling SciPy or the delivered sweep. All 20 Romberg values agree within 2.220446049250313e-16 absolute difference. Decimal recomputation of absolute errors from all 80 stored float values and references agrees with the CSV's seven-significant-digit precision (maximum relative rounding difference 3.961e-7). Checked all 80 unique cases, threshold masks, retained n lists, counts, and all eight least-squares slopes and nondegenerate R-squared statistics. Diagnostic code and output: notes/check_romberg.py and notes/romberg-check.json, outside the delivered review path.
+
+Romberg fits independently recovered: smooth order 7.6760084531, five eligible grids n=2,4,8,16,32, R-squared 0.9797279003; singular order 1.3465172812, ten eligible grids, R-squared 0.9998633264. This supports the stated empirical slopes and endpoint-singularity interpretation, with the required caveat that Romberg depth increases across grids and the smooth fit is not a fixed-order asymptotic estimate. No numerical revision is requested. Final approval awaits inspection of the updated four-method figures and one-page report at their delivered revisions.
+
+## Romberg report handoff: page-scale revision required
+
+Objective #4 and updated brief/assignment re-read. Inspected assembled paper-repo 3cbe0ed5c014b2f8bd777c4136c1a7c1ba6bcd3e, analysis/assignment 1fb81b78818e0bc40fd2626020908e0bd71b3110 and unchanged figure package a823597068aa3482a97032b3e1aa45c8a23c97de. Opened both newly delivered report/compact PNGs and the rasterized delivered report/report.pdf; read report.md and the compact generator. Both compact data CSVs are byte-identical to the verified current results. Four methods, all eight annotated orders, cutoff, retained/excluded markers and numerical comparisons agree with the CSV. The report describes Romberg samples and increasing tableau depth, and qualifies its empirical slope. No numerical correction is requested.
+
+The PDF is one complete A4 page, but the Markdown reduced image width from 400 to 280 CSS px. Actual image bounds are x=42.52..252.52 pt (210pt wide), y=365.08..472.80 and 482.25..589.97 pt. The compact raster width including its external legend is 1429px at 300dpi: nominal 6.5pt legend text therefore becomes approximately 3.98pt in the PDF, and 7.5pt tick labels become approximately 4.59pt. Visual inspection confirms this regression from the prior larger compact display. The large unused region right of the narrow plots shows that a page-layout redesign, not numerical work, is needed. Requested readable final-scale figures (roughly 7–8pt labels) while preserving one page, by tightening repeated prose and table spacing and/or redesigning the compact art for its actual allotted width. A disclosure does not resolve the defect.
+
+The assigned report/figures/ package still contains the original three-rule figures/snapshots. Their original bytes were visually inspected in the earlier review; they do not yet satisfy the new four-rule assignment. Paper has already requested figtab-repo #6 to reconcile that supply, which is still in progress; this remains pending rather than a repeated revision decision to the report owner for another owner's ongoing work. Current verdict to paper: revise the final-scale readability; final approval withheld.
+
+## Revised Romberg page: readability resolved
+
+Re-read objective #4 and current brief. Inspected paper-repo 67a1186109124db041dbecc65590038b63bc7a15 in the assembled delivery with analysis 1fb81b78818e0bc40fd2626020908e0bd71b3110. Opened both revised compact PNGs and the delivered PDF rasterized at 1.5x. The PDF has one complete A4 page; the two images occupy x=42.52..293.77 and 297.64..548.89 pt, y=365.02..570.59 pt. Each is 251.25pt wide with larger relative lettering. Both plot labels and all four legend entries are readable at page scale, and the legends do not obscure measured points. The smooth-axis extra headroom accommodates its legend; the singular legend partly overlays the redundant cutoff annotation, but the cutoff line, numerical tick and caption/method threshold remain checkable. This is not a material scientific defect. Figure readability and one-page layout findings are resolved.
+
+The compact CSV snapshots match current results byte-for-byte, and numerical artifacts are unchanged since independent verification. Read the revised generator and report text; all eight orders, method definitions, empirical Romberg qualification, reference values and endpoint-error comparisons remain supported. Report and compact-figure handoff is accepted at this revision.
+
+Release still awaits reconciliation of the assigned report/figures/ package, currently at a823597068aa3482a97032b3e1aa45c8a23c97de, which retains its three-rule contents. The figure owner is actively working on the four-rule update, already requested through paper-repo. No repeated revise decision is sent for that in-progress supply. Final approval will follow inspection of the complete updated assembly, including every additional delivered figure.
+
+## Continuation objective #5: distinct Romberg marker via fork PR
+
+Read new objective internal-review-repo #5 and inherited brief/assignment at experiment-repo 1fb81b78818e0bc40fd2626020908e0bd71b3110. The objective requires both a presentation result and a contribution route: experiment proposes from its own fork of figtab, figtab reviews and merges, then regenerates figures and paper adopts them while retaining one page. Recorded a revised commitment covering that provenance and direct inspection of every final image and the report page. Requested fork/PR/review/merge evidence in experiment-repo #8 and updated the existing paper-repo #2 handoff request to cover all retained figure variants and the PDF.
+
+The latest inherited reply in paper-repo #2 refers to 67a1186109124db041dbecc65590038b63bc7a15, already inspected and accepted for numerical content and report-scale readability in the preceding record. No new artifact in that reply supersedes the prior review. The pending report/figures four-method supply and the new marker workflow still require final handoffs. No numerical rerun or repeated layout revision is requested. Approval is withheld until the new objective's workflow and final delivery can be inspected; this is a commitment and dependency record, not a negative verdict on work currently in progress.
+
+## Resumed-world baseline check
+
+Re-read objective #5, the live brief, assignment and paper-repo #2 thread in activation 2ac077f8299ad7660559da3053a8d912. Assembled current delivery into /hutian/delivery-marker-baseline: paper 67a1186109124db041dbecc65590038b63bc7a15, figures a823597068aa3482a97032b3e1aa45c8a23c97de, analysis 1fb81b78818e0bc40fd2626020908e0bd71b3110. All non-review delivered files are byte-identical to the previously inspected /hutian/delivery-romberg-final2 assembly. Thus the inherited report handoff is already addressed by the preceding visual and numerical review; it is not a new final marker-change delivery.
+
+Experiment-repo #8 now supplies the proposal provenance: fork experiment-repo/figtab-repo, branch romberg-marker, head 0625224c309ff840368a330019ee077e89666484, PR figtab-repo #8. Its reply explicitly says review and merge are pending. The existing requests remain open for merge/regeneration evidence and final report adoption; these owners are active. No duplicate request or revise decision is needed for that ongoing work. Approval is not issued: final changed artifacts and completed workflow still need inspection. The recorded commitment remains applicable without revision.

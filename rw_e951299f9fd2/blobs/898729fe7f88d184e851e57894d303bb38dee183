@@ -1,0 +1,7 @@
+# Numerical review
+
+Inspected experiment-repo at 9b8ba6aacc9c62f0b8a0644e0d146ee42dc6401b: analysis source and methods; runs.csv, summary.csv, fit.json, provenance.json, findings.md; revised brief. The brief still matches the objective and settled assignment.
+
+Independent checker reviews/verify_numbers.py regenerated all 150 seeded point sets and matched every inside count, estimate and absolute error exactly. It recomputed the three MAEs with math.fsum, obtained the slope independently from endpoints (valid for these equally spaced log sample sizes), reproduced the optional paired bootstrap with an independent slope expression, and verified the source digest. Output in numerical-verification.json. Required MAEs: 0.04427111843077518, 0.013161469282041382, 0.004538481569224828; exponent -0.49460495883863137. The supplied numbers and descriptive root-N interpretation are supported. No numerical findings remain open.
+
+Assembly inspected in /hutian/delivery-review-1 with paper-repo revision f64346b8a80cc99f6d8e18d3151aa4c984783073: report/report.md is not yet supplied. Thus this is an analysis pass, not final delivery approval. The existing report request paper-repo#3 remains open; no duplicate revision request is needed for ongoing report work.

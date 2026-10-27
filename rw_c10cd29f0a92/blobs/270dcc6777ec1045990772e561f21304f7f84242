@@ -1,0 +1,154 @@
+{
+ "inputs": [
+  "data/stage2/summary-L32.json",
+  "data/stage2/summary-L64.json",
+  "data/stage2/summary-L128.json",
+  "data/stage2/series/*.npz"
+ ],
+ "sizes": [
+  32,
+  64,
+  128
+ ],
+ "temps": [
+  2.18,
+  2.21,
+  2.24,
+  2.27,
+  2.3,
+  2.33,
+  2.36,
+  2.39,
+  2.42
+ ],
+ "seeds": [
+  1,
+  2,
+  3
+ ],
+ "sweeps": 20000,
+ "burn": 2000,
+ "estimator": "seed-pooled U(T) per L; pairwise crossing = first -/+ sign change of U_small - U_large, located with a cubic through the 4 grid points around the bracketing interval (cubic4); T_c = mean of the 3 pairwise crossings; variants: linear interpolation, PCHIP",
+ "Tc": 2.2592630568951466,
+ "U_at_crossing": 0.620349995718909,
+ "pairwise": {
+  "32/64": {
+   "T": 2.264199857438745,
+   "U": 0.6126936158670173
+  },
+  "32/128": {
+   "T": 2.258820957924763,
+   "U": 0.6178199907707024
+  },
+  "64/128": {
+   "T": 2.2547683553219313,
+   "U": 0.6305363805190074
+  }
+ },
+ "bootstrap_seeds": {
+  "B": 4000,
+  "ci95": [
+   2.2542888800379948,
+   2.2683747652572017
+  ],
+  "median": 2.2593773324734574,
+  "sd": 0.003742564789348544,
+  "distinct_resamples": 832,
+  "U_ci95": [
+   0.6053633296005704,
+   0.6274665664108335
+  ],
+  "pairwise_ci95": {
+   "32/64": [
+    2.2590218278289615,
+    2.2727219795066964
+   ],
+   "32/128": [
+    2.2526169971267422,
+    2.269550660991794
+   ],
+   "64/128": [
+    2.247149523468265,
+    2.2709732248236216
+   ]
+  },
+  "note": "percentile interval; with 3 seeds per L only 10 distinct seed multisets exist per size"
+ },
+ "bootstrap_blocks_robustness": {
+  "B": 4000,
+  "block_sweeps": 1000,
+  "blocks_per_run": 20,
+  "ci95": [
+   2.2519586205862288,
+   2.269186307005986
+  ],
+  "sd": 0.0047636306957849015,
+  "U_ci95": [
+   0.6016700750795413,
+   0.6305775349896103
+  ]
+ },
+ "variants_robustness": {
+  "linear": {
+   "Tc": 2.2542261890690916,
+   "U": 0.6244940082091622,
+   "pairwise": {
+    "32/64": 2.2626065403484588,
+    "32/128": 2.2531892951737085,
+    "64/128": 2.246882731685107
+   },
+   "seed_bootstrap_ci95": [
+    2.2514123577936798,
+    2.2673635679340656
+   ]
+  },
+  "pchip": {
+   "Tc": 2.2590895763842105,
+   "U": 0.6209875132584846,
+   "pairwise": {
+    "32/64": 2.2641829502472977,
+    "32/128": 2.2586371595221424,
+    "64/128": 2.2544486193831914
+   },
+   "seed_bootstrap_ci95": [
+    2.256020518335926,
+    2.268596778437999
+   ]
+  }
+ },
+ "tc_exact": 2.269185314213022,
+ "deviation_from_exact": -0.009922257317875438,
+ "exact_inside_seed_ci": false,
+ "exact_inside_block_ci": true,
+ "U_star_literature": 0.61069,
+ "autocorrelation": {
+  "tau_abs_m_max": {
+   "L": 128,
+   "T": 2.27,
+   "seed": 3,
+   "tau": 1154.1345736062233
+  },
+  "tau_abs_m_max_by_L": {
+   "32": 65.77679309025201,
+   "64": 245.71439120176754,
+   "128": 1154.1345736062233
+  },
+  "tau_abs_m_mean_within_0.03_of_Tc_by_L": {
+   "32": 42.77945836515543,
+   "64": 141.42613031048572,
+   "128": 444.92192139398566
+  },
+  "min_N_over_tau": 17.329001710353197,
+  "min_N_eff": 8.664500855176598,
+  "min_burn_over_tau": 1.7329001710353196,
+  "windows_not_converged": 1
+ },
+ "stage3_temps": [
+  2.2293,
+  2.2443,
+  2.2593,
+  2.2743,
+  2.2893
+ ],
+ "stage3_rule": "T* - 0.03 ... T* + 0.03, 5 equally spaced (step 0.015), T* rounded to 4 decimals"
+}

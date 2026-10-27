@@ -1,0 +1,110 @@
+"""T-summary (tab:summary, main text): one row per registered test family with its error, the best baseline's error and the verdict as
+registered. A layout of results that already exist in Tables 4, 5, 7 and 8 (the detailed tables): every number is read from the same score files
+as those tables (results/ paths in .inputs.json); only labels, section references and the registered tolerances quoted in a cell are typed here.
+Verdicts are the registrations', never re-scored: a verdict read from a file is asserted against the word typed here."""
+import os, sys, json, re
+sys.path.insert(0, os.path.dirname(__file__))
+import common
+
+R = common.results_dir()
+USED = []
+
+def J(rel):
+    p = os.path.join(R, rel); USED.append(p); return json.load(open(p))
+
+def f(x, d=2): return f"{x:.{d}f}".replace("-", "$-$")
+def ci(c, d=2): return f"[{f(c[0], d)}, {f(c[1], d)}]"
+def rr(x): return f"{x:,}".replace(",", "{,}")
+P, F_ = r"\textbf{pass}", r"\textbf{fail}"
+def S(label): return r"\S\ref{" + label + "}"
+def verdict(ok): return P if ok else F_
+
+def build():
+    """15 one-line rows, no group rows; ';' separates the merged tests in the order of the Test cell."""
+    rows = []   # ("row", test, runs, result, baseline, verdict) | ("rule",)
+    def row(*a): rows.append(("row",) + a)
+    PW = lambda *ok: ", ".join(verdict(o) for o in ok)
+
+    # ---- gradient descent, linear encoder
+    s, _ = common.load_e1b_summary(); USED.append(os.path.join(R, "e1b", "summary.json"))
+    cr = s["criteria"]; A = s["N1_aligned_all"]; g = cr["grid/ema_alpha/depth (N1)"]; gn = cr["randpred/noncomm (N1-general)"]
+    row("E1b aligned statistics", rr(A["runs"]), f"{f(A['rank_pred']['mae'][0])} {ci(A['rank_pred']['mae'][1:])}", f"window {f(A['rank_window']['mae'][0], 1)}", verdict(g["passed"]))
+    nrp = s["randpred"]["runs"] + s["noncomm"]["runs"]
+    row("E1b random, non-commuting", rr(nrp), f"{f(gn['rank_mae'])}", f"static {f(gn['bound_mae'], 1)}", verdict(gn["passed"]))
+    d = s["depth"]; c1 = J("e1c/summary.json"); cc = c1["criteria"]["depthL nullcline, L >= 2"]; nd = sum(v["runs"] for k, v in c1["by_depth"].items() if int(k) >= 2)
+    assert cc["passed"] and g["passed"]
+    row("Deep predictors: E1b, E1c", f"{d['runs']}/{nd}", f"{f(d['rank_pred']['mae'][0])}; {f(cc['mae'])}", f"depth-1 {f(cc['mae_depth1'])}", "miss; " + P)
+    es = cr["ema_alpha signs"]
+    row("E1b EMA rate, sign test", f"{es['of']} signs", f"{es['agree']} of {es['of']}", "--", verdict(es["passed"]))
+    S2 = J("e2/summary.json"); c2 = S2["criteria"]; A2 = S2["arms"]; cy = c2["pop cyclic (N1)"]
+    row("E2 cyclic masks", rr(A2["pop/cyclic"]["runs"]), f"{f(cy['mae_N1'])}", f"window {f(cy['mae_window'])}", verdict(cy["passed"]))
+    pk = c2["pop peak"]; th, ml = c2["tanh (decided near collapse)"], c2["mlp (exploratory)"]
+    assert not pk["passed"] and not th["passed"] and not ml["passed"]
+    row("E2 fall; tanh; 2-layer tanh", f"{pk['non_monotone_pred']}/{A2['tanh']['runs']}/{A2['mlp']['runs']}", f"{pk['non_monotone_confirmed']} of {pk['non_monotone_pred']}; {f(th['mae'], 1)}; {f(ml['mae'])}",
+        f"static {f(th['mae_bound'], 1)}; {f(ml['mae_bound'])}", PW(False, False, False))
+    rows3, S3, F3, p3 = common.load_e3(); USED.extend(p3)
+    C = S3["criteria"]; rt, rp, loc = C["C-rank arm T"], C["C-rank arm P"], C["C-loc wd arm T"]
+    assert rt["passed"] and not loc["passed"] and not rp["passed"]
+    row("E3 ViT: Arm T; Arm P", f"{rt['n']}/{rp['n']}", f"$\\rho$ {f(rt['rho'])}, $\\times${f(loc['predicted'] / loc['observed'], 1)}; $\\rho$ {f(rp['rho'])}", "--", "T mixed, P " + F_)
+    rows.append(("rule",))
+
+    # ---- beyond gradient descent
+    A2r = J("e4/a2/a2_score.json")["all"]; rk = A2r["rank"]; bs = max((k for k in rk if k != "model"), key=lambda k: rk[k]["within1_strict"])
+    A2p = J("e4/a2p/a2p_score.json")["all"]; rp_ = A2p["rank_at_T_h"]; bp = min((k for k in rp_ if k != "model"), key=lambda k: rp_[k]["mae_finite"])
+    assert A2p["reading"] == "passes" and not A2r["pass"] and bs == "static_bound" and bp == "static_bound"
+    row("AdamW: horizon; converged", f"{A2p['runs']}/{A2r['runs']}", f"{f(rp_['model']['mae_finite'])}; $\\pm1$ {f(rk['model']['within1_strict'])}",
+        f"static {f(rp_[bp]['mae_finite'])}; {f(rk[bs]['within1_strict'])}", P + ", " + F_)
+    A4V = J("e4/a4_heldout/a4_heldout_verdict.json"); A4N = A4V["not_fragile"]; n2 = A4N["n2"]; sb = A4N["comparisons"]["static_bound"]
+    assert A4V["verdict_word"] == "pass on sample-robust runs" and A4N["passed"]
+    row("Layer-normalised target", f"{n2['n']}", f"{f(n2['mae'], 3)}", f"static {f(n2['mae'] + sb['mean'])}", P)
+    E6 = J("e6/r1heldout/r1_heldout_score.json"); xs = []
+    for arm in ("aligned", "generic"):
+        x = E6[arm]["L_ge2"]; bl = x["baselines"]; bb = min(bl, key=lambda k: bl[k]["mae"]); assert bb == "early_50"; xs.append((x, bl[bb]["mae"]))
+    assert xs[0][0]["pass"] and not xs[1][0]["pass"]
+    row("Deep linear: aligned; generic", f"{xs[0][0]['runs']}/{xs[1][0]['runs']}", f"{f(xs[0][0]['A1']['mae'], 3)}; {f(xs[1][0]['A1']['mae'], 3)}", f"{f(xs[0][1], 3)}; {f(xs[1][1], 3)}", PW(True, False))
+    R1B = J("e6/r1b_heldout/r1b_heldout_score.json"); parts, bparts = [], []
+    for arm in ("gauss", "nearid"):
+        x = R1B[f"{arm}_M_ge2"]; assert x["pass"] and R1B["verdict"][f"{arm}_M_ge2"]
+        parts.append(f(x["n1g_K"]["mae"], 2)); bparts.append(f(x["baselines"]["n1g_d1"]["mae"], 2))
+    row("Deep pred., random factors", f"{R1B['gauss_M_ge2']['runs'] + R1B['nearid_M_ge2']['runs']}", "; ".join(parts), "depth-1 " + "; ".join(bparts), P)
+    R2F = J("e6/r2_heldout/r23_r2_heldout_score_a2.json")["gd"]; R2V = R2F["registered"]["verdict"]; R2A = R2F["summaries_a2"]["all"]
+    R3F = J("e6/r3_heldout/r23_r3_heldout_score_a2.json")["adamw"]; R3A = R3F["summaries_a2"]["all"]; R3V = R3F["registered"]["verdict"]
+    R4 = J("e6/r4_heldout/r4_heldout_score_a1.json")
+    assert R2V["pass_"] and R2F["registered"]["word"] == "pass" and R3F["registered"]["word"] == "fail" and not R3V["pass_"] and R4["verdict_word"] == "undetermined (truth ill-posed)"
+    row("MLP enc.: GD; AdamW; LN", f"{R2A['runs'] + R2A['nonfinite']}/{R3A['runs']}/{R4['base_runs']}",
+        f"{f(R2V['mae'])}; {f(R3A['rows']['static']['mae'])}; {f(R4['all']['criterion']['mae'])}",
+        f"{f(R2F['C1_r_init']['primary']['mae_r_init'])}; {f(R3A['rows']['early']['mae'])}; {f(R4['all']['rows']['early']['mae'])}", P + ", " + F_ + ", undet.")
+    E5 = J("e5/b1heldout/b1_heldout_score.json"); A5 = E5["all"]; V5 = E5["verdicts"]; TM = A5["B1a_prime"]["truth_or_model"]
+    BF = J("e5/b1p_fresh/b1p_b1p_fresh_score_a1.json"); PF = BF["primary"]; dF = PF["verdicts"]["B1d"]
+    bb5 = max((k for k in TM["agree"] if k != "model"), key=lambda k: TM["agree"][k])
+    assert not V5["B1a_prime"]["pass_"] and not PF["verdicts"]["B1_prime"]["pass_"] and not dF["pass_"]
+    row("Schedules; post-loss law", f"{A5['runs']}/{PF['runs']}", f"{f(TM['agree']['model'], 3)}; {f(dF['median_abs'])}",
+        f"{f(TM['agree'][bb5], 3)}; {f(PF['B1d_b1p']['all']['stage_qs']['median_abs'])}", PW(False, False))
+    S7 = J("e7/score.json"); V7 = S7["verdicts_final"]; T50 = S7["e50"]["transition"]; E20, E50 = S7["e20"], S7["e50"]; m = T50["measured"]
+    reg = float(re.search(r"within a factor 2 of ([\d.]+)", J("e7/prediction.json")["predictions"]["H1_transition_50"]).group(1))
+    assert V7["H1_transition_50"]["verdict"] == "pass" and V7["H2_e50"]["step0"].startswith("undetermined")
+    mae = lambda E, b: f(E["mae"][b] + 1e-9, 1)
+    row("E7 ViT race, step 200", f"{E20['runs']}", f"{f(m['lam_c'], 4)} vs {f(reg, 4)}; {mae(E20, 'headroom_200')}, {mae(E50, 'headroom_200')}",
+        f"{f(T50['step0']['lam_c'], 4)}; {mae(E20, 'step0')}, {mae(E50, 'step0')}", P + ", undet.")
+    S8 = J("e8/grid/summary.json"); pv = S8["prediction_verdicts"]; cells = ("T_lo2hi", "T_hi2lo", "P_lo2hi", "P_hi2lo")
+    held = [c for c in cells if pv[c].startswith("holds")]; prem = [c for c in cells if isinstance(S8[c]["prediction"]["D_final"], int) and S8[c]["prediction"]["D_final"] <= 5]
+    assert held == ["T_lo2hi"] and not prem
+    f20 = {c: S8[c]["prediction"]["f20"][0] for c in cells}
+    row("E8 ViT weight-decay switch", "4 cells", f"{f(f20['T_lo2hi'])}, {f(f20['P_lo2hi'])}, {f(f20['T_hi2lo'])}, {f(f20['P_hi2lo'])}", "$\\ge0.5$; $D\\le5$: 0", "1 of 4 hold")
+    return rows
+
+def make(outdir, tabdir):
+    rows = build()
+    W = ("1.62in", "0.55in", "1.28in", "0.93in", "0.87in")
+    col = "".join(r">{\raggedright\arraybackslash}p{" + w + "}" for w in W)
+    L = [r"{\footnotesize", r"\setlength{\tabcolsep}{2pt}", r"\renewcommand{\arraystretch}{1.0}", r"\begin{tabular}{@{}" + col + r"@{}}", r"\toprule",
+         r"Test & Runs & Result & Best baseline & Verdict \\", r"\midrule"]
+    for r in rows:
+        L.append(r"\midrule" if r[0] == "rule" else " & ".join(r[1:]) + r" \\")
+    L += [r"\bottomrule", r"\end{tabular}", r"}"]
+    os.makedirs(tabdir, exist_ok=True)
+    open(os.path.join(tabdir, "tab_summary.tex"), "w").write("\n".join(L) + "\n")
+    common.record_inputs(tabdir, "tab_summary", sorted(set(USED)))
+
+if __name__ == "__main__":
+    make(None, sys.argv[1] if len(sys.argv) > 1 else "/tmp/tabtest")

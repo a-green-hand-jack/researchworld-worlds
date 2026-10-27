@@ -1,0 +1,348 @@
+"""E6 / rungs 2-3 of direction C (plan v2.12 Sec. 3 C; limitation L2): the race with a two-layer MLP encoder
+f(x) = W2 phi(W1 x) (phi = tanh or relu, no biases), identity predictor P0 = p0 I, copy target (stop-gradient),
+weight decay lam on W1, W2 and P, full-batch training on a fixed sample of N (input, mask) pairs.
+Rung 2: gradient descent (step ETA). Rung 3: AdamW (decoupled decay) in the same model.
+Theory: theory/ext_C_ladder.md, "Rung 2".
+
+Near collapse (W2 small) the gradient on W1 is O(|W2|), so W1 moves under its own weight decay only, as the predictor
+does in N1-general (A1): W1(t) = (1 - eta lam)^step W1(0). The hidden-feature statistics the race sees are therefore
+not those at initialisation: S11(t) = E[h_c h_c^T], S21(t) = E[h_t h_c^T] with h = phi(W1(t) x). For relu (degree-1
+homogeneous) S(t) = (1 - eta lam)^(2 step) S(0) exactly; for tanh they are recomputed on the sample.
+Criteria (each integrates the near-collapse linear system of N1-general, W2' = P^T W2 S21 - P^T P W2 S11 - lam W2,
+P(t) = (1 - eta lam)^step P0, from the actual W2(0), and counts per check as linjepa.n1_general; predicted rank = the
+maximum count over checks):
+  r_init    feature statistics frozen at initialisation (the delivered E2 MLP predictor)
+  r_decay   statistics of W1(t) = (1 - eta lam)^step W1(0) (the near-collapse drift of W1; candidate)
+  r_meas    statistics of the run's own W1 at the checks up to EARLY_F of T, then W1 decaying from its EARLY_F
+            value (operational: uses only early training)
+Baselines: static #{c^2 >= 4 lam s} and window #{p0 c - p0^2 s - lam > 0} on the initial feature statistics
+(eigenvector-paired), r_lin (the delivered N1 on the input statistics, ignoring the hidden layer), the mu variants of
+2610.02344 (code/baselines/dvd_mu.py) on the initial feature statistics and P0, and the count read early in the run
+(EARLY_F of T). AdamW arm (rung 3): static bound (criterion, A2's exit), cs_thr = #{c/s > THR} (v4's settled law),
+window, mu variants, early count, v4 = E4's phase model v4 run per eigen-paired direction of the initial feature
+statistics (a0_k = |W2(0) u_k|, scalar AdamW to step K_V4, then code/e4_theory.py phase_model_v4 to T).
+r_init / r_decay / r_meas are not defined under AdamW: W1 is not near-static or decaying (Adam normalises its tiny
+gradient to steps of size ~eta), and the race integrator is the gradient-flow map.
+"zero" (rank 0) is reported as the trivial row in both arms.
+Truth: the embedding rank #sv((Z - mean Z) / sqrt N) > THR on the sample at T (also at NCHK checks); the rank of W2
+(#sv > THR, values below 1e-150 flushed) is recorded beside it. The early count reads the same embedding rank at
+EARLY_F of T (the dev grid, run before this change, read the W2 rank there; see summarize).
+Usage: python3 code/e6_r2.py list GRID | pilot GRID ID | run GRID OUTDIR [NPROC] | score GRID OUTDIR"""
+import sys, os, json, time, itertools, gzip, hashlib
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+from linjepa import escape_score
+from baselines.dvd_mu import variants as mu_variants
+import e4_theory as th4
+
+n, H, d = 32, 64, 32
+RHO = 0.7
+N = 1024
+THR = 0.05
+NCHK = 20
+EARLY_F = 0.10
+CHECK_EVERY = 10
+STAT_EVERY = 50           # tanh: feature statistics recomputed every STAT_EVERY steps along the W1 decay
+ADAM = dict(b1=0.9, b2=0.999, eps=1e-8)
+MU = ["dvd", "dvd_signed", "dvd_sorted", "dvd_pq", "dvd_pq_signed", "dvd_exact", "dvd_nowd"]
+idx = np.arange(n)
+DIST = np.minimum(np.abs(idx[:, None] - idx[None]), n - np.abs(idx[:, None] - idx[None]))
+CHOL = np.linalg.cholesky(RHO ** DIST)
+K_LAT = 6
+K_V4 = 300
+
+GRIDS = {
+    "dev": dict(data=["field", "latent"], act=["tanh", "relu"], s1=[0.5, 1.0, 2.0], lam=[0.005, 0.01, 0.02],
+                p0=[0.5, 1.0], r=[0.5], w0=[1e-3], opt=["gd"], eta=0.1, horizon=8.0, seeds=[600, 601]),
+    # development 2: wider truth range (smaller lam, larger s1), new seeds
+    "dev2": dict(data=["field", "latent"], act=["tanh", "relu"], s1=[2.0, 4.0], lam=[0.0025, 0.005],
+                 p0=[0.5, 1.0], r=[0.5], w0=[1e-3], opt=["gd"], eta=0.1, horizon=8.0, seeds=[602, 603]),
+    # development of the AdamW arm (rung 3)
+    "dev_adam": dict(data=["field", "latent"], act=["tanh", "relu"], s1=[0.5, 1.0, 2.0], lam=[0.01, 0.03],
+                     p0=[0.5, 1.0], r=[0.5], w0=[1e-3], opt=["adamw"], eta=0.02, horizon=8.0, seeds=[604]),
+    # AdamW development at eta = 0.002 (code/checks/e6_r3_adam_eta.py: at eta = 0.02 the loss rises 3-25 fold over
+    # training and the embedding stays near full rank; at 0.002 it is stable in 4 of the 5 checked configurations);
+    # same configurations, seed and horizon in weight-decay e-folds as dev_adam
+    "dev_adam2": dict(data=["field", "latent"], act=["tanh", "relu"], s1=[0.5, 1.0, 2.0], lam=[0.01, 0.03],
+                      p0=[0.5, 1.0], r=[0.5], w0=[1e-3], opt=["adamw"], eta=0.002, horizon=8.0, seeds=[604]),
+}
+
+
+def configs(grid):
+    g = GRIDS[grid]; out = []
+    for data, act, s1, lam, p0, r, w0, opt, seed in itertools.product(g["data"], g["act"], g["s1"], g["lam"], g["p0"],
+                                                                     g["r"], g["w0"], g["opt"], g["seeds"]):
+        T = int(round(g["horizon"] / (g["eta"] * lam)))
+        out.append(dict(data=data, act=act, s1=s1, lam=lam, p0=p0, r=r, w0=w0, opt=opt, seed=seed, eta=g["eta"], T=T))
+    for i, c in enumerate(out):
+        c["id"] = i
+    return out
+
+
+# --------------------------------------------------------------------------------------------- data and model
+def sample(cfg):
+    rng = np.random.default_rng(cfg["seed"])
+    if cfg["data"] == "field":
+        X = rng.standard_normal((N, n)) @ CHOL.T
+    else:   # nonlinear latent-variable model: K_LAT latents with decaying scales through a fixed random tanh map
+        rl = np.random.default_rng(12345)
+        A = rl.standard_normal((n, K_LAT)) * 1.5 / np.sqrt(K_LAT)
+        sc = np.linspace(1.5, 0.3, K_LAT)
+        Z = rng.standard_normal((N, K_LAT)) * sc
+        X = np.tanh(Z @ A.T) + 0.1 * rng.standard_normal((N, n))
+        X = (X - X.mean(0)) / X.std(0)
+    Mt = (rng.random((N, n)) < cfg["r"]).astype(float)
+    return X * (1 - Mt), X * Mt
+
+
+def init(cfg):
+    rng = np.random.default_rng(10 ** 5 + cfg["seed"])
+    W1 = cfg["s1"] * rng.standard_normal((H, n)) / np.sqrt(n)
+    Q, _ = np.linalg.qr(rng.standard_normal((H, d)))
+    W2 = cfg["w0"] * Q.T * (1 + 0.1 * rng.standard_normal(d))[:, None]
+    return W1, W2, cfg["p0"] * np.eye(d)
+
+
+def phi(a, act):
+    return np.tanh(a) if act == "tanh" else np.maximum(a, 0)
+
+
+def dphi(a, h, act):
+    return 1 - h ** 2 if act == "tanh" else (a > 0).astype(float)
+
+
+def feat_stats(W1, Xc, Xt, act):
+    hc, ht = phi(Xc @ W1.T, act), phi(Xt @ W1.T, act)
+    return hc.T @ hc / N, ht.T @ hc / N
+
+
+def svals(M):
+    M = M.copy(); M[np.abs(M) < 1e-150] = 0.0
+    try:
+        return np.linalg.svd(M, compute_uv=False)
+    except np.linalg.LinAlgError:
+        import scipy.linalg
+        return scipy.linalg.svd(M, compute_uv=False, lapack_driver="gesvd")
+
+
+def truth(cfg, Xc, Xt):
+    """Full-batch training; returns rank of W2 at NCHK checks, the early count and the W1 snapshots up to EARLY_F."""
+    W1, W2, P = init(cfg); lam, eta, T, act = cfg["lam"], cfg["eta"], cfg["T"], cfg["act"]
+    chk = set(np.linspace(0, T, NCHK + 1).astype(int)[1:].tolist())
+    t_early = int(round(EARLY_F * T))
+    snaps = {0: W1.copy()}
+    adam = cfg["opt"] == "adamw"
+    if adam:
+        mom = [np.zeros_like(W1), np.zeros_like(W2), np.zeros_like(P)]; vel = [np.zeros_like(W1), np.zeros_like(W2), np.zeros_like(P)]
+        b1, b2, ep = ADAM["b1"], ADAM["b2"], ADAM["eps"]
+    counts, embc, emb, early = [], [], None, None
+    for step in range(1, T + 1):
+        ac = Xc @ W1.T; hc = phi(ac, act); ht = phi(Xt @ W1.T, act)
+        zc = hc @ W2.T; zt = ht @ W2.T
+        E = zc @ P.T - zt
+        gP = E.T @ zc / N
+        gz = E @ P
+        gW2 = gz.T @ hc / N
+        gW1 = ((gz @ W2) * dphi(ac, hc, act)).T @ Xc / N
+        if adam:
+            out = []
+            for i, (th, g) in enumerate(zip([W1, W2, P], [gW1, gW2, gP])):
+                mom[i] = b1 * mom[i] + (1 - b1) * g; vel[i] = b2 * vel[i] + (1 - b2) * g * g
+                mh = mom[i] / (1 - b1 ** step); vh = vel[i] / (1 - b2 ** step)
+                out.append(th - eta * (mh / (np.sqrt(vh) + ep) + lam * th))
+            W1, W2, P = out
+        else:
+            W1 = W1 - eta * (gW1 + lam * W1); W2 = W2 - eta * (gW2 + lam * W2); P = P - eta * (gP + lam * P)
+        if step % 50 == 0:
+            for M in (W1, W2, P):
+                M[np.abs(M) < 1e-150] = 0.0
+            if not (np.isfinite(W2).all() and np.abs(W2).max() < 1e8 and np.isfinite(W1).all()):
+                return dict(counts=None, diverged=step)
+        if step <= t_early and step % CHECK_EVERY == 0:
+            snaps[step] = W1.copy()
+        if step == t_early:
+            Z = phi(Xc @ W1.T, act) @ W2.T
+            early = int((svals(Z - Z.mean(0)) / np.sqrt(N) > THR).sum())
+        if step in chk:
+            counts.append(int((svals(W2) > THR).sum()))
+            Z = phi(Xc @ W1.T, act) @ W2.T
+            embc.append(int((svals(Z - Z.mean(0)) / np.sqrt(N) > THR).sum()))
+    sv = svals(W2)
+    Z = phi(Xc @ W1.T, act) @ W2.T
+    emb = int((svals(Z - Z.mean(0)) / np.sqrt(N) > THR).sum())
+    return dict(counts=counts, emb_counts=embc, early=early, emb_rank=emb, sv_top=[float(x) for x in sv[:8]],
+                sv_min_alive=float(sv[sv > THR].min()) if (sv > THR).any() else None,
+                sv_max_dead=float(sv[sv <= THR].max()) if (sv <= THR).any() else None,
+                w1_rel_change=float(np.linalg.norm(W1 / (1 - eta * lam) ** T - init(cfg)[0]) / np.linalg.norm(init(cfg)[0]))
+                if not adam else None,
+                p_final=float(svals(P).max()), snaps=snaps)
+
+
+# --------------------------------------------------------------------------------------------- criteria
+def n1g_tv(stat_at, W0, P0, lam, eta, T, adam=False):
+    """N1-general with time-varying statistics: stat_at(step) -> (S11, S21), called every STAT_EVERY steps."""
+    W = W0.copy(); P = P0.copy(); dec = 1 - eta * lam
+    best = 0; logscale = 0.0
+    S11, S21 = stat_at(0)
+    for step in range(T + 1):
+        if step % STAT_EVERY == 0 and step > 0:
+            S11, S21 = stat_at(step)
+        nrm = np.abs(W).max()
+        if nrm > 1e30 or (0 < nrm < 1e-30):
+            W = W / nrm; logscale += np.log(nrm)
+        if step % CHECK_EVERY == 0:
+            m = np.abs(W).max(); W[np.abs(W) < 1e-150 * m] = 0.0
+            U, sv, Vt = np.linalg.svd(W, full_matrices=False)
+            sv = sv * np.exp(min(logscale, 700.0))
+            PU = P @ U
+            p = np.einsum("ij,ij->j", U, PU); q = (PU ** 2).sum(0)
+            c = np.einsum("ij,jk,ik->i", Vt, S21, Vt); sg = np.einsum("ij,jk,ik->i", Vt, S11, Vt)
+            g = p * c - q * sg - lam; gap = c - p * sg
+            ok = (g > 0) & (gap > 0) & (sv ** 2 * np.maximum(gap, 1e-300) >= lam * np.abs(p))
+            best = max(best, int(ok.sum()))
+        if step == T:
+            break
+        W = W + eta * (P.T @ W @ S21 - P.T @ P @ W @ S11 - lam * W)
+        P = P * dec
+    return best
+
+
+def paired(S11, S21):
+    s, U = np.linalg.eigh(S11)
+    c = np.einsum("ik,ij,jk->k", U, (S21 + S21.T) / 2, U)
+    return s, c
+
+
+def predict(cfg, Xc, Xt, tr):
+    W1, W2, P0 = init(cfg); lam, eta, T, act, p0 = cfg["lam"], cfg["eta"], cfg["T"], cfg["act"], cfg["p0"]
+    S0 = feat_stats(W1, Xc, Xt, act)
+    s, c = paired(*S0)
+    out = dict(static=int(((c > 0) & (c ** 2 >= 4 * lam * s)).sum()),
+               window=int((p0 * c - p0 ** 2 * s - lam > 0).sum()),
+               cs_thr=int((c / np.maximum(s, 1e-300) > THR).sum()))
+    mu = mu_variants(S0[0], S0[1], P0, lam)
+    out.update({k: int(mu[k]) for k in MU})
+    # linear-input N1: the delivered race on the input statistics (ignores the hidden layer)
+    S11x, S21x = Xc.T @ Xc / N, Xt.T @ Xc / N
+    sx, cx = paired(S11x, S21x)
+    tend = eta * T
+    out["r_lin"] = int(sum(escape_score(cx[k], sx[k], lam, lam, 1.0, p0, np.log(cfg["w0"]), t_end=tend) >= 0
+                           for k in range(n) if cx[k] > 0))
+    out["zero"] = 0
+    if cfg["opt"] == "adamw":
+        U = np.linalg.eigh(S0[0])[1]
+        a0 = np.linalg.norm(W2 @ U, axis=0)
+        _, stK = th4.scalar_adamw(c, s, a0, p0, lam, eta, K_V4, ADAM["b1"], ADAM["b2"], ADAM["eps"], keep=[K_V4])
+        o = th4.phase_model_v4(c, s, stK[K_V4], K_V4, lam, eta, T, b1=ADAM["b1"], b2=ADAM["b2"], eps=ADAM["eps"],
+                               thr=THR, checks=[T])
+        out["v4"] = int(o["alive"][T].sum())
+        return out
+    out["r_init"] = n1g_tv(lambda st: S0, W2, P0, lam, eta, T)
+    dec = 1 - eta * lam
+    if act == "relu":
+        dec_stats = lambda st: (S0[0] * dec ** (2 * st), S0[1] * dec ** (2 * st))
+    else:
+        dec_stats = lambda st: feat_stats(W1 * dec ** st, Xc, Xt, act)
+    out["r_decay"] = n1g_tv(dec_stats, W2, P0, lam, eta, T)
+    snaps = tr.get("snaps")
+    if snaps:
+        ks = sorted(snaps); kmax = ks[-1]
+        def meas(st):
+            if st <= kmax:
+                k = max(x for x in ks if x <= st)
+                return feat_stats(snaps[k], Xc, Xt, act)
+            return feat_stats(snaps[kmax] * dec ** (st - kmax), Xc, Xt, act) if act == "tanh" else \
+                tuple(S * dec ** (2 * (st - kmax)) for S in feat_stats(snaps[kmax], Xc, Xt, act))
+        out["r_meas"] = n1g_tv(meas, W2, P0, lam, eta, T)
+    return out
+
+
+def run_one(cfg):
+    t0 = time.time()
+    Xc, Xt = sample(cfg)
+    tr = truth(cfg, Xc, Xt)
+    t1 = time.time()
+    pr = predict(cfg, Xc, Xt, tr) if tr.get("counts") is not None else {}
+    tr.pop("snaps", None)
+    return dict(cfg=cfg, truth=tr, pred=pr, seconds_truth=t1 - t0, seconds_pred=time.time() - t1)
+
+
+def md5(path):
+    return hashlib.md5(open(path, "rb").read()).hexdigest()
+
+
+def cmd_run(grid, outdir, nproc=8):
+    os.makedirs(outdir, exist_ok=True); cf = configs(grid); t0 = time.time()
+    with Pool(int(nproc)) as pool:
+        res = pool.map(run_one, sorted(cf, key=lambda r: -r["T"]), chunksize=1)
+    res.sort(key=lambda r: r["cfg"]["id"])
+    with gzip.open(os.path.join(outdir, f"r2_{grid}_runs.jsonl.gz"), "wt") as f:
+        for r in res:
+            f.write(json.dumps(r) + "\n")
+    here = os.path.dirname(os.path.abspath(__file__))
+    meta = dict(grid=grid, runs=len(res), seconds=time.time() - t0, numpy=np.__version__,
+                md5={p: md5(os.path.join(here, p)) for p in ["e6_r2.py", "linjepa.py", "baselines/dvd_mu.py", "e4_theory.py"]},
+                config=GRIDS[grid], THR=THR, N=N, n=n, H=H, d=d, EARLY_F=EARLY_F, ADAM=ADAM)
+    json.dump(meta, open(os.path.join(outdir, f"r2_{grid}_meta.json"), "w"), indent=1)
+    cmd_score(grid, outdir)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), f"rung 2 {grid}: {len(res)} runs in {time.time() - t0:.0f} s", flush=True)
+
+
+def boot_ci(x, B=2000, seed=0):
+    x = np.asarray(x, float); r = np.random.default_rng(seed)
+    m = x[r.integers(0, x.size, (B, x.size))].mean(1)
+    return [float(np.quantile(m, 0.025)), float(np.quantile(m, 0.975))]
+
+
+def summarize(rows, primary):
+    """Truth = embedding rank at T (the representation's rank, #sv(Z - mean)/sqrt N > THR). Under GD it equals the W2
+    rank in 143 of 144 development runs; under AdamW W2 keeps chatter of size ~eta in directions the features no longer
+    carry, so the W2 rank is reported beside it only as a diagnostic."""
+    tru = np.array([r["truth"]["emb_rank"] for r in rows])
+    keys = [k for k in rows[0]["pred"]] + ["early"]
+    val = lambda r, k: r["truth"]["early"] if k == "early" else r["pred"][k]
+    err = {k: np.abs(np.array([val(r, k) for r in rows]) - tru) for k in keys}
+    conv = np.array([len(set(r["truth"].get("emb_counts", r["truth"]["counts"])[-4:])) == 1 for r in rows])
+    out = dict(runs=len(rows), truth_mean=float(tru.mean()), zero_share=float((tru == 0).mean()),
+               converged=float(conv.mean()),
+               emb_vs_w2=float(np.mean([r["truth"]["emb_rank"] == r["truth"]["counts"][-1] for r in rows])))
+    for k in keys:
+        pk = np.array([val(r, k) for r in rows])
+        out[k] = dict(mae=float(err[k].mean()), within1=float((err[k] <= 1).mean()), bias=float((pk - tru).mean()))
+        if k != primary:
+            out[k]["minus_primary_ci"] = boot_ci(err[k] - err[primary])
+    return out
+
+
+def cmd_score(grid, outdir):
+    rows = [json.loads(l) for l in gzip.open(os.path.join(outdir, f"r2_{grid}_runs.jsonl.gz"), "rt")]
+    div = [r["cfg"]["id"] for r in rows if r["truth"].get("counts") is None]
+    rows = [r for r in rows if r["truth"].get("counts") is not None]
+    out = dict(grid=grid, diverged=div)
+    for opt in GRIDS[grid]["opt"]:
+        prim = "r_decay" if opt == "gd" else "static"
+        O = [r for r in rows if r["cfg"]["opt"] == opt]
+        if not O:
+            continue
+        out[opt] = summarize(O, prim)
+        for data, act in itertools.product(GRIDS[grid]["data"], GRIDS[grid]["act"]):
+            S = [r for r in O if r["cfg"]["data"] == data and r["cfg"]["act"] == act]
+            if S:
+                out[f"{opt}_{data}_{act}"] = summarize(S, prim)
+    json.dump(out, open(os.path.join(outdir, f"r2_{grid}_score.json"), "w"), indent=1)
+    return out
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "list":
+        cf = configs(sys.argv[2]); print(len(cf), "configs; total steps", sum(c["T"] for c in cf))
+    elif cmd == "pilot":
+        cfg = configs(sys.argv[2])[int(sys.argv[3])]
+        r = run_one(cfg); print(json.dumps(r, indent=None)[:3000])
+    elif cmd == "run":
+        cmd_run(sys.argv[2], sys.argv[3], *(sys.argv[4:5] or [8]))
+    elif cmd == "score":
+        print(json.dumps(cmd_score(sys.argv[2], sys.argv[3]), indent=1)[:6000])

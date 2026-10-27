@@ -1,0 +1,47 @@
+\section{Setup: a JEPA near its collapsed solution}
+\label{sec:setup}
+
+\paragraph{Model.}
+An input $x\in\R^n$ is split into a context view $x_c$ and a target view $x_t$; for masking, $x_c=M_cx$ and $x_t=M_tx$ with random binary masks $M_c,M_t$ drawn independently of $x$.
+A context encoder $\Wc$ maps the context view to $z=\Wc x_c\in\R^d$, a target encoder $\Wt$ maps the target view to $\bar z=\Wt x_t$, and a predictor $\Pred$ predicts $\bar z$ from $z$.
+Training minimises
+\begin{equation}
+  \mathcal L(\Wc,\Pred)=\tfrac12\,\E\big\|\Pred\Wc x_c-\sg(\Wt x_t)\big\|^2+\tfrac{\lambda_W}{2}\|\Wc\|_F^2+\tfrac{\lambda_P}{2}\|\Pred\|_F^2,
+  \label{eq:loss}
+\end{equation}
+where $\sg$ is the stop-gradient and $\lambda_W,\lambda_P\ge0$ are the weight decays of the encoder and the predictor (equal in our experiments).
+The target encoder starts as a copy of $\Wc$ and follows it by an exponential moving average (EMA), $\Wt\leftarrow\tau\Wt+(1-\tau)\Wc$ after each step of size $\eta$ ($\tau=0$: SimSiam's copy; $\tau\to1$: BYOL, I-JEPA).
+We analyse the gradient flow of the linear model, $\Wc\in\R^{d\times n}$, $\Pred\in\R^{d\times d}$, in units of the encoder learning rate, with a predictor learning-rate ratio $\alpha$ and the EMA as a relaxation at rate $\kappa=(1-\tau)/\eta$ (for $\tau=0$, $\Wt=\Wc$):
+\begin{align}
+  \dot\Wc&=\Pred^\top\Wt\,\Sigma_{tc}-\Pred^\top\Pred\,\Wc\,\Sigma_c-\lambda_W\Wc, \label{eq:flowW}\\
+  \dot\Pred&=\alpha\big[(\Wt\,\Sigma_{tc}-\Pred\Wc\,\Sigma_c)\Wc^\top-\lambda_P\Pred\big], \label{eq:flowP}\\
+  \dot{\Wt}&=\kappa\,(\Wc-\Wt). \label{eq:flowWt}
+\end{align}
+The data enter only through $\Sigma_c=\E[x_cx_c^\top]$ and $\Sigma_{tc}=\E[x_tx_c^\top]$; because of the stop-gradient, the flow is not the gradient of a single function.
+
+\paragraph{Driving force and decay.}
+Expanding the square in \eqref{eq:loss} gives, up to a term without gradient, a drive term $-\E\langle \Pred z,\sg(\bar z)\rangle$ plus the decay terms $\tfrac12\E\|\Pred z\|^2+\tfrac{\lambda_W}{2}\|\Wc\|_F^2+\tfrac{\lambda_P}{2}\|\Pred\|_F^2$, which split \eqref{eq:flowW} into the \emph{driving force} $\Pred^\top\Wt\Sigma_{tc}$, carried by the signal $\Sigma_{tc}$ shared by the views, and the \emph{decay} $\Pred^\top\Pred\Wc\Sigma_c+\lambda_W\Wc$.
+
+\paragraph{The collapsed solution.}
+At $\Wc=\Wt=0$ the predictor receives no data signal (the first term of \eqref{eq:flowP} is quadratic in the embedding), so for $\lambda_W,\lambda_P>0$ the point $(0,0,0)$ is locally stable \citep{tian2021understanding}.
+Collapse is therefore decided by \emph{transient growth}, not by an instability: training starts with small embeddings and an order-one predictor, and a direction survives only if it grows to order one before the predictor has decayed.
+The initial imbalance between the two decays only through weight decay: for $\alpha=1$ and $\lambda_W=\lambda_P=\lambda$, \eqref{eq:flowW}--\eqref{eq:flowP} give exactly (\cref{app:proofs})
+\begin{equation}
+  \Pred^\top\Pred-\Wc\Wc^\top=e^{-2\lambda t}\big(\Pred_0^\top\Pred_0-\Wc_0\Wc_0^\top\big)
+  \label{eq:balance}
+\end{equation}
+for any $\Wt$, $\Sigma_c$, $\Sigma_{tc}$ (Tian et al.'s conserved quantity, their Theorem~1, at $\alpha=1$).
+A standard initialisation is strongly unbalanced, $\Pred_0^\top\Pred_0\gg\Wc_0\Wc_0^\top$, so the drive is first order in $\Wt$, whereas on Tian et al.'s balanced manifold it is quadratic.
+
+\paragraph{Near-collapse regime and directions.}
+While the embeddings are small, $\|\Wc\|^2\|\Sigma\|\ll\lambda_P\|\Pred\|$, the predictor decays freely, $\Pred(t)=e^{-\alpha\lambda_P t}\Pred_0$, and \eqref{eq:flowW}, \eqref{eq:flowWt} are linear in $(\Wc,\Wt)$.
+Our premise is that collapse is decided in this regime, before the first directions reach order one; it is a hypothesis, supported in the linear models under constant weight decay that we test and refuted in a ViT (\cref{sec:e8}).
+The linear system splits into independent directions under the following structure.
+\begin{assumption}[Aligned statistics and predictor]
+\label{ass:aligned}
+(i) $\Sigma_c$ and $\Sigma_{tc}$ are symmetric and commute, with common orthonormal eigenvectors $u_k$, $\Sigma_cu_k=\sigma_ku_k$, $\Sigma_{tc}u_k=c_ku_k$;
+(ii) $\Pred_0$ is symmetric with orthonormal eigenvectors $v_j$ and eigenvalues $p_j$.
+\end{assumption}
+Part (i) constrains the masks: with $\Sigma_c=\Sigma\circ G$, $\Sigma_{tc}=\Sigma\circ F$, $G_{ij}=\Pr(i,j\in c)$, $F_{ij}=\Pr(i\in t,j\in c)$, it holds for a stationary signal on a cyclic domain under translation- and reflection-invariant masks, not with boundaries or oriented context--target geometry (\cref{app:structure}).
+Under \cref{ass:aligned} the near-collapse dynamics decouple into scalar modes $w_{jk}=v_j^\top\Wc u_k$, driven at rate $p_j(t)c_k$ and decaying at rate $p_j(t)^2\sigma_k+\lambda_W$ (\cref{app:structure}).
+For $\Pred_0=p_0I$ the rank of $\Wc$ is the number of surviving data directions $u_k$, which we call \emph{directions}; outside \cref{ass:aligned} we test a general form of the criterion (\cref{app:more}).

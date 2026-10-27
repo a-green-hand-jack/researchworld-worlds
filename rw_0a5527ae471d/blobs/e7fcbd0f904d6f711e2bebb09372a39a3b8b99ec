@@ -1,0 +1,52 @@
+# OLS or WLS for two noisy straight-line series (seed 221, n = 40 each)
+
+Both series are y = 2.5 + 0.8 x + e at x = 0..39 from `default_rng(221)`, A first, then B. Noise sd is 3 for A and 0.5 + 0.15 x for B. For each series: OLS or WLS, and slope and intercept with 95% CIs?
+
+**Decision.** A: **OLS**. B: **WLS**, weights 1/(0.5 + 0.15 x)². CIs are t-based (38 df, residual scale estimated); the true values (2.5, 0.8) lie inside all chosen-method intervals.
+
+| Series | Method | Intercept [95% CI] | Slope [95% CI] |
+|---|---|---|---|
+| A | OLS (chosen) | 3.100 [1.39, 4.82] | 0.755 [0.679, 0.831] |
+| B | WLS (chosen) | 2.609 [1.99, 3.23] | 0.847 [0.777, 0.918] |
+| B | OLS (comparison) | 3.002 [0.95, 5.06] | 0.825 [0.734, 0.916] |
+
+<img src="../figures/series_and_residuals.png" alt="Left: both series with chosen-method fits. Right: OLS residuals against x." width="480">
+
+*Figure 1. Seed 221, 40 points per series, true line 2.5 + 0.8 x. (a) Observations (A blue circles, B orange triangles) and chosen fits (A: OLS solid, B: WLS dashed). (b) Unweighted OLS residuals for both series; B shows increasing spread, A shows no clear variance trend. Code: `figures/generate.py`; parameters in `tables/parameters.md`.*
+
+**Residual check** (OLS residuals, printed by the code below):
+
+| Check | A | B |
+|---|---|---|
+| Residual sd, x = 0..19 vs 20..39 | 2.45 vs 3.08 | 2.16 vs 4.24 |
+| Goldfeld-Quandt-style F (18, 18 df), one-sided p | 1.57, p = 0.17 | 3.85, p = 0.003 |
+| Breusch-Pagan p | 0.19 | 0.0045 |
+| Spearman rho of abs(residual) with x, p | 0.09, p = 0.58 | 0.44, p = 0.004 |
+
+**Why.** B's residual spread roughly doubles across the range and every test rejects constant variance, as its noise model predicts, so equal weights are inefficient: WLS shrinks the intercept CI width from 4.1 to 1.2 and the slope CI width from 0.18 to 0.14, and the weighted residuals pass (Breusch-Pagan p = 0.38). For A no test finds a trend and the stated variance is constant, so WLS equals OLS exactly and OLS is the simpler choice. Caveats: one realisation, so a non-significant test on A does not prove constant variance (the choice rests on the test and the design); B's weights use the stated noise model, known only because the data are simulated, but a feasible WLS estimating the variance from OLS residuals gives B slope 0.849 [0.778, 0.920], intercept 2.589 [1.87, 3.30]. A 20,000-replicate simulation (seed 2210) gives B slope sd 0.057 (OLS) vs 0.036 (WLS) and 95% CI coverage 93.1% vs 95.0%. Those numbers and the weighted-residual p come from `code/analysis.py` (`results/results.json`); all others from `report/check.py`:
+
+```python
+import numpy as np
+from scipy import stats
+x = np.arange(40.0)
+rng = np.random.default_rng(221)
+sd = {"A": np.full(40, 3.0), "B": 0.5 + 0.15 * x}
+y = {s: 2.5 + 0.8 * x + rng.normal(0, sd[s]) for s in "AB"}   # dict order: A first, then B
+X = np.column_stack([np.ones(40), x])
+t = stats.t.ppf(0.975, 38)
+def fit(yy, w):                       # weighted LS; w = 1 for OLS; classical SE with estimated scale
+    cov = np.linalg.inv((X.T * w) @ X)
+    b = cov @ (X.T * w) @ yy
+    r = yy - X @ b
+    se = np.sqrt((w * r**2).sum() / 38 * np.diag(cov))
+    return b, np.c_[b - t * se, b + t * se], r
+for s in "AB":
+    for name, w in [("OLS", np.ones(40)), ("WLS", 1 / sd[s] ** 2)]:
+        b, ci, r = fit(y[s], w)
+        print(f"{s} {name}: intercept {b[0]:.3f} [{ci[0,0]:.2f}, {ci[0,1]:.2f}]  slope {b[1]:.3f} [{ci[1,0]:.3f}, {ci[1,1]:.3f}]")
+    r = fit(y[s], np.ones(40))[2]                              # residual check on OLS residuals
+    F = np.var(r[20:], ddof=2) / np.var(r[:20], ddof=2)
+    bp = stats.chi2.sf(40 * np.corrcoef(x, r**2)[0, 1] ** 2, 1)  # Breusch-Pagan, LM = n R^2
+    rho, p = stats.spearmanr(x, np.abs(r))
+    print(f"  {s}: resid sd {r[:20].std(ddof=2):.2f} -> {r[20:].std(ddof=2):.2f}, GQ F {F:.2f} p={stats.f.sf(F,18,18):.3f}, BP p={bp:.4f}, Spearman {rho:.2f} p={p:.3f}")
+```

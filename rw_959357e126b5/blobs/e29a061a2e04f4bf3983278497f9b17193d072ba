@@ -1,0 +1,32 @@
+# E6 rung 2 held-out (experiment 3a53d47): checks
+
+Inputs: `git archive 3a53d47` of experiment-repo. These frozen-code md5s match the registration and the run meta:
+- e6_r23.py fbf11fcb
+- e6_r2.py 321bbbe9
+- e6_r23_a2.py 9ae651c3
+- e6_r23_run.py fff396f1
+- linjepa.py e7d569d4
+- dvd_mu.py 88ed281a
+- e4_theory.py 72f6b424
+
+1. **Rescore from the delivered raw runs** (`python3 code/e6_r23_a2.py score r2_heldout <copy> results/e6/r2_heldout_inputs.json`, numpy 2.3.2, 82 s):
+   - `r23_r2_heldout_score.json` reproduces: 848 of 848 leaves identical.
+   - `r23_r2_heldout_score_a2.json` reproduces: 1218 of 1218 leaves identical.
+2. **Full re-run of the training runs** (job-4d2a6f4e38, `rerun_check.py`): the frozen runner on 8 processes, then a per-run comparison (accounting excluded) and a rescore. The result goes to `/hutian/work/r2rerun/compare.json` and is recorded in reviews/log.md when the job ends.
+   - **Result** (job ended exit 0, 4.01 CPU-h, wall 1896 s; `rerun_compare.json`): all 432 runs (144 base, 288 truth-floor re-runs) were re-run with the frozen runner. In every run, every non-timing field equals the delivered run: truth counts, embedding counts, early counts, emb_rank, singular values, `w1_rel_change`, `p_final` and all predictions. Only the wall-clock fields differ: `seconds_truth` in 432 runs and `seconds_pred` in 144. That is why the job's line reports "runs_with_diff 432"; the full comparison without `seconds_*` gives 0. Rescored from the re-run, `r23_r2_heldout_score.json` (848 leaves) and `r23_r2_heldout_score_a2.json` (1218 leaves) are identical to the delivered files.
+3. **README numbers against the score files:**
+   - These match: the verdict, C1 (primary and halves), C2 primary and halves, early, late gain, truth mean and zero count, the non-finite ids (399 and 423: latent/relu/s1 2.8/p0 0.7, rep 1) and the fragile id.
+   - **Mislabelled μ rows (E6R2-W1).** Under "baseline − r_decay MAE difference" the README gives each baseline's MAE, not the difference: dvd_exact 1.38 is the MAE, so the point lies outside its own CI [0.73, 1.20]. The differences against r_decay's 0.415 are:
+     - dvd_exact 0.96
+     - window/dvd_signed/dvd_pq_signed 1.27
+     - dvd/dvd_pq 1.42
+     - dvd_sorted 2.06
+     - dvd_nowd 2.13
+     - r_meas 0.41
+     - zero 1.57
+     - cs_thr 5.66
+   - **Pooled C2 rows.** "pooled over all 142, 2.69" (static) and "pooled 1.37" (r_lin) are likewise the baselines' MAEs.
+   - **Small slips (E6R2-N1).**
+     - Static's MAE at λ 0.0035 is 2.32 (109/47 finite runs), not 2.30. The other λ values match: 2.56, 3.19; r_decay 0.68/0.44/0.13; r_lin 1.32/1.35/1.45.
+     - The realized C2 half-widths are static 0.38–0.51 and r_lin 0.49–0.60, where the README says 0.39–0.50 and 0.51–0.60. Early is 0.19–0.22, which matches.
+   - None of these changes a word.

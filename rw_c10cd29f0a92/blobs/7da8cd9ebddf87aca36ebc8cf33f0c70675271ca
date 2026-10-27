@@ -1,0 +1,12 @@
+#!/bin/sh
+# Stage 2 (crossing): L = 32, 64, 128 at the 9 temperatures T_peak - 0.12 ... T_peak + 0.12 (step 0.03) taken
+# from results/stage1_peak.json, seeds 1 2 3, 20,000 measured sweeps after the program's default 2,000 burn-in,
+# time series kept (--series). Then the stage-2 analysis.
+set -e
+cd "$(dirname "$0")/.."
+TEMPS=$(python3 -c "import json; print(' '.join(str(t) for t in json.load(open('results/stage1_peak.json'))['stage2_temps']))")
+for L in 128 64 32; do
+  python3 -u code/run_points.py --L $L --temps $TEMPS --seeds 1 2 3 --sweeps 20000 --burn 2000 --out data/stage2 --series --jobs 2
+done
+python3 code/stage2_analysis.py > /dev/null
+python3 -c "import json; d=json.load(open('results/stage2_crossing.json')); print('HUTIAN_WAKE: stage 2 done, Tc =', round(d['Tc'],4), 'CI', d['bootstrap_seeds']['ci95'], 'stage-3 temps', d['stage3_temps'])"

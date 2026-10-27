@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Check a compiled NeurIPS 2026 submission PDF and its LaTeX source against the venue rules.
+
+usage: check_submission.py PAPER.pdf [SOURCE_DIR]
+Checks: US Letter, main-text pages <= 9 (up to the References/Appendix/Checklist heading),
+checklist present with no TODO answers, no Type 3 / non-embedded fonts, anonymity markers
+(line numbers present, no 'Preprint', no acknowledgments), size <= 50MB, style file unmodified.
+Exit code 1 if any hard check fails.
+"""
+import sys, re, hashlib, pathlib
+from pypdf import PdfReader
+
+STY_SHA256 = "c3fc2894e83d2517ca18b66741d6c595986d97957dc08ec08bb2125a7ec4555a"
+pdf = pathlib.Path(sys.argv[1]); src = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None
+r = PdfReader(str(pdf)); fails = []; notes = []
+
+def ok(c, msg, hard=True):
+    print(("PASS " if c else ("FAIL " if hard else "WARN ")) + msg)
+    if not c and hard: fails.append(msg)
+
+ok(pdf.stat().st_size <= 50*2**20, f"file size {pdf.stat().st_size/2**20:.2f} MB <= 50 MB")
+w, h = (float(x) for x in r.pages[0].mediabox[2:])
+ok(abs(w-612) < 2 and abs(h-792) < 2, f"page size {w:.0f}x{h:.0f} pt is US Letter")
+
+texts = [(p.extract_text() or "") for p in r.pages]
+def first_page(pattern):
+    for i, t in enumerate(texts):
+        if re.search(pattern, t, re.M): return i
+    return None
+# Line numbers (anonymous mode) are glued to the end of extracted lines ("References341"); strip them.
+def lines(t): return [re.sub(r"(?<=\D)\d{1,3}$", "", l).strip() for l in t.split("\n")]
+def heading(pattern):
+    for i, t in enumerate(texts):
+        ls = lines(t)
+        for j, l in enumerate(ls):
+            if re.fullmatch(pattern, l): return i, j, ls
+    return None
+ref = heading(r"(\d+\s+)?References") or heading(r"NeurIPS Paper Checklist")
+if ref is None:
+    ok(False, "no References or checklist heading found")
+else:
+    pg, j, ls = ref
+    body_before = [l for l in ls[:j] if len(l) > 3 and not re.fullmatch(r"\d+", l)]
+    # on a page that starts with the References heading nothing precedes it; on a shared page the lines above are main text
+    spill = pg + 1 == 10 and len(body_before) > 0
+    ok(pg + 1 <= 10 and not spill,
+       f"back matter starts on page {pg+1} after {len(body_before)} text lines above it on that page; main text must end by page 9"
+       + (" (page 10 holds main text above the heading)" if spill else ""))
+    if not spill:
+        print(f"INFO  main text ends on page {pg+1 if body_before else pg}")
+ck = first_page(r"NeurIPS Paper Checklist")
+ok(ck is not None, "NeurIPS Paper Checklist present in PDF")
+full = "\n".join(texts)
+ok("TODO" not in full and "[TODO]" not in full, "no TODO answers/justifications left in PDF")
+ok(not re.search(r"Preprint\. Work in progress", full), "not built with preprint option")
+ok(not re.search(r"Under review at NeurIPS", full, re.I) and not any(re.fullmatch(r"(Acknowledg(e)?ments?|Funding)", l, re.I) for t in texts for l in lines(t)), "no acknowledgments heading / 'under review' text (anonymity)", hard=False)
+ok(len(re.findall(r"\D\d{1,3}$", texts[0], re.M)) >= 5, "submission line numbers present on page 1 (anonymous default mode)", hard=False)
+bad = set()
+for p in r.pages:
+    res = p.get("/Resources") or {}
+    fonts = (res.get("/Font") or {}) if hasattr(res, "get") else {}
+    for k, f in (fonts.items() if fonts else []):
+        f = f.get_object(); st = str(f.get("/Subtype"))
+        desc = f.get("/FontDescriptor"); emb = False
+        if desc is not None:
+            d = desc.get_object(); emb = any(x in d for x in ("/FontFile", "/FontFile2", "/FontFile3"))
+        if st == "/Type3" or (st != "/Type0" and not emb): bad.add((str(f.get("/BaseFont")), st))
+        if st == "/Type0":
+            df = f["/DescendantFonts"][0].get_object(); d = df.get("/FontDescriptor")
+            if d is None or not any(x in d.get_object() for x in ("/FontFile", "/FontFile2", "/FontFile3")): bad.add((str(f.get("/BaseFont")), st))
+ok(not bad, f"all fonts embedded and none Type 3 (offenders: {sorted(bad)[:5]})")
+if src:
+    sty = list(src.rglob("neurips_2026.sty"))
+    ok(bool(sty) and hashlib.sha256(sty[0].read_bytes()).hexdigest() == STY_SHA256, "neurips_2026.sty present and identical to the official file")
+    tex = "\n".join(re.sub(r"(?<!\\)%.*", "", p.read_text(errors="ignore")) for p in src.rglob("*.tex"))
+    ok(re.search(r"\\usepackage(\[[^\]]*\])?\{neurips_2026\}", tex) is not None, "uses \\usepackage{neurips_2026}")
+    ok(not re.search(r"\\usepackage\[[^\]]*(final|preprint|nonanonymous)[^\]]*\]\{neurips_2026\}", tex), "no final/preprint/nonanonymous option")
+    ok(not re.search(r"\\(geometry|setlength\{\\(textwidth|textheight|oddsidemargin)\})|\\usepackage(\[[^\]]*\])?\{(geometry|fullpage|savetrees|times)\}", tex), "no margin/font-size tampering packages")
+    ok("answerTODO" not in tex and "justificationTODO" not in tex, "checklist has no answerTODO/justificationTODO left")
+print("RESULT:", "FAIL" if fails else "PASS"); sys.exit(1 if fails else 0)

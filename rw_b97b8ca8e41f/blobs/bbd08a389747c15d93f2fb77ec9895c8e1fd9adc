@@ -1,0 +1,42 @@
+"""Committed experiment-repo results, read at a pinned commit.
+
+Every generator that plots measurements loads its CSVs through `results()`, so the
+input revision is fixed in one place and recorded in figures/PROVENANCE.md.
+The files are extracted with `git archive` from a clone of experiment-repo
+(default: ../experiment-repo next to this repository; override with EXP_REPO)
+into figures/.cache/<commit>/ (not delivered).
+"""
+import os, pathlib, subprocess, tarfile, io
+
+EXPERIMENT_COMMIT = "ae59eab281902647a55001cda1218c14d38aaaaa"
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+def results(commit=EXPERIMENT_COMMIT):
+    cache = ROOT / "figures" / ".cache" / commit
+    if not (cache / "results").is_dir():
+        repo = pathlib.Path(os.environ.get("EXP_REPO", ROOT.parent / "experiment-repo"))
+        tar = subprocess.run(["git", "-C", str(repo), "archive", commit, "results"],
+                             check=True, capture_output=True).stdout
+        cache.mkdir(parents=True, exist_ok=True)
+        tarfile.open(fileobj=io.BytesIO(tar)).extractall(cache)
+    return cache / "results"
+
+
+def vit_runs(tier, commit=EXPERIMENT_COMMIT):
+    """Per-seed nonlinear runs under results/raw/vit_runs/<config_id>/ for one tier
+    ("B_controlled" or "C_real_cifar10"): (summaries, trajectories) as DataFrames, one
+    summary row per committed run with status final. Read per seed so that the
+    figures use exactly the runs committed, also before experiment-repo's merge."""
+    import pandas as pd
+    base = results(commit) / "raw" / "vit_runs"
+    summ, traj = [], []
+    for f in sorted(base.glob("*/summary_seed*.csv")):
+        s = pd.read_csv(f)
+        if s["tier"].iloc[0] != tier:
+            continue
+        assert (s["status"] == "final").all(), f
+        summ.append(s)
+        traj.append(pd.read_csv(f.with_name(f.name.replace("summary", "trajectory"))))
+    return pd.concat(summ, ignore_index=True), pd.concat(traj, ignore_index=True)

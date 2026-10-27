@@ -1,0 +1,18 @@
+# Monte Carlo estimate of π
+
+**Method.** Each of 20 independent pseudorandom streams (NumPy PCG64, child `SeedSequence`s spawned from root seed 20261020, spawn keys 0–19) drew 1,000,000 points uniformly in the unit square [0,1)². A point was counted as inside if x² + y² ≤ 1, and the stream's estimate is 4 × inside / 1,000,000. All 20 streams were kept, with no selection. The 95% confidence interval is a two-sided Student t interval across the 20 seed estimates: mean ± t(0.975, 19) × s / √20, with t = 2.0930 and s the sample standard deviation (ddof = 1).
+
+**Results.**
+
+| Quantity | Value |
+|---|---|
+| Mean estimate of π (20 seeds) | **3.1418818** |
+| 95% CI across seeds | **[3.1410487, 3.1427149]** (half-width 0.000833) |
+| Sample SD of per-seed estimates / standard error | 0.001780 / 0.000398 |
+| Signed error (mean − `math.pi`) | **+0.000289** (`math.pi` = 3.1415927) |
+| Absolute error | **0.000289** (relative 9.2 × 10⁻⁵) |
+| Points drawn in all | **20,000,000** (20 × 1,000,000; 15,709,409 inside) |
+
+**Interpretation.** The interval contains `math.pi`, so the estimate is consistent with it at the 95% level. The across-seed SD is 1.08 times the binomial value √(π(4−π)/10⁶) = 0.001642 expected for 1,000,000 points, which is consistent with sampling variation. The nominal coverage of the interval relies on the near-normality of each large-binomial seed estimate. It describes the Monte Carlo uncertainty of this one run, and no coverage study was done. The pooled estimate over all points is the same as the seed mean, since every seed has the same size.
+
+**Provenance.** The numbers come from `results/summary.json` and `results/per_seed.csv` in `experiment-repo` at commit c03bc77 (code: `code/monte_carlo.py`; aggregation re-checked by `code/check_results.py`). `internal-review-repo` independently re-ran all 20 streams and reproduced every inside count and every statistic above (review commit ed463fd). Python 3.11.2, NumPy 2.4.6, SciPy 1.17.1.

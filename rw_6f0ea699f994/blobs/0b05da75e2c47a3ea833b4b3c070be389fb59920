@@ -1,0 +1,22 @@
+# Review record — approval of the assembled delivery
+
+Inspected 2026-10-19 via `ht-role delivery` (assignment at experiment-repo f537049ac52de0cbc289a9aa5e8c3f727b5ad833):
+- `report/report.md`, `README.md` — paper-repo 48e62bc5826738c343232d0eecfd0817a0777c6c
+- `report/figures/error_scaling.png`, `caption.md`, `make_figure.py` — figtab-repo d0e4cbdf8bb24439d28483ecb20194d7d8769d4e
+- cited provenance: experiment-repo f537049ac52de0cbc289a9aa5e8c3f727b5ad833 (`analysis/compute.py`, `results/errors.csv`, `results/fits.json`, `results/methods.md`, `results/validation.json` all present)
+
+## Checks against review_standard.md
+1. Exact value: closed form stated; −2.034887312886015 matches my 60-digit evaluation (`check/hp_check.out`). ✔
+2. Table: all 11 n, both rules; every entry agrees to the 7 displayed digits with my 60-digit recomputation and with `results/errors.csv`. ✔
+3. Fits: OLS on ln/ln, strict > 1e-13, retained points stated (11 trap, 10 Simpson; n = 4096 Simpson excluded and marked), t(0.975, m−2) intervals. Trap −2.001080 [−2.002078, −2.000083]; Simpson −3.893577 [−4.017581, −3.769572] — both reproduced exactly. ✔
+4. Comparison: report states honestly that the trapezoid interval narrowly excludes −2 and Simpson's contains −4 but is wide; diagnostics reproduced: local orders (2.0137→2.00000006; 2.378, 3.864 … 3.999998), restricted fits (trap n≥64 −2.000010 [−2.000021, −1.9999997]; Simpson n≥16 −3.996346 [−4.000023, −3.992669], n≥64 −3.99964 [−4.000032, −3.999248]); Euler–Maclaurin leading terms match the errors at n = 2048/4096 to ~1e-6 relative, signs included. Deterministic-error caveat on the intervals is stated. ✔
+5. Figure: opened and inspected. Log-log axes, both series as markers, both fits as lines over their fitted ranges, the 1e-13 threshold drawn, the excluded Simpson point open and labelled, fit slopes/intervals annotated consistent with the table, guide slopes labelled as shifted guides, legend, labelled axes, readable. Linked path `figures/error_scaling.png` resolves in the assembled delivery. ✔
+6. One page: short report — one table, one fit table, one figure, brief text. ✔
+7. Provenance: numbers trace to the cited commit's files; figure caption names its sources and generator. ✔
+
+## Non-blocking observations
+- The trapezoid n ≥ 64 restricted-interval upper end is −1.9999997, printed as −1.999999 (truncated rather than rounded at 6 dp). The claim it supports (interval contains −2) is correct.
+- My binary64 Simpson slope (−3.89350, numpy linspace/summation order) differs from the report's binary64 recomputation (−3.89364) in the 4th decimal; this reflects the round-off sensitivity of the n = 2048 Simpson error (2.8e-13) that the report already flags; the required fit uses 60-digit errors.
+
+## Conclusion
+The delivery meets the objective and every claim is supported by the evidence. Approved.

@@ -1,0 +1,34 @@
+# Table: mean absolute error of the Monte Carlo pi estimate
+
+| N | MAE (200 runs) | s.e. of MAE | analytic expectation* | fitted MAE |
+|---:|---:|---:|---:|---:|
+| 10^3 | 4.18870e-02 | 2.26612e-03 | 4.14469e-02 | 4.35540e-02 |
+| 10^4 | 1.44063e-02 | 7.51052e-04 | 1.31023e-02 | 1.37363e-02 |
+| 10^5 | 4.31005e-03 | 2.19392e-04 | 4.14345e-03 | 4.33223e-03 |
+| 10^6 | 1.39880e-03 | 7.32946e-05 | 1.31027e-03 | 1.36632e-03 |
+| 10^7 | 4.19456e-04 | 2.22633e-05 | 4.14345e-04 | 4.30918e-04 |
+
+\*Analytic, not simulated: the exact expectation of the estimator's
+absolute error, (4/N) * E|K - Np| with K ~ Binomial(N, p), p = pi/4,
+i.e. E|pi_hat - pi|. For large N it tends to sqrt(2(4 - pi)/N), the
+dashed asymptotic line in report/figures/mae_loglog.png.
+
+Definitions: MAE = mean over 200 independent runs of |pi_hat - math.pi|,
+pi_hat = 4 * #{x^2 + y^2 <= 1} / N with (x, y) uniform in the unit square;
+run i = 0..199 uses numpy.random.default_rng(2026 + i), and each run's
+five estimates use nested prefixes of one 10^7-point stream, so runs are
+independent while the five N within a run are dependent.
+s.e. of MAE = standard error of that mean over the 200 runs.
+fitted MAE = exp(intercept) * N^slope, the OLS fit of ln(MAE) on ln(N).
+
+Fit (from analysis/fit.json): slope b = -0.501158 (R^2 = 0.999617).
+Headline 95% interval (residual OLS Student-t, df = 3): [-0.519172, -0.483145].
+Dependence-aware check (paired-run percentile bootstrap over the 200
+five-N error vectors, 50000 resamples): [-0.516146, -0.486015].
+Both intervals contain the Monte Carlo value -1/2: the measured scaling is consistent with N^(-1/2).
+
+Provenance: rendered from world/experiment-repo `analysis/mae_table.csv`
+and `analysis/fit.json` at commit 6cb94ccdef057908bf489882cd13261bab2105c6 by render_table.py;
+SHA-256: mae_table.csv 7de3aa3c0b98e8ef..., fit.json 638e7cce89ee5585....
+Values shown at 6 significant digits; the stored full-precision values
+are in the CSV. Command: report/tables/render_table.py --inputs /hutian/experiment-repo.

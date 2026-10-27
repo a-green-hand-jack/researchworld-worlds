@@ -1,0 +1,70 @@
+"""Final pi estimate, 95% CIs and running-estimate table from the pilot's output.
+
+usage: python3 analysis/analyze.py results/pilot.json results/
+Writes results/estimate.json and results/running_estimate.csv.
+"""
+import csv
+import json
+import math
+import sys
+
+Z = 1.959963984540054  # two-sided 95% normal quantile
+
+
+def wald(k, n):
+    p = k / n
+    half = Z * math.sqrt(p * (1 - p) / n)
+    return 4 * (p - half), 4 * (p + half)
+
+
+def wilson(k, n):
+    p = k / n
+    d = 1 + Z * Z / n
+    c = (p + Z * Z / (2 * n)) / d
+    h = Z * math.sqrt(p * (1 - p) / n + Z * Z / (4 * n * n)) / d
+    return 4 * (c - h), 4 * (c + h)
+
+
+src, outdir = sys.argv[1], sys.argv[2].rstrip('/')
+d = json.load(open(src))
+n = d['samples']
+est = d['estimate']
+k = round(est * n / 4)  # hits in the quarter disc; exact since estimate = 4k/n
+assert abs(4 * k / n - est) < 1e-12, 'estimate is not 4k/n for an integer k'
+lo, hi = wald(k, n)
+wlo, whi = wilson(k, n)
+se = 4 * math.sqrt((k / n) * (1 - k / n) / n)
+res = {
+    'source': src,
+    'samples': n,
+    'hits': k,
+    'seconds': d['seconds'],
+    'estimate': est,
+    'std_error': se,
+    'ci95_wald': [lo, hi],
+    'ci95_wilson': [wlo, whi],
+    'ci95_reported_by_pilot': d['ci95'],
+    'ci_half_width': (hi - lo) / 2,
+    'true_pi': math.pi,
+    'error': est - math.pi,
+    'z_vs_true_pi': (est - math.pi) / se,
+    'true_pi_in_ci95': lo <= math.pi <= hi,
+    'pilot_ci_matches_wald': max(abs(a - b) for a, b in zip(d['ci95'], (lo, hi))) < 1e-6,
+}
+json.dump(res, open(f'{outdir}/estimate.json', 'w'), indent=1)
+
+# Running estimate with the 95% band expected around the true value, sigma_n = 4 sqrt(q(1-q)/n), q = pi/4.
+q = math.pi / 4
+with open(f'{outdir}/running_estimate.csv', 'w', newline='') as f:
+    w = csv.writer(f)
+    w.writerow(['elapsed_s', 'samples', 'estimate', 'ci95_lo', 'ci95_hi', 'true_pi_band_lo', 'true_pi_band_hi', 'z_vs_true_pi'])
+    rows = [list(r) for r in d['trace']]
+    if rows[-1][1] != n:  # the trace may already end at the final sample count
+        rows.append([d['seconds'], n, est])
+    for t, m, e in rows:
+        km = round(e * m / 4)
+        a, b = wald(km, m)
+        s = 4 * math.sqrt(q * (1 - q) / m)
+        w.writerow([t, m, f'{e:.9f}', f'{a:.9f}', f'{b:.9f}', f'{math.pi - Z * s:.9f}', f'{math.pi + Z * s:.9f}',
+                    f'{(e - math.pi) / s:.4f}'])
+print(json.dumps(res, indent=1))

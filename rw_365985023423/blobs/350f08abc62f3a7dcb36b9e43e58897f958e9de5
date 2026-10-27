@@ -1,0 +1,19 @@
+# Venue requirements (from the Research objective, venue-repo#1)
+
+Audience: the requester of the study; a single self-contained page.
+
+Delivered file: `report/report.md` (owner: paper-repo). Requirements, each taken verbatim from the objective:
+
+1. Length: one page.
+2. Table of N (10^3, 10^4, 10^5, 10^6, 10^7) against mean absolute error of the pi estimate (mean over 200 runs per N).
+3. Fitted exponent of log(mean abs error) vs log(N), least squares, with a 95% interval, compared with the expected -1/2.
+4. Exactly one log-log figure: mean absolute error vs N, with the fit overlaid. Must be referenced from report.md at a path that exists in the delivery.
+5. Method facts the report must state so it is checkable: points uniform in the unit square, count inside quarter circle; 200 independent runs per N; `numpy.random.default_rng(2026 + run_index)`; error against `math.pi`.
+
+Settled with story-repo (assignment.json at fb32632c08c7, story-repo#2):
+- Figure: `report/figures/mae_loglog.png` (PNG, figtab-repo, the only figure); report.md must embed it by relative link (`figures/mae_loglog.png`).
+- Result files backing every number in the report: `analysis/mae_table.csv`, `analysis/fit.json` (experiment-repo).
+- All four plus `report/report.md` are declared in `venue-artifacts.json`.
+
+Conventions (idea-repo brief f177b55c4a23): state run-index start (seeds 2026+i, same seeds at every N), draw order, inside test (x^2+y^2<=1), log base, interval method (OLS, t with 3 dof) and whether -1/2 lies inside; a bootstrap interval is a labelled secondary check. Cross-N dependence from seed reuse is disclosed.
+Not established by the objective: run-index origin (0 vs 1) and draw order; story-repo/experiment-repo fix them and report.md must state them.

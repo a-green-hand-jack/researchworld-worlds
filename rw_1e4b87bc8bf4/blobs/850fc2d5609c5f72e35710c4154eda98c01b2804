@@ -1,0 +1,68 @@
+# Results: multinomial LR vs kNN on Iris (OpenML 61), 10 x stratified 5-fold CV
+
+Produced by `report/code/` (`bash code/make_all.sh`); design `story-repo` `plan.md` D1-D6.
+The local run is primary; the Ibex run is the replicate (identical, see below).
+
+## Which file supports which claim
+
+| Claim / item | File (fields) |
+|---|---|
+| Q1 mean accuracy of LR and kNN with 95% interval | `summary.json` -> `quantities.LR`, `quantities.kNN` -> `corrected_t.{mean,lo,hi,se,df}` |
+| Q2 paired difference LR - kNN, 95% interval, covers 0? | `summary.json` -> `quantities.LR_minus_kNN.corrected_t`, `.corrected_t_covers_0`; win/tie/loss in `paired_fold_counts` |
+| Labelled comparison intervals (not primary) | same objects -> `naive_t` (50 folds, df 49), `repetition_t` (10 repetition means, df 9), `repetition_bootstrap` |
+| Q3 Ibex node, job id, identical? (replicate on a second node: `ibex_other_node/`) | `identity.json` (`identical`, `L1_raw_identical`, `L2_printed_identical`, `diagnostics`, `info_b.slurmd_nodename`, `info_b.slurm_job_id`); raw job log `run_ibex/ibex-<jobid>.out` |
+| Q4 selected k | `summary.json` -> `k_selected` (counts, median, min, max, mode); per fold `run_local/folds.csv` `k_selected` |
+| Data provenance | `data_provenance.json` (OpenML id, version, URL, OpenML md5 = computed md5, sha256); file `data/iris.arff`; OpenML metadata `data/openml_61_description.json` |
+| Robustness checks (outside the plan) | `sensitivity.json`, `sensitivity_folds.csv` |
+| Every printed number as a LaTeX macro | `numbers.tex` |
+
+## Files
+
+- `run_local/`, `run_ibex/` — raw output of `code/run_cv.py`, one directory per machine:
+  - `folds.csv`: one row per outer fold (50). `repeat` 0-9, `fold` 0-4, `outer_fold` 0-49,
+    `n_train` 120, `n_test` 30, `acc_lr`, `acc_knn` (multiples of 1/30), `diff_lr_minus_knn`,
+    `correct_lr`, `correct_knn` (out of 30), `k_selected`, `k_inner_acc` (best inner-CV accuracy),
+    `lr_n_iter` (lbfgs iterations).
+  - `predictions.csv`: one row per test case per fold (1500): `test_index` (row of the ARFF, 0-based),
+    `y_true`, `pred_lr`, `pred_knn` (0 setosa, 1 versicolor, 2 virginica), `prob_lr_0..2`.
+  - `inner_scores.csv`: inner-CV mean and sd accuracy of every k on every outer fold (50 x 16).
+  - `run_info.json`: host, SLURM ids, CPU model, Python and package versions, BLAS
+    (threadpoolctl), thread settings, data sha256, sha256 of the run files, seeds, k grid, wall time.
+- `folds_long.csv` — the local `folds.csv` in long form for plotting: `repeat, fold, method`
+  (`LR`/`kNN`), `accuracy, correct, n_test, k_selected` (kNN rows only).
+- `summary.json` (local, primary) and `summary_ibex.json` — output of `code/summarize.py`.
+  Also `fold_sd` and `repetition_means` (10 values) per quantity.
+- `identity.json` — output of `code/compare_runs.py`.
+- `numbers.tex` — output of `code/make_numbers.py`; accuracies in percent, differences in
+  percentage points, one decimal. `\DataURL` holds a URL: use `\expandafter\url\expandafter{\DataURL}`.
+
+## Interval method
+
+Primary, for each method's mean accuracy and for the mean paired difference: the corrected
+resampled t interval (Nadeau & Bengio 2003; "corrected repeated k-fold CV test", Bouckaert &
+Frank 2004). With J = 50 fold values x_j, mean m and sample variance s^2,
+m +- t(0.975, 49) * sqrt((1/50 + 30/120) * s^2). The unit is the outer fold. The correction
+widens the naive interval about 3.7-fold, because the training sets of different folds overlap.
+It is still an approximation; coverage can fall short of nominal (Bates, Hastie & Tibshirani 2023).
+The naive t over folds and the t over repetition means are reported only as labelled
+comparisons. Both ignore the dependence between folds and are much narrower.
+Bounds are not clipped to [0, 1].
+
+## Identity of the local and Ibex runs (plan D6)
+
+Both runs used the same `run_cv.py`, lock file, launchers and data file. `identity.json` checks
+this: `same_code` compares the run files' sha256 and `same_data` compares the data sha256. Both
+runs are single-threaded. The primary replicate is Ibex job 53905964 on node cn504-20 (AMD EPYC 9655).
+It is **identical** to the local run (Intel Xeon Gold 6230) at L1 (all 1500 predicted labels per
+method, the selected k and the fold accuracies) and at L2 (all printed result macros). It is also
+identical in the diagnostics: all three output CSVs are byte-identical, LR probabilities included.
+On both machines OpenBLAS selects its SkylakeX kernels (`info_*.blas`).
+
+Recorded side result: `ibex_other_node/` holds an earlier replicate of the same design.
+It is Ibex job 53905853 on node cn113-35-l (AMD EPYC 7702), where OpenBLAS selects its Haswell kernels.
+Its `run_cv.py` differed from the final one only in which files it hashes into `run_info.json`
+(so `same_code` is false there); the computation was the same. It is also identical at L1 and L2,
+but its LR predicted probabilities differ from the local run by up to 4.9e-14
+(`ibex_other_node/identity.json` -> `diagnostics`). So on this hardware pairing, bitwise identity
+of intermediate floating-point values depends on the CPU's BLAS kernel. Every reported number
+(accuracies, k, intervals) is identical on all three machines.

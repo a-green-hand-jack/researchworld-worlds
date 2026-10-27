@@ -1,0 +1,90 @@
+{
+  "figure": "mae_loglog.png",
+  "rendered_by": "plot_mae_loglog.py",
+  "selftest": false,
+  "values_used": {
+    "N": [
+      1000.0,
+      10000.0,
+      100000.0,
+      1000000.0,
+      10000000.0
+    ],
+    "MAE": [
+      0.0418870449666731,
+      0.0144062938564082,
+      0.0043100530717958,
+      0.0013987999999999,
+      0.0004194556076938
+    ],
+    "SE": [
+      0.0022661186542054,
+      0.0007510523069005,
+      0.0002193917350615,
+      7.329460938374138e-05,
+      2.226326808788393e-05
+    ],
+    "theory": [
+      0.0414344626225611,
+      0.0131027275512406,
+      0.0041434462622561,
+      0.001310272755124,
+      0.0004143446262256
+    ],
+    "slope": -0.5011584081803624,
+    "slope_source": "slope",
+    "intercept": 0.3281259480421346,
+    "intercept_source": "intercept",
+    "fit_mae_column_max_log_diff": 7.815970093361102e-14,
+    "intervals": {
+      "headline_ols_t": {
+        "method": "headline_interval/ci",
+        "lo": -0.5191719876462288,
+        "hi": -0.48314482871449593
+      },
+      "dependence_check_paired_bootstrap": {
+        "method": "paired_bootstrap/ci",
+        "lo": -0.5161464783001017,
+        "hi": -0.4860153418456996
+      },
+      "other_intervals_ignored": [
+        {
+          "method": "paired_bootstrap/first_half_ci",
+          "lo": -0.5161032257536549,
+          "hi": -0.4861222445851498
+        },
+        {
+          "method": "paired_bootstrap/second_half_ci",
+          "lo": -0.5161848317120072,
+          "hi": -0.48592047432426355
+        },
+        {
+          "method": "diagnostics/delta_method_normal_ci",
+          "lo": -0.516142491455732,
+          "hi": -0.48617432490499274
+        }
+      ]
+    }
+  },
+  "environment": {
+    "python": "3.11.2",
+    "numpy": "2.4.6",
+    "matplotlib": "3.11.2",
+    "pandas": "3.0.6"
+  },
+  "command": "plot_mae_loglog.py --inputs /hutian/experiment-repo --outdir /hutian/repo/report/figures",
+  "inputs": [
+    {
+      "repo": "world/experiment-repo",
+      "commit": "6cb94ccdef057908bf489882cd13261bab2105c6",
+      "path": "analysis/mae_table.csv",
+      "sha256": "7de3aa3c0b98e8ef64515c07808b6a8cf7adfa762a9f9e5b7a4a519267f8a883"
+    },
+    {
+      "repo": "world/experiment-repo",
+      "commit": "6cb94ccdef057908bf489882cd13261bab2105c6",
+      "path": "analysis/fit.json",
+      "sha256": "638e7cce89ee5585274161c47bedcfb8f9aa545d594bf21e4e9a55249677b0ed"
+    }
+  ]
+}

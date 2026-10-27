@@ -1,0 +1,73 @@
+"""Poisson MLE with exact Gaussian bin integration and nuisance-profile intervals."""
+import json, pathlib, time, hashlib, platform
+import numpy as np
+import scipy
+from scipy.special import ndtr, xlogy
+from scipy.optimize import minimize, brentq, root as solve_root
+from scipy.stats import chi2
+start=time.perf_counter(); root=pathlib.Path('results')
+p=pathlib.Path('/hutian/experiment-download/photons.f32')
+prov=json.loads((root/'download_provenance.json').read_text())
+assert hashlib.file_digest(p.open('rb'),'sha256').hexdigest()==prov['sha256']
+x=np.memmap(p,dtype='<f4',mode='r'); edges=np.arange(1201,dtype=float)
+y,_=np.histogram(x,bins=edges)
+audit=dict(n=int(x.size),minimum=float(x.min()),maximum=float(x.max()),at_1200=int(np.sum(x==1200)),outside=int(np.sum((x<0)|(x>1200))),sorted=bool(np.all(x[1:]>=x[:-1])),binned=int(y.sum()))
+assert audit['outside']==0 and audit['sorted'] and y.sum()==30000000
+# Scale parameters for well-conditioned numerical optimization.
+scale=np.array([20000.,6000000.,600.,30.])
+def model(q):
+    b,a,c,s=q*scale
+    z=(edges-c)/s; phi=np.exp(-z*z/2)/np.sqrt(2*np.pi)
+    mass=np.diff(ndtr(z))
+    mu=b+a*mass
+    jac=np.array([np.ones(1200),mass,a*(phi[:-1]-phi[1:])/s,a*(z[:-1]*phi[:-1]-z[1:]*phi[1:])/s]).T*scale
+    return mu,jac
+# Center at saturated likelihood to avoid cancellation of large log likelihoods.
+def fun(q):
+    mu,jac=model(q)
+    delta=(mu-y)/y
+    value=np.sum(y*(delta-np.log1p(delta)))
+    grad=jac.T@(1-y/mu)
+    return value,grad
+bounds=[(.01,10),(.001,10),(.01,1.99),(.01,10)]
+runs=[]
+for initial in ([1,1,1,1],[.9,1.2,.98,1.1],[1.1,.8,1.02,.9]):
+    r=minimize(fun,initial,jac=True,method='L-BFGS-B',bounds=bounds,options={'ftol':1e-14,'gtol':1e-7,'maxiter':2000,'maxls':50})
+    runs.append(r)
+best=min(runs,key=lambda r:r.fun)
+polish=solve_root(lambda q:fun(q)[1],best.x,tol=1e-10)
+assert polish.success
+best.x=polish.x; best.fun,best.jac=fun(best.x)
+q=best.x; mu,jac=model(q)
+fisher=jac.T@(jac/mu[:,None]); cov=np.linalg.inv(fisher); se=np.sqrt(np.diag(cov))
+profile_log=[]; intervals=[]
+for i in range(4):
+    keep=np.arange(4)!=i
+    def profile(v):
+        def f(nuisance):
+            trial=q.copy(); trial[i]=v; trial[keep]=nuisance
+            fval,g=fun(trial); return fval,g[keep]
+        r=minimize(f,q[keep],jac=True,method='L-BFGS-B',bounds=[b for j,b in enumerate(bounds) if j!=i],options={'ftol':1e-14,'gtol':1e-7,'maxiter':1000,'maxls':50})
+        polish=solve_root(lambda v:f(v)[1],r.x,tol=1e-10)
+        if np.max(np.abs(f(polish.x)[1])) < 1e-4:
+            r.x=polish.x; r.fun,r.jac=f(r.x); r.success=True; r.message='Score equations polished to <1e-4 in scaled coordinates'
+        profile_log.append(dict(parameter=i,fixed=float(v*scale[i]),success=bool(r.success),message=str(r.message),gradient_max=float(np.max(np.abs(r.jac))),twice_delta_nll=float(2*(r.fun-best.fun))))
+        return 2*(r.fun-best.fun)-chi2.ppf(.95,1)
+    limits=[]
+    for sign in (-1,1):
+        dist=3*se[i]
+        while profile(q[i]+sign*dist)<0: dist*=2
+        limits.append(brentq(profile,*sorted([q[i],q[i]+sign*dist]),xtol=1e-13)*scale[i])
+    intervals.append(limits)
+pearson=(y-mu)/np.sqrt(mu)
+# Observed curvature via central differences of analytic gradient.
+h=1e-5
+hessian=np.column_stack([(fun(q+np.eye(4)[j]*h)[1]-fun(q-np.eye(4)[j]*h)[1])/(2*h) for j in range(4)])
+obs_se=np.sqrt(np.diag(np.linalg.inv(hessian)))*scale
+names=['background_rate','burst_counts','centre','width']; units=['photons/s','photons','s','s']
+params={name:dict(value=float(q[i]*scale[i]),ci95=intervals[i],unit=units[i],fisher_se=float(se[i]*scale[i]),observed_hessian_se=float(obs_se[i]),generating_value=float(scale[i])) for i,name in enumerate(names)}
+result=dict(params=params,interval_method='95% one-parameter profile likelihood, 2 delta NLL = chi2_1(0.95), other three parameters reoptimized',model='mu_i = b*(right-left) + A*(Phi((right-c)/sigma)-Phi((left-c)/sigma))',binning='1200 one-second bins on [0,1200]; final bin includes right edge',provenance=prov,data_audit=audit,diagnostics=dict(deviance=float(2*best.fun),degrees_of_freedom=1196,poisson_reference_deviance_p=float(chi2.sf(2*best.fun,1196)),pearson_statistic=float(pearson@pearson),max_abs_pearson=float(np.max(abs(pearson))),lag1_pearson_correlation=float(np.corrcoef(pearson[:-1],pearson[1:])[0,1]),gradient_scaled=best.jac.tolist(),multistart=[dict(success=bool(r.success),message=str(r.message),nll=float(r.fun),parameters=(r.x*scale).tolist()) for r in runs],profile_all_success=all(r['success'] for r in profile_log),fit_total=float(mu.sum()),observed_total=int(y.sum())),coverage_caveat='Component counts are fixed by the simulator, so Poisson profile intervals and goodness-of-fit reference are model-based, not exact repeated-sampling calibration for this generator.',environment=dict(python=platform.python_version(),numpy=np.__version__,scipy=scipy.__version__),elapsed_seconds=time.perf_counter()-start)
+(root/'fit.json').write_text(json.dumps(result,indent=2)+'\n')
+(root/'profile_checks.json').write_text(json.dumps(profile_log,indent=2)+'\n')
+np.savetxt(root/'lightcurve.csv',np.column_stack([edges[:-1],edges[1:],y,mu,pearson]),delimiter=',',header='left,right,observed,fitted,pearson_residual',comments='',fmt=['%.0f','%.0f','%.0f','%.10f','%.10f'])
+print(json.dumps(result,indent=2))

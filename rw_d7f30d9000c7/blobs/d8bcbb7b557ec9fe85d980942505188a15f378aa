@@ -1,0 +1,18 @@
+# Review pass 2: assembled delivery (approval)
+
+Inspected `ht-role delivery` at:
+- experiment-repo 1ee116c535620d15f297149f4d4218e5d4cb749b (`data/`, `analysis/`)
+- figtab-repo 60676a939e1f628abe5be9466fac05e73c55fdc8 (`report/figures/`)
+- paper-repo a129e63b9a91 (`report/report.md`, `README.md`)
+
+## Findings from pass 1
+1. Resolved. `analysis/` (README, analyze.py, annual_fits.csv, fetch.py, results.json) is now assigned and delivered. Between c13de75 and 1ee116c the only changes in experiment-repo are to `assignment.json` and `brief.md`; the analysis numbers did not change. Running `analysis/analyze.py` inside the assembled delivery completes, and its hash and fit assertions pass. Running `report/figures/make_figure.py` with its defaults inside the delivery regenerates `co2_mlo_fits.png` byte-identical to the delivered file. The report's `analysis/results.json` reference now resolves.
+2. Resolved. The caption now names the shaded 1960–1969 and 2016–2025 windows and the tangent segments at 1964.5 and 2020.5 (slope equals the reported rate). It marks the printed intervals as conventional OLS intervals, conditional on independent errors, and points to the Newey–West intervals in Caveats.
+
+## Re-verified at these revisions
+- **Data:** the delivered CSV's SHA-256 is bdd956e8…1e0089b2b, matching provenance.json and the report. The URL, the fetch time (2026-10-20 01:17:51 UTC) and the last year (2025) are stated.
+- **Numbers:** all report numbers still match `checks/recompute_c13de75.txt`. Rates: 0.935 [0.901, 0.969] and 2.436 [2.402, 2.470] ppm/yr. Lag-5 HAC intervals: [0.875, 0.996] and [2.366, 2.506].
+- **Figure:** inspected in pass 1 and unchanged (same figtab revision). It shows the data points, both fits, labelled axes with units and a legend.
+- **Length:** the report is 401 words including tables and caption, about half a page.
+
+Conclusion: the delivery meets the objective, and every claim is supported by the delivered data, analysis and figure. Approve.

@@ -1,0 +1,83 @@
+"""OLS vs WLS for two simulated series; writes results/*.json|csv. Run from repo root."""
+import json
+import numpy as np
+import statsmodels.api as sm
+from scipy import stats
+from statsmodels.stats.diagnostic import het_breuschpagan, het_goldfeldquandt
+
+A0, B0 = 2.5, 0.8
+x = np.arange(40.0)
+rng = np.random.default_rng(221)
+yA = A0 + B0 * x + rng.normal(0, 3.0, x.size)           # A first
+sdB = 0.5 + 0.15 * x
+yB = A0 + B0 * x + rng.normal(0, sdB)                    # then B
+X = sm.add_constant(x)
+w_true = 1.0 / sdB**2   # weights = 1/variance (variance function given by the design of series B)
+
+def ci(res):
+    c = res.conf_int(0.05)  # t-based, n-2 df
+    return {"intercept": [float(res.params[0]), float(c[0, 0]), float(c[0, 1]), float(res.bse[0])],
+            "slope": [float(res.params[1]), float(c[1, 0]), float(c[1, 1]), float(res.bse[1])]}
+
+def diag(y, ols):
+    r = ols.resid
+    bp = het_breuschpagan(r, X)
+    rho, p_rho = stats.spearmanr(x, np.abs(r))
+    lo, hi = r[:20], r[20:]   # descriptive only: halves of the full-fit residuals (no p-value)
+    # classical Goldfeld-Quandt: separate OLS on each half (x ascending, no observations dropped)
+    s2 = [sm.OLS(y[sl], X[sl]).fit().scale for sl in (slice(0, 20), slice(20, 40))]
+    f = s2[1] / s2[0]
+    p_gq = float(stats.f.sf(f, 18, 18))
+    gq_sm = het_goldfeldquandt(y, X, idx=0, split=20, drop=0, alternative="increasing", result_object=False)
+    assert abs(gq_sm[0] - f) < 1e-9 and abs(gq_sm[1] - p_gq) < 1e-9
+    return {"breusch_pagan_LM": float(bp[0]), "breusch_pagan_p": float(bp[1]),
+            "spearman_abs_resid_vs_x": float(rho), "spearman_p": float(p_rho),
+            "full_fit_resid_sd_first_half": float(lo.std(ddof=2)), "full_fit_resid_sd_second_half": float(hi.std(ddof=2)),
+            "separate_fit_sd_first_half": float(np.sqrt(s2[0])), "separate_fit_sd_second_half": float(np.sqrt(s2[1])),
+            "goldfeld_quandt_F": float(f), "goldfeld_quandt_p_upper": p_gq}
+
+out = {"numpy": np.__version__, "statsmodels": sm.__version__, "seed": 221, "truth": {"intercept": A0, "slope": B0}}
+data = {"A": yA, "B": yB}
+for k, y in data.items():
+    ols = sm.OLS(y, X).fit()
+    wls = sm.WLS(y, X, weights=w_true).fit()
+    # feasible WLS: sd model |resid| ~ a + b x from OLS residuals, no knowledge of design
+    g = sm.OLS(np.abs(ols.resid), X).fit()
+    sd_hat = np.clip(g.predict(X), 0.05, None)
+    fwls = sm.WLS(y, X, weights=1 / sd_hat**2).fit()
+    sw = (wls.resid * np.sqrt(w_true))  # standardised residuals under WLS
+    out[k] = {"OLS": ci(ols), ("WLS_known_weights" if k=="B" else "WLS_with_B_weights_misspecified_illustration"): ci(wls), "FWLS_estimated_weights": ci(fwls),
+              "OLS_HC3_robust": {"intercept": [float(ols.params[0])] + [float(v) for v in ols.get_robustcov_results('HC3').conf_int()[0]],
+                                 "slope": [float(ols.params[1])] + [float(v) for v in ols.get_robustcov_results('HC3').conf_int()[1]]},
+              "ols_residual_diagnostics": diag(y, ols),
+              ("wls_weighted_resid_diagnostics" if k=="B" else "misspecified_B_weights_resid_diagnostics"): {
+                  "sd_first_half": float(sw[:20].std(ddof=1)), "sd_second_half": float(sw[20:].std(ddof=1)),
+                  "spearman_abs_vs_x": float(stats.spearmanr(x, np.abs(sw))[0]),
+                  "spearman_p": float(stats.spearmanr(x, np.abs(sw))[1])},
+              "shapiro_p_ols_resid": float(stats.shapiro(ols.resid)[1])}
+    np.savetxt(f"results/resid_{k}.csv", np.c_[x, y, ols.resid, wls.resid, wls.resid * np.sqrt(w_true)],
+               delimiter=",", header="x,y,ols_resid,wls_resid,wls_weighted_resid", comments="")
+np.savetxt("results/data.csv", np.c_[x, yA, yB, sdB], delimiter=",", header="x,yA,yB,sdB_true", comments="")
+
+# Monte Carlo (separate seed): CI coverage and slope SE of OLS vs WLS for each noise model
+mc = {}
+mrng = np.random.default_rng(9001); R = 4000; tq = stats.t.ppf(0.975, 38)
+for k, sd in {"A": np.full(40, 3.0), "B": sdB}.items():
+    w = 1 / sd**2; rec = {"OLS": [], "WLS": []}  # for A, correct weights are constant so WLS == OLS
+    for _ in range(R):
+        y = A0 + B0 * x + mrng.normal(0, sd)
+        for nm, r in (("OLS", sm.OLS(y, X).fit()), ("WLS", sm.WLS(y, X, weights=w).fit())):
+            rec[nm].append((r.params[1], abs(r.params[1] - B0) < tq * r.bse[1], 2 * tq * r.bse[1]))
+    mc[k] = {nm: {"slope_empirical_sd": float(np.std([t[0] for t in v])),
+                  "slope_ci_coverage": float(np.mean([t[1] for t in v])),
+                  "slope_mean_ci_width": float(np.mean([t[2] for t in v]))} for nm, v in rec.items()}
+out["monte_carlo_4000_reps"] = mc
+json.dump(out, open("results/results.json", "w"), indent=1)
+print(json.dumps(out, indent=1))
+
+# Selected method per series (decision from the residual checks above): A -> OLS, B -> WLS with known weights
+sel = {"convention": "95% two-sided t intervals, df = n-2 = 38 (t=2.0244); WLS weights 1/(0.5+0.15x)^2 known by construction, scale estimated from residuals (statsmodels WLS default)",
+       "A": {"method": "OLS", "weights": None, **out["A"]["OLS"]},
+       "B": {"method": "WLS", "weights": "1/(0.5+0.15*x)^2", **out["B"]["WLS_known_weights"]},
+       "fields_order": "[estimate, ci_low, ci_high, std_error]", "truth": out["truth"]}
+json.dump(sel, open("results/selected.json", "w"), indent=1)

@@ -1,0 +1,19 @@
+# Brief
+
+## Objective (quoted)
+> Fit a straight line y = a + b x to the 40 points in `/initial-state/inputs/0/points.csv` by ordinary least squares. Report a and b with 95% confidence intervals and the residual standard deviation, make one figure (the points, the fitted line and its 95% confidence band), and write a one-page report `report/report.md` (Markdown is enough) with the numbers, the figure and the analysis code used. This is a small task: a few minutes of work on one CPU.
+
+## Requirements / deliverables
+1. OLS fit, n=40 (x = 0..9.75 step 0.25; y ≈ 1.1–9.6). Report a, b with 95% CIs and residual SD (s, on n-2 = 38 dof).
+2. One figure: points, fitted line, 95% confidence band (band for the mean line, t-based).
+3. One-page `report/report.md` with the numbers, the figure and the analysis code.
+
+## Data
+Single file, 40 rows, columns x,y; sha256 5eec9bbc34f6996cd84748d85e95d9114bd263ff6bafda0cfcda8aa80a5c2905. No related material supplied.
+
+## Conventions / interpretation
+- CIs use Student t with 38 dof (t=2.0244). "Confidence band" read as the pointwise 95% CI of the mean regression line (not a prediction band); the report should say so.
+- Residual SD = sqrt(RSS/(n-2)).
+
+## Not established
+Nothing about data provenance/units; no venue requirements beyond Markdown.

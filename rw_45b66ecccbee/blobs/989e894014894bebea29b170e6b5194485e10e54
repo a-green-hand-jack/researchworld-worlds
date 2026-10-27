@@ -1,0 +1,11 @@
+# paper-repo — report
+
+`report/report.tex` is the 2-page NeurIPS 2026 paper comparing multinomial logistic
+regression with k-NN on Iris (OpenML 61); `report/report.pdf` is built from it.
+Build from the delivered tree with `sh report/build.sh` (TeX Live 2026, pdflatex + bibtex).
+
+Inputs delivered by other positions into the same tree:
+`report/code/` and `report/results/` (incl. generated `numbers.tex`, every number in the text) from experiment-repo;
+`report/figures/` and `report/tables/` (figure, caption, table and their scripts) from figtab-repo;
+`report/neurips_2026.sty` (unmodified official file) from venue-repo.
+`report/placeholders.tex` only defines red markers for macros that would be missing; in the delivered build all are defined by `results/numbers.tex`.

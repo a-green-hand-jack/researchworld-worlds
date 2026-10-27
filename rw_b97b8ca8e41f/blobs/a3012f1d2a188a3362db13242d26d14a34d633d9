@@ -1,0 +1,34 @@
+# Reproducible analyses
+
+This directory contains the generators, derivations, validation checks, and merge utility for the delivered evidence. All commands use the pinned private environment (`Python 3.11.2`, `numpy 2.4.6`, `torch 2.13.0+cpu`, `pyarrow 18.1.0`, `Pillow 11.1.0`, and `scikit-learn 1.6.1`). Install the exact direct and transitive versions with `/researchworld/.venv/bin/python -m pip install -r code/requirements-cutoff.txt` (or your own Python 3.11 environment) and check them with `python -m pip check`. The lock includes the CPU-only PyTorch wheel; all locked version release dates were checked against PyPI version metadata and precede the 1 September 2026 cutoff. Without the lock, a fresh PyTorch installation currently resolves some post-cutoff transitive versions and does not reproduce the permitted dependency set.
+
+## Tier A: linear theory checks
+
+```bash
+/researchworld/.venv/bin/python code/run_experiments.py --output results
+/researchworld/.venv/bin/python code/derive_auxiliary.py
+/researchworld/.venv/bin/python code/validate_results.py --require-nonlinear  # after the ViT merge
+```
+
+`run_experiments.py` simulates the expected-gradient linear JEPA with diagonal synthetic view covariances and an independent full-matrix implementation. It covers predictor-scale, masking, EMA, predictor-design/bottleneck, encoder-decay, predictor-learning-rate/decay, depth, no-stop-gradient, and matched reduced/full controls. `derive_auxiliary.py` computes per-direction early slopes, decay calibration, rank-prediction splits, and the matched-limit comparison table. `validate_results.py` checks schemas, finite values, the reduced/full agreement, and the predeclared qualitative controls. The nonlinear runner aligns covariance eigenspaces between checkpoints by overlap and records the online-context rank measure, alignment overlaps, and the early-window baseline/rank-at-250 fields before merging.
+
+The full-matrix validation uses the configuration's predictor decay (not encoder decay); its maximum trajectory relative error is recorded in `results/raw/ode_vs_full.csv`.
+
+## Tier B/C: nonlinear ViT checks
+
+Run one configuration and seed with:
+
+```bash
+/researchworld/.venv/bin/python code/run_vit_experiments.py \
+  --config-id b_reference --seed 0 --output-root results/raw/vit_runs
+```
+
+The settled Tier-B grid is defined by `run_vit_experiments.py::configs`: 17 controlled configurations, each with primary seeds 0, 1, and 2. The completed `b_reference` seed 3 is retained as one extra sensitivity row; the omitted cells are exactly the four EMA-by-decay combinations. Tier C uses six `c_*` IDs on the pinned `uoft-cs/cifar10` parquet files under `data/cifar10/`, each with seeds 0, 1, and 2 at 50 epochs. `--steps` and `--epochs` exist only for labelled pilots and must not be used for final rows. `merge_vit_results.py` combines committed per-seed files after all final jobs complete. The final validation command uses `--require-nonlinear` and checks the 70-run manifest (69 primary runs plus the extra reference row), required online/target spectra, and finite Tier-C probe values.
+
+The nonlinear runner uses the pinned ViT d192/L6, 64 4x4 patches, predictor d64/L2, batch 256, AdamW, and EMA target. Training and rank evaluation use independent per-patch Bernoulli masking; `mask_fraction` is an expected fraction, not an exact per-example count, and no contiguous block-mask claim is made. It stores checkpoint spectra, per-seed summaries, early-window fitted slopes, and the frozen-backbone RidgeClassifier probe for Tier C. Rank spectra use one fixed seeded Bernoulli context mask per seed across checkpoints, with the sampler and seed recorded in each summary/config/provenance file. The linear `Phi_j` and fixed-point predictions are not asserted as exact nonlinear predictions; nonlinear rows identify this scope explicitly.
+
+The `code/annotate_vit_protocol.py` migration annotates completed pre-revision rows with the settled Bernoulli mask metadata; newly generated rows include it directly. Run `code/add_init_probe.py` after completed Tier-C rows land and before merging; it computes the untrained frozen-backbone RidgeClassifier baseline from the same seed and writes `results/derived/vit_init_probe.csv` plus `probe_accuracy_init` into each summary. The `code/diagnose_vit_transfer.py --tier all` sensitivity audit reads completed per-seed trajectories and writes `results/derived/vit_transfer_diagnostics.csv` with early eigenvalue-resolution and eigenspace-overlap filters. The unfiltered nonlinear early-slope count is a diagnostic rather than an exact linear-theory prediction; see `results/README.md`.
+
+The raw CIFAR-10 parquet files are local inputs only and are not part of the assembled `code/` or `results/` delivery. Their hashes and source revision are recorded by the runner in each run's `data_provenance.json`.
+
+The runner uses an equivalent fused scaled-dot-product-attention implementation on CPU and four intra-op threads; this is the measured configuration used for final jobs. The reported parameter count is trainable parameters (the EMA target is frozen and excluded).

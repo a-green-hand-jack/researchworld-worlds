@@ -1,0 +1,30 @@
+"""Lossless compaction of the per-sweep series written by ising.py --series (to keep the delivery under its size limit).
+
+ising.py saves |m| and e per site as float64 .npy, i.e. |M|/L^2 and E/L^2 with integer totals M, E. This stores each
+run's pair as one compressed L{L}-T{T:.4f}-s{seed}.npz holding the int32 totals M, E and L, checks that dividing them
+by L^2 reproduces the original float64 arrays bit for bit, and only then deletes the two .npy files.
+Read them back with common.load_series. Usage: python3 code/compact_series.py data/stage2/series [more dirs]
+"""
+import re
+import sys
+from pathlib import Path
+
+import numpy as np
+
+for d in map(Path, sys.argv[1:]):
+    for fm in sorted(d.glob('L*-T*-s*-m.npy')):
+        stem = fm.name[:-len('-m.npy')]
+        fe = d / f'{stem}-e.npy'
+        if not fe.exists():
+            continue
+        L = int(re.match(r'L(\d+)-', stem).group(1))
+        n = L * L
+        m, e = np.load(fm), np.load(fe)
+        M, E = np.rint(m * n).astype(np.int32), np.rint(e * n).astype(np.int32)
+        if not (np.array_equal(M / n, m) and np.array_equal(E / n, e)):
+            sys.exit(f'{stem}: not exactly representable, left as .npy')
+        np.savez_compressed(d / f'{stem}.npz', M=M, E=E, L=np.int32(L))
+        z = np.load(d / f'{stem}.npz')
+        assert np.array_equal(z['M'] / n, m) and np.array_equal(z['E'] / n, e)
+        fm.unlink(); fe.unlink()
+        print(stem)

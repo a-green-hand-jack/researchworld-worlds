@@ -1,0 +1,178 @@
+"""Stage 3 analysis: do the L = 256 Binder values agree with the stage-2 crossing?
+
+Input : data/stage3/summary-L256.json, data/stage3/series/*.npz (per-sweep |m|, e; kept for diagnostics)
+        results/stage2_crossing.json, data/stage2/summary-L{32,64,128}.json (the stage-2 curves)
+Output: results/stage3_binder.csv  U(256) per T (seeds pooled), seed and block errors, per-seed U, tau_int(|m|)
+        results/stage3_check.json  U(256) at T* from a linear fit vs U at the stage-2 crossing; T where the
+                                   L = 256 line meets U*; crossing of L = 256 with the stage-2 L = 128 curve;
+                                   slope ratio; tau_int at L = 256; the agreement verdict
+Agreement criterion: |U_256(T*) - U*| <= 2 sigma, with sigma combining the L = 256 fit error and the half-width
+of the stage-2 seed-bootstrap U interval / 1.96; and the stage-2 T_c interval and the L = 256 crossing interval overlap.
+"""
+import csv
+import json
+import os
+import sys
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import TC_EXACT, U_STAR_LIT, binder, fit_curves, load_series, tau_int  # noqa: E402
+
+ROOT = Path(os.environ.get('ISING_ROOT', Path(__file__).resolve().parents[1]))
+BLOCK = 1000  # sweeps; raised to N // 10 for longer runs below
+rng = np.random.default_rng(256)
+# usage: stage3_analysis.py [DATA_DIR OUT_PREFIX]; default data/stage3 -> results/stage3_*
+DATA = sys.argv[1] if len(sys.argv) > 1 else 'data/stage3'
+PREFIX = sys.argv[2] if len(sys.argv) > 2 else 'stage3'
+
+
+def main():
+    s2 = json.loads((ROOT / 'results/stage2_crossing.json').read_text())
+    rows = json.loads((ROOT / DATA / 'summary-L256.json').read_text())
+    temps = sorted({r['T'] for r in rows})
+    seeds = sorted({r['seed'] for r in rows})
+    N = rows[0]['sweeps']
+    block = max(BLOCK, N // 10)
+    nb = N // block
+    ser = {}
+    for r in rows:
+        me = load_series(ROOT / DATA / 'series', 256, r['T'], r['seed'])
+        ser[r['T'], r['seed']] = None if me is None else me[0]
+    M2 = np.array([[next(r['m2'] for r in rows if r['T'] == T and r['seed'] == s) for s in seeds] for T in temps])
+    M4 = np.array([[next(r['m4'] for r in rows if r['T'] == T and r['seed'] == s) for s in seeds] for T in temps])
+    U = binder(M2.mean(1), M4.mean(1))
+    U_seed = binder(M2, M4)
+    U_err_seed = U_seed.std(1, ddof=1) / np.sqrt(len(seeds))
+    have_series = all(v is not None for v in ser.values())
+    tau = {}
+    if have_series:
+        BM2 = np.array([[(ser[T, s][:nb * block] ** 2).reshape(nb, block).mean(1) for s in seeds] for T in temps])
+        BM4 = np.array([[(ser[T, s][:nb * block] ** 4).reshape(nb, block).mean(1) for s in seeds] for T in temps])
+        draws = []
+        for _ in range(2000):
+            pick = rng.integers(0, nb, (len(seeds), nb))
+            m2 = np.take_along_axis(BM2, pick[None], axis=2).mean(2).mean(1)
+            m4 = np.take_along_axis(BM4, pick[None], axis=2).mean(2).mean(1)
+            draws.append(binder(m2, m4))
+        draws = np.array(draws)
+        U_err_block = draws.std(0, ddof=1)
+        tau = {(T, s): tau_int(ser[T, s]) for T in temps for s in seeds}
+    else:
+        draws, U_err_block = None, np.full_like(U, np.nan)
+    # error used for the fit: the larger of the seed and block estimates at each point
+    sig = np.fmax(U_err_seed, np.nan_to_num(U_err_block))
+
+    Tstar, Ustar = s2['Tc'], s2['U_at_crossing']
+    Ustar_sig = (s2['bootstrap_seeds']['U_ci95'][1] - s2['bootstrap_seeds']['U_ci95'][0]) / (2 * 1.96)
+    t = np.array(temps)
+    w = 1 / sig ** 2
+    A = np.vstack([np.ones_like(t), t - Tstar]).T
+    cov = np.linalg.inv(A.T @ (A * w[:, None]))
+    coef = cov @ (A.T @ (w * U))
+    chi2 = float(np.sum(w * (U - A @ coef) ** 2))
+    U256_at_Tstar, U256_at_Tstar_err = float(coef[0]), float(np.sqrt(cov[0, 0]))
+    slope256 = float(coef[1])
+    z = (U256_at_Tstar - Ustar) / np.hypot(U256_at_Tstar_err, Ustar_sig)
+    T_meet = Tstar + (Ustar - coef[0]) / coef[1]
+
+    # stage-2 L = 128 curve (cubic, seed-pooled) and its crossing with the L = 256 line; resampled over the
+    # L = 256 point errors (Gaussian) and the stage-2 L = 128 seeds
+    s2rows = json.loads((ROOT / 'data/stage2/summary-L128.json').read_text())
+    t2 = sorted({r['T'] for r in s2rows})
+    s2seeds = sorted({r['seed'] for r in s2rows})
+    m2_128 = np.array([[next(r['m2'] for r in s2rows if r['T'] == T and r['seed'] == s) for s in s2seeds] for T in t2])
+    m4_128 = np.array([[next(r['m4'] for r in s2rows if r['T'] == T and r['seed'] == s) for s in s2seeds] for T in t2])
+
+    def cross128(u256, pick):
+        (p128,), x0 = fit_curves(t2, [binder(m2_128[:, pick].mean(1), m4_128[:, pick].mean(1))], 3)
+        c = np.polyfit(t - Tstar, u256, 1, w=1 / sig)
+        tt = np.linspace(t[0] - 0.03, t[-1] + 0.03, 3001)
+        d = np.polyval(c, tt - Tstar) - p128(tt - x0)
+        idx = np.nonzero(np.sign(d[:-1]) != np.sign(d[1:]))[0]
+        if not len(idx):
+            return np.nan, float(np.polyder(p128)(Tstar - x0))
+        m = idx[np.argmin(np.abs(tt[idx] - Tstar))]
+        return float(tt[m] - d[m] * (tt[m + 1] - tt[m]) / (d[m + 1] - d[m])), float(np.polyder(p128)(Tstar - x0))
+
+    T_cross_128_256, slope128 = cross128(U, np.arange(len(s2seeds)))
+    bc = []
+    for _ in range(4000):
+        u = U + rng.normal(size=U.shape) * sig
+        bc.append(cross128(u, rng.integers(0, len(s2seeds), len(s2seeds)))[0])
+    bc = np.array(bc)
+    ci_cross = np.nanpercentile(bc, [2.5, 97.5]).tolist()
+    ci2 = s2['bootstrap_seeds']['ci95']
+    overlap = bool(ci_cross[0] <= ci2[1] and ci2[0] <= ci_cross[1])
+    formal_agree = bool(abs(z) <= 2 and overlap)
+    # validity of the L = 256 data themselves: a linear U(T) over 0.06 in T must fit (p > 0.01), the curve must be
+    # steeper than L = 128 (finite-size scaling: slope ratio ~ 2^(1/nu) = 2), and the runs must be long against
+    # tau_int (N/tau >= 50, burn/tau >= 10, every window converged); otherwise the check is inconclusive
+    from scipy.stats import chi2 as chi2dist
+    p_fit = float(chi2dist.sf(chi2, len(temps) - 2))
+    taus_all = [v[0] for v in tau.values()]
+    problems = []
+    if p_fit < 0.01:
+        problems.append(f'linear fit of U(256) vs T fails (chi2 = {chi2:.1f} on {len(temps) - 2} dof, p = {p_fit:.2g})')
+    if slope128 and not (slope256 / slope128 > 1):
+        problems.append(f'L=256 curve is not steeper than L=128 (slope ratio {slope256 / slope128:.2f}, expected ~2)')
+    if tau and (N / max(taus_all) < 50 or rows[0]['burn'] / max(taus_all) < 10):
+        problems.append(f'runs short against tau_int(|m|): N/tau_max = {N / max(taus_all):.0f}, '
+                        f'burn/tau_max = {rows[0]["burn"] / max(taus_all):.1f}')
+    nc = sum(1 for v in tau.values() if v[1] < 0)
+    if nc:
+        problems.append(f'{nc} of {len(tau)} tau_int windows not converged (tau underestimated)')
+    verdict = 'inconclusive' if problems else ('agree' if formal_agree else 'disagree')
+    # equilibration diagnostic: U from the first and second half of each run, seeds pooled
+    halves = {}
+    if have_series:
+        h = N // 2
+        for i, T in enumerate(temps):
+            a = [ser[T, s][:h] for s in seeds]; b = [ser[T, s][h:] for s in seeds]
+            halves[T] = [float(binder(np.mean([(x ** 2).mean() for x in a]), np.mean([(x ** 4).mean() for x in a]))),
+                         float(binder(np.mean([(x ** 2).mean() for x in b]), np.mean([(x ** 4).mean() for x in b])))]
+
+    out = ROOT / 'results'
+    with open(out / f'{PREFIX}_binder.csv', 'w', newline='') as f:
+        wr = csv.writer(f)
+        wr.writerow(['L', 'T', 'U', 'U_err_seed', 'U_err_block', *[f'U_s{s}' for s in seeds],
+                     *[f'tau_abs_m_s{s}' for s in seeds], *[f'window_s{s}' for s in seeds]])
+        for i, T in enumerate(temps):
+            wr.writerow([256, f'{T:.4f}', f'{U[i]:.6f}', f'{U_err_seed[i]:.6f}', f'{U_err_block[i]:.6f}',
+                         *[f'{U_seed[i, j]:.6f}' for j in range(len(seeds))],
+                         *[f'{tau[T, s][0]:.1f}' if tau else '' for s in seeds],
+                         *[tau[T, s][1] if tau else '' for s in seeds]])
+    taus = [v[0] for v in tau.values()]
+    res = {
+        'inputs': [f'{DATA}/summary-L256.json', f'{DATA}/series/*.npz', 'results/stage2_crossing.json',
+                   'data/stage2/summary-L128.json'],
+        'L': 256, 'block_sweeps': block, 'temps': temps, 'seeds': seeds, 'sweeps': N, 'burn': rows[0]['burn'],
+        'stage2_Tc': Tstar, 'stage2_Tc_ci95': ci2, 'stage2_U_at_crossing': Ustar, 'stage2_U_sigma': Ustar_sig,
+        'U256': U.tolist(), 'U256_err_seed': U_err_seed.tolist(), 'U256_err_block': U_err_block.tolist(),
+        'linear_fit': {'U256_at_stage2_Tc': U256_at_Tstar, 'err': U256_at_Tstar_err, 'slope': slope256,
+                       'chi2': chi2, 'dof': len(temps) - 2},
+        'U256_minus_Ustar_in_sigma': float(z),
+        'T_where_L256_line_meets_Ustar': float(T_meet),
+        'crossing_L128_L256': {'T': T_cross_128_256, 'ci95': ci_cross,
+                               'note': 'L=256 linear fit vs stage-2 L=128 cubic; resampled L=256 errors and L=128 seeds'},
+        'slope_ratio_256_over_128': slope256 / slope128 if slope128 else None,
+        'slope_ratio_expected': 2.0,
+        'tau_abs_m_L256': {'max': max(taus) if taus else None, 'min': min(taus) if taus else None,
+                           'N_over_tau_min': N / max(taus) if taus else None,
+                           'burn_over_tau_min': rows[0]['burn'] / max(taus) if taus else None,
+                           'windows_not_converged': sum(1 for v in tau.values() if v[1] < 0)},
+        'tc_exact': TC_EXACT, 'U_star_literature': U_STAR_LIT,
+        'formal_agreement': formal_agree,
+        'formal_criterion': '|U256(T*) - U*| <= 2 sigma and the L128/L256 crossing interval overlaps the stage-2 T_c interval',
+        'linear_fit_p_value': p_fit,
+        'validity_problems': problems,
+        'verdict': verdict,
+        'U256_first_half_second_half': halves,
+    }
+    (out / f'{PREFIX}_check.json').write_text(json.dumps(res, indent=1))
+    print(json.dumps(res, indent=1))
+
+
+if __name__ == '__main__':
+    main()

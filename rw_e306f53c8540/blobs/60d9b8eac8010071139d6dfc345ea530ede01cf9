@@ -1,0 +1,17 @@
+# Results guide (all produced by `python3 code/analysis.py` from the repo root; numpy 2.4.6, scipy 1.17.1, statsmodels 0.15.0)
+
+Provenance: seed 221, one generator, A noise `rng.normal(0,3,40)` first, then B noise `rng.normal(0, 0.5+0.15x)` (= sd * standard normals). No external input files.
+
+| File | Content |
+|---|---|
+| `data.csv` | x, yA, yB, true sd of B |
+| `resid_A.csv`, `resid_B.csv` | x, y, OLS residual, WLS (B-weights) residual, weighted residual |
+| `selected.json` | chosen method per series (A OLS, B WLS), estimate/CI low/CI high/SE, interval convention |
+| `results.json` | everything: OLS/WLS/FWLS/HC3 fits, residual diagnostics, Monte Carlo |
+
+Interval convention: 95% two-sided t, df = 38 (t = 2.0244). B's WLS uses known weights 1/(0.5+0.15x)^2 (variance function known by construction), overall scale estimated from the residuals. For A, OLS; the B-weights WLS entry for A is a misspecified illustration only.
+
+Residual-check decision: A BP p=0.194, Spearman p=0.58, Goldfeld-Quandt (separate fits per half) F=1.38 p=0.25 -> OLS. B (OLS residuals) BP p=0.0045, Spearman rho=0.444 p=0.0041, GQ F=4.05 p=0.0024, half-SD (separate fits) 2.09 -> 4.20 -> WLS; after weighting Spearman p=0.77.
+
+Line map in `code/analysis.py`: data generation l.10-13; weights l.15; CI helper l.17-20; residual diagnostics `diag` l.22-37 (BP, Spearman, classical Goldfeld-Quandt with separate fits per half checked against statsmodels, half-SDs); results dict l.39; OLS/WLS/FWLS fits l.41-47; Monte Carlo l.62-79; selected-method file l.79+. (Use `grep -n` if lines drift.)
+Coverage note: both chosen CIs contain the true values (2.5, 0.8); one draw is not evidence for a method -- Monte Carlo (4000 reps) gives B slope CI coverage OLS 93.4% vs WLS 95.1%, mean width 0.210 vs 0.144.

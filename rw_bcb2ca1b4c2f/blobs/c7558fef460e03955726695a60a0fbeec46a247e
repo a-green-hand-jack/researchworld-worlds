@@ -1,0 +1,44 @@
+"""Compare re-rendered figures/tables (work dir) with the delivered ones: tables and .inputs.json byte-wise
+(ignoring nothing), figures by rasterising every page at 100 dpi with pdftoppm and comparing pixels."""
+import sys, os, json, hashlib, subprocess, tempfile
+import numpy as np
+D, W, out = sys.argv[1:4]
+def sha(p): return hashlib.sha256(open(p, 'rb').read()).hexdigest()
+def raster(pdf, tmp, tag):
+    pre = os.path.join(tmp, tag)
+    subprocess.run(['pdftoppm', '-r', '100', '-gray', pdf, pre], check=True)
+    pages = sorted(f for f in os.listdir(tmp) if f.startswith(tag) and f.endswith('.pgm'))
+    arrs = []
+    for f in pages:
+        with open(os.path.join(tmp, f), 'rb') as fh:
+            data = fh.read()
+        # PGM P5 header: magic, width height, maxval
+        parts = data.split(b'\n', 3)
+        w, h = map(int, parts[1].split()); arrs.append(np.frombuffer(parts[3], dtype=np.uint8).reshape(h, w))
+    return arrs
+res = {'tables': {}, 'inputs_json': {}, 'figures': {}}
+for sub, key in (('paper/tables', 'tables'),):
+    for f in sorted(os.listdir(os.path.join(D, sub))):
+        a, b = os.path.join(D, sub, f), os.path.join(W, sub, f)
+        res[key][f] = 'identical' if os.path.exists(b) and sha(a) == sha(b) else ('missing' if not os.path.exists(b) else 'differs')
+figdir_d, figdir_w = os.path.join(D, 'paper/figures'), os.path.join(W, 'paper/figures')
+for f in sorted(os.listdir(figdir_d)):
+    a, b = os.path.join(figdir_d, f), os.path.join(figdir_w, f)
+    if f.endswith('.json'):
+        res['inputs_json'][f] = 'identical' if sha(a) == sha(b) else 'differs'
+        continue
+    if not f.endswith('.pdf'):
+        res['figures'][f] = 'identical' if sha(a) == sha(b) else 'differs (non-pdf)'; continue
+    with tempfile.TemporaryDirectory() as tmp:
+        ra, rb = raster(a, tmp, 'a'), raster(b, tmp, 'b')
+    if len(ra) != len(rb) or any(x.shape != y.shape for x, y in zip(ra, rb)):
+        res['figures'][f] = {'status': 'shape differs'}; continue
+    nd = int(sum((x != y).sum() for x, y in zip(ra, rb))); tot = int(sum(x.size for x in ra))
+    mx = int(max(np.abs(x.astype(int) - y.astype(int)).max() for x, y in zip(ra, rb)))
+    res['figures'][f] = {'status': 'pixel-identical' if nd == 0 else 'differs', 'pixels_differing': nd, 'pixels': tot, 'max_abs_gray_diff': mx, 'bytes_identical': sha(a) == sha(b)}
+# new outputs produced by the generators but not delivered
+for sub in ('paper/figures', 'paper/tables'):
+    extra = sorted(set(os.listdir(os.path.join(W, sub))) - set(os.listdir(os.path.join(D, sub))))
+    res.setdefault('not_delivered', {})[sub] = extra
+json.dump(res, open(out, 'w'), indent=1)
+print(json.dumps({k: (v if k == 'not_delivered' else {f: (s if isinstance(s, str) else s['status']) for f, s in v.items()}) for k, v in res.items()}, indent=0))

@@ -1,0 +1,11 @@
+# Review of paper-repo PR #4
+
+Inspected commit `61ca48e` (pull request head) on 2026-10-26.
+
+The delivered `report/report.md` is one paragraph and states the NOAA GML URL, UTC fetch time (`2026-10-26T20:02:18Z`), preserved file path, SHA-256 `bdd956e8d7e05ebc3c61ac1f8f8c8cea4a505df56724fba5200b4eb1e0089b2b`, final year 2025 and annual mean 427.35 ppm. I recomputed the SHA-256 from the committed CSV and obtained the stated digest. The CSV has 2015 = 401.01 ppm and 2025 = 427.35 ppm; `(427.35 - 401.01) / 10 = 2.634`, matching the report and the objective's ten-year definition. The fetched timestamp matches `data/fetched_at.txt`. No figure is required by the objective and none is delivered.
+
+**Conclusion: supported; approve PR #4.**
+
+## Final promotion PR #5
+
+Inspected PR #5 head `777492162ef4d21f0fd2829f8e98aeb562af630f` (release merge) on 2026-10-26. Its tree is identical in delivered content to the approved release: the one-paragraph report, fetched timestamp, and preserved CSV are present; the CSV digest and reported values remain correct. **Conclusion: supported; approve PR #5.**

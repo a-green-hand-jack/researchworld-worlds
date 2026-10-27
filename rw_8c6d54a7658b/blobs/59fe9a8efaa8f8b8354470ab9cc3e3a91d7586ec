@@ -1,0 +1,114 @@
+\documentclass{article}
+
+% NeurIPS 2026 submission mode (default = Main Track, anonymous).
+\usepackage{neurips_2026}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+
+% Every number in the text comes from the generated macro file delivered with
+% the code; placeholders (red) are used only if it is absent.
+\IfFileExists{results/numbers.tex}{\input{results/numbers.tex}}{}
+\input{placeholders.tex}
+
+\title{Logistic Regression versus $k$-NN on Iris}
+
+\author{Anonymous Author(s)\\Affiliation\\Address\\\texttt{email}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We compare multinomial logistic regression (LR) with $k$-nearest neighbours
+($k$NN, $k$ tuned by inner cross-validation) on Iris (OpenML 61) by 10
+repetitions of stratified 5-fold cross-validation on shared splits. LR reaches a mean accuracy of \LRMean\%
+(95\% interval \LRLo--\LRHi\%) and $k$NN \KNNMean\% (\KNNLo--\KNNHi\%). The
+paired difference LR$-k$NN is \DiffMean{} percentage points (pp), 95\% interval
+[\DiffLo, \DiffHi]~pp: the data do not distinguish the methods. Runs on a KAUST
+Ibex CPU node (\IbexNode) and locally \RunsIdentical.
+\end{abstract}
+
+\section{Introduction}
+On Fisher's Iris data~\citep{fisher1936} both a linear classifier (multinomial
+LR) and a non-parametric one ($k$NN) are accurate, so
+the question is whether their difference can be resolved with 150 samples. We
+use a paired repeated cross-validation design with an interval that accounts
+for overlapping training sets~\citep{nadeau2003inference}, and check exact
+reproducibility across two machines.
+
+\section{Data and methods}
+\paragraph{Data.} Iris was downloaded by the delivered script from
+OpenML~\citep{vanschoren2014openml} (dataset 61, version \OpenMLVersion, ARFF
+MD5 \texttt{\DataMDFive}; 150 rows, 3 classes of 50).
+
+\paragraph{Models.} Both are scikit-learn~\citep{pedregosa2011scikit} pipelines
+that standardise features on the training fold only. LR is a multinomial
+(softmax) model with fixed hyperparameters (\LRSettings); only $k$NN is tuned.
+$k$NN (uniform weights, Euclidean) selects $k$ from \KGrid{} on each outer
+training fold by stratified \InnerFolds-fold inner cross-validation (ties: smallest $k$).
+
+\paragraph{Protocol and intervals.} The outer loop is 10 repetitions of
+stratified 5-fold cross-validation (seed \Seed): \NFolds{} folds of \NTrain{}
+training and \NTest{} test points, shared by both methods so that differences
+are paired. Each mean over the \NFolds{} folds gets a 95\% corrected resampled
+$t$ interval~\citep{nadeau2003inference,bouckaert2004replicability},
+$\bar x \pm t_{0.975,49}\sqrt{(1/50+30/120)\,s^2}$ with $s^2$ the variance of
+the fold values; the correction accounts for overlapping training sets, which
+make the naive $t$ interval too narrow~\citep{dietterich1998approximate}. For contrast
+only, we also give naive $t$ and fold-bootstrap intervals, which ignore it.
+
+\section{Results and discussion}
+\begin{table}[t]
+  \IfFileExists{tables/tab_results.tex}{\centering\input{tables/tab_results.tex}}%
+  {\caption{\PH{Table from figtab-repo: tables/tab\_results.tex}}\label{tab:results}}
+\end{table}
+
+\begin{figure}[t]
+  \centering
+  \IfFileExists{figures/fig_accuracy.pdf}%
+  {\includegraphics[width=\linewidth]{figures/fig_accuracy.pdf}}%
+  {\fbox{\parbox{0.9\linewidth}{\centering\PH{Figure from figtab-repo: figures/fig\_accuracy.pdf}}}}
+  \IfFileExists{figures/fig_accuracy_caption.tex}{\input{figures/fig_accuracy_caption.tex}}%
+  {\caption{\PH{Caption from figtab-repo: figures/fig\_accuracy\_caption.tex}}\label{fig:accuracy}}
+\end{figure}
+
+LR attains \LRMean\% [\LRLo, \LRHi] and $k$NN \KNNMean\% [\KNNLo, \KNNHi]
+(Table~\ref{tab:results}). The paired difference LR$-k$NN is \DiffMean~pp,
+corrected 95\% interval [\DiffLo, \DiffHi]~pp ($p=\DiffP$; Figure~\ref{fig:accuracy}).
+It contains zero: the methods are not distinguishable on Iris, and differences
+of a few points either way cannot be excluded. The naive $t$
+[\DiffNaiveLo, \DiffNaiveHi]~pp and bootstrap [\DiffBootLo, \DiffBootHi]~pp
+intervals are much narrower (the latter excludes zero) only because they treat
+overlapping folds as independent. The selected $k$ ranges over \KRange{}
+(median \KMedian). With five other split seeds, without standardisation, or
+with LR's $C$ tuned, every corrected difference interval still contains zero
+(\texttt{results/sensitivity.json}).
+
+\paragraph{Ibex versus local.} The same script, data and packages (NumPy
+\NumpyVersion, SciPy \ScipyVersion, scikit-learn \SklearnVersion; one BLAS
+thread) ran as a one-CPU SLURM job on KAUST Ibex (job \IbexJobID, node
+\IbexNode{} as recorded in the job, Python \PythonVersionIbex) and locally
+(Python \PythonVersion). Per-fold accuracies, selected $k$ and all predictions
+are byte-identical (max.\ abs.\ difference \MaxAbsDiff): the runs \RunsIdentical.
+
+\paragraph{Limitations.} With \NTest{} test points per fold accuracies move in
+steps of $1/30$; the corrected interval is only approximately calibrated; LR
+was not tuned; and one small, nearly separable dataset says nothing about
+harder problems. \textbf{Code} for every number, the figure and the table is
+next to this PDF in \texttt{code/}, \texttt{results/}, \texttt{figures/} and
+\texttt{tables/}.
+
+{\small
+\bibliographystyle{abbrvnat}
+\bibliography{references}}
+
+\end{document}

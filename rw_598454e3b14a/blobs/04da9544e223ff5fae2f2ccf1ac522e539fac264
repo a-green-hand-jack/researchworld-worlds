@@ -1,0 +1,94 @@
+"""E7 (study plan v2.11, direction C rung 5): the race in the ViT. Registration: results/e7/prediction.json.
+Development that fixed the readout: theory/ext_C_ladder.md "Rung 5 (E7)", code/checks/e7_dev_headroom.py.
+
+Rows (50 epochs on the 50-epoch schedule, instrumented: --instrument 1, step-0 force export --force-steps 0):
+  C5 transition rows: Arm T (code/e3_grid.py ARM_T: SGD momentum 0.9, lr 0.05 constant, copy target, no target or
+     predictor LayerNorm, decay on every parameter) at constant weight decay WD_C5, spaced by sqrt(2) around the
+     headroom race's predicted transition at 50 epochs (and covering the 20-epoch one), 5 seeds each;
+  toggle rows from Arm T towards Arm P (the I-JEPA recipe), one change each, at WD_TOG, 3 seeds each:
+     T_adamw  AdamW with the recipe's lr schedule (lr 3e-4, warm-up then cosine), weight decay constant WD_TOG;
+     T_ema    EMA target, momentum 0.996 -> 1 (recipe);
+     T_tln    LayerNorm on the target features (recipe);
+     T_pln    LayerNorms inside the predictor (recipe);
+     T_nodn   no weight decay on biases, norm gains and the mask token (recipe).
+  The Arm T row at WD_TOG is the C5 row of the same weight decay (its seeds 0-2 serve as the toggles' reference).
+Seeds 20-24 (C5) and 20-22 (toggles): disjoint from E3 (0-2), E8 (0-4) and the pilot (900).
+Usage:
+  python3 code/e7_grid.py list
+  python3 code/e7_grid.py sbatch-pilot DIR COMMIT     # timing/instrumentation pilot (<= 1 GPU-h), seed 900, 3 epochs
+  python3 code/e7_grid.py sbatch-grid DIR COMMIT      # production: one array, 3 runs per GPU
+"""
+import sys, os
+sys.path.insert(0, os.path.dirname(__file__))
+from e3_grid import ARM_T, cli_args, sbatch
+from e8_grid import PROV
+
+EPOCHS = 50
+WD_C5 = [0.0012, 0.0017, 0.0024, 0.0034, 0.0048, 0.0068, 0.0096, 0.0136]
+WD_TOG = 0.0034
+SEEDS_C5 = [20, 21, 22, 23, 24]
+SEEDS_TOG = [20, 21, 22]
+COMMON = ["--epochs", str(EPOCHS), "--full-epochs", str(EPOCHS), "--threads", "2", "--probe-every", "10",
+          "--instrument", "1", "--force-steps", "0"]
+TOGGLES = {"T_adamw": dict(opt="adamw", lr=3e-4, sched="cosine"),
+           "T_ema": dict(target="ema", ema=[0.996, 1.0]),
+           "T_tln": dict(target_ln=1),
+           "T_pln": dict(pred_norm=1),
+           "T_nodn": dict(decay_norm=0)}
+
+
+def grid():
+    G = {}
+    for wd in WD_C5:
+        G[f"T_wd{wd}"] = ("T", "c5", wd, dict(ARM_T, wd=[wd, wd]), SEEDS_C5)
+    for name, ch in TOGGLES.items():
+        G[name] = ("T", "toggle", WD_TOG, dict(ARM_T, wd=[WD_TOG, WD_TOG], **ch), SEEDS_TOG)
+    return G
+
+
+def run_line(name, over, seed, epochs=EPOCHS, root="runs7"):
+    out = f"{root}/{name}/s{seed}"
+    common = list(COMMON); common[1] = str(epochs)
+    return (f"mkdir -p {out}; prov {out}; venv/bin/python -u vit_jepa.py --out {out} --data data --seed {seed} "
+            + " ".join(common + cli_args(over)) + f" > {out}.log 2>&1 &")
+
+
+def cmd_pilot(d, commit):
+    """3 epochs of the base row and every toggle, seed 900, 3 runs packed per GPU as in production."""
+    G = grid(); names = [f"T_wd{WD_TOG}"] + list(TOGGLES)
+    for j in range(2):
+        lines = [PROV, f"export CODE_COMMIT={commit}"]
+        for name in names[3 * j:3 * j + 3]:
+            lines.append(run_line(name, G[name][3], 900, epochs=3, root="pilot7"))
+        open(os.path.join(d, f"e7pilot{j}.sbatch"), "w").write(sbatch(f"e7pilot{j}", lines, "00:45:00"))
+        print(os.path.join(d, f"e7pilot{j}.sbatch"))
+
+
+def cmd_grid(d, commit, per_job=3):
+    G = grid()
+    prio = lambda n: (0 if G[n][1] == "c5" else 1, abs(__import__("math").log(G[n][2] / 0.0027)))
+    runs = [(n, G[n][3], s) for n in sorted(G, key=prio) for s in G[n][4]]
+    jobs = [runs[i:i + per_job] for i in range(0, len(runs), per_job)]
+    lines = [PROV, f"export CODE_COMMIT={commit}", 'case "$SLURM_ARRAY_TASK_ID" in']
+    for i, job in enumerate(jobs):
+        lines.append(f"{i})")
+        for name, over, s in job:
+            out = f"runs7/{name}/s{s}"
+            lines.append(f"  if [ ! -f {out}/final.json ]; then " + run_line(name, over, s).replace(" &", "") + " & fi")
+        lines.append("  ;;")
+    lines.append("esac")
+    txt = sbatch("e7grid", lines, "02:00:00").replace("#SBATCH --output=%x_%j.out", f"#SBATCH --output=%x_%A_%a.out\n#SBATCH --array=0-{len(jobs) - 1}")
+    txt = txt.replace("echo ${JOB_DONE_PREFIX:-done:} e7grid done", "echo e7grid task $SLURM_ARRAY_TASK_ID done")
+    open(os.path.join(d, "e7grid.sbatch"), "w").write(txt)
+    print(os.path.join(d, "e7grid.sbatch"), len(runs), "runs", len(jobs), "array tasks")
+
+
+if __name__ == "__main__":
+    c = sys.argv[1]
+    if c == "list":
+        for k, v in grid().items():
+            print(k, v[:3], v[4], " ".join(cli_args(v[3])))
+    elif c == "sbatch-pilot":
+        cmd_pilot(sys.argv[2], sys.argv[3])
+    elif c == "sbatch-grid":
+        cmd_grid(sys.argv[2], sys.argv[3])

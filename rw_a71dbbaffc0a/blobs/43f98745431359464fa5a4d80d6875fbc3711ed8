@@ -1,0 +1,30 @@
+# World-command verification report
+
+Commands run from paper-repo's sandbox. Worlds: **nw_3d964f469935** (NoteWorld, step 2), **rw_bf27c6e9bf79** (continuation of rw_399c28e983a7 at g1, step 3). No third world was made.
+
+Note: world commands that create or drive worlds must go through `ht-resource run worlds -- ...` (async, tracked jobs); read-only commands (`status`, `artifacts`, `monitor`) worked directly.
+
+## 1. Install the note definition
+`researchworld definition install /initial-state/inputs/0/note` — exit 0. Output: `"name": "note", "command": "noteworld", "prefix": "nw"`, `installed_at` set, images built (`hutian-definition-system:note-b1e301d5741b6274`, `hutian-definition-worker:note-a1d07aa1cc1c888f`).
+
+## 2. NoteWorld
+- Direct `noteworld run --topic "A three-sentence note on why the sky is blue." --config note-config.json` — exit 1: `noteworld runs on the host through a world resource, and this world declares none that runs it`.
+- `ht-resource run worlds -- noteworld run ...` (cmd-945b5a51fd) — exit 0, world **nw_3d964f469935**.
+- `ht-resource run worlds -- noteworld execute nw_3d964f469935 --loop` (cmd-564584c5e8) — succeeded, exit 0; final output said "Driver termination alone does not establish readability or delivery completion."
+- `noteworld monitor nw_3d964f469935 --summary`: `scheduler=world-complete budget=3 / 8 model_seconds=50 / 600 accepted=True`, `release_status=verified delivery_complete=True`, `release_verification={"status": "verified", "reasons": []}`, release commit a267ac2085ac3240c99d34d5f8b2df29a9006121; roles writer and editor idle/complete (editor reason=released). `liveness=worker-unavailable`, `terminal_reason=None`, `world_terminal=False` (the world was not marked terminal).
+- `noteworld artifacts nw_3d964f469935 --output <dir>` — exit 0; files manifest.json, README.md, note.md, editor/README.md, editor/assignment.json. The delivered note.md reads: "Sunlight contains all colors, and as it passes through the atmosphere it collides with air molecules much smaller than its wavelengths. This Rayleigh scattering is far stronger for short (blue) wavelengths than long (red) ones, scattering as roughly 1/wavelength^4. So blue light is redirected across the whole sky into our eyes, while the sun itself looks yellowish and turns red at sunset when its light travels a longer path." (three sentences).
+
+## 3. Continue rw_399c28e983a7 from g1
+- `ht-resource run worlds -- researchworld continue rw_399c28e983a7 --checkpoint g1 --config continue-config.json` (cmd-19475d4063) — exit 0, new world **rw_bf27c6e9bf79**; its output ended with the export of both repositories (`export: 2 repositories dumped in 3 s`).
+- `researchworld status rw_bf27c6e9bf79`: `config_source: "run"`, `config_revision: 1`, `active_roles: [paper-repo, internal-review-repo]`, `continues` block with checkpoint `g1`; bootstrap status `infrastructure-ready`, world_status `waiting-for-execution`, scheduler starting with HTTP 503 at that moment. Later monitor-style output showed `scheduler_status: running`, `world_complete: false`, open obligation `verdict`.
+- `researchworld stop rw_399c28e983a7` — exit 1, HTTP 422: "rw_399c28e983a7 is given you to read: it takes status, checkpoints, monitor, graph, topic, artifacts, export, continue, instruction, config show/history/diff/validate/preview, not stop".
+- `researchworld capture rw_399c28e983a7` — exit 1, HTTP 422: "capture writes the record of a world into its own directory: a world given you to read stays as it is".
+
+## 4. Drive the step-3 world through `capped`
+`ht-resource run capped -- researchworld execute rw_bf27c6e9bf79 --loop` (cmd-6a2c0a8565) — failed, exit 1: `invalid configuration sources; this code cannot drive this world (its record was written by other code). Reading and closing it still work (status, checkpoints, capture, stop, stop --release, finish); to go on with it on this code: researchworld continue rw_bf27c6e9bf79`. Caveat: I started this drive while the step-3 continue job was still running; I did not retry. `ht-resource status capped`: limits `max_spend` 30, remaining spend 30.0, used spend 0.0, nothing tracked — the drive spent nothing.
+
+## 5. One more world
+`ht-resource run worlds -- noteworld run --topic "Another note." --config note-config.json` — refused, HTTP 422: `worlds holds its limit of 2 worlds that have not ended (nw_3d964f469935, rw_bf27c6e9bf79): finish or end one first (stop --release)`. Limits of `worlds`: max_worlds 2, max_spend 900.
+
+## Review cross-check
+internal-review-repo asked for the world ids (paper-repo#2), answered with nw_3d964f469935 and rw_bf27c6e9bf79; it reports its own `stop` attempt in its review record.

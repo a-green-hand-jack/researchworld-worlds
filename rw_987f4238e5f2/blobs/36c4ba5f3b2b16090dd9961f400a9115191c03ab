@@ -1,0 +1,12 @@
+"""Generate photons.f32 exactly as the objective specifies, and photons.sha256."""
+import hashlib, sys
+import numpy as np
+out = sys.argv[1] if len(sys.argv) > 1 else "photons.f32"
+rng = np.random.default_rng(205)
+bg = rng.uniform(0, 1200, 24_000_000)
+burst = rng.normal(600, 30, 6_000_000)
+t = np.sort(np.concatenate([bg, burst])).astype("<f4")
+t.tofile(out)
+h = hashlib.sha256(open(out, "rb").read()).hexdigest()
+open(out.rsplit(".", 1)[0] + ".sha256", "w").write(f"{h}  photons.f32\n")
+print(h, t.size, t.nbytes)

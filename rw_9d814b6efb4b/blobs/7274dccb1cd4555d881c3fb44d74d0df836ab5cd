@@ -1,0 +1,49 @@
+# Monte Carlo evidence
+
+Run from the repository root with `OPENBLAS_NUM_THREADS=1 python3 code/monte_carlo.py`.
+The experiment fixes 20 streams before sampling: NumPy SeedSequence entropy
+20261020, spawn keys (0,) through (19,), and PCG64. Each draws exactly
+1,000,000 two-coordinate uniform points. These distinct spawned streams are
+used as independent pseudorandom replicates. There is no seed selection.
+
+The timing pilot uses stream 0, which is reproduced in the main run; it is not
+an additional statistical replicate or part of the reported 20,000,000-point
+sample. Its timing is recorded in pilot.json. Two workers run the main study;
+the pilot indicates this needs seconds, including Python startup.
+
+per_seed.csv and summary.json contain the measured study evidence.
+The summary records runtime versions, source and CSV hashes, pooled-count
+and independent sample-SD checks, and theoretical binomial uncertainty.
+The reported interval uses sample SD / sqrt(20) and t(0.975,19). Its coverage
+is approximate, justified by large binomial counts per stream. Theoretical
+uncertainty is a diagnostic, not the reported interval.
+
+These are working evidence supplied to the report and review owners. The
+objective requires only report/report.md in the assembled delivery, owned
+by paper-repo; assignment.json therefore lists only that required path.
+
+## Measured results and validation
+
+The mean is 3.1418818; the 95% across-seed t interval is
+[3.1410487102, 3.1427148898]. The signed error (mean minus math.pi)
+and absolute error are both 0.0002891464. There are 15,709,409 inside
+points out of 20,000,000 study points. All 20 prespecified streams are included.
+
+The sample SD is 0.0017800516, versus theoretical binomial SD
+0.0016421834 (ratio 1.083954). The mean error is 0.787429 theoretical
+standard errors; math.pi lies in the reported interval. These diagnostics
+show no evident inconsistency with the expected sampling variability;
+they do not establish repeated-study interval coverage.
+
+`OPENBLAS_NUM_THREADS=1 python3 code/verify_results.py` passes. It reads
+the saved integer counts and recomputes the mean and sample SD using
+Python statistics, checks every estimate and seed record, recalculates the
+interval and errors, and verifies input/source hashes. The main run took
+1.2343 seconds as measured inside the script. Timing is not scientific
+output and varies between runs. Reproduction should compare integer
+counts and numerical statistics, not the elapsed-time fields or CSV hash.
+
+The pilot generated stream 0 once before the full run reproduced it: thus
+21,000,000 coordinate pairs were computationally generated including the
+pilot, representing the 20,000,000 points used in the requested study plus
+1,000,000 repeated pilot points. Report the study total as 20,000,000.

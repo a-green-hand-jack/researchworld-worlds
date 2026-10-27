@@ -1,0 +1,355 @@
+# Citation audit: /hutian/deliv/d1/paper (ICLR 2027 submission), 2026-10-22
+
+Scope: every `\cite*` command in sections/{introduction, related, setup, theory, heuristics, experiments, extension, discussion, statements, related_ext, appendix, appendix_ext}.tex. That is 109 commands (experiments.tex has none; abstract and appendix_structure have none; tables/ have none), covering 54 distinct keys. Nothing in the paper was edited.
+
+Criterion: does the sentence say what the cited work says or does?
+
+**Source tags**
+- [LT] refs/lit_theory.md
+- [LP] refs/lit_practice.md
+- [LTo] refs/lit_tools.md
+- [ABC] refs/lit_directions_ABC.md
+- [DVD] refs/lit_dvd2610.md, with the quoted text checked in refs/papers/dvd.txt
+- [BR] brief.md, Appendix B
+- [AX] arXiv API abstract and metadata (export.arxiv.org, fetched 2026-10-22)
+- [S2] Semantic Scholar batch API, 2026-10-22
+- [PDF:x] arXiv PDF read in this session (pdftotext). Read this way: Tian 2102.06810v4, Ponce 2507.01028v3, PEIRA 2605.17671v1, Jacobs 2603.02064v1.
+
+## Summary
+
+| Verdict | Count (of 109 cite commands) |
+|---|---|
+| OK | 98 |
+| VAGUE | 7 |
+| MISATTRIBUTED | 4 |
+| UNCHECKED | 0 (one OK has a second clause taken from notes only; see #100) |
+
+**Non-OK items, ranked by how much a reviewer would object**
+
+1. **MISATTRIBUTED, related_ext.tex:16, `ponce2025dual`** (with arbel2026peira). Two things are wrong for Ponce et al.:
+   - The setting. Ponce et al. train the predictor B by gradient flow, which is not an optimal ridge predictor; B only takes the ridge form at equilibria (their Eq. 7). Their threshold is the scalar-input case m=1 (Prop. 4.11: non-zero equilibria iff τ²−4ρλ ≥ 0). "Canonical correlation" is PEIRA's language, not theirs.
+   - EMA stability. They do not leave it open: Prop. 4.10 says the SG **and EMA** equilibria are "in general, asymptotically stable".
+
+   Everything in the sentence is true of PEIRA, which leaves EMA stability to future work (footnote 2). Ponce and Arbel are co-authors on both papers, so they are likely reviewers. [PDF:Ponce pp. 7–8; PDF:PEIRA Eq. 10, Prop. 4.2, fn. 2]
+2. **MISATTRIBUTED, related.tex:14, `demelocosta2026drive`.** The sentence says they "read predictor scale, masking, EMA and encoder weight decay as shifts of that ratio". For EMA this is wrong: DvD say "EMA acts as a timescale parameter" (contributions list). Prop. J.7 says β "cannot decide whether a mode escapes" for a real drive. Our own related_ext.tex:31 states this correctly, so the main text contradicts our appendix on the closest concurrent work. [DVD §3; dvd.txt l.80–83]
+3. **MISATTRIBUTED (setting), related.tex:11, `ponce2025dual`.** "With an optimal ridge predictor Ponce and Arbel give the static rule c²≥4λ": the same setting problem as item 1 (Ponce: trained predictor, scalar input). This is main text.
+4. **MISATTRIBUTED (second clause), related_ext.tex:60, `li2021greedy`.** "…with weight decay a mode grows only if its signal exceeds the decay": Li, Luo & Lyu have no weight decay. [LTo] says explicitly: "This step is our extension, not their statement."
+5. **VAGUE, extension.tex:20, `xie2024implicit`** ("the KKT point of Xie & Li"). Their theorem is about AdamW minimising a loss, given convergence. Here it is applied to the stop-gradient field, which is not a gradient. The point |a|=|p|=c_k/σ_k lies inside the ℓ∞ box, where their KKT condition reduces to stationarity. A reviewer could object that the theorem does not formally apply. [AX 2404.04454; ABC A2]
+6. **VAGUE, extension.tex:19, `kunstner2024heavy, sabanayagam2026optimizer`.** These are a tag on our modelling step ("step close to η·sign while the gradient keeps its sign"). Kunstner et al. compare sign descent with GD under heavy-tailed class imbalance. Sabanayagam & Lucey model instantaneous Adam as sign-like when the gradient ≫ ε. Neither sentence says this. [AX; ABC A1]
+7. **VAGUE, related_ext.tex:19, `bao2023feature`.** "feature normalisation changes the balance of the dynamics" does not say what Bao shows. [LT #10; AX]
+8. **VAGUE, discussion.tex:6, `chen2023stochastic`.** This is a parenthetical tag on "minibatch noise". The sentence does not say what Chen et al. show.
+9. **VAGUE (minor), related_ext.tex:75, `kunstner2024heavy`.** "signal strength" generalises their result, which is about class frequency in a linear softmax model (Thm 3). [ABC A1; AX]
+10. **VAGUE (minor), related.tex:7, `jing2022dimensional`.** "measured by the effective rank [Jing; Garrido]": Jing et al. use the sorted singular-value spectrum. Effective rank is RankMe's measure. [LP §2]
+11. **VAGUE (minor), introduction.tex:7, `tian…, richemond…, halvagal…, littwin…`.** "Several have partial theory" says nothing about what each provides. This is acceptable in an intro because related.tex expands on it.
+
+**Related non-`\cite` attributions checked (all OK unless noted)**
+- theory.tex:34, "Tian et al.'s per-mode system (their eqs. 11–12…)". The equation numbers are correct (Eq. 11 is ṗ_j, Eq. 12 is ṡ_j, Eq. 13 is τ). The match is exact for the predictor decay term only at α=1: in Tian's Eq. 2 the predictor decay is ηW_p, not scaled by α_p, while ours is αλ_P. related_ext.tex:13 says so. Optional: add "at α=1" here. [PDF:Tian l.174, 352–358]
+- theory.tex:53, "their eq. 14". Correct: Eq. 14 is s_j = α_p⁻¹p_j² + e^{−2ηt}c_j. [PDF:Tian l.396–404]
+- setup.tex:39 and related_ext.tex:13, "their Theorem 1". Correct: WWᵀ = α_p⁻¹W_pᵀW_p + e^{−2ηt}C, "completely independent of the particular dynamics of W_a". Their predictor decay is unscaled by α_p (Eq. 2). [PDF:Tian l.155–211]
+- related_ext.tex:10–12. These match Tian's Eq. 16 form p_j(τp_j−(1+σ²)p_j²−η), the stable origin and basin p_j < p*_−, and the threshold τ²/(4(1+σ²)). [LT #1; PDF:Tian]
+- extension.tex:20, "Lemma 4.5" of Jacobs et al. Correct: deep diagonal reparametrisation, |w_i|^q−|w_j|^q = (…)·exp(−q∫α_s ds) (their Eq. 6). The flow (their Eq. 5) is sign(∇)|∇|^{q−1} with decoupled decay. [PDF:Jacobs l.368, 387–392]
+- appendix_ext.tex:156, "App. K.2" of DvD. Correct: "the target-aligned drive after a few predictor-only steps", signed drive γ̂_ℓ. [dvd.txt l.3028]
+- related_ext.tex:36, Eq. 51 (paired absolute-value µ̃) and Eq. 31 (independently sorted): correct. Line 39, "Assumption 3.2": correct. Line 47, "Tab. 16": correct (the T-JEPA/jannis per-cell table). Line 41, code commit 3176215: matches [DVD §9.4]. Line 43, lr×wd ≤ 1e-8: from DvD §4 (lr 1e-3→1e-5, wd 1e-5). [DVD; dvd.txt l.197, 936, 1524, 2683]
+- No "Prop. J.1" of DvD appears in the paper text. The content of J.1 (encoder-only weight-decay floor, "escape iff γ−σ>η_wd", line 31) is stated correctly. [dvd.txt l.2957]
+- **VAGUE (minor), related_ext.tex:35.** "…so it calls a smaller predictor always safer" is our reading. DvD say "one must initialize the predictor with a sufficiently small variance" and "nothing escapes above α_ext". Suggested: "…has no lower window edge: by it a smaller predictor never removes a mode (µ∝1/α), and they advise a sufficiently small predictor initialisation".
+
+## Suggested minimal rewordings (non-OK items)
+
+| # | file:line | Suggested text |
+|---|---|---|
+| 1 | related_ext:16 | "\citet{arbel2026peira}, with an optimal ridge predictor and a norm penalty $\lambda$, show that a canonical correlation $c$ between the views survives if and only if $c^2\ge4\lambda$, that total collapse is a stable equilibrium, and that the same equilibria hold with an EMA target, whose stability they leave open. \citet{ponce2025dual} characterise the stop-gradient and EMA equilibria of the linear model with a trained predictor, show them generically asymptotically stable, and for a scalar input obtain non-zero equilibria if and only if $\tau^2\ge4\rho\lambda$." |
+| 2 | related:14 | "…read predictor scale, masking and encoder weight decay as shifts of that ratio and the EMA rate as a time scale that does not change which modes escape, and propose…" |
+| 3 | related:11 | "With an optimal ridge predictor \citet{arbel2026peira} give the static rule $c^2\ge4\lambda$ ($c_k^2\ge4\lambda\sigma_k$ here), which \citet{ponce2025dual} obtain for a trained predictor and a scalar input, and \citet{wang2021directset}…" |
+| 4 | related_ext:60 | "Near zero, gradient descent on a factorised model acts as power iteration and learns greedily, one rank at a time~\citep{li2021greedy}; adding weight decay to this linearisation, a mode grows only if its signal exceeds the decay; depth lengthens…" |
+| 5 | extension:20 | "…settles at $|a_k|=|p_k|=c_k/\sigma_k$, inside the $\ell_\infty$ box, where the KKT condition of \citet{xie2024implicit} (stated for a loss) reduces to stationarity, through the balance of…" |
+| 6 | extension:19 | "(i) While a gradient keeps its sign the step is close to $\eta\,\mathrm{sign}$, the sign-descent model of Adam under which a mode from a small seed is learned in bounded time~\citep{sabanayagam2026optimizer} and the rate no longer depends on class frequency~\citep{kunstner2024heavy}, so the factor…" |
+| 7 | related_ext:19 | "\citet{bao2023feature} show that with the cosine loss (feature normalisation) the eigenmode dynamics become sixth order and a stable non-collapsed equilibrium can emerge under weight decay that collapses the $L_2$ dynamics." |
+| 8 | discussion:6 | "…and minibatch noise, which can make collapsed sets of parameters attractive~\citep{chen2023stochastic}, shifts a linear count…" |
+| 9 | related_ext:75 | "…and sign descent removes the dependence of the rate on class frequency in a linear softmax model~\citep{kunstner2024heavy}…" |
+| 10 | related:7 | "Dimensional collapse shows in the embedding spectrum~\citep{jing2022dimensional} and is summarised by its effective rank~\citep{garrido2023rankme}, which in I-JEPA rises and then falls~\citep{thilak2024lidar}." |
+| 11 | introduction:7 | Optional: "Several have partial theory: per-mode dynamics of linear BYOL/SimSiam~\citep{tian2021understanding}, the predictor as an orthonormaliser~\citep{richemond2023edge} or per-mode rate multiplier~\citep{halvagal2023implicit}, and the implicit bias of deep linear self-distillation~\citep{littwin2024jepa}; but…". Or leave as is; the intro is acceptable. |
+
+## Per-file tables
+
+### introduction.tex
+
+| # | line | Sentence (short) | Keys | Verdict | Source / note |
+|---|---|---|---|---|---|
+| 1 | 4 | JEPAs learn by predicting, in embedding space, the target representation from the context | lecun2022path, assran2023ijepa, bardes2024vjepa | OK | [LP] |
+| 2 | 5 | "unlike masked autoencoders, reconstruct no pixels" | he2022mae | OK | MAE reconstructs pixels; [AX] metadata |
+| 3 | 5 | "…collapse dimensionally, spanning only a few directions" | jing2022dimensional | OK | [LT #13] |
+| 4 | 5 | "…which degrades downstream performance" | garrido2023rankme | OK | [LP §2] |
+| 5 | 6 | non-contrastive relatives avoid collapse through design choices (predictor, masking, SG+EMA) | grill2020byol, chen2021simsiam, baevski2022data2vec, caron2021dino | OK | [LP]. Collective list; DINO has no predictor and SimSiam no EMA, which is acceptable |
+| 6 | 7 | "Several have partial theory, but no criterion predicts when…" | tian, richemond, halvagal, littwin | VAGUE (minor) | says nothing about what each provides |
+| 7 | 10 | "Recent work develops this picture as a stability count at initialisation with the predictor held fixed" | demelocosta2026drive | OK | [DVD §1–2] |
+| 8 | 12 | "Analyses of linear BYOL/SimSiam and of optimal predictors give a static threshold in weight decay…, with the predictor as small as the encoder" | tian, wang2021directset, ponce2025dual, arbel2026peira | OK | [LT #1, 2, 16, 17]; [PDF:Ponce Prop. 4.11, Lemma 4.2 BᵀB=AAᵀ at limit points] |
+
+### related.tex
+
+| # | line | Sentence (short) | Keys | Verdict | Source / note |
+|---|---|---|---|---|---|
+| 9–11 | 5 | I-JEPA and V-JEPA instantiate JEPAs with EMA target and narrow predictor; predictor depth and masking matter | assran2023ijepa; bardes2024vjepa; lecun2022path | OK | [LP]: I-JEPA T6, T12; V-JEPA T4 |
+| 12 | 6 | "Like BYOL, SimSiam, DINO and data2vec they avoid collapse architecturally…" | grill, chen, caron, baevski | OK | [LP] |
+| 13 | 6 | "…rather than through regularisers on the embedding statistics" | zbontar2021barlow, bardes2022vicreg, balestriero2025lejepa | OK | [LP] |
+| 14 | 7 | "Dimensional collapse is measured by the effective rank" | jing2022dimensional, garrido2023rankme | VAGUE (minor) | Jing uses the spectrum, not erank [LP §2] |
+| 15 | 7 | "…which in I-JEPA rises and then falls" | thilak2024lidar | OK | [LP §2] |
+| 16 | 10 | Tian et al. show on an invariant manifold that wd makes the collapsed point stable, basin, threshold | tian2021understanding | OK | [LT #1; PDF:Tian] |
+| 17 | 11 | "With an optimal ridge predictor Ponce… give the static rule c²≥4λ" | ponce2025dual | MISATTRIBUTED (setting) | trained predictor, scalar input (Prop. 4.11) [PDF:Ponce] |
+| 18 | 11 | same; Arbel | arbel2026peira | OK | [PDF:PEIRA Eq. 10] |
+| 19 | 11 | "…an analogous variance threshold for a directly set predictor" | wang2021directset | OK | [LT #2; AX] |
+| 20 | 11 | "without the stop-gradient every mode collapses" | halvagal2023implicit | OK | [LT #3] |
+| 21 | 11 | "Littwin et al. solve deep linear self-distillation" | littwin2024jepa | OK | [LT #11] |
+| 22 | 11 | "from small init linear networks learn modes one at a time" | saxe2014exact, simon2023stepwise, li2021greedy | OK | [LTo §1] |
+| 23 | 13 | "Without wd, activation is an integrated threshold against log(1/init)" | pesme2023saddle, kunin2025alternating | OK | [ABC B1] |
+| 24 | 13 | "deep linear pathways race with permanent early deficits" | kleinman2023critical | OK | [ABC C4, checked] |
+| 25 | 13 | "wd on a large factor switches the regime at t≈log(scale)/λ" | lyu2023dichotomy | OK | [ABC C4, checked; AX] |
+| 26 | 14 | DvD linearise at collapse with predictor fixed, bound rank by #µ>1, "read predictor scale, masking, **EMA** and encoder wd as shifts of that ratio", propose identity-biased predictor | demelocosta2026drive | MISATTRIBUTED (EMA clause) | DvD: EMA is a timescale and does not decide escape [dvd.txt l.80–83; DVD §3] |
+| 27 | 18 | "converged AdamW is a KKT point of an ℓ∞-constrained problem" | xie2024implicit | OK | [AX 2404.04454] |
+| 28 | 18 | "sign updates with decoupled decay balance the magnitudes of the two factors" | jacobs2026never | OK | [PDF:Jacobs Lemma 4.5] |
+| 29 | 18 | "Weight decay balances the factors of a deep linear network" | kunin2020neural | OK | [ABC C1, Eq. 19–20 checked] |
+| 30 | 18 | "…makes the origin a local minimum for depth at least two" | ziyin2022exact | OK | [LTo §2; AX: "more than 1 hidden layer"]. "Depth" here means hidden layers; optional wording "more than one hidden layer" |
+
+### setup.tex
+
+| # | line | Sentence | Keys | Verdict | Source |
+|---|---|---|---|---|---|
+| 31 | 32 | "At W=0 the predictor receives no data signal…, so for λ_W,λ_P>0 (0,0,0) is locally stable" | tian2021understanding | OK | [PDF:Tian]: for η>0 the trivial point is stable |
+
+### theory.tex
+
+| # | line | Sentence | Keys | Verdict | Source / note |
+|---|---|---|---|---|---|
+| 32 | 8 | Prop. title "per-mode system of Tian" (+ l.34 "their eqs. 11–12") | tian | OK | eq. numbers verified; exact at α=1 for the predictor decay term [PDF:Tian] |
+| 33–35 | 44 | "Part (b) is the static threshold of Tian, Wang and Arbel, which we do not claim" | tian, wang, arbel | OK | Tian τ²/(4(1+σ²)); Wang σ²>1/(4η)−1; PEIRA c²≥4λ. Optional: add ponce2025dual (Prop. 4.11) |
+| 36 | 53 | "it is the per-mode integral of Tian, their eq. 14" | tian | OK | [PDF:Tian l.396–404] |
+| 37 | 56 | "The balanced case is the basin of Tian" | tian | OK | [LT #1] |
+| 38 | 98 | "Without the stop-gradient, or without a predictor when the views have equal marginals, every direction decays, as known in substance" | tian, halvagal | OK | Tian Thm 2 and the W_p=I remark [PDF:Tian]; Halvagal −(1−λ)² and 0 rates [LT #3] |
+
+### heuristics.tex
+
+| # | line | Sentence | Keys | Verdict | Source |
+|---|---|---|---|---|---|
+| 39 | 5 | "At initialisation these are the doses of DvD; the race adds the clock" | demelocosta | OK | [DVD §3] |
+
+### experiments.tex
+
+No citations.
+
+### extension.tex
+
+| # | line | Sentence | Keys | Verdict | Source / note |
+|---|---|---|---|---|---|
+| 40 | 5 | µ count of DvD among the baselines | demelocosta | OK | [DVD] |
+| 41 | 18 | reduction to scalar AdamW maps, "which a rotated encoder breaks" | xie2024adam | OK | Adam is not rotation-invariant [AX; ABC A2] |
+| 42 | 19 | "While a gradient keeps its sign the step is close to η sign" | kunstner2024heavy, sabanayagam2026optimizer | VAGUE | tag on our step; see rewording 6 |
+| 43 | 20 | "…loses stability at the adaptive edge of Cohen" | cohen2022adaptive | OK | AEoS: preconditioned sharpness at the stability threshold 38/η [AX] |
+| 44 | 20 | "…settles at \|a\|=\|p\|=c/σ, the KKT point of Xie & Li" | xie2024implicit | VAGUE | theorem is for a loss; interior point [AX] |
+| 45 | 20 | "through the balance of Jacobs et al. [Lemma 4.5]" | jacobs2026never | OK | [PDF:Jacobs Eq. 6] |
+| 46 | 41 | "factor imbalances decay as e^{−2λt}" | kunin2020neural | OK | [ABC C1] |
+| 47 | 42 | "For L≥2… the collapsed point attracts every direction" | ziyin2022exact | OK | in substance: origin a local min for >1 hidden layer (encoder L≥2 plus predictor) [AX; LTo] |
+| 48 | 48 | "survival depends on the initial scale as a power law, as does the early phase of deep homogeneous networks" | kumar2024early | OK | [ABC C3; AX] |
+| 49 | 74 | "If collapse is decided early, as for weight decay in supervised networks" | golatkar2019time | OK | [ABC C4] |
+
+### discussion.tex
+
+| # | line | Sentence | Keys | Verdict | Source |
+|---|---|---|---|---|---|
+| 50 | 6 | "minibatch noise [cite] shifts a linear count with a sign no account predicts" | chen2023stochastic | VAGUE | tag; see rewording 8 |
+| 51 | 8 | "On the tabular grid of DvD the race… orders the rank worse than their µ count" | demelocosta | OK | [DVD §4.1] |
+
+### statements.tex
+
+| # | line | Sentence | Keys | Verdict |
+|---|---|---|---|---|
+| 52 | 3 | "the public CIFAR-10 dataset" | krizhevsky2009cifar | OK |
+
+### related_ext.tex
+
+| # | line | Sentence (short) | Keys | Verdict | Source / note |
+|---|---|---|---|---|---|
+| 53 | 5 | JEPAs proposed as a route to predictive world models in representation space | lecun2022path | OK | [LP] |
+| 54–55 | 5 | I-JEPA / V-JEPA: ViT, EMA target, narrow transformer predictor; depth and masking matter | assran, bardes2024 | OK | [LP] |
+| 56–59 | 6 | BYOL, SimSiam, DINO, data2vec avoid collapse architecturally | grill, chen, caron, baevski | OK | [LP] |
+| 60–62 | 6 | Barlow Twins, VICReg, LeJEPA's isotropic-Gaussian regulariser "proposed as a replacement for the heuristics" | zbontar, bardes2022, balestriero2025 | OK | [LP; AX title] |
+| 63 | 9 (–14) | Tian analysed linear BYOL/SimSiam with eigen-aligned modes (Eq. 16 form, threshold, Thm 1, DirectPred) | tian | OK | [PDF:Tian; LT #1] |
+| 64 | 15 | DirectSet/DirectCopy: discarded iff augmentation variance > 1/(4η)−1 | wang2021directset | OK | [LT #2; AX] |
+| 65 | 16 | "With an optimal ridge predictor… Ponce and Arbel show c²≥4λ, total collapse stable, same equilibria with EMA, whose stability they leave open" | ponce2025dual | MISATTRIBUTED | see item 1 [PDF:Ponce Prop. 4.10, 4.11] |
+| 66 | 16 | same | arbel2026peira | OK | [PDF:PEIRA Eq. 10, Prop. 4.2, fn. 2] |
+| 67 | 17 | predictor eigenvalues as rate multipliers λ_m(1−λ_m); no SG → all collapse | halvagal | OK | [LT #3; LTo §3] |
+| 68 | 18 | "optimal or fast predictor conserves the representation's second moment" | tang2023selfpredictive | OK | Thm 1, ΦᵀΦ conserved [LT #8] |
+| 69 | 19 | "feature normalisation changes the balance of the dynamics" | bao2023feature | VAGUE | [LT #10; AX] |
+| 70 | 20 | relate BYOL's behaviour to the orthogonality of the predictor | richemond2023edge | OK | [AX] |
+| 71 | 20 | rank-differential mechanism | zhuo2023rank | OK | [LT #6] |
+| 72 | 21 | prediction head rescues weak features in a non-linear model | wen2022mechanism | OK | [LT #4; AX] |
+| 73 | 22 | origin stability per subspace decides collapse; no predictor, SG or EMA | ziyin2023loss | OK | [LT #12] |
+| 74 | 23 (–24) | solve deep linear self-distillation; greedy in regression coefficient; nothing collapses without wd | littwin2024jepa | OK | [LT #11; AX] |
+| 75 | 26 | paragraph heading | demelocosta | OK | — |
+| 76 | 27 (–48) | DvD model; µ; Assumption 3.2; upper bound; ResidualPred results; Eq. 51/31; Tab. 16; K.1/K.2 | demelocosta | OK | [DVD; dvd.txt]. Line 35 sub-clause is VAGUE (minor), see above |
+| 77 | 31 | "DirectPred, IsoLoss and the rate equation of Halvagal are limits" (of DvD) | halvagal | OK | DvD App. J.2 [DVD §3] |
+| 78 | 49 | λ-balance prevents collapse of the first layer of a 2-layer linear net; regularise backbone towards it | demirel2026lambdajepa | OK | [ABC C0, checked; AX] |
+| 79 | 53 | table caption: µ criterion of DvD, "which they state as an upper bound" | demelocosta | OK | [dvd.txt l.1509] |
+| 80 | 59 | modes learned one at a time, delay ~ log(1/init)/rate | saxe, simon | OK | [LTo §1] |
+| 81 | 60 | "GD on a factorised model acts as power iteration, and with weight decay a mode grows only if its signal exceeds the decay" | li2021greedy | MISATTRIBUTED (wd clause) | [LTo §1]: "our extension, not their statement" |
+| 82 | 60 | "depth lengthens the escape time" | jacot2021saddle | OK | [LTo §1] |
+| 83 | 61 | "Weight decay on a factorised map soft-thresholds the singular values of the product" | ziyin2022exact, kobayashi2024weight | OK | Kobayashi: equivalence with nuclear-norm regularisation [AX]; Ziyin: exact minima [AX]. Soft-thresholding is exact for a square loss |
+| 84 | 62 | EMA scaling rule is a statement about its time scale | busbridge2023ema | OK | [AX] |
+| 85–86 | 63 | moment identities for masked covariances; missing-data threshold of spectral PLS; nothing about collapse dynamics | bisulco, dong; gjolbye | OK | [LTo §4] |
+| 87 | 66 | integrated utility vs log(1/init) threshold; losers carry norms; no wd | pesme, kunin2025 | OK | [ABC B1; AX] |
+| 88 | 67 | competition between pathways, same conserved quantity, permanent early deficits; no wd/predictor | kleinman | OK | [ABC C4, checked] |
+| 89 | 68 | wd shrinking a large initial factor switches implicit bias at t≈log(scale)/λ | lyu2023dichotomy | OK | [ABC C4, checked] |
+| 90 | 69 | wd and augmentation matter mostly early in supervised nets | golatkar | OK | [ABC C4] |
+| 91 | 70 | homogeneous order >2: early phase lasts a power of 1/init; no wd | kumar2024early | OK | [ABC C3; AX] |
+| 92 | 71 | "Multiplicative gradient noise makes collapsed directions attractive" | chen2023stochastic | OK | [ABC B3, checked; AX] |
+| 93 | 72 | the only wd-schedule ablation for SSL reports accuracy (DINO ramp vs fixed), not rank | morningstar2024augmentations | OK | [ABC B2] |
+| 94 | 75 | under sign descent a mode from a small seed grows linearly, learned in bounded time | sabanayagam2026optimizer | OK | [ABC A1, checked; AX] |
+| 95 | 75 | "sign descent removes the dependence of the rate on the signal strength" | kunstner2024heavy | VAGUE (minor) | class frequency [ABC A1; AX] |
+| 96 | 76 | re-escape is the adaptive edge of stability of Cohen | cohen2022adaptive | OK | [AX] |
+| 97 | 77 | "Adam is not rotation-invariant" | xie2024adam | OK | [ABC A2] |
+| 98 | 80 | dimensional collapse characterised for contrastive learning | jing2022dimensional | OK | [LT #13] |
+| 99 | 80 | effective rank is a label-free predictor of downstream performance | garrido2023rankme | OK | [LP §2] |
+| 100 | 81 | I-JEPA effective rank rises then falls; best probe not at max rank | thilak2024lidar | OK | [LP §2]. The first clause is explicit in the notes; the second comes from the [LP] heuristics table and was not re-read in the LiDAR PDF |
+
+### appendix.tex
+
+| # | line | Sentence | Keys | Verdict | Source |
+|---|---|---|---|---|---|
+| 101 | 79 | no-SG and no-predictor limits "known in substance" | tian, halvagal | OK | [PDF:Tian Thm 2 + remark; LT #3] |
+| 102 | 244 | "CIFAR-10 training images" | krizhevsky2009cifar | OK | — |
+
+### appendix_ext.tex
+
+| # | line | Sentence | Keys | Verdict | Source |
+|---|---|---|---|---|---|
+| 103 | 37 | µ count with LN gain inserted, "our adaptation: DvD do not model a target LayerNorm" | demelocosta | OK | [DVD §1] |
+| 104 | 83 | µ count applied to the end-to-end map | demelocosta | OK | — |
+| 105 | 92 | µ count in its best variant as a baseline | demelocosta | OK | — |
+| 106 | 103 | registration against every µ variant | demelocosta | OK | — |
+| 107 | 156 | "our count on the signed drive of [DvD, App. K.2]" | demelocosta | OK | [dvd.txt l.3028] |
+| 108 | 158 | "…transfer to the ViT, where that work makes no rank prediction" | demelocosta | OK | DvD: the rank relation is "claimed on tabular data only" [DVD §5] |
+| 109 | 167 | caption "(c) µ>1 count" | demelocosta | OK | — |
+
+## Bibliography check (references.bib, 54 entries)
+
+- **(a) Use.** All 54 entries are cited, and no cited key is missing from the bib.
+- **(b) Dates.** The date is the arXiv v1 date from the arXiv API `<published>` field (2026-10-22), unless noted otherwise. Every entry is on or before 2026-10-18; none is later. The latest are:
+  - sabanayagam2026optimizer, 2026-10-03
+  - demelocosta2026drive, 2026-10-01
+  - demirel2026lambdajepa, 2026-09-28
+- **Stale bib comment.** The header comment ("Only work published before 1 September 2026") is out of date, because of the three entries above. It is not rendered in the PDF, but should be fixed.
+- **Author and title check.** Authors and titles were compared programmatically against arXiv for all 52 arXiv-backed entries, and all match. The only flag was an "ø" encoding artefact for Gjølbye.
+
+| key | v1 / first date | bib venue, year | verified venue (source) | action |
+|---|---|---|---|---|
+| lecun2022path | 2022-06-27 (OpenReview v0.9.2) | OpenReview preprint 2022 | same [LP; BR] | — |
+| assran2023ijepa | 2023-01-19 (2301.08243) | CVPR 2023 | CVPR 2023, DOI 10.1109/CVPR52729.2023.01499 [S2]. The arXiv comment wrongly says ICCV | — |
+| bardes2024vjepa | 2024-02-15 (2404.08471) | TMLR 2024 | TMLR 2024 [S2] | — |
+| he2022mae | 2021-11-11 | CVPR 2022 | CVPR 2022 [S2 DOI] | — |
+| jing2022dimensional | 2021-10-18 | ICLR 2022 | ICLR 2022 [AX journal_ref] | — |
+| garrido2023rankme | 2022-10-05 | ICML 2023 | ICML 2023 [AX journal_ref] | — |
+| grill2020byol | 2020-06-13 | NeurIPS 2020 | NeurIPS 2020 [S2] | — |
+| chen2021simsiam | 2020-11-20 | CVPR 2021 | CVPR 2021 [S2 DOI] | — |
+| baevski2022data2vec | 2022-02-07 | ICML 2022 | ICML 2022 [S2] | — |
+| caron2021dino | 2021-04-29 | ICCV 2021 | ICCV 2021 [S2 DOI] | — |
+| tian2021understanding | 2021-02-12 | ICML 2021 | ICML 2021 [S2; PDF] | — |
+| richemond2023edge | 2023-02-09 | ICML 2023 | ICML 2023 [S2] | — |
+| halvagal2023implicit | 2022-12-09 | NeurIPS 2023 | NeurIPS 2023 [AX comment] | — |
+| littwin2024jepa | 2024-07-03 | NeurIPS 2024 | NeurIPS 2024 [S2] | — |
+| zbontar2021barlow | 2021-03-04 | ICML 2021 | ICML 2021 [AX comment] | — |
+| bardes2022vicreg | 2021-05-11 | ICLR 2022 | ICLR 2022 [AX comment] | — |
+| zhuo2023rank | 2023-03-04 | ICLR 2023 | ICLR 2023 [AX comment] | — |
+| ziyin2023loss | 2022-10-02 | ICLR 2023 | ICLR 2023 [AX comment] | — |
+| saxe2014exact | 2013-12-20 | ICLR 2014 | ICLR 2014 [AX comment] | — |
+| simon2023stepwise | 2023-03-27 | ICML 2023 | ICML 2023 [AX comment] | — |
+| wen2022mechanism | 2022-05-12 | NeurIPS 2022 | NeurIPS 2022 [S2] | — |
+| balestriero2025lejepa | 2025-11-11 | arXiv 2025 | arXiv only [S2] | — |
+| arbel2026peira | 2026-05-17 | arXiv 2026 | arXiv only [S2; PDF] | — |
+| ponce2025dual | 2025-06-18 | arXiv 2025 | **ICLR 2026** (v3 PDF header "Published as a conference paper at ICLR 2026", v3 2026-02-05) | **update to @inproceedings ICLR 2026** |
+| wang2021directset | 2021-10-11 | arXiv 2021 | arXiv only [S2] | — |
+| tang2023selfpredictive | 2022-12-06 | ICML 2023 | ICML 2023 [S2] | — |
+| bao2023feature | 2023-09-28 | arXiv 2023 | **Neural Computation** [S2 venue; 2025 per OpenAlex, LT #10] | **update to the journal version** (check volume/pages) |
+| li2021greedy | 2020-12-17 | ICLR 2021 | ICLR 2021 [AX comment] | — |
+| jacot2021saddle | 2021-06-30 | arXiv 2021 | no venue found [S2] | — |
+| kobayashi2024weight | 2024-10-31 | NeurIPS 2024 | NeurIPS 2024 [S2] | — |
+| ziyin2022exact | 2022-02-10 | NeurIPS 2022 | NeurIPS 2022 [AX comment]; also J. Stat. Mech. 2023 [S2] | — (optional) |
+| busbridge2023ema | 2023-07-25 | NeurIPS 2023 | NeurIPS 2023 spotlight [AX comment] | — |
+| thilak2024lidar | 2023-12-07 | ICLR 2024 | ICLR 2024 [S2] | — |
+| bisulco2025masked | 2025-08-21 | arXiv 2025 | **ICCV 2025**, DOI 10.1109/ICCV51701.2025.01526 [S2] | **update to @inproceedings ICCV 2025** |
+| dong2025mask | 2025-09-25 | NeurIPS 2025 | NeurIPS 2025 [AX comment] | — |
+| gjolbye2026pls | 2026-01-29 | arXiv 2026 | arXiv preprint [AX comment] | — |
+| krizhevsky2009cifar | 2009 (tech report) | U. Toronto TR 2009 | standard; not re-checked online | — |
+| demelocosta2026drive | 2026-10-01 | arXiv 2026, note "NeurIPS 2026" | "Accepted at NeurIPS 2026 (Main Track)" [AX comment]; conference not yet held | — (fine as is) |
+| demirel2026lambdajepa | 2026-09-28 (v2 exists) | arXiv 2026 | arXiv only [S2] | — |
+| xie2024implicit | 2024-04-05 | ICML 2024 | ICML 2024 [S2] | — |
+| jacobs2026never | 2026-03-02 | ICLR 2026 | ICLR 2026 [AX journal_ref; PDF header] | — |
+| kunin2020neural | 2020-12-08 | ICLR 2021 | ICLR 2021 [AX comment] | — (key says 2020; harmless) |
+| kleinman2023critical | 2023-08-23 | ICLR 2024 | ICLR 2024 spotlight [AX comment] | — |
+| kunin2025alternating | 2025-06-06 | NeurIPS 2025 | NeurIPS 2025 [AX comment] | — |
+| pesme2023saddle | 2023-04-02 | NeurIPS 2023 | NeurIPS 2023 [S2]; also J. Stat. Mech. 2024 | — |
+| lyu2023dichotomy | 2023-11-30 | ICLR 2024 | ICLR 2024 [AX comment] | — |
+| sabanayagam2026optimizer | 2026-10-03 | arXiv 2026 | arXiv, "Under review" [AX] | — |
+| chen2023stochastic | 2023-06-07 | NeurIPS 2023 | NeurIPS 2023 [AX comment]; also J. Stat. Mech. 2024 | — |
+| cohen2022adaptive | 2022-07-29 | arXiv 2022 | arXiv only [S2] | — |
+| kunstner2024heavy | 2024-02-29 | NeurIPS 2024 | NeurIPS 2024 [S2] | — |
+| xie2024adam | 2024-10-10 | ICLR 2025 | ICLR 2025 [S2] | — |
+| kumar2024early | 2024-03-12 | TMLR 2025 | TMLR 2025 [S2 journal; AX "tmlr-final-version"] | — |
+| golatkar2019time | 2019-05-30 | NeurIPS 2019 | NeurIPS 2019 [S2] | — |
+| morningstar2024augmentations | 2024-03-08 | arXiv 2024 | arXiv only [S2] | — |
+
+**Bib actions**
+1. ponce2025dual → ICLR 2026.
+2. bisulco2025masked → ICCV 2025.
+3. bao2023feature → Neural Computation.
+4. Fix the stale header comment.
+
+No entry is after the 18 Oct 2026 cutoff, and none has an unconfirmable date apart from the two non-arXiv items (LeCun 2022 via OpenReview, and the CIFAR tech report), which are standard.
+
+## Answer to story-repo's request idea-repo#6 (2026-10-22): main-text fixes and the plan's three items
+
+**About the work vs backing our step (main text, 52 citation commands).** All main-text citations sit in a
+sentence that says what the cited work does, except these, which back a step of our own argument:
+introduction l. 7 (the "partial theory" list), extension l. 18 (Xie et al. 2025, borderline: the fact used is
+theirs, the sentence is about our reduction), extension l. 19 (Kunstner; Sabanayagam & Lucey), extension l. 20
+(Xie & Li 2024, theorem applied outside its setting) and discussion l. 6 (Chen et al. 2023). Wrong about the
+work: related l. 11 (Ponce, setting) and related l. 14 (De Melo Costa, EMA). Imprecise: related l. 7 (Jing).
+
+**The plan's three readings (plan v3 §2.5).**
+1. Sec. 7.1 "close to η sign (Kunstner et al., 2024; Sabanayagam & Lucey, 2026)": confirmed, a tag on our
+   modelling step; Kunstner et al. is about heavy-tailed class imbalance (sign descent removes the dependence
+   of the rate on class frequency, their Thm 3). Fix M6.
+2. Sec. 7.1 "which a rotated encoder breaks (Xie et al., 2025)": the fact is theirs (arXiv 2410.08198, ICLR
+   2025: "Adam performs much worse when the favorable ℓ∞-geometry is changed while SGD provably remains
+   unaffected", i.e. under rotation), but the sentence states our consequence. Not wrong; reword so the cited
+   finding is stated (M5).
+3. Sec. 4 "as known in substance (Tian et al., 2021; Halvagal et al., 2023)": correct attribution (Tian et
+   al. Theorem 2 and their remark for W_p = I; Halvagal et al.: without the stop-gradient every mode
+   collapses), but "as known in substance" does not say who shows which part. Optional fix M8.
+
+**Main-text fixes (sentence → proposed wording).** Released text at paper-repo 771f5a9; line numbers are
+source lines in `paper/sections/`.
+
+| id | where | released | proposed |
+|---|---|---|---|
+| M1 | related.tex l. 14 (Sec. 2) | "...read predictor scale, masking, EMA and encoder weight decay as shifts of that ratio, and propose an identity-biased predictor for I-JEPA." | "...read predictor scale, masking and encoder weight decay as shifts of that ratio and the EMA rate as a time scale that does not change which modes escape, and propose an identity-biased predictor for I-JEPA." (DvD "Mechanism 3: EMA as a timescale", Prop. J.7) |
+| M2 | related.tex l. 11 (Sec. 2) | "With an optimal ridge predictor \citet{ponce2025dual} and \citet{arbel2026peira} give the static rule $c^2\ge4\lambda$ ($c_k^2\ge4\lambda\sigma_k$ here), and \citet{wang2021directset} an analogous..." | "With an optimal ridge predictor \citet{arbel2026peira} give the static rule $c^2\ge4\lambda$ ($c_k^2\ge4\lambda\sigma_k$ here), which \citet{ponce2025dual} obtain for a trained predictor and a scalar input, and \citet{wang2021directset} an analogous..." (Ponce: predictor trained by gradient flow, ridge form only at equilibria, Eq. 7; threshold τ² ≥ 4ρλ, Prop. 4.11) |
+| M3 | related.tex l. 7 (Sec. 2) | "Dimensional collapse is measured by the effective rank \citep{jing2022dimensional,garrido2023rankme}, which in I-JEPA rises and then falls \citep{thilak2024lidar}." | "Dimensional collapse shows in the embedding's singular-value spectrum \citep{jing2022dimensional} and is summarised by its effective rank \citep{garrido2023rankme}, which in I-JEPA rises and then falls \citep{thilak2024lidar}." |
+| M4 | related.tex l. 12 (Sec. 2, not a citation but about cited works) | "We recover these results as limits (\cref{app:related})." | Appendix D derives none of them. "Proposition 2(b) recovers the static threshold of \citet{tian2021understanding}, \citet{wang2021directset} and \citet{arbel2026peira}, and \cref{cor:alpha1} the balanced basin of \citet{tian2021understanding}." (brief §5 item 7; the mode-by-mode learning of Saxe, Simon and Li is not derived in the paper, so it is not claimed as recovered) |
+| M5 | extension.tex l. 18 (Sec. 7.1) | "...reduce exactly to scalar AdamW maps on $(a_k,p_k)$, which a rotated encoder breaks~\citep{xie2024adam}." | "...reduce exactly to scalar AdamW maps on $(a_k,p_k)$. A rotated encoder breaks this reduction: Adam is not invariant to rotations of the parameter basis, and \citet{xie2024adam} show that its advantage over SGD disappears when the loss is rotated." |
+| M6 | extension.tex l. 19 (Sec. 7.1) | "(i)~While a gradient keeps its sign the step is close to $\eta\,\mathrm{sign}$~\citep{kunstner2024heavy,sabanayagam2026optimizer}, so the factor..." | "(i)~While a gradient keeps its sign and is much larger than Adam's $\epsilon$, the step is close to $\eta\,\mathrm{sign}$, the sign-descent model of Adam that \citet{kunstner2024heavy} use to explain its advantage under heavy-tailed class imbalance and \citet{sabanayagam2026optimizer} to show that a mode grown from a small seed is learned in bounded time; so the factor..." (or drop both citations here and keep them in App. D l. 75, where the sentence is about them) |
+| M7 | extension.tex l. 20 (Sec. 7.1) | "...settles at $|a_k|=|p_k|=c_k/\sigma_k$, the KKT point of \citet{xie2024implicit}, through the balance of \citet[Lemma 4.5]{jacobs2026never}." | "...settles at $|a_k|=|p_k|=c_k/\sigma_k$, inside the box $\|\cdot\|_\infty\le1/\lambda$ to which converged AdamW is confined \citep{xie2024implicit} (their KKT characterisation is for a loss; the stop-gradient field is not a gradient, and inside the box their condition reduces to the stationarity we use; the box is the condition $\lambda c_k/\sigma_k<1$), through the balance of \citet[Lemma 4.5]{jacobs2026never}." |
+| M8 | theory.tex l. 98 (Sec. 4), optional | "Without the stop-gradient, or without a predictor when the views have equal marginals, every direction decays, as known in substance \citep{tian2021understanding,halvagal2023implicit}; heavy Bernoulli..." | "Without the stop-gradient every direction decays \citep[Theorem~2]{tian2021understanding}, as \citet{halvagal2023implicit} also show, and so does every direction without a predictor when the views have equal marginals, as \citet{tian2021understanding} note for an identity predictor; heavy Bernoulli..." |
+| M9 | discussion.tex l. 6 (Sec. 8) | "...and minibatch noise \citep{chen2023stochastic} shifts a linear count with a sign no account predicts (B3)." | "...and minibatch noise, which can make collapsed sets of parameters attractive \citep{chen2023stochastic}, shifts a linear count with a sign no account predicts." (and drop the internal label "B3", brief §4.3) |
+| M10 | introduction.tex l. 7 (Sec. 1), optional | "Several have partial theory \citep{tian...,richemond...,halvagal...,littwin...}, but no criterion predicts..." | "Several have partial theory: the per-mode dynamics of linear BYOL and SimSiam \citep{tian2021understanding}, the predictor as an orthonormaliser \citep{richemond2023edge} or a per-mode rate multiplier \citep{halvagal2023implicit}, and the implicit bias of deep linear self-distillation \citep{littwin2024jepa}." The rest of that sentence ("no criterion predicts when a configuration collapses and how much rank it keeps") overstates the gap once De Melo Costa et al. is cited two lines later (brief §5 item 1): say what their count lacks instead. |
+| M11 | theory.tex l. 34 (Sec. 4.1), optional | "This is Tian et al.'s per-mode system (their eqs. 11–12, ...)" | add "at $\alpha=1$" (Tian et al. do not scale the predictor's decay by the learning-rate ratio; our App. D l. 13 says so) |
+| M12 | theory.tex l. 44 (Sec. 4.1), optional | "Part (b) is the static threshold of Tian, Wang and Arbel" | add \citet{ponce2025dual} (scalar-input case, Prop. 4.11) if M2 is adopted, for consistency |
+
+**Appendix fixes**: rewordings 1, 4, 7 and 9 of the table "Suggested minimal rewordings" above (related_ext
+l. 16 Ponce/Arbel, l. 60 Li et al., l. 19 Bao, l. 75 Kunstner) and the l. 35 sub-clause on DvD's advice.
+
+**Bib records to correct** (all other 51 records checked: authors, title, venue, year, arXiv id):
+- `ponce2025dual`: published at ICLR 2026 (v3 PDF header "Published as a conference paper at ICLR 2026");
+  `@inproceedings`, booktitle International Conference on Learning Representations (ICLR), 2026.
+- `bisulco2025masked`: ICCV 2025, DOI 10.1109/ICCV51701.2025.01526 (Semantic Scholar).
+- `bao2023feature`: Neural Computation 37(11):2079–2124, 2025, DOI 10.1162/neco.a.27 (Crossref, published
+  2025-10-10; title there "Feature Normalization Prevents Collapse of Noncontrastive Learning Dynamics").
+- the stale header comment of `references.bib` ("Only work published before 1 September 2026").
+No entry is cited nowhere; no work is first published after 2026-10-18.

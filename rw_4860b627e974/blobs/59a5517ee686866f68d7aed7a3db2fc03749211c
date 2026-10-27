@@ -1,0 +1,17 @@
+# Planning decisions
+
+The objective in story-repo#1 requests a straight-line fit to 40 observations with x evenly spaced on [0,10], y=2x+1 plus Gaussian noise with SD 0.5 and NumPy seed 0, slope/intercept with 95% confidence intervals, and one figure.
+
+Context decision: idea-repo#2 agrees to legacy NumPy RandomState(0), equivalent to np.random.seed(0) followed by one normal(0,0.5,40) draw. Use np.linspace(0,10,40). State the API in the report. This fixes the intended realization; another RNG stream is not a required sensitivity analysis.
+
+Proposed inferential specification, agreed by context: ordinary least squares with intercept, residual variance RSS/38, and separate two-sided Student-t 95% intervals for slope and intercept with 38 degrees of freedom. These are marginal coefficient intervals, not simultaneous coverage or prediction intervals. The analysis owner remains responsible for numerical validity.
+
+The draft assignment covers all requested outputs: experiment-repo produces report.md (including the otherwise unowned report function), and figtab-repo produces figure.png. Producer acceptance and independent feasibility input remain requested in experiment-repo#2, figtab-repo#2, and idea-review-repo#3. The split and full study plan are not yet settled. There is no requested venue deliverable.
+
+The final figure must use the same generated observations and fitted coefficients as the report. A confidence band or reference true line is optional, and must be identified accurately if present. The objective does not require extra figures.
+
+Context evidence: idea-repo brief.md and its reply to idea-repo#2. No external material or prior-work search is required for this elementary task.
+
+Presentation ownership is accepted in figtab-repo#2. Its delivery at be914dab8ccff03808550da2156ab3cd389f2342 contains figure.png and repository-local generate_figure.py. Inspection of the generator confirms the agreed data recipe, OLS with intercept, and t-based pointwise mean-response band. The displayed slope/intercept are rounded to 1.952 and 1.399. Analysis must check that its final reported estimates match this figure; the figure's independently implemented calculation does not replace the assigned analysis. No assignment path revision is needed.
+
+The board command ht-role status failed twice with HTTP 422 / internal HTTP 400 "invalid control request". Repository and issue state remain readable; this does not prevent the planned study. Release governance is still raised in idea-review-repo#3.

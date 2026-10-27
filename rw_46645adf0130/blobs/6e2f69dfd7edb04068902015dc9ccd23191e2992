@@ -1,0 +1,69 @@
+"""Stage 1 analysis: chi(T) and c(T) at L=64 per seed and seed-mean; locate the susceptibility peak.
+
+Inputs : data/stage1/raw/L64-s{1,2}.json (written by ising.py via stage1_run.sh)
+Outputs: data/stage1/stage1.json      all runs merged
+         data/stage1/table.csv         T, chi and c per seed, seed means and half-differences
+         data/stage1/peak.json         peak location (grid argmax and parabola refinement) and the
+                                       stage-2 temperature grid derived from it
+"""
+import csv
+import json
+from pathlib import Path
+
+import numpy as np
+
+D = Path('data/stage1')
+runs = []
+for s in (1, 2):
+    runs += json.loads((D / 'raw' / f'L64-s{s}.json').read_text())
+(D / 'stage1.json').write_text(json.dumps(runs, indent=1))
+
+temps = sorted({r['T'] for r in runs})
+seeds = sorted({r['seed'] for r in runs})
+get = {(r['T'], r['seed']): r for r in runs}
+chi = np.array([[get[T, s]['chi'] for s in seeds] for T in temps])
+c = np.array([[get[T, s]['c'] for s in seeds] for T in temps])
+absm = np.array([[get[T, s]['abs_m'] for s in seeds] for T in temps])
+U = np.array([[get[T, s]['binder'] for s in seeds] for T in temps])
+T = np.array(temps)
+
+with open(D / 'table.csv', 'w', newline='') as f:
+    w = csv.writer(f)
+    w.writerow(['T'] + [f'chi_s{s}' for s in seeds] + ['chi_mean', 'chi_halfdiff']
+               + [f'c_s{s}' for s in seeds] + ['c_mean', 'c_halfdiff']
+               + [f'abs_m_s{s}' for s in seeds] + [f'binder_s{s}' for s in seeds])
+    for i, t in enumerate(T):
+        w.writerow([f'{t:.1f}'] + [f'{x:.4f}' for x in chi[i]]
+                   + [f'{chi[i].mean():.4f}', f'{abs(chi[i, 0] - chi[i, 1]) / 2:.4f}']
+                   + [f'{x:.5f}' for x in c[i]]
+                   + [f'{c[i].mean():.5f}', f'{abs(c[i, 0] - c[i, 1]) / 2:.5f}']
+                   + [f'{x:.5f}' for x in absm[i]] + [f'{x:.5f}' for x in U[i]])
+
+
+def parabola_peak(T, y, k):
+    """Vertex of a least-squares parabola through the 2k+1 grid points centred on the argmax."""
+    i = int(np.argmax(y))
+    lo, hi = max(i - k, 0), min(i + k + 1, len(T))
+    a, b, _ = np.polyfit(T[lo:hi], y[lo:hi], 2)
+    return float(-b / (2 * a)), [float(T[lo]), float(T[hi - 1])]
+
+
+out = {'L': 64, 'inputs': ['data/stage1/raw/L64-s1.json', 'data/stage1/raw/L64-s2.json'],
+       'chi_peak': {}, 'c_peak': {}}
+for name, arr, key in (('chi', chi, 'chi_peak'), ('c', c, 'c_peak')):
+    cols = {f'seed{s}': arr[:, j] for j, s in enumerate(seeds)}
+    cols['mean'] = arr.mean(axis=1)
+    for lab, y in cols.items():
+        i = int(np.argmax(y))
+        p3, r3 = parabola_peak(T, y, 1)
+        p5, r5 = parabola_peak(T, y, 2)
+        out[key][lab] = {'grid_argmax_T': float(T[i]), 'max_value': float(y[i]),
+                         'parabola3_T': p3, 'parabola3_range': r3,
+                         'parabola5_T': p5, 'parabola5_range': r5}
+centre = round(out['chi_peak']['mean']['parabola3_T'], 2)
+out['stage2_centre'] = centre
+out['stage2_centre_rule'] = ('vertex of the parabola through the 3 grid points around the maximum of '
+                             'the seed-mean chi, rounded to 0.01')
+out['stage2_temps'] = [round(centre - 0.12 + 0.03 * k, 4) for k in range(9)]
+(D / 'peak.json').write_text(json.dumps(out, indent=1))
+print(json.dumps(out, indent=1))

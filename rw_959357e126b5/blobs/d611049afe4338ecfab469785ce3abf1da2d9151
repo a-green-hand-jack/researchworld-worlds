@@ -1,0 +1,37 @@
+import numpy as np
+rng=np.random.default_rng(0)
+lams=0.0012*np.sqrt(2)**np.arange(8)
+def lam_cross(lams,c,half):
+    for i in range(1,len(lams)):
+        if c[i]<half<=c[i-1]:
+            a,b=np.log(lams[i-1]),np.log(lams[i]); return np.exp(a+(c[i-1]-half)/(c[i-1]-c[i])*(b-a))
+    return None
+mu=60*np.exp(-np.log(lams/lams[0])*0.9)  # mean curve
+half=0.5*mu[0]*1.6  # crossing inside the grid
+true=lam_cross(lams,mu,half)
+def run(tau,sig,NB=400,R=300):
+    cov={'within':0,'cluster':0}; w={'within':[],'cluster':[]}
+    for _ in range(R):
+        s=rng.normal(0,tau,5); C=mu[None,:]+s[:,None]+rng.normal(0,sig,(5,8))  # seeds x rows
+        for kind in w:
+            bs=[]
+            for _ in range(NB):
+                if kind=='within':
+                    m=np.array([C[rng.integers(0,5,5),j].mean() for j in range(8)])
+                else:
+                    m=C[rng.integers(0,5,5)].mean(0)
+                v=lam_cross(lams,m,half)
+                if v: bs.append(v)
+            lo,hi=np.percentile(bs,[2.5,97.5]); w[kind].append(hi/lo); cov[kind]+= lo<=true<=hi
+    return {k:(round(float(np.median(w[k])),3), cov[k]/R) for k in w}
+for tau,sig in [(0,1.5),(1.5,0.5),(1.5,1.5),(3,1)]:
+    print(tau,sig,run(tau,sig))
+# 5-cluster bootstrap vs t for mean of 5 seed-level differences
+from scipy import stats
+cb=ct=0;R=4000
+for _ in range(R):
+    x=rng.normal(0,1,5)
+    bs=[x[rng.integers(0,5,5)].mean() for _ in range(500)]
+    lo,hi=np.percentile(bs,[2.5,97.5]); cb+= lo<=0<=hi
+    h=stats.t.ppf(0.975,4)*x.std(ddof=1)/np.sqrt(5); ct+= abs(x.mean())<=h
+print('coverage bootstrap',cb/R,'t',ct/R)

@@ -1,0 +1,64 @@
+"""Convergence of composite trapezoid, Simpson, 4-node Gauss-Legendre. Writes results/*.csv/json."""
+import json, sys
+import numpy as np
+from scipy import stats
+
+EPS = np.finfo(float).eps
+FUNCS = {
+    "exp(x)": (np.exp, np.e - 1),
+    "1/(1+25x^2)": (lambda x: 1 / (1 + 25 * x**2), np.arctan(5) / 5),
+    "sqrt(x)": (np.sqrt, 2 / 3),
+}
+GX, GW = np.polynomial.legendre.leggauss(4)
+
+def trap(f, n):
+    x = np.linspace(0, 1, n + 1); h = 1 / n
+    y = f(x); return h * (y.sum() - 0.5 * (y[0] + y[-1]))
+
+def simpson(f, n):  # one 3-point Simpson per panel
+    x = np.linspace(0, 1, n + 1); h = 1 / n
+    m = f((x[:-1] + x[1:]) / 2)
+    y = f(x); return h / 6 * (y[:-1] + 4 * m + y[1:]).sum()
+
+def gl(f, n):  # 4 nodes per panel
+    a = np.arange(n) / n; h = 1 / n
+    xs = a[:, None] + h * (GX[None, :] + 1) / 2
+    return h / 2 * (f(xs) * GW[None, :]).sum()
+
+RULES = {"trapezoid": trap, "simpson": simpson, "gauss4": gl}
+
+def fit(ns, err, thr):
+    mask = err > thr
+    if mask.sum() < 2: return dict(order=None, lo=None, hi=None, npts=int(mask.sum()), kmin=None, kmax=None, mask=mask.tolist())
+    lx, ly = np.log(ns[mask]), np.log(err[mask]); m = mask.sum()
+    if m == 2:
+        s = np.polyfit(lx, ly, 1)[0]; return dict(order=-s, lo=None, hi=None, npts=2, kmin=int(np.log2(ns[mask][0])), kmax=int(np.log2(ns[mask][-1])), mask=mask.tolist())
+    r = stats.linregress(lx, ly); t = stats.t.ppf(0.975, m - 2)
+    return dict(order=-r.slope, lo=-r.slope - t * r.stderr, hi=-r.slope + t * r.stderr, se=r.stderr, npts=int(m),
+                kmin=int(np.log2(ns[mask][0])), kmax=int(np.log2(ns[mask][-1])), mask=mask.tolist())
+
+def main():
+    ks = np.arange(1, 13); ns = 2 ** ks
+    rows = []; errs = {}
+    for fn, (f, ex) in FUNCS.items():
+        for rn, rule in RULES.items():
+            e = np.array([abs(rule(f, int(n)) - ex) for n in ns]); errs[(fn, rn)] = e
+            for k, n, v in zip(ks, ns, e): rows.append((fn, rn, int(k), int(n), float(v)))
+    with open("results/errors.csv", "w") as fh:
+        fh.write("function,rule,k,n,abs_error\n")
+        for r in rows: fh.write("%s,%s,%d,%d,%.17e\n" % r)
+    out = {}
+    for label, thr in [("main_10eps", 10 * EPS), ("eps", EPS), ("1e-13", 1e-13)]:
+        out[label] = {"threshold": thr, "fits": {f"{fn}|{rn}": fit(ns, e, thr) for (fn, rn), e in errs.items()}}
+    # local (pairwise) orders for diagnosing departures
+    out["local_orders"] = {f"{fn}|{rn}": [None if (e[i] <= 10*EPS or e[i+1] <= 10*EPS) else float(np.log2(e[i] / e[i+1])) for i in range(11)] for (fn, rn), e in errs.items()}
+    json.dump(out, open("results/fits.json", "w"), indent=1)
+    with open("results/orders.csv", "w") as fh:
+        fh.write("function,rule,order,ci95_lo,ci95_hi,n_points,k_range,theory\n")
+        th = {"trapezoid": 2, "simpson": 4, "gauss4": 8}
+        for key, v in out["main_10eps"]["fits"].items():
+            fn, rn = key.split("|")
+            fmt = lambda x: "" if x is None else "%.4f" % x
+            fh.write("%s,%s,%s,%s,%s,%d,%s,%d\n" % (fn, rn, fmt(v["order"]), fmt(v["lo"]), fmt(v["hi"]), v["npts"],
+                     "" if v["kmin"] is None else f'{v["kmin"]}-{v["kmax"]}', th[rn]))
+main()

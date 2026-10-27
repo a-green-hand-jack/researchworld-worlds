@@ -1,0 +1,23 @@
+{
+ "experiment": "4207193fc02e1452f057141115ec50dea17b0788",
+ "command": "python3 code/checks/e6_r4_floor_bracket.py results/e6/r4_heldout OUT (tree at 4207193)",
+ "byte_identical_to_delivered": true,
+ "earlier_leaves_compared": 319,
+ "earlier_leaves_changed": 0,
+ "new_leaves": 99,
+ "all_relu": {
+  "n2_decay": {
+   "mae_plain": 1.5833,
+   "within1_plain": 0.4792,
+   "mae_bracket": 1.5,
+   "within1_bracket": 0.5
+  },
+  "static": {
+   "mae_plain": 1.1458,
+   "within1_plain": 0.6458,
+   "mae_bracket": 1.0625,
+   "within1_bracket": 0.6667
+  }
+ },
+ "readme": "post hoc relu line prints plain 1.58 / 0.48 and 1.15 / 0.65 with bracket values labelled (E6R4-W1 resolved)"
+}

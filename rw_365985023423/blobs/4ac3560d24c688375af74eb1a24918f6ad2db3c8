@@ -1,0 +1,33 @@
+# Monte Carlo analysis
+
+Protocol agreed with story-repo: run indices 0–199, seeds 2026+i, NumPy default_rng; interleaved (x,y) uniform draws using random((chunk,2)). Each run's five estimates use nested prefixes of the same 10^7-point stream, equivalent to restarting the seed at every N. Boundary rule x²+y²≤1. The 200 runs are independent; the five errors within a run are dependent.
+
+Production is split into runs 0–99 and 100–199, with counts and errors recorded as each run finishes. The headline interval is the residual OLS t interval; paired-bootstrap uncertainty resamples entire five-N error vectors as a dependence-aware check.
+
+Timed pilot: two complete runs took 0.326 seconds (NumPy version and precise timing in pilot.json); approximately 33 seconds of serial compute for 200, excluding launch/I/O and host contention. Two parallel jobs use available host capacity. Pilot output is not incorporated into production. Direct re-seeded prefix counts at N≤10^5 matched chunked counts for seeds 2026 and 2027; changing chunks from 250000 to 7777 preserved every count through N=10^7 for both seeds.
+
+Input source: experiment-repo Research objective issue #1 (no external dataset). Required N are 1000, 10000, 100000, 1000000, 10000000. Error reference is Python math.pi.
+
+## Completed results and interpretation
+
+All 200 runs completed for all five N (1000 rows). Files `runs_000_099.csv` and `runs_100_199.csv` contain the counts, estimates and absolute errors; their JSON companions record measured production times (13.322 and 13.293 seconds), software and chunk size. In total 2 billion distinct points were generated; prefix reuse supplies all five required estimates per seed exactly. No pilot values were substituted.
+
+`mae_table.csv` supplies the final table and figure: `N`, `mean_absolute_error`, optional `se_mean_absolute_error`, and `fit_mae`. `fit.json` supplies the line as exp(intercept) * N**slope; all logs are natural.
+
+The OLS exponent is −0.5011584. Dependence-aware paired-run percentile-bootstrap 95% interval: [−0.5161465, −0.4860153], 50,000 replicates using separate seed 42026. Headline residual OLS t interval (3 df): [−0.5191720, −0.4831448]. Both contain −0.5, supporting consistency with the expected inverse-square-root error scaling, not proof of an exact power law. The paired interval reflects finite-run sampling uncertainty and preserves the empirical dependence across N; it is an approximate bootstrap interval, not guaranteed finite-sample coverage. The headline OLS t interval ignores that dependence, so interpret it alongside the paired interval.
+
+Checks: input cardinality, seed mapping, unique (run,N), count bounds and exact recalculation of estimates/errors passed. Leave-one-N-out slopes range −0.50963 to −0.49530. A covariance-aware delta-method slope SE (0.00764494) agrees with the bootstrap SE (0.00764474). Bootstrap halves give endpoint differences below 0.00021. Every MAE is within 1.74 empirical standard errors of the exact binomial expectation. These checks identify no contradiction to N^(−1/2); there are only five sample sizes and 200 replications per size.
+
+For the theoretical comparison, K~Binomial(N,p), p=pi/4. The exact absolute-error expectation is 8p(1−p) P[Binomial(N−1,p)=floor(Np)], from E|K−Np|=2Np(1−p)P[Binomial(N−1,p)=floor(Np)]. Its large-N approximation is sqrt(2(4−pi)/N). These are analytic references, not simulation outputs. The table distinguishes them explicitly.
+
+## Reproduction
+
+From the repository root, run these sequentially (or the first two as independent resource jobs):
+
+```sh
+python3 analysis/simulate.py --start 0 --stop 100 --output analysis/runs_000_099.csv
+python3 analysis/simulate.py --start 100 --stop 200 --output analysis/runs_100_199.csv
+OPENBLAS_NUM_THREADS=1 python3 analysis/analyze.py
+```
+
+The analysis needs NumPy, pandas and SciPy; versions and raw input SHA256 hashes are in `fit.json`. It takes about four seconds in the measured environment. `analyze.py` uses count-derived errors as its only numeric inputs; no external data or fitted reference values are involved. Source objective: issue #1; agreed protocol: story-repo `PLAN.md` and assignment at fb32632c08c776aab03459cb9d49c2886f1f8c7d. The final plan at 257ed703fae6e9d362e9566f271fc02bc9ae74f7 prioritizes the conventional OLS t interval with the dependence-aware paired bootstrap alongside it. In fit.json, headline_interval is OLS t and paired_bootstrap is the dependence-aware check; these names supersede the earlier primary_interval and ols_t_sensitivity keys. The standardized slope difference (slope+0.5)/SE uses the headline OLS SE.

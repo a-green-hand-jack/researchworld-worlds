@@ -1,0 +1,45 @@
+"""E4 / A1 development grid 3, for the phase model after v3 (v4: hover at the threshold and the collapse loop past
+the first crossing). Development grid 2 (code/e4_dev2.py) has second collapses (dead after the per-step first
+crossing) in only 1.7-2.0% of directions against 8.0% on the A1 held-out grid, so it under-represents the failure
+v4 must fix. This grid uses two new development statistics sets with steeper spectra and n = 32 (disjoint from the
+held-out ho1/ho2 and from the dev/e1b sets), b1 in {0.9, 0.8} (0.85 is held-out only), development beta2 values.
+Same ground truth as code/e4_a1.py (80-bit maps, per-step first crossings, 30 log-spaced checkpoints, T = 60000).
+The held-out grid is not used for development.
+Usage: python3 code/e4_dev3.py run results/e4/dev3 [NPROC]       (writes dev3_runs.jsonl.gz; no tolerance scoring)"""
+import sys, os, json, time, itertools, gzip
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+import e4_a1 as A
+
+A.STATS = {"dev3a": (np.linspace(2.8, 0.6, 32), 0.89), "dev3b": (np.linspace(1.8, 0.4, 32), 0.91)}
+A.A1A_SUBSET = lambda cfg: False
+
+
+def configs():
+    out = []
+    for st, p0, lam, a0, eta, b1, b2 in itertools.product(A.STATS, [1.0, 2.0, 3.0], [0.005, 0.02, 0.05], [1e-4, 1e-2],
+                                                           [0.02, 0.05], [0.9, 0.8], [0.999, 0.998]):
+        out.append(dict(id=len(out), stats=st, p0=p0, lam=lam, a0=a0, eta=eta, b1=b1, b2=b2, seed=2000))
+    return out
+
+
+def truth_only(cfg):
+    return dict(cfg, checkpoints=A.CHECKS, **A.truth(cfg))
+
+
+if __name__ == "__main__":
+    outdir = sys.argv[2]; nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    os.makedirs(outdir, exist_ok=True); cfgs = configs(); t0 = time.time(); runs = []
+    with Pool(nproc) as pool:
+        for i, r in enumerate(pool.imap(truth_only, cfgs)):
+            runs.append(r)
+            if (i + 1) % 96 == 0:
+                print(f"{i+1}/{len(cfgs)} {time.time()-t0:.0f}s", flush=True)
+    with gzip.open(os.path.join(outdir, "dev3_runs.jsonl.gz"), "wt") as f:
+        for r in runs:
+            f.write(json.dumps(r) + "\n")
+    json.dump(dict(runs=len(runs), seconds=time.time() - t0, numpy=np.__version__, command=" ".join(["code/e4_dev3.py"] + sys.argv[1:])),
+              open(os.path.join(outdir, "dev3_meta.json"), "w"), indent=1)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E4 dev3 ground truth done", flush=True)

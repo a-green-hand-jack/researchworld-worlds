@@ -1,0 +1,6 @@
+#!/bin/sh
+# Stages 2 and 3 in sequence (stage 3 is designed from the stage-2 estimate by the fixed rule in code/stage3.sh).
+set -e
+cd "$(dirname "$0")/.."
+sh code/stage2.sh
+sh code/stage3.sh

@@ -1,0 +1,275 @@
+{
+  "design": {
+    "outer": "RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=20261017)",
+    "inner": "StratifiedKFold(n_splits=5, shuffle=True, random_state=20261017+1000+outer_index)",
+    "k_grid": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30
+    ],
+    "lr": "StandardScaler + LogisticRegression(C=1.0, lbfgs, multinomial, max_iter=10000)",
+    "knn": "StandardScaler + KNeighborsClassifier(uniform weights, Euclidean), k by inner CV accuracy, ties to smallest k",
+    "intervals": "95%; primary = Nadeau-Bengio corrected t over 50 folds (df=49, factor 1/50 + 30/120); naive t and percentile bootstrap (10000 resamples) as checks",
+    "n_train": 120,
+    "n_test": 30
+  },
+  "data": {
+    "file": "data/iris.arff",
+    "md5": "ad484452702105cbf3d30f8deaba39a9",
+    "source": "https://openml.org/data/v1/download/61/iris.arff",
+    "openml_id": 61,
+    "n": 150,
+    "features": [
+      "sepallength",
+      "sepalwidth",
+      "petallength",
+      "petalwidth"
+    ],
+    "classes": [
+      "Iris-setosa",
+      "Iris-versicolor",
+      "Iris-virginica"
+    ]
+  },
+  "summary": {
+    "acc_lr": {
+      "mean": 0.9540000000000001,
+      "sd": 0.03681787005729086,
+      "n_folds": 50,
+      "corrected_t": [
+        0.9155545619880852,
+        0.992445438011915
+      ],
+      "naive_t": [
+        0.9435364771036676,
+        0.9644635228963325
+      ],
+      "bootstrap": [
+        0.9433333333333335,
+        0.9640000000000001
+      ]
+    },
+    "acc_knn": {
+      "mean": 0.9446666666666667,
+      "sd": 0.04790864322059323,
+      "n_folds": 50,
+      "corrected_t": [
+        0.8946401776191959,
+        0.9946931557141374
+      ],
+      "naive_t": [
+        0.9310511809123072,
+        0.9582821524210261
+      ],
+      "bootstrap": [
+        0.9313333333333332,
+        0.9573333333333334
+      ]
+    },
+    "diff_lr_minus_knn": {
+      "mean": 0.00933333333333333,
+      "sd": 0.03301892537782802,
+      "n_folds": 50,
+      "corrected_t": [
+        -0.025145224140470157,
+        0.04381189080713682
+      ],
+      "naive_t": [
+        -5.054143089354944e-05,
+        0.01871720809756021
+      ],
+      "bootstrap": [
+        0.0006666666666666665,
+        0.01866666666666666
+      ],
+      "corrected_t_p_two_sided_vs_0": 0.5889143086511872
+    },
+    "folds_lr_better": 16,
+    "folds_knn_better": 9,
+    "folds_tied": 25,
+    "per_repeat_accuracy": [
+      {
+        "repeat": 0,
+        "acc_lr": 0.9466666666666667,
+        "acc_knn": 0.9400000000000001
+      },
+      {
+        "repeat": 1,
+        "acc_lr": 0.9533333333333334,
+        "acc_knn": 0.9400000000000001
+      },
+      {
+        "repeat": 2,
+        "acc_lr": 0.9533333333333334,
+        "acc_knn": 0.9400000000000001
+      },
+      {
+        "repeat": 3,
+        "acc_lr": 0.9533333333333334,
+        "acc_knn": 0.9533333333333334
+      },
+      {
+        "repeat": 4,
+        "acc_lr": 0.9533333333333334,
+        "acc_knn": 0.9400000000000001
+      },
+      {
+        "repeat": 5,
+        "acc_lr": 0.96,
+        "acc_knn": 0.9400000000000001
+      },
+      {
+        "repeat": 6,
+        "acc_lr": 0.96,
+        "acc_knn": 0.9533333333333334
+      },
+      {
+        "repeat": 7,
+        "acc_lr": 0.9533333333333334,
+        "acc_knn": 0.9466666666666667
+      },
+      {
+        "repeat": 8,
+        "acc_lr": 0.9533333333333334,
+        "acc_knn": 0.9533333333333334
+      },
+      {
+        "repeat": 9,
+        "acc_lr": 0.9533333333333334,
+        "acc_knn": 0.9400000000000001
+      }
+    ],
+    "mcnemar_per_repeat": [
+      {
+        "repeat": 0,
+        "lr_only_correct": 1,
+        "knn_only_correct": 0,
+        "exact_p": 1.0
+      },
+      {
+        "repeat": 1,
+        "lr_only_correct": 4,
+        "knn_only_correct": 2,
+        "exact_p": 0.6875
+      },
+      {
+        "repeat": 2,
+        "lr_only_correct": 2,
+        "knn_only_correct": 0,
+        "exact_p": 0.5
+      },
+      {
+        "repeat": 3,
+        "lr_only_correct": 2,
+        "knn_only_correct": 2,
+        "exact_p": 1.0
+      },
+      {
+        "repeat": 4,
+        "lr_only_correct": 3,
+        "knn_only_correct": 1,
+        "exact_p": 0.625
+      },
+      {
+        "repeat": 5,
+        "lr_only_correct": 5,
+        "knn_only_correct": 2,
+        "exact_p": 0.453125
+      },
+      {
+        "repeat": 6,
+        "lr_only_correct": 5,
+        "knn_only_correct": 4,
+        "exact_p": 1.0
+      },
+      {
+        "repeat": 7,
+        "lr_only_correct": 2,
+        "knn_only_correct": 1,
+        "exact_p": 1.0
+      },
+      {
+        "repeat": 8,
+        "lr_only_correct": 2,
+        "knn_only_correct": 2,
+        "exact_p": 1.0
+      },
+      {
+        "repeat": 9,
+        "lr_only_correct": 3,
+        "knn_only_correct": 1,
+        "exact_p": 0.625
+      }
+    ],
+    "k_chosen_counts": {
+      "1": 4,
+      "3": 2,
+      "4": 1,
+      "5": 6,
+      "6": 4,
+      "7": 5,
+      "8": 4,
+      "9": 7,
+      "10": 4,
+      "11": 2,
+      "12": 3,
+      "13": 2,
+      "14": 1,
+      "17": 2,
+      "19": 2,
+      "21": 1
+    },
+    "errors_per_repeat_mean": {
+      "lr": 6.900000000000006,
+      "knn": 8.299999999999985
+    }
+  },
+  "outputs_sha256": {
+    "folds.csv": "746f95bd3f17ad374304f48be2622c64be64e4008ba8ceb5abaf44d9c8b4d710",
+    "inner_cv.csv": "1890a8c7d3454adc32f5437007a4c0b33e43b06988c74e19068ec41e64c48833",
+    "predictions.csv": "68509d6abd9a601f54faa4bfcae8fbea82ff78f83c0d48e277a69f944785222b"
+  },
+  "environment": {
+    "hostname": "cn511-19",
+    "slurm_job_id": "53917056",
+    "slurm_job_nodelist": "cn511-19",
+    "slurmd_nodename": "cn511-19",
+    "python": "3.11.17",
+    "platform": "Linux-5.14.0-427.20.1.el9_4.0.1.x86_64-x86_64-with-glibc2.34",
+    "processor": "x86_64",
+    "cpu_count": 192,
+    "numpy": "1.26.4",
+    "scipy": "1.13.1",
+    "sklearn": "1.5.2",
+    "pandas": "2.2.3"
+  },
+  "started_utc": "2026-10-17T14:16:50.490715+00:00",
+  "wall_seconds": 12.25
+}

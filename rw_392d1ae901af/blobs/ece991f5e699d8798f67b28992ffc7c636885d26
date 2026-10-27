@@ -1,0 +1,20 @@
+% Stand-in for the official icml2025.sty (not supplied in the task inputs):
+% reproduces ICML two-column geometry (10pt Times, 6.75in x 9in text, 0.25in column gap).
+\NeedsTeXFormat{LaTeX2e}\ProvidesPackage{icml2025}
+\RequirePackage{times}\RequirePackage{natbib}\RequirePackage{xcolor}
+\setcitestyle{authoryear,round,comma}
+\DeclareOption{accepted}{}\ProcessOptions\relax
+\setlength{\textwidth}{6.75in}\setlength{\columnsep}{0.25in}
+\setlength{\textheight}{9in}\setlength{\topmargin}{-0.5in}\setlength{\headheight}{12pt}\setlength{\headsep}{0.25in}
+\setlength{\oddsidemargin}{-0.125in}\setlength{\evensidemargin}{-0.125in}
+\setlength{\parindent}{0pt}\setlength{\parskip}{4pt}
+\renewcommand{\normalsize}{\@setfontsize\normalsize\@xpt{11}}\normalsize
+\newcommand{\icmltitlerunning}[1]{}
+\newcommand{\icmltitle}[1]{\vskip 0.1in\begin{center}{\LARGE\bf #1}\end{center}\vskip 0.1in}
+\newenvironment{icmlauthorlist}{\begin{center}}{\end{center}}
+\newcommand{\icmlauthor}[2]{#1}
+\renewcommand{\abstractname}{Abstract}
+\renewenvironment{abstract}{\begin{center}{\large\bf Abstract}\end{center}\begin{quote}\small}{\end{quote}}
+\renewcommand\section{\@startsection{section}{1}{\z@}{-0.12in}{0.05in}{\large\bf\raggedright}}
+\renewcommand\subsection{\@startsection{subsection}{2}{\z@}{-0.1in}{0.04in}{\normalsize\bf\raggedright}}
+\pagestyle{plain}

@@ -1,0 +1,63 @@
+"""Development only (A3 level model, exploratory; not scored): what sets the predictor's spectrum on the unused output
+subspace under rotation, which decides which directions stay dead (theory/ext_A_adamw.md, A3 'what the dead directions
+see'). One rotated configuration (e1b statistics, theta = 1, side both, seed 1, p0 = 0.5, a0 = 1e-4), one factor at a
+time around lam = 0.02, eta = 0.02, b1 = 0.9, b2 = 0.999; T = 100k. Over [T/2, T] (every 50 steps) it records:
+  - the AdamW stationarity identity mean(P) = -mean(N)/lam, N = mhat/(sqrt(vhat)+eps) (relative error);
+  - the alive output subspace (left singular vectors of W with sv > 0.05) and the unused block P_u = Q_u' mean(P) Q_u;
+    its real eigenvalues, against c/s of the first dead and the last alive direction;
+  - the relative spread of sqrt(vhat_P) over entries (rms/median - 1) and the alive amplitudes over c/s.
+Usage: python3 code/checks/e4_a3_level_explore.py > results/e4/a3dev2/level_explore.txt"""
+import sys, os
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import e4_a3 as a3
+
+
+def run(cfg):
+    c, s, U, V, a0 = a3.problem(cfg)
+    S11, S21 = U @ np.diag(s) @ U.T, U @ np.diag(c) @ U.T
+    W, P = V @ np.diag(a0) @ U.T, cfg["p0"] * np.eye(s.size)
+    eta, lam, b1, b2, eps = (cfg[k] for k in ("eta", "lam", "b1", "b2", "eps"))
+    m = [np.zeros_like(W), np.zeros_like(P)]; v = [np.zeros_like(W), np.zeros_like(P)]
+    T = cfg["T"]; Ps, Ns, Ws, sv, spread, ranks = 0, 0, 0, [], [], []
+    for t in range(1, T + 1):
+        R = P @ W @ S11 - W @ S21
+        g = (P.T @ R, R @ W.T); x = [W, P]; Nn = None
+        for i in range(2):
+            m[i] = b1 * m[i] + (1 - b1) * g[i]; v[i] = b2 * v[i] + (1 - b2) * g[i] * g[i]
+            sq = np.sqrt(v[i] / (1 - b2 ** t))
+            N = (m[i] / (1 - b1 ** t)) / (sq + eps)
+            if i == 1:
+                Nn, sqP = N, sq
+            x[i] = x[i] * (1 - eta * lam) - eta * N
+        W, P = x
+        if t > T // 2 and t % 50 == 0:
+            Ps = Ps + P; Ns = Ns + Nn; ranks.append(int((np.linalg.svd(W, compute_uv=False) > 0.05).sum()))
+            spread.append(np.sqrt(np.mean(sqP ** 2)) / np.median(sqP) - 1)
+            Ws = Ws + np.linalg.norm(W @ U, axis=0)
+    k = len(ranks); Pm, Nm, amp = Ps / k, Ns / k, Ws / k
+    ident = np.linalg.norm(Pm + Nm / lam) / np.linalg.norm(Pm)
+    Uw, sw, _ = np.linalg.svd(W); r = int((sw > 0.05).sum()); Qu = Uw[:, r:]
+    ev = np.sort(np.linalg.eigvals(Qu.T @ Pm @ Qu).real) if r < s.size else np.array([])
+    alive = amp > 0.05; cs = c / s
+    return dict(cfg=cfg, rank_tavg=float(np.mean(ranks)), ident=float(ident), r_end=r, ev_unused=ev,
+                cs_last_alive=float(cs[alive].min()) if alive.any() else None,
+                cs_first_dead=float(cs[~alive].max()) if (~alive).any() else None,
+                spread=float(np.mean(spread)), over=float(np.median(amp[alive] / cs[alive])))
+
+
+if __name__ == "__main__":
+    base = dict(a3.DEV_BASE, stats="e1b", a0=1e-4, p0=0.5, seed=1, theta=1.0, side="both", lam=0.02, eta=0.02, b1=0.9,
+                b2=0.999, T=100000)
+    var = [{}, {"lam": 0.005}, {"lam": 0.05}, {"eta": 0.01}, {"eta": 0.04}, {"b2": 0.99}, {"b2": 0.9999},
+           {"b1": 0.8}, {"b1": 0.95}, {"theta": 0.25}, {"lam": 0.005, "eta": 0.04}, {"lam": 0.05, "eta": 0.01}]
+    cfgs = [dict(base, id=i, **d) for i, d in enumerate(var)]
+    with Pool(8) as pool:
+        res = pool.map(run, cfgs)
+    for d, r in zip(var, res):
+        ev = r["ev_unused"]
+        print(f"{str(d):34s} eta*lam {r['cfg']['eta']*r['cfg']['lam']:.0e} rank_tavg {r['rank_tavg']:5.2f} | ident {r['ident']:.3f} "
+              f"| cs last alive {r['cs_last_alive']:.3f} first dead {r['cs_first_dead'] if r['cs_first_dead'] is None else round(r['cs_first_dead'],3)} "
+              f"| P_u eig min/med/max {('%.3f %.3f %.3f' % (ev.min(), np.median(ev), ev.max())) if ev.size else '-'} "
+              f"| sqrt(vP) spread {r['spread']:.2f} | |w|/(c/s) alive median {r['over']:.2f}", flush=True)

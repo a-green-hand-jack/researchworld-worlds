@@ -1,0 +1,61 @@
+"""Early check of the E6 rung 1a v2 tolerance (experiment 758ab70 / registration acdcbcb): how informative is the
+registered fixed-time early baseline (measured count at t = 25 and 50) on the DEVELOPMENT grid, against A1 and
+against the v1 early reading (10% of T)? Re-runs each dev config's truth flow up to t = 50 with the frozen code
+(experiment 8835010, code/e6_r1.py truth/init, unchanged for the dev grid), deterministic from the config seed, so
+the trajectory is the dev run's own. Consistency check: rerun to T/20 and compare with the dev run's counts[0].
+Usage: python3 checks/e6_r1_fixed_early_dev.py EXP_CHECKOUT OUT.json"""
+import sys, os, json, gzip
+import numpy as np
+from multiprocessing import Pool
+EXP, OUT = sys.argv[1], sys.argv[2]
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e6_r1 as E
+
+
+def early(cfg):
+    c2 = dict(cfg, T=50.0); tr = E.truth(c2, E.init(c2))
+    if not tr.get("counts"):
+        return cfg["id"], None, None
+    return cfg["id"], tr["counts"][9], tr["counts"][19]      # checkpoints at 2.5 k: t = 25 and 50
+
+
+def first(cfg):
+    c2 = dict(cfg, T=cfg["T"] / 20); tr = E.truth(c2, E.init(c2))
+    return cfg["id"], tr["counts"][-1]
+
+
+def boot(x, B=10000, seed=7):
+    x = np.asarray(x, float); r = np.random.default_rng(seed)
+    m = x[r.integers(0, x.size, (B, x.size))].mean(1); return [float(np.quantile(m, .025)), float(np.quantile(m, .975))]
+
+
+if __name__ == "__main__":
+    rows = {r["cfg"]["id"]: r for r in (json.loads(l) for l in gzip.open(os.path.join(EXP, "results/e6/r1dev/r1_dev_runs.jsonl.gz"), "rt"))}
+    cfgs = [r["cfg"] for r in rows.values() if r["truth"].get("counts")]
+    with Pool(8) as P:
+        ea = {i: (a, b) for i, a, b in P.map(early, cfgs, chunksize=8)}
+        chk = [cf for cf in cfgs if cf["T"] / 20 >= 10][::40]
+        fc = dict(P.map(first, chk))
+    consist = dict(n=len(fc), equal=sum(int(fc[i] == rows[i]["truth"]["counts"][0]) for i in fc))
+    res = dict(source="experiment 8835010 code/e6_r1.py on results/e6/r1dev/r1_dev_runs.jsonl.gz (dev grid only; no held-out run)",
+               consistency_T_over_20=consist, groups={})
+    for arm in ("aligned", "generic"):
+        for g, sel in (("L_ge2", lambda L: L >= 2), ("L2", lambda L: L == 2), ("L3", lambda L: L == 3), ("L1", lambda L: L == 1)):
+            R = [rows[cf["id"]] for cf in cfgs if cf["arm"] == arm and sel(cf["L"])]
+            if not R:
+                continue
+            tru = np.array([r["truth"]["counts"][-1] for r in R]); a1 = np.abs(np.array([r["pred"]["race_deep_A1"] for r in R]) - tru)
+            d = dict(runs=len(R), A1_mae=float(a1.mean()))
+            for nm, v in (("early_t25", [ea[r["cfg"]["id"]][0] for r in R]), ("early_t50", [ea[r["cfg"]["id"]][1] for r in R]),
+                          ("early_10pctT_v1", [r["truth"]["counts"][1] for r in R]), ("early_5pctT", [r["truth"]["counts"][0] for r in R])):
+                e = np.abs(np.array(v) - tru)
+                d[nm] = dict(mae=float(e.mean()), exact=float((e == 0).mean()), minus_A1=float((e - a1).mean()), minus_A1_ci=boot(e - a1))
+            d["t_over_T"] = dict(t25_median=float(np.median([25 / r["cfg"]["T"] for r in R])), t50_median=float(np.median([50 / r["cfg"]["T"] for r in R])))
+            d["count_t25_by_a0"] = {str(a0): dict(mean_early=float(np.mean([ea[r["cfg"]["id"]][0] for r in R if r["cfg"]["a0"] == a0])),
+                                               mean_final=float(np.mean([r["truth"]["counts"][-1] for r in R if r["cfg"]["a0"] == a0])))
+                                    for a0 in sorted({r["cfg"]["a0"] for r in R})}
+            res["groups"][f"{arm}_{g}"] = d
+    json.dump(res, open(OUT, "w"), indent=1)
+    print(json.dumps(consist))
+    for k, d in res["groups"].items():
+        print(k, d["runs"], "A1 %.3f" % d["A1_mae"], " ".join("%s %.3f %s" % (nm, d[nm]["mae"], [round(x, 3) for x in d[nm]["minus_A1_ci"]]) for nm in ("early_t25", "early_t50", "early_5pctT", "early_10pctT_v1")))

@@ -1,0 +1,15 @@
+% Minimal stand-in for the official icml2025.sty (not available offline).
+% Reproduces ICML two-column geometry: 6.75in x 9in text, 0.25in column gap, 10pt Times.
+\ProvidesPackage{icml2025}
+\RequirePackage{times,geometry,fancyhdr,xcolor}
+\geometry{paperwidth=8.5in,paperheight=11in,textwidth=6.75in,textheight=9in,top=1in,left=0.75in,columnsep=0.25in}
+\RequirePackage[numbers]{natbib}
+\DeclareOption{accepted}{}\ProcessOptions\relax
+\setlength{\parindent}{0pt}\setlength{\parskip}{3pt}
+\newcommand{\icmltitlerunning}[1]{\pagestyle{fancy}\fancyhf{}\fancyhead[C]{\footnotesize #1}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+\newcommand{\icmltitle}[1]{\begin{center}{\Large\bf #1\par}\end{center}}
+\newenvironment{icmlauthorlist}{\begin{center}}{\end{center}}
+\newcommand{\icmlauthor}[2]{#1}
+\newcommand{\icmlaffiliation}[2]{}
+\newcommand{\icmlcorrespondingauthor}[2]{}
+\newcommand{\icmlkeywords}[1]{}

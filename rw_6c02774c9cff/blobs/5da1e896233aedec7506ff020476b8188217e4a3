@@ -1,0 +1,7 @@
+#!/bin/sh
+# Rebuild report.pdf from the delivered tree: numbers.tex is regenerated from
+# the experiment's committed results before LaTeX runs.
+set -e
+cd "$(dirname "$0")"
+python3 make_numbers.py > numbers.tex
+latexmk -pdf -interaction=nonstopmode -halt-on-error report.tex

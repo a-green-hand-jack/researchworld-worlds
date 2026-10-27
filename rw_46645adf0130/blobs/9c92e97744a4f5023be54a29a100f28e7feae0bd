@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Stage 2 (crossing): L in "$@" (e.g. 128, or 32 64), 9 temperatures from 0.12 below to 0.12 above
+# the stage-1 chi peak (data/stage1/peak.json: stage2_temps), seeds 1-3, 20000 sweeps after 2000
+# burn-in, keeping per-sweep series. One process per (L, seed), all concurrent within the job.
+# Run from the repository root.
+set -euo pipefail
+TEMPS=$(python3 -c "import json; print(' '.join(f'{t:.4f}' for t in json.load(open('data/stage1/peak.json'))['stage2_temps']))")
+mkdir -p data/stage2/raw data/stage2/series_raw
+for L in "$@"; do
+  for s in 1 2 3; do
+    python3 -u code/ising.py --L $L --temps $TEMPS --seeds $s --sweeps 20000 --burn 2000 \
+      --out data/stage2/raw/L$L-s$s.json --series data/stage2/series_raw > data/stage2/raw/L$L-s$s.log 2>&1 &
+  done
+done
+wait
+echo "HUTIAN_WAKE: stage 2 sizes $* finished"

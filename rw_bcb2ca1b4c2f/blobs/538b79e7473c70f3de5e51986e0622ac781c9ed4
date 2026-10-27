@@ -1,0 +1,15 @@
+import json, gzip, numpy as np, collections
+R=[json.loads(l) for l in gzip.open('prec.jsonl.gz')]
+fr=collections.defaultdict(list)
+for r in R:
+    c=r['cfg']; t=r['truth']
+    if t.get('counts') is None: continue
+    fr[(c['p0'],c['lam'],r['prec'],c['B']==0)].append((c['eta'],c['seed'],c['B'],t['counts'][-1]))
+for p0 in (0.7,1.5):
+  for lam in (0.006,0.012):
+    row=[]
+    for prec in ('f64','f80','f32'):
+        pop={ (e,s):k for e,s,B,k in fr[(p0,lam,prec,True)]}
+        d=[k-pop[(e,s)] for e,s,B,k in fr[(p0,lam,prec,False)]]
+        row.append(round(np.mean(d),2))
+    print(p0,lam,row, 'pop mean f64', np.mean([k for *_,k in fr[(p0,lam,'f64',True)]]))

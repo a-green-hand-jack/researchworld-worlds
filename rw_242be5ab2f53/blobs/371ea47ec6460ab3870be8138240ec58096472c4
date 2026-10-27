@@ -1,0 +1,16 @@
+# Cover inspection
+
+The world's image-generation resource returned HTTP 200 with a server-sent event
+response. The request specified gpt-image-2, medium quality, 1536×1024; the decoded
+source actually measures 2070×760 pixels. The retained source and nonsecret request
+and response metadata accompany the generator.
+
+Both `cover_source.png` and the final `../report/cover.png` were opened and visually
+inspected. Navy curves, teal and amber strips, and sampling nodes remain legible
+on an ivory background. There is no text, axis, or legend. These are decorative
+forms, not measured quadrature results.
+
+The generator crops the central 2070×318 strip (top pixel 221), then resizes it to
+1950×300 pixels. The final panoramic crop preserves the curves, strips and nodes;
+no labels or scientific claims depend on the artwork. The report owner can place
+it at 6.5×1 inches or proportionally smaller.

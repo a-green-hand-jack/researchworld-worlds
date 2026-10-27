@@ -1,0 +1,63 @@
+"""Rebuild summaries from actual counts; paired nonparametric bootstrap."""
+import hashlib, json, math, platform
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import scipy
+from scipy import stats
+
+ROOT=Path(__file__).resolve().parent
+FILES=['runs_000_099.csv','runs_100_199.csv']
+raw=pd.concat([pd.read_csv(ROOT/f, float_precision='round_trip') for f in FILES],ignore_index=True)
+ns=np.array([1000,10000,100000,1000000,10000000])
+assert len(raw)==1000 and not raw.duplicated(['run_index','N']).any()
+assert set(raw.run_index)==set(range(200)) and (raw.seed==2026+raw.run_index).all()
+assert (raw.inside>=0).all() and (raw.inside<=raw.N).all()
+assert np.allclose(raw.estimate,4*raw.inside/raw.N,rtol=0,atol=0)
+assert np.allclose(raw.absolute_error,abs(raw.estimate-math.pi),rtol=0,atol=0)
+errors=raw.pivot(index='run_index',columns='N',values='absolute_error').reindex(columns=ns).to_numpy()
+assert errors.shape==(200,5) and np.isfinite(errors).all()
+mae=errors.mean(axis=0); se=errors.std(axis=0,ddof=1)/math.sqrt(200)
+x=np.log(ns); y=np.log(mae); xc=x-x.mean(); sxx=xc@xc
+slope=float(xc@y/sxx); intercept=float(y.mean()-slope*x.mean())
+resid=y-(intercept+slope*x); slope_se=float(np.sqrt(resid@resid/3/sxx))
+t_ci=[slope-stats.t.ppf(.975,3)*slope_se,slope+stats.t.ppf(.975,3)*slope_se]
+# Batch bootstrap indices to avoid storing 50000 x 200 x 5 samples.
+rng=np.random.default_rng(42026); slopes=[]
+for _ in range(50):
+    idx=rng.integers(0,200,size=(1000,200))
+    slopes.extend(np.log(errors[idx].mean(axis=1))@xc/sxx)
+slopes=np.array(slopes); boot_ci=np.quantile(slopes,[.025,.975])
+p=math.pi/4
+normal=np.sqrt(2*(4-math.pi))/np.sqrt(ns)
+exact=8*p*(1-p)*stats.binom.pmf(np.floor(ns*p),ns-1,p)
+table=pd.DataFrame(dict(N=ns,runs=200,mean_absolute_error=mae,se_mean_absolute_error=se,
+    mean_estimate=raw.groupby('N').estimate.mean().reindex(ns).to_numpy(),
+    normal_approximation_mae=normal,exact_binomial_mae=exact,fit_mae=np.exp(intercept+slope*x)))
+table.to_csv(ROOT/'mae_table.csv',index=False,float_format='%.17g')
+loo=[]
+for k in range(5):
+    mask=np.arange(5)!=k
+    loo.append(dict(omitted_N=int(ns[k]),slope=float(stats.linregress(x[mask],y[mask]).slope)))
+# Delta-method covariance sensitivity keeps observed across-N dependence.
+cov_log=np.cov(errors,rowvar=False,ddof=1)/200/np.outer(mae,mae)
+delta_se=float(np.sqrt(xc@cov_log@xc/sxx**2))
+fit=dict(method='Unweighted ordinary least squares of natural log(MAE) on natural log(N)',
+    slope=slope,intercept=intercept,prefactor=math.exp(intercept),r_squared=float(1-resid@resid/((y-y.mean())@(y-y.mean()))),
+    paired_bootstrap=dict(method='Paired-run percentile bootstrap; resample 200 entire five-N vectors',
+        confidence=.95,replicates=50000,seed=42026,ci=boot_ci.tolist(),contains_minus_half=bool(boot_ci[0]<=-.5<=boot_ci[1]),
+        bootstrap_slope_se=float(slopes.std(ddof=1)),
+        first_half_ci=np.quantile(slopes[:25000],[.025,.975]).tolist(),second_half_ci=np.quantile(slopes[25000:],[.025,.975]).tolist()),
+    headline_interval=dict(method="Residual OLS Student-t interval", confidence=.95,df=3,slope_se=slope_se,standardized_difference_from_minus_half=(slope+.5)/slope_se,ci=list(map(float,t_ci)),contains_minus_half=bool(t_ci[0]<=-.5<=t_ci[1]),
+        caveat='Residual interval assumes independent homoskedastic log errors; nested samples induce dependence.'),
+    diagnostics=dict(log_residuals=resid.tolist(),leave_one_N_out=loo,delta_method_slope_se=delta_se,
+        delta_method_normal_ci=[slope-1.96*delta_se,slope+1.96*delta_se],
+        absolute_error_correlation=np.corrcoef(errors,rowvar=False).tolist(),
+        mae_minus_exact_in_empirical_se=((mae-exact)/se).tolist()),
+    provenance=dict(input_sha256={f:hashlib.sha256((ROOT/f).read_bytes()).hexdigest() for f in FILES},
+        numpy=np.__version__,scipy=scipy.__version__,pandas=pd.__version__,python=platform.python_version(),
+        reference_pi=math.pi,run_indices=[0,199],simulation_seeds=[2026,2225],
+        unique_points_generated=200*10000000,draw_order='rng.random((chunk,2)); x and y adjacent; nested prefixes',
+        bootstrap_quantile_method='NumPy default linear interpolation'))
+(ROOT/'fit.json').write_text(json.dumps(fit,indent=2)+'\n')
+print(table.to_string(index=False)); print(json.dumps({k:fit[k] for k in ['slope','headline_interval','paired_bootstrap','diagnostics']},indent=2))

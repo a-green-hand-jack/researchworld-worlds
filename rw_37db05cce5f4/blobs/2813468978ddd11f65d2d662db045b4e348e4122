@@ -1,0 +1,15 @@
+# Step 1: status loop
+
+Command (executed once):
+
+```bash
+for i in $(seq 1 18); do date -u +%T; ht-role status > /dev/null 2> checks/status-err-$i.txt && echo ok || { echo failed; cat checks/status-err-$i.txt; }; sleep 10; done | tee checks/status-loop.txt
+```
+
+Run date: 2026-10-19 UTC. First iteration: 21:29:14 UTC; last iteration: 21:32:50 UTC. These timestamps precede each status call, not its completion. After the final call the command sleeps 10 seconds. The shell returned exit 0. No exact shell completion timestamp was instrumented.
+
+All 18 iterations printed `ok`; all 18 stderr files are present and empty. Exact stdout remains unmodified in status-loop.txt.
+
+Ordering deviation: the first shell invocation read the objective via `forge issue view 1 && ht-role execution && ls -la`; only then was `checks/` created and this loop started. Therefore the objective’s strict “before anything else” requirement was not met. The loop was not rerun or reconstructed. Steps 2–5 were performed while the original loop continued.
+
+Evidence verification time: 2026-10-19T21:33:32.226445+00:00 (after shell completion).

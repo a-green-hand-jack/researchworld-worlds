@@ -1,0 +1,800 @@
+"""E5 / B1 (plan v2.9 Sec. 3 B, Sec. 4): the stage-wise description (code/e5_theory.py, theory/ext_B_stagewise.md)
+against the exact gradient-descent flow of the aligned linear JEPA under weight-decay schedules.
+Tolerances: results/e5/b1_tolerance.json, committed before any grid of this file is run.
+
+Ground truth: the exact per-direction gradient-descent maps (Prop. 3: the matrix flow from an aligned orthogonal
+initialisation with P0 = p0 I is n independent scalar maps, for any schedule), in np.longdouble (80-bit);
+a subset also runs the full d x n matrix flow in float64 to check the reduction under schedules (B1-0).
+Alive: |w_k| > 0.05 (the delivered SV_THR). Events: changes of the alive state that persist >= DEBOUNCE time units.
+
+Usage: python3 code/e5_b1.py list GRID | run GRID OUTDIR [NPROC] | score GRID OUTDIR      (GRID = dev | heldout)
+The held-out grid (GRIDS['heldout']) is run with two truth-floor re-runs per run and scored by cmd_score_v2 against
+results/e5/b1_tolerance_v2.json, the frozen model being stage_model_qs (results/e5/prediction.json)."""
+import sys, os, json, time, itertools, gzip, hashlib, math, functools
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+from linjepa import init_params, race_end_time
+import e5_theory as th
+
+THR = th.THR
+ETA = 0.1
+NCHK = 40
+DEBOUNCE = 10.0
+T_CAP = 4000.0
+
+GRIDS = {
+    "dev": dict(n=20, s=(1.3, 0.55), ratio=0.91, pairs=[(0.004, 0.03), (0.008, 0.06), (0.004, 0.12)], ts=[100.0, 400.0],
+                p0=[0.5, 1.0, 2.0], w0=1e-3, seeds=[100, 101, 102, 103, 104]),
+    # held-out (results/e5/b1_tolerance_v2.json): statistics, values, p0, seeds and two variants disjoint from dev;
+    # every plateau value at a geometric midpoint between adjacent static thresholds (|ln(lam/lam*_k)| >= 0.125);
+    # ts in multiples of the race end time at the lambda in force before the knot (B2a, B2c, B2d); a short high pulse
+    # of 0.5, 1, 2 times the model's bottleneck loss delay at lam_hi; every run re-run twice for the truth floor
+    "heldout": dict(n=18, s=(1.45, 0.6), ratio=0.9, pairs=[(0.00482, 0.0427), (0.01126, 0.0922), (0.00482, 0.1524)],
+                    ts_mult=[0.25, 0.5, 1.0, 2.0], pulse_ts_mult=[0.25, 0.5, 1.0], short_ts_mult=[1.0, 2.0], short_dur=[0.5, 1.0, 2.0],
+                    p0=[0.7, 1.5], w0=1e-3, seeds=[205, 206, 207, 208, 209], T_cap=16000.0, floor=True,
+                    variants=["base", "alpha0.5", "alpha2", "ema0.2", "rhoP0.25", "rhoP0.5", "rhoP2"],
+                    kinds=["const_lo", "const_hi", "step_up", "step_down", "ramp_up", "ramp_down", "pulse", "short_pulse"]),
+}
+VARIANTS = {"base": dict(alpha=1.0, kappa=None, rho=1.0), "alpha0.5": dict(alpha=0.5, kappa=None, rho=1.0),
+            "alpha2": dict(alpha=2.0, kappa=None, rho=1.0), "ema0.1": dict(alpha=1.0, kappa=0.1, rho=1.0),
+            "rhoP0.5": dict(alpha=1.0, kappa=None, rho=0.5), "rhoP2": dict(alpha=1.0, kappa=None, rho=2.0)}
+VARIANTS_HO = {**VARIANTS, "ema0.2": dict(alpha=1.0, kappa=0.2, rho=1.0), "rhoP0.25": dict(alpha=1.0, kappa=None, rho=0.25)}
+KINDS = ["const_lo", "const_hi", "step_up", "step_down", "ramp_up", "ramp_down", "pulse"]
+WELL_POSED = 0.10
+
+
+def stats(G):
+    s = np.linspace(G["s"][0], G["s"][1], G["n"])
+    return G["ratio"] ** np.arange(G["n"]) * s, s
+
+
+def knots(kind, lo, hi, ts):
+    return {"const_lo": [(0.0, lo)], "const_hi": [(0.0, hi)], "step_up": [(0.0, lo), (ts, lo), (ts + 1e-9, hi)],
+            "step_down": [(0.0, hi), (ts, hi), (ts + 1e-9, lo)], "ramp_up": [(0.0, lo), (ts, hi)],
+            "ramp_down": [(0.0, hi), (ts, lo)],
+            "pulse": [(0.0, lo), (ts, lo), (ts + 1e-9, hi), (2 * ts, hi), (2 * ts + 1e-9, lo)]}[kind]
+
+
+def configs(grid):
+    if GRIDS[grid].get("floor"):
+        return configs_heldout(grid)
+    G = GRIDS[grid]; out = []
+    for (lo, hi), p0, var, kind, ts, seed in itertools.product(G["pairs"], G["p0"], VARIANTS, KINDS, G["ts"], G["seeds"]):
+        if kind.startswith("const") and ts != G["ts"][0]:
+            continue
+        v = VARIANTS[var]
+        kW = knots(kind, lo, hi, ts)
+        kP = [(a, v["rho"] * b) for a, b in kW]
+        lend = kW[-1][1]
+        t_last = kW[-1][0]
+        T = min(t_last + 3 * race_end_time(*stats(G), lend, v["rho"] * lend, v["alpha"], p0) + 300.0, T_CAP)
+        T = float(math.ceil(T / 10.0) * 10.0)
+        out.append(dict(id=len(out), grid=grid, lo=lo, hi=hi, p0=p0, variant=var, kind=kind,
+                        ts=None if kind.startswith("const") else ts, seed=seed, T=T, kW=kW, kP=kP, **v))
+    for cfg in out:   # B1-0: one seed per (pair 0, p0 = 1, variant, schedule) also runs the matrix flow
+        cfg["matrix"] = bool(cfg["seed"] == G["seeds"][0] and (cfg["lo"], cfg["hi"]) == G["pairs"][0] and cfg["p0"] == 1.0)
+    return out
+
+
+def race_end(G, lam, v, p0):
+    return race_end_time(*stats(G), lam, v["rho"] * lam, v["alpha"], p0)
+
+
+@functools.lru_cache(maxsize=None)
+def loss_delay(grid, lo, hi, p0, var):
+    """Bottleneck loss delay at lam_hi, by the frozen model: lam_lo until ts = race end at lo, then lam_hi; the time
+    from ts to the model's first loss (first seed's initial amplitudes). None if the model loses nothing."""
+    G = GRIDS[grid]; v = VARIANTS_HO[var]; c, s = stats(G)
+    ts = race_end(G, lo, v, p0)
+    kW = knots("step_up", lo, hi, ts); kP = [(a, v["rho"] * b) for a, b in kW]
+    T = ts + 3 * race_end(G, hi, v, p0) + 300.0
+    w0 = np.linalg.norm(init_amp(dict(grid=grid, seed=G["seeds"][0], p0=p0), c.size), axis=0)
+    r = th.stage_model_qs(c, s, w0, p0, kW, kP, v["alpha"], v["kappa"], T, dt=ETA, t_out=[T])
+    t = [e[2] for e in r["events"] if e[1] == "loss" and e[2] >= ts]
+    return min(t) - ts if t else None
+
+
+def configs_heldout(grid):
+    """Held-out grid. Per run: ts_mult (ts in units of the race end at the lambda in force before the first knot),
+    t_d (the time the last decrease of lam_W completes: ts for step_down / ramp_down, 2 ts for pulse, ts + dur for
+    short_pulse), late (t_d >= race end at the lambda before that decrease), and the extra truth times [t_d]."""
+    G = GRIDS[grid]; out = []; skipped = []
+    for (ip, (lo, hi)), p0, var, kind, seed in itertools.product(enumerate(G["pairs"]), G["p0"], G["variants"], G["kinds"], G["seeds"]):
+        v = VARIANTS_HO[var]
+        if kind.startswith("const"):
+            sched = [(None, None, None)]
+        elif kind == "short_pulse":
+            dl = loss_delay(grid, lo, hi, p0, var)
+            if dl is None:
+                skipped.append((ip, p0, var)); continue
+            sched = [(m, m * race_end(G, lo, v, p0), dm) for m in G["short_ts_mult"] for dm in G["short_dur"]]
+        else:
+            lam0 = hi if kind in ("step_down", "ramp_down") else lo
+            sched = [(m, m * race_end(G, lam0, v, p0), None) for m in G["pulse_ts_mult" if kind == "pulse" else "ts_mult"]]
+        for m, ts, dm in sched:
+            if kind == "short_pulse":
+                dur = dm * loss_delay(grid, lo, hi, p0, var)
+                kW = [(0.0, lo), (ts, lo), (ts + 1e-9, hi), (ts + dur, hi), (ts + dur + 1e-9, lo)]
+            else:
+                dur = None; kW = knots(kind, lo, hi, 1.0 if ts is None else ts)
+            kP = [(a, v["rho"] * b) for a, b in kW]
+            td = ts if kind in ("step_down", "ramp_down") else 2 * ts if kind == "pulse" else ts + dur if kind == "short_pulse" else None
+            late = None if td is None else bool(td >= race_end(G, hi, v, p0) * (1 - 1e-9))
+            lend = kW[-1][1]
+            T = kW[-1][0] + 3 * race_end(G, lend, v, p0) + 300.0
+            T = float(math.ceil(min(T, G["T_cap"]) / 10.0) * 10.0)
+            assert T >= kW[-1][0] + 300.0, (kind, var, p0, T, kW)
+            cfg = dict(id=len(out), grid=grid, pair=ip, lo=lo, hi=hi, p0=p0, variant=var, kind=kind, ts_mult=m,
+                       ts=ts, dur_mult=dm, dur=dur, t_d=td, late=late, seed=seed, T=T, kW=kW, kP=kP,
+                       t_extra=[] if td is None else [td], **v)
+            cfg["matrix"] = bool(seed == G["seeds"][0] and ip == 0 and p0 == G["p0"][0] and m in (None, 1.0) and dm in (None, 1.0))
+            out.append(cfg)
+    c, s = stats(G); lstar = th.static_threshold(c, s)
+    for lo, hi in G["pairs"]:
+        for x in (lo, hi):
+            assert np.min(np.abs(np.log(x / lstar))) >= WELL_POSED, x
+    configs_heldout.skipped = skipped
+    return out
+
+
+def init_amp(cfg, n):
+    _, W, _ = init_params(cfg["seed"], n, n, GRIDS[cfg["grid"]]["w0"], cfg["p0"], 1, None, "identity", "orthogonal", 0.1)
+    return W
+
+
+def floor_draws(cfg, n):
+    """Truth-floor perturbations (b1_tolerance_v2.json): d_k ~ U(-1e-3, 1e-3), then e = +-0.005, default_rng(seed + 7919)."""
+    r = np.random.default_rng(cfg["seed"] + 7919)
+    d = r.uniform(-1e-3, 1e-3, n)
+    return d, 0.005 * float(r.choice([-1.0, 1.0]))
+
+
+def truth(cfg, pert=None):
+    """Exact per-direction GD maps in 80-bit; alive transitions per step; amplitudes at NCHK checkpoints.
+    pert = 'w0' | 'lam': the truth-floor re-runs. cfg['t_extra'] (held-out): alive bitmasks at these times too."""
+    G = GRIDS[cfg["grid"]]; c, s = stats(G); n = c.size
+    W0 = init_amp(cfg, n)
+    L = np.longdouble
+    a = np.linalg.norm(W0, axis=0).astype(L); p = np.full(n, cfg["p0"], dtype=L); ab = a.copy()
+    if pert is not None:
+        d, e = floor_draws(cfg, n)
+        if pert == "w0":
+            a = a * (1 + d).astype(L); ab = a.copy()
+    cl = c.astype(L); sl = s.astype(L); eta = L(ETA); al = L(cfg["alpha"])
+    N = int(round(cfg["T"] / ETA))
+    chk = set(np.linspace(0, N, NCHK + 1).astype(int)[1:].tolist())
+    ext = {int(round(x / ETA)): i for i, x in enumerate(cfg.get("t_extra", []))}
+    E = [0] * len(ext)
+    tt = np.arange(N) * ETA
+    lW = th.lam_of(cfg["kW"], tt); lP = th.lam_of(cfg["kP"], tt)
+    if pert == "lam":
+        lW = lW * (1 + e); lP = lP * (1 + e)
+    kap = None if cfg["kappa"] is None else L(cfg["kappa"])
+    alive = np.abs(a) > THR; trans = []; A = []; P = []; tchk = []
+    for k in range(N):
+        tgt = a if kap is None else ab
+        da = p * cl * tgt - p * p * sl * a - L(lW[k]) * a
+        dp = al * ((cl * tgt - p * sl * a) * a - L(lP[k]) * p)
+        a = a + eta * da; p = p + eta * dp
+        if kap is not None:
+            ab = ab + eta * kap * (a - ab)
+        if (k + 1) % 10 == 0 or (k + 1) in chk:
+            al_now = np.abs(a) > THR
+            if (al_now != alive).any():
+                for j in np.nonzero(al_now != alive)[0]:
+                    trans.append((int(j), "gain" if al_now[j] else "loss", float((k + 1) * ETA)))
+                alive = al_now
+        if (k + 1) in chk:
+            tchk.append((k + 1) * ETA); A.append([float(x) for x in np.abs(a)]); P.append([float(x) for x in p])
+        if (k + 1) in ext:
+            E[ext[k + 1]] = bits(np.abs(a) > THR)
+    out = dict(t=tchk, a=A, p=P, trans=trans, finite=bool(np.isfinite(np.array(A, float)).all()))
+    if ext:
+        out["ext"] = E
+    return out
+
+
+def bits(alive):
+    return int(sum(1 << int(j) for j in np.nonzero(np.asarray(alive))[0]))
+
+
+def unbits(x, n):
+    return (np.asarray(x, dtype=object)[..., None] >> np.arange(n)) & 1 == 1
+
+
+def matrix_flow(cfg):
+    """Full d x n matrix GD (float64) with the schedule; column norms at the checkpoints (B1-0)."""
+    G = GRIDS[cfg["grid"]]; c, s = stats(G); n = c.size
+    S11 = np.diag(s); S21 = np.diag(c)
+    W = init_amp(cfg, n); P = cfg["p0"] * np.eye(n); Wb = W.copy()
+    N = int(round(cfg["T"] / ETA)); chk = set(np.linspace(0, N, NCHK + 1).astype(int)[1:].tolist())
+    tt = np.arange(N) * ETA; lW = th.lam_of(cfg["kW"], tt); lP = th.lam_of(cfg["kP"], tt)
+    out = []
+    for k in range(N):
+        tgt = W if cfg["kappa"] is None else Wb
+        R = P @ W @ S11 - tgt @ S21
+        gW = P.T @ R; gP = R @ W.T
+        W = W - ETA * (gW + lW[k] * W); P = P - ETA * cfg["alpha"] * (gP + lP[k] * P)
+        if cfg["kappa"] is not None:
+            Wb = Wb + ETA * cfg["kappa"] * (W - Wb)
+        if (k + 1) in chk:
+            out.append([float(x) for x in np.linalg.norm(W, axis=0)])
+    return out
+
+
+def predict(cfg, t_out):
+    G = GRIDS[cfg["grid"]]; c, s = stats(G); n = c.size
+    w0 = np.linalg.norm(init_amp(cfg, n), axis=0)
+    r = th.stage_model(c, s, w0, cfg["p0"], cfg["kW"], cfg["kP"], cfg["alpha"], cfg["kappa"], cfg["T"], dt=ETA, t_out=t_out)
+    b = th.baseline_counts(c, s, w0, cfg["p0"], cfg["kW"], cfg["kP"], cfg["alpha"], cfg["kappa"], cfg["T"], t_out, None)
+    return dict(W=[[float(x) for x in row] for row in r["W"]], tc=[None if np.isnan(x) else float(x) for x in r["tc"]],
+                events=r["events"], baselines=b)
+
+
+def crossing_events(alive, t):
+    return [(int(k), "gain" if alive[j + 1, k] else "loss", float(t[j + 1])) for j, k in zip(*np.nonzero(alive[1:] != alive[:-1]))]
+
+
+def predict_v2(cfg, t_chk):
+    """Held-out predictions: the frozen model (stage_model_qs, results/e5/prediction.json) and the scored set of
+    b1_tolerance_v2.json (stage_v1 = the delivered stage_model; capture_static from the frozen model's capture times;
+    static_now; race_frozen0 / race_frozenT = the frozen model with the schedule frozen at its initial / final values),
+    as alive bitmasks at the checkpoints and at t_extra, and full-resolution events; plus the v1 count baselines."""
+    G = GRIDS[cfg["grid"]]; c, s = stats(G); n = c.size
+    w0 = np.linalg.norm(init_amp(cfg, n), axis=0)
+    N = int(round(cfg["T"] / ETA)); tf = np.arange(N + 1) * ETA
+    ich = np.clip(np.round(np.asarray(t_chk) / ETA).astype(int), 0, N)
+    iex = np.clip(np.round(np.asarray(cfg["t_extra"], float) / ETA).astype(int), 0, N)
+    args = (cfg["alpha"], cfg["kappa"], cfg["T"])
+    q = th.stage_model_qs(c, s, w0, cfg["p0"], cfg["kW"], cfg["kP"], *args, dt=ETA)
+    st = th.stage_model(c, s, w0, cfg["p0"], cfg["kW"], cfg["kP"], *args, dt=ETA)
+    full = {"model": q["W"] > THR, "stage_v1": st["W"] > THR}
+    ev = {"model": q["events"], "stage_v1": st["events"]}
+    lWf = th.lam_of(cfg["kW"], tf); lstar = th.static_threshold(c, s)
+    tc = np.where(np.isnan(q["tc"]), np.inf, q["tc"])
+    full["capture_static"] = (tf[:, None] >= tc[None, :]) & (lstar[None, :] >= lWf[:, None])
+    full["static_now"] = np.broadcast_to(lstar[None, :] >= lWf[:, None], (N + 1, n))
+    for name, tv in (("race_frozen0", 0.0), ("race_frozenT", cfg["T"])):
+        vw = th.lam_of(cfg["kW"], [tv])[0]; vp = th.lam_of(cfg["kP"], [tv])[0]
+        r = th.stage_model_qs(c, s, w0, cfg["p0"], [(0.0, vw)], [(0.0, vp)], *args, dt=ETA)
+        full[name] = r["W"] > THR; ev[name] = r["events"]
+    for name in ("capture_static", "static_now"):
+        ev[name] = crossing_events(full[name], tf)
+    out = {k: dict(chk=[bits(x) for x in v[ich]], ext=[bits(x) for x in v[iex]], events=ev[k]) for k, v in full.items()}
+    out["model"]["P"] = [[float(x) for x in row] for row in q["P"][ich]]
+    out["model"]["tc"] = [None if np.isnan(x) else float(x) for x in q["tc"]]
+    out["stage_v1"]["W"] = [[float(x) for x in row] for row in st["W"][ich]]
+    out["v1_counts"] = th.baseline_counts(c, s, w0, cfg["p0"], cfg["kW"], cfg["kP"], *args, t_chk, None)
+    return out
+
+
+def floor_rec(tr):
+    A = np.array(tr["a"], float)
+    return dict(chk=[bits(x) for x in A > THR], ext=tr.get("ext", []), trans=tr["trans"], finite=tr["finite"])
+
+
+def run_one(cfg):
+    t0 = time.time()
+    if GRIDS[cfg["grid"]].get("floor"):
+        tr = truth(cfg)
+        rec = dict(cfg=cfg, truth=tr, floor={k: floor_rec(truth(cfg, k)) for k in ("w0", "lam")}, pred=predict_v2(cfg, tr["t"]))
+        if cfg["matrix"]:
+            rec["matrix"] = matrix_flow(cfg)
+        rec["seconds"] = time.time() - t0
+        return rec
+    tr = truth(cfg)
+    pr = predict(cfg, tr["t"])
+    rec = dict(cfg=cfg, truth=tr, pred=pr)
+    if cfg["matrix"]:
+        rec["matrix"] = matrix_flow(cfg)
+    rec["seconds"] = time.time() - t0
+    return rec
+
+
+def md5(path):
+    return hashlib.md5(open(path, "rb").read()).hexdigest()
+
+
+def cmd_run(grid, outdir, nproc=8):
+    os.makedirs(outdir, exist_ok=True)
+    cfgs = configs(grid)
+    t0 = time.time(); done = 0
+    with gzip.open(os.path.join(outdir, f"b1_{grid}_runs.jsonl.gz"), "wt") as fh, Pool(nproc) as pool:
+        for rec in pool.imap_unordered(run_one, sorted(cfgs, key=lambda c: -c["T"] * (1 + 3 * c["matrix"])), chunksize=1):
+            fh.write(json.dumps(rec) + "\n"); done += 1
+            if done % 200 == 0 or done == len(cfgs):
+                print(f"{done}/{len(cfgs)} {time.time() - t0:.0f}s", flush=True)
+    meta = dict(grid=grid, runs=len(cfgs), seconds=time.time() - t0, numpy=np.__version__,
+                command=f"code/e5_b1.py run {grid} {outdir} {nproc}",
+                md5={f: md5(os.path.join(os.path.dirname(__file__), f)) for f in ("e5_b1.py", "e5_theory.py", "linjepa.py")})
+    json.dump(meta, open(os.path.join(outdir, f"b1_{grid}_meta.json"), "w"), indent=1)
+
+
+# ------------------------------------------------------------------------------------------------- scoring
+def debounce(ev):
+    """Drop pairs of opposite transitions of one direction that are closer than DEBOUNCE (chatter at the threshold)."""
+    by = {}
+    for k, typ, t in sorted(ev, key=lambda e: (e[0], e[2])):
+        L = by.setdefault(k, [])
+        if L and L[-1][1] != typ and t - L[-1][2] < DEBOUNCE:
+            L.pop()
+        else:
+            L.append((k, typ, t))
+    return by
+
+
+def match_events(meas, pred, kW, kP):
+    """i-th measured event of a type on a direction against the i-th predicted one of that type.
+    Error |ln((t_p - t_ref)/(t_m - t_ref))|, t_ref = latest schedule knot <= min(t_p, t_m) (0 if none)."""
+    knots_t = sorted({0.0} | {float(a) for a, _ in kW} | {float(a) for a, _ in kP})
+    errs, abs_dt, unmatched, n_ev = [], [], 0, 0
+    for k in set(meas) | set(pred):
+        for typ in ("gain", "loss"):
+            m = [e[2] for e in meas.get(k, []) if e[1] == typ]; p = [e[2] for e in pred.get(k, []) if e[1] == typ]
+            n_ev += max(len(m), len(p)); unmatched += abs(len(m) - len(p))
+            for tm, tp in zip(m, p):
+                tref = max([x for x in knots_t if x <= min(tm, tp) + 1e-6])
+                errs.append(abs(math.log(max(tp - tref, ETA) / max(tm - tref, ETA)))); abs_dt.append(abs(tp - tm))
+    return errs, abs_dt, unmatched, n_ev
+
+
+def score_run(rec):
+    cfg, tr, pr = rec["cfg"], rec["truth"], rec["pred"]
+    A = np.array(tr["a"], float); Wp = np.array(pr["W"], float)
+    am, ap = A > THR, Wp > THR
+    meas = debounce(tr["trans"]); pred = debounce([tuple(e) for e in pr["events"]])
+    errs, adt, unm, nev = match_events(meas, pred, cfg["kW"], cfg["kP"])
+    counts = {"truth": [int(x) for x in am.sum(1)], "stage": [int(x) for x in ap.sum(1)]}
+    counts.update(pr["baselines"])
+    t = np.array(tr["t"]); ref = cfg["ts"] if cfg["ts"] is not None else 0.1 * cfg["T"]
+    i_ref = int(np.argmin(np.abs(t - ref)))
+    counts["early"] = [int(am[i_ref].sum())] * len(t)
+    out = dict(id=cfg["id"], kind=cfg["kind"], variant=cfg["variant"], p0=cfg["p0"], lo=cfg["lo"], hi=cfg["hi"],
+               ts=cfg["ts"], seed=cfg["seed"], T=cfg["T"], finite=tr["finite"], agree=float((am == ap).mean()),
+               pairs=int(am.size), agree_n=int((am == ap).sum()), errs=errs, abs_dt=adt, unmatched=unm, n_events=nev,
+               final={k: v[-1] for k, v in counts.items()}, counts=counts)
+    if "matrix" in rec:
+        M = np.array(rec["matrix"], float)
+        out["matrix_state_share"] = float(((M > THR) == am).mean())
+        out["matrix_rank_share"] = float(((M > THR).sum(1) == am.sum(1)).mean())
+    return out
+
+
+def boot_ci(x, B=2000, seed=0):
+    x = np.asarray(x, float)
+    if x.size == 0:
+        return [None, None]
+    r = np.random.default_rng(seed); m = x[r.integers(0, x.size, (B, x.size))].mean(1)
+    return [float(np.quantile(m, 0.025)), float(np.quantile(m, 0.975))]
+
+
+def summarize(rows):
+    errs = np.concatenate([r["errs"] for r in rows]) if rows else np.array([])
+    adt = np.concatenate([r["abs_dt"] for r in rows]) if rows else np.array([])
+    nev = sum(r["n_events"] for r in rows); unm = sum(r["unmatched"] for r in rows)
+    out = dict(runs=len(rows), state_agree=sum(r["agree_n"] for r in rows) / max(sum(r["pairs"] for r in rows), 1),
+               events=nev, matched=int(errs.size), unmatched_share=unm / max(nev, 1),
+               timing_logerr_median=float(np.median(errs)) if errs.size else None,
+               timing_logerr_p90=float(np.quantile(errs, 0.9)) if errs.size else None,
+               timing_absdt_median=float(np.median(adt)) if adt.size else None)
+    tru = np.array([r["final"]["truth"] for r in rows])
+    fin = {}
+    for name in rows[0]["final"]:
+        if name == "truth":
+            continue
+        e = np.abs(np.array([r["final"][name] for r in rows]) - tru)
+        fin[name] = dict(mae=float(e.mean()), mae_ci=boot_ci(e), within1=float((e <= 1).mean()), exact=float((e == 0).mean()))
+    es = np.abs(np.array([r["final"]["stage"] for r in rows]) - tru)
+    for name in fin:
+        if name != "stage":
+            eb = np.abs(np.array([r["final"][name] for r in rows]) - tru)
+            fin[name]["minus_stage"] = float((eb - es).mean()); fin[name]["minus_stage_ci"] = boot_ci(eb - es)
+    out["final_rank"] = fin
+    return out
+
+
+def cmd_score(grid, outdir):
+    rows = []
+    with gzip.open(os.path.join(outdir, f"b1_{grid}_runs.jsonl.gz"), "rt") as fh:
+        for line in fh:
+            rows.append(score_run(json.loads(line)))
+    rows.sort(key=lambda r: r["id"])
+    res = dict(grid=grid, all=summarize(rows),
+               schedules=summarize([r for r in rows if not r["kind"].startswith("const")]),
+               by_variant={v: summarize([r for r in rows if r["variant"] == v]) for v in VARIANTS},
+               by_kind={k: summarize([r for r in rows if r["kind"] == k]) for k in KINDS},
+               by_cell={f"{k}|{v}": summarize([r for r in rows if r["kind"] == k and r["variant"] == v])
+                        for k in KINDS for v in VARIANTS},
+               nonfinite=int(sum(not r["finite"] for r in rows)))
+    mx = [r for r in rows if "matrix_state_share" in r]
+    res["B1_0_matrix"] = dict(runs=len(mx), state_share_min=min(r["matrix_state_share"] for r in mx) if mx else None,
+                              rank_share_min=min(r["matrix_rank_share"] for r in mx) if mx else None)
+    json.dump(res, open(os.path.join(outdir, f"b1_{grid}_score.json"), "w"), indent=1)
+    with gzip.open(os.path.join(outdir, f"b1_{grid}_scored_runs.jsonl.gz"), "wt") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+    print(json.dumps({k: res[k] for k in ("all", "schedules", "B1_0_matrix", "nonfinite")}, indent=1), flush=True)
+
+
+# ------------------------------------------------------------------------------------------ v2 scoring (held-out)
+SCORED = ["model", "stage_v1", "capture_static", "static_now", "race_frozen0", "race_frozenT"]
+BASELINES = SCORED[1:]
+FLOOR_EV_TOL = 0.10    # a truth event is fragile if a floor re-run lacks it or moves it by |ln| > 0.10 (B1b' median)
+
+
+def post_events(ev, t1):
+    return {k: [e for e in v if e[2] >= t1] for k, v in ev.items()}
+
+
+def floor_shifts(meas, reruns, kW, kP):
+    """Per truth event (k, type, i): the largest knot-referenced log shift of the i-th event of that type on k over the
+    floor re-runs (inf if a re-run lacks it). Fragile: shift > FLOOR_EV_TOL."""
+    knots_t = sorted({0.0} | {float(a) for a, _ in kW} | {float(a) for a, _ in kP})
+    out = {}
+    for k, L in meas.items():
+        for typ in ("gain", "loss"):
+            for i, tm in enumerate([e[2] for e in L if e[1] == typ]):
+                sh = 0.0
+                for R in reruns:
+                    r = [e[2] for e in R.get(k, []) if e[1] == typ]
+                    if i >= len(r):
+                        sh = math.inf; break
+                    tref = max([x for x in knots_t if x <= min(tm, r[i]) + 1e-6])
+                    sh = max(sh, abs(math.log(max(r[i] - tref, ETA) / max(tm - tref, ETA))))
+                out[(k, typ, i)] = sh
+    return out
+
+
+def match_events_tagged(meas, pred, kW, kP, frag):
+    """match_events, with each matched error and each unmatched count tagged fragile or not (by the truth event)."""
+    knots_t = sorted({0.0} | {float(a) for a, _ in kW} | {float(a) for a, _ in kP})
+    errs, ef, unm, unm_nf, n_ev, n_nf = [], [], 0, 0, 0, 0
+    for k in set(meas) | set(pred):
+        for typ in ("gain", "loss"):
+            m = [e[2] for e in meas.get(k, []) if e[1] == typ]; p = [e[2] for e in pred.get(k, []) if e[1] == typ]
+            fr = [(k, typ, i) in frag for i in range(len(m))]
+            n_ev += max(len(m), len(p)); unm += abs(len(m) - len(p))
+            # non-fragile tally: drop the fragile truth events and the predicted events paired with them
+            m_nf = len(m) - sum(fr); p_nf = sum(1 for i in range(min(len(m), len(p))) if not fr[i]) + max(len(p) - len(m), 0)
+            n_nf += max(m_nf, p_nf); unm_nf += abs(m_nf - p_nf)
+            for i, (tm, tp) in enumerate(zip(m, p)):
+                tref = max([x for x in knots_t if x <= min(tm, tp) + 1e-6])
+                errs.append(abs(math.log(max(tp - tref, ETA) / max(tm - tref, ETA)))); ef.append(fr[i])
+    return dict(errs=errs, frag=ef, unmatched=unm, n_events=n_ev, unmatched_nf=unm_nf, n_events_nf=n_nf)
+
+
+def score_run_v2(rec):
+    cfg, tr, pr, fl = rec["cfg"], rec["truth"], rec["pred"], rec["floor"]
+    G = GRIDS[cfg["grid"]]; c, s = stats(G); n = c.size
+    t = np.array(tr["t"]); A = np.array(tr["a"], float); Pt = np.array(tr["p"], float); am = A > THR
+    st = {k: unbits(pr[k]["chk"], n) for k in SCORED}
+    frs = [unbits(fl[k]["chk"], n) for k in ("w0", "lam")]
+    fpair = (frs[0] != am) | (frs[1] != am)
+    fin = {"truth": int(am[-1].sum()), **{k: int(st[k][-1].sum()) for k in SCORED}}
+    ffin = bool(any(int(f[-1].sum()) != fin["truth"] for f in frs))
+    out = dict(id=cfg["id"], pair=cfg["pair"], kind=cfg["kind"], variant=cfg["variant"], p0=cfg["p0"], seed=cfg["seed"],
+               ts_mult=cfg["ts_mult"], dur_mult=cfg["dur_mult"], late=cfg["late"], T=cfg["T"],
+               finite=bool(tr["finite"] and all(fl[k]["finite"] for k in fl)), final=fin, final_fragile=ffin,
+               pairs=int(am.size), pairs_fragile=int(fpair.sum()), agree={k: int((st[k] == am).sum()) for k in SCORED})
+    meas = debounce(tr["trans"]); rer = [debounce(fl[k]["trans"]) for k in ("w0", "lam")]
+    shifts = floor_shifts(meas, rer, cfg["kW"], cfg["kP"])
+    frag = {e for e, v in shifts.items() if v > FLOOR_EV_TOL}
+    out["truth_events"] = int(sum(len(v) for v in meas.values())); out["truth_events_fragile"] = len(frag)
+    out["events_all"] = {k: match_events_tagged(meas, debounce([tuple(e) for e in pr[k]["events"]]), cfg["kW"], cfg["kP"], frag)
+                         for k in SCORED}
+    if cfg["ts"] is not None:
+        t1 = cfg["ts"]; before = np.nonzero(t <= t1)[0]
+        ref = am[before[-1]] if before.size else np.zeros(n, bool)
+        refs = {k: (st[k][before[-1]] if before.size else np.zeros(n, bool)) for k in SCORED}
+        after = t > t1
+        U = after[:, None] & (am != ref[None, :])
+        for k in SCORED:
+            U |= after[:, None] & (st[k] != refs[k][None, :])
+        Ut = after[:, None] & (am != ref[None, :])
+        out["sched_pairs"] = int(U.sum()); out["sched_fragile"] = int((U & fpair).sum())
+        out["sched_agree"] = {k: int(((st[k] == am) & U).sum()) for k in SCORED}
+        out["sched_agree_nf"] = {k: int(((st[k] == am) & U & ~fpair).sum()) for k in SCORED}
+        out["truth_changed_pairs"] = int(Ut.sum())
+        out["truth_changed_agree"] = {k: int(((st[k] == am) & Ut).sum()) for k in SCORED}
+        # amendment 2 (prediction.json): the absolute B1a' bar sits on the pairs where the truth or the frozen model changes
+        Um = Ut | (after[:, None] & (st["model"] != refs["model"][None, :]))
+        out["tm_pairs"] = int(Um.sum()); out["tm_fragile"] = int((Um & fpair).sum())
+        out["tm_agree"] = {k: int(((st[k] == am) & Um).sum()) for k in SCORED}
+        out["tm_agree_nf"] = {k: int(((st[k] == am) & Um & ~fpair).sum()) for k in SCORED}
+        mp = post_events(meas, t1)
+        fp = set(); sh_post = []      # the fragile set and floor shifts, indexed on the post-knot event lists
+        for k, v in meas.items():
+            for typ in ("gain", "loss"):
+                j = 0
+                for i, e in enumerate([e for e in v if e[1] == typ]):
+                    if e[2] >= t1:
+                        sh_post.append(shifts[(k, typ, i)])
+                        if (k, typ, i) in frag:
+                            fp.add((k, typ, j))
+                        j += 1
+        out["truth_events_post"] = int(sum(len(v) for v in mp.values())); out["truth_events_post_fragile"] = len(fp)
+        out["floor_shift_post"] = [x if math.isfinite(x) else None for x in sh_post]
+        out["events_post"] = {k: match_events_tagged(mp, post_events(debounce([tuple(e) for e in pr[k]["events"]]), t1),
+                                                     cfg["kW"], cfg["kP"], fp) for k in SCORED}
+    # B1d: the predictor after a true loss
+    was = np.maximum.accumulate(am, axis=0); dead = was & ~am
+    if dead.any():
+        lW = th.lam_of(cfg["kW"], t); lP = th.lam_of(cfg["kP"], t)
+        rr = np.sqrt(lW / np.maximum(lP, 1e-300))[:, None]
+        # amendment 3: the slaved relation p = w sqrt(lam_W / lam_P) on the truth's own w (the comparator of the
+        # post-loss law); the stage model's W in its place only where that model is dead too (else it measures the
+        # model's loss timing). Comparators, reported beside B1d, never scored
+        slaved = rr * np.array(pr["stage_v1"]["W"], float); slaved_tw = rr * np.abs(A)
+        Pm = np.array(pr["model"]["P"], float)
+        LamP = np.concatenate([[0.0], np.cumsum(0.5 * (lP[1:] + lP[:-1]) * np.diff(t))]) + lP[0] * t[0]
+        own = np.full(Pt.shape, np.nan); la = np.full(n, -1)
+        for j in range(t.size):
+            la = np.where(am[j], j, la); ok = la >= 0
+            own[j, ok] = np.abs(Pt[la[ok], np.nonzero(ok)[0]]) * np.exp(-cfg["alpha"] * (LamP[j] - LamP[la[ok]]))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            lg = lambda x: np.log(np.abs(Pt[dead]) / np.maximum(x[dead], 1e-300))
+            out["post_loss"] = dict(model=lg(Pm).tolist(), slaved_model_W=lg(slaved).tolist(), own_decay=lg(own).tolist(),
+                                    slaved_truth_w=lg(slaved_tw).tolist(), model_dead=(~st["stage_v1"][dead]).tolist(),
+                                    fragile=fpair[dead].tolist())
+    # B1e
+    def regains(alive):
+        lost = np.zeros(n, bool); reg = np.zeros(n, bool)
+        for j in range(1, alive.shape[0]):
+            lost |= alive[j - 1] & ~alive[j]; reg |= lost & alive[j]
+        return reg
+    rt = regains(am)
+    out["regain"] = {"truth": int(rt.sum()), **{k: int(regains(st[k]).sum()) for k in ("model", "stage_v1", "capture_static")},
+                     "truth_and_model": int((rt & regains(st["model"])).sum()),
+                     "runs_with_fragile_truth_regain": int((rt & regains(frs[0]) & regains(frs[1])).sum() != rt.sum())}
+    sub = am & (np.abs(Pt) < (c / (2 * s))[None, :])
+    out["subcapture"] = dict(dirs=int(sub.any(0).sum()), pairs=int(sub.sum()),
+                             model_miss=int((sub & (st["model"] != am)).sum()), stage_v1_miss=int((sub & (st["stage_v1"] != am)).sum()))
+    # B2c inputs: alive at t_d (truth, floor, model)
+    if cfg["t_d"] is not None:
+        e_t = unbits(tr["ext"], n)[0]; e_m = unbits(pr["model"]["ext"], n)[0]
+        e_f = [unbits(fl[k]["ext"], n)[0] for k in ("w0", "lam")]
+        R = lambda a_td, a_T: int((a_T & ~a_td).sum())
+        out["R"] = dict(truth=R(e_t, am[-1]), model=R(e_m, st["model"][-1]),
+                        fragile=bool(any(R(e_f[i], frs[i][-1]) != R(e_t, am[-1]) for i in range(2))))
+    # v1 statistics, the frozen model in place of the delivered one
+    counts = dict(pr["v1_counts"]); ref_t = cfg["ts"] if cfg["ts"] is not None else 0.1 * cfg["T"]
+    counts["early"] = [int(am[int(np.argmin(np.abs(t - ref_t)))].sum())] * len(t)
+    out["v1_final"] = {k: v[-1] for k, v in counts.items()}
+    if "matrix" in rec:
+        M = np.array(rec["matrix"], float)
+        out["matrix_state_share"] = float(((M > THR) == am).mean())
+    lstar = th.static_threshold(c, s)
+    out["static_final"] = int((lstar >= th.lam_of(cfg["kW"], [cfg["T"]])[0]).sum())
+    return out
+
+
+def _ev(rows, key, name, nf=False):
+    R = [r for r in rows if key in r]
+    if not R:
+        return dict(events=0)
+    E = np.concatenate([r[key][name]["errs"] for r in R]); F = np.concatenate([r[key][name]["frag"] for r in R]).astype(bool) if E.size else np.zeros(0, bool)
+    ne = sum(r[key][name]["n_events"] for r in R); un = sum(r[key][name]["unmatched"] for r in R)
+    nn = sum(r[key][name]["n_events_nf"] for r in R); unn = sum(r[key][name]["unmatched_nf"] for r in R)
+    q = lambda x, a: float(np.quantile(x, a)) if x.size else None
+    return dict(events=ne, matched=int(E.size), unmatched_share=un / max(ne, 1), median=q(E, 0.5), p90=q(E, 0.9),
+                non_fragile=dict(events=nn, unmatched_share=unn / max(nn, 1), median=q(E[~F], 0.5), p90=q(E[~F], 0.9)),
+                matched_fragile=int(F.sum()))
+
+
+def summ_v2(rows):
+    out = dict(runs=len(rows))
+    if not rows:
+        return out
+    P = sum(r["pairs"] for r in rows)
+    out["state_agree_all_pairs"] = {k: sum(r["agree"][k] for r in rows) / P for k in SCORED}
+    out["pairs_fragile_share"] = sum(r["pairs_fragile"] for r in rows) / P
+    S = [r for r in rows if "sched_pairs" in r]
+    if S:
+        sp = sum(r["sched_pairs"] for r in S); sf = sum(r["sched_fragile"] for r in S)
+        out["B1a_prime"] = dict(pairs=sp, share_of_pairs=sp / sum(r["pairs"] for r in S), fragile_share=sf / max(sp, 1),
+                                agree={k: sum(r["sched_agree"][k] for r in S) / max(sp, 1) for k in SCORED},
+                                agree_non_fragile={k: sum(r["sched_agree_nf"][k] for r in S) / max(sp - sf, 1) for k in SCORED})
+        dis = lambda r, k: (r["sched_pairs"] - r["sched_agree"][k]) / max(sp / len(S), 1e-12)
+        out["B1a_prime"]["baseline_minus_model_ci"] = {k: boot_ci([dis(r, k) - dis(r, "model") for r in S]) for k in BASELINES}
+        tm = sum(r.get("tm_pairs", 0) for r in S); tmf = sum(r.get("tm_fragile", 0) for r in S)
+        out["B1a_prime"]["truth_or_model"] = dict(pairs=tm, fragile_share=tmf / max(tm, 1),
+                                                  agree={k: sum(r["tm_agree"][k] for r in S if "tm_agree" in r) / max(tm, 1) for k in SCORED},
+                                                  agree_non_fragile={k: sum(r["tm_agree_nf"][k] for r in S if "tm_agree_nf" in r) / max(tm - tmf, 1) for k in SCORED})
+        tp = sum(r["truth_changed_pairs"] for r in S)
+        out["B1a_prime"]["truth_changed"] = dict(pairs=tp, agree={k: sum(r["truth_changed_agree"][k] for r in S) / max(tp, 1) for k in SCORED})
+        out["B1b_prime"] = {k: _ev(S, "events_post", k) for k in SCORED}
+        out["B1b_prime"]["truth_events"] = sum(r["truth_events_post"] for r in S)
+        out["B1b_prime"]["fragile_share"] = sum(r["truth_events_post_fragile"] for r in S) / max(out["B1b_prime"]["truth_events"], 1)
+        sh = np.array([np.inf if x is None else x for r in S for x in r["floor_shift_post"]], float)
+        out["B1b_prime"]["floor"] = dict(events=int(sh.size), missing_share=float(np.isinf(sh).mean()) if sh.size else 0.0,
+                                         moved_over_0p30_share=float((sh > 0.30).mean()) if sh.size else 0.0,
+                                         median_shift=float(np.median(sh)) if sh.size else 0.0)
+    out["events_all_v1"] = {k: _ev(rows, "events_all", k) for k in SCORED}
+    PL = [r["post_loss"] for r in rows if "post_loss" in r]
+    if PL:
+        cat = lambda k: np.array([v for x in PL for v in x[k]], float)
+        fr = np.array([v for x in PL for v in x["fragile"]], bool)
+        med = lambda v: float(np.nanmedian(np.abs(v))) if v.size else None
+        out["B1d"] = dict(runs=len(PL), pairs=int(fr.size), fragile_share=float(fr.mean()),
+                          **{f"median_abs_vs_{k}": med(cat(k)) for k in ("model", "own_decay", "slaved_truth_w")},
+                          **{f"median_signed_vs_{k}": float(np.nanmedian(cat(k))) for k in ("model", "own_decay", "slaved_truth_w")},
+                          median_abs_vs_model_non_fragile=med(cat("model")[~fr]))
+        md = np.array([v for x in PL for v in x["model_dead"]], bool); stw = cat("slaved_truth_w"); smw = cat("slaved_model_W")
+        sg = lambda v: float(np.nanmedian(v)) if v.size else None
+        out["B1d"]["comparators"] = dict(
+            note="amendment 3: reported beside B1d, not scored. slaved_truth_w = the slaved relation on the truth's own w; "
+                 "slaved_model_W = the stage model's (stage_v1) W in its place, only on the pairs where that model is dead too",
+            slaved_truth_w=dict(pairs=int(stw.size), median_signed=sg(stw), median_abs=med(stw),
+                                truth_above_share=float(np.mean(stw[np.isfinite(stw)] > 0)) if np.isfinite(stw).any() else None),
+            model_alive_share=float(1 - md.mean()),
+            slaved_model_W_model_dead=dict(pairs=int(md.sum()), median_signed=sg(smw[md]), median_abs=med(smw[md])),
+            slaved_model_W_model_alive=dict(pairs=int((~md).sum()), median_signed=sg(smw[~md])))
+    out["B1e"] = dict(regain={k: sum(r["regain"][k] for r in rows) for k in rows[0]["regain"]},
+                      subcapture={k: sum(r["subcapture"][k] for r in rows) for k in rows[0]["subcapture"]})
+    tru = np.array([r["final"]["truth"] for r in rows]); ff = np.array([r["final_fragile"] for r in rows])
+    out["final"] = dict(fragile_share=float(ff.mean()))
+    for k in SCORED:
+        e = np.abs(np.array([r["final"][k] for r in rows]) - tru)
+        out["final"][k] = dict(mae=float(e.mean()), within1=float((e <= 1).mean()), mae_non_fragile=float(e[~ff].mean()) if (~ff).any() else None)
+    v1 = {}
+    for k in rows[0]["v1_final"]:
+        e = np.abs(np.array([r["v1_final"][k] for r in rows]) - tru); em = np.abs(np.array([r["final"]["model"] for r in rows]) - tru)
+        v1[k] = dict(mae=float(e.mean()), within1=float((e <= 1).mean()), minus_model_ci=boot_ci(e - em))
+    out["final_v1_baselines"] = v1
+    return out
+
+
+def b2(rows):
+    """B2a-d (b1_tolerance_v2.json)."""
+    key = lambda r: (r["pair"], r["p0"], r["variant"], r["seed"])
+    by = {}
+    for r in rows:
+        by.setdefault(key(r), {}).setdefault(r["kind"], []).append(r)
+    out = {}
+    # B2a
+    D = []
+    for k, d in by.items():
+        if "const_hi" not in d:
+            continue
+        h = d["const_hi"][0]
+        for r in d.get("step_up", []):
+            D.append(dict(group=(k[0], k[1], k[2], r["ts_mult"]), meas=r["final"]["truth"] - h["final"]["truth"],
+                          pred=r["final"]["model"] - h["final"]["model"], fragile=r["final_fragile"] or h["final_fragile"]))
+    sg = lambda x: int(np.sign(x))
+    agree = np.array([sg(x["meas"]) == sg(x["pred"]) for x in D]); fr = np.array([x["fragile"] for x in D])
+    groups = {}
+    for x in D:
+        groups.setdefault(x["group"], []).append(x)
+    neg = {}
+    for g, L in groups.items():
+        if all(x["pred"] < 0 for x in L):
+            neg[str(g)] = dict(mean_meas=float(np.mean([x["meas"] for x in L])), ci=boot_ci([x["meas"] for x in L]), n=len(L))
+    out["B2a"] = dict(pairs=len(D), sign_agree=float(agree.mean()), sign_agree_non_fragile=float(agree[~fr].mean()) if (~fr).any() else None,
+                      fragile_share=float(fr.mean()), meas_negative=int(sum(x["meas"] < 0 for x in D)),
+                      pred_negative=int(sum(x["pred"] < 0 for x in D)),
+                      by_ts_mult={str(m): float(np.mean([a for a, x in zip(agree, D) if x["group"][3] == m])) for m in sorted({x["group"][3] for x in D})},
+                      groups_all_pred_negative=neg,
+                      nonzero=dict(pairs=int(sum(x["meas"] != 0 or x["pred"] != 0 for x in D)),
+                                   sign_agree=float(np.mean([a for a, x in zip(agree, D) if x["meas"] != 0 or x["pred"] != 0]))
+                                   if any(x["meas"] != 0 or x["pred"] != 0 for x in D) else None),
+                      pass_=bool(agree.mean() >= 0.90 and all(v["ci"][1] is not None and v["ci"][1] < 0 for v in neg.values())))
+    # B2b
+    inc = [r for r in rows if r["kind"] in ("step_up", "ramp_up")]
+    viol = [r for r in inc if r["final"]["truth"] > r["static_final"]]
+    out["B2b"] = dict(runs=len(inc), violations=len(viol), violations_non_fragile=sum(not r["final_fragile"] for r in viol),
+                      pass_=bool(sum(not r["final_fragile"] for r in viol) == 0))
+    # B2c
+    late = [r for r in rows if r.get("late") and "R" in r]
+    eq = np.array([r["R"]["truth"] == r["R"]["model"] for r in late]); frc = np.array([r["R"]["fragile"] for r in late])
+    out["B2c"] = dict(runs=len(late), agree=float(eq.mean()) if late else None,
+                      agree_non_fragile=float(eq[~frc].mean()) if (~frc).any() else None, fragile_share=float(frc.mean()) if late else None,
+                      meas_R_zero=float(np.mean([r["R"]["truth"] == 0 for r in late])) if late else None,
+                      meas_R_pos_runs=int(sum(r["R"]["truth"] > 0 for r in late)), pred_R_pos_runs=int(sum(r["R"]["model"] > 0 for r in late)),
+                      nonzero=dict(runs=int(sum(r["R"]["truth"] > 0 or r["R"]["model"] > 0 for r in late)),
+                                   agree=float(np.mean([a for a, r in zip(eq, late) if r["R"]["truth"] > 0 or r["R"]["model"] > 0]))
+                                   if any(r["R"]["truth"] > 0 or r["R"]["model"] > 0 for r in late) else None),
+                      by_kind={k: dict(runs=int(sum(r["kind"] == k for r in late)),
+                                       agree=float(np.mean([a for a, r in zip(eq, late) if r["kind"] == k])) if any(r["kind"] == k for r in late) else None)
+                               for k in ("step_down", "ramp_down", "pulse", "short_pulse")},
+                      pass_=bool(late and eq.mean() >= 0.90))
+    # B2d
+    E = []
+    for k, d in by.items():
+        if "const_lo" not in d:
+            continue
+        lo = d["const_lo"][0]
+        for r in d.get("step_down", []) + d.get("ramp_down", []):
+            if r["late"] is False:
+                E.append(dict(meas=abs(r["final"]["truth"] - lo["final"]["truth"]), model=abs(r["final"]["model"] - lo["final"]["model"]),
+                              fragile=r["final_fragile"] or lo["final_fragile"], kind=r["kind"]))
+    w1 = np.array([x["meas"] <= 1 for x in E]); fd = np.array([x["fragile"] for x in E])
+    out["B2d"] = dict(pairs=len(E), within1=float(w1.mean()) if E else None,
+                      within1_non_fragile=float(w1[~fd].mean()) if (~fd).any() else None, fragile_share=float(fd.mean()) if E else None,
+                      model_within1=float(np.mean([x["model"] <= 1 for x in E])) if E else None,
+                      pass_=bool(E and w1.mean() >= 0.90))
+    return out
+
+
+def verdicts(res):
+    """Pass/fail of B1a', B1b', B1d (b1_tolerance_v2.json) with the per-cell ill-posed rule."""
+    S = res["schedules"]; a = S["B1a_prime"]; b = S["B1b_prime"]["model"]
+    cells = {}
+    for name, c in res["by_cell"].items():
+        if c.get("runs", 0) == 0 or "B1a_prime" not in c:
+            continue
+        ca = c["B1a_prime"]; cb = c["B1b_prime"]; tm = ca["truth_or_model"]
+        # amendment 2: absolute bar on the truth-or-model pairs; ill-posed is a flag beside pass/fail, never a pass
+        cells[name] = dict(pairs=tm["pairs"], agree=tm["agree"]["model"], fragile_share=tm["fragile_share"],
+                           union_pairs=ca["pairs"], union_agree=ca["agree"]["model"],
+                           B1a_ill_posed=bool(tm["fragile_share"] > 0.05), B1b_ill_posed=bool(cb["floor"]["missing_share"] > 0.025 or cb["floor"]["moved_over_0p30_share"] > 0.05
+                                                 or cb["floor"]["median_shift"] > 0.05),
+                           B1a_ok=bool(tm["pairs"] < 100 or tm["agree"]["model"] >= 0.80))
+    ci_ok = all(v[0] is not None and v[0] > 0 for v in a["baseline_minus_model_ci"].values())
+    v = dict(B1a_prime=dict(overall=a["truth_or_model"]["agree"]["model"], overall_ok=bool(a["truth_or_model"]["agree"]["model"] >= 0.90),
+                            pairs=a["truth_or_model"]["pairs"], union_overall=a["agree"]["model"], union_pairs=a["pairs"],
+                            cells_failing=[k for k, x in cells.items() if not x["B1a_ok"]],
+                            cells_ill_posed=[k for k, x in cells.items() if x["B1a_ill_posed"]], beats_baselines=bool(ci_ok)),
+             B1b_prime=dict(median=b["median"], p90=b["p90"], unmatched=b["unmatched_share"],
+                            unmatched_capture_static=S["B1b_prime"]["capture_static"]["unmatched_share"],
+                            cells_ill_posed=[k for k, x in cells.items() if x["B1b_ill_posed"]]),
+             B1d=dict(median_abs=S.get("B1d", {}).get("median_abs_vs_model")))
+    v["B1a_prime"]["pass_"] = bool(v["B1a_prime"]["overall_ok"] and not v["B1a_prime"]["cells_failing"] and ci_ok)
+    bb = v["B1b_prime"]
+    bb["pass_"] = bool(bb["median"] is not None and bb["median"] <= 0.10 and bb["p90"] <= 0.30 and bb["unmatched"] <= 0.05
+                       and bb["unmatched"] < bb["unmatched_capture_static"])
+    v["B1d"]["pass_"] = bool(v["B1d"]["median_abs"] is not None and v["B1d"]["median_abs"] <= 0.5)
+    v["cells"] = cells
+    return v
+
+
+def cmd_score_v2(grid, outdir):
+    G = GRIDS[grid]; rows = []
+    with gzip.open(os.path.join(outdir, f"b1_{grid}_runs.jsonl.gz"), "rt") as fh:
+        for line in fh:
+            rows.append(score_run_v2(json.loads(line)))
+    rows.sort(key=lambda r: r["id"])
+    sch = [r for r in rows if r["kind"] not in ("const_lo", "const_hi")]
+    res = dict(grid=grid, model="stage_model_qs (frozen, results/e5/prediction.json)", tolerance="results/e5/b1_tolerance_v2.json",
+               all=summ_v2(rows), schedules=summ_v2(sch),
+               by_kind={k: summ_v2([r for r in rows if r["kind"] == k]) for k in G["kinds"]},
+               by_variant={v: summ_v2([r for r in sch if r["variant"] == v]) for v in G["variants"]},
+               by_cell={f"{k}|{v}": summ_v2([r for r in rows if r["kind"] == k and r["variant"] == v]) for k in G["kinds"] if not k.startswith("const") for v in G["variants"]},
+               B2=b2(rows), nonfinite=int(sum(not r["finite"] for r in rows)))
+    # amendment 3 (B-4): sensitivity without the cells of the disclosed scorer pilot (pair 1, p0 0.7, base and rhoP0.25)
+    pil = lambda r: r["pair"] == 1 and r["p0"] == 0.7 and r["variant"] in ("base", "rhoP0.25")
+    sx = summ_v2([r for r in sch if not pil(r)])
+    res["sensitivity_without_pilot_cells"] = dict(
+        runs=sx["runs"], excluded_runs=int(sum(pil(r) for r in sch)),
+        B1a_prime=dict(truth_or_model=sx["B1a_prime"]["truth_or_model"]["agree"]["model"], pairs=sx["B1a_prime"]["truth_or_model"]["pairs"],
+                       union=sx["B1a_prime"]["agree"]["model"], baseline_minus_model_ci=sx["B1a_prime"]["baseline_minus_model_ci"]),
+        B1b_prime={k: sx["B1b_prime"]["model"][k] for k in ("median", "p90", "unmatched_share")},
+        B1b_prime_capture_static_unmatched=sx["B1b_prime"]["capture_static"]["unmatched_share"])
+    mx = [r["matrix_state_share"] for r in rows if "matrix_state_share" in r]
+    res["B1_0_matrix"] = dict(runs=len(mx), state_share_min=min(mx) if mx else None)
+    res["verdicts"] = verdicts(res)
+    res["verdicts"]["B2"] = {k: res["B2"][k]["pass_"] for k in res["B2"]}
+    json.dump(res, open(os.path.join(outdir, f"b1_{grid}_score.json"), "w"), indent=1)
+    with gzip.open(os.path.join(outdir, f"b1_{grid}_scored_runs.jsonl.gz"), "wt") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+    print(json.dumps({k: v for k, v in res["verdicts"].items() if k != "cells"}, indent=1), flush=True)
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "list":
+        cs = configs(sys.argv[2])
+        print(len(cs), "runs;", sum(c["matrix"] for c in cs), "with matrix flow; T range", min(c["T"] for c in cs), max(c["T"] for c in cs))
+    elif cmd == "pilot":
+        cs = configs(sys.argv[2]); i = int(sys.argv[3]); t0 = time.time(); rec = run_one(cs[i])
+        print("pilot", i, "T", cs[i]["T"], "matrix", cs[i]["matrix"], f"{time.time() - t0:.1f}s")
+    elif cmd == "run":
+        cmd_run(sys.argv[2], sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 8)
+        print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E5 B1 " + sys.argv[2] + " grid done", flush=True)
+    elif cmd == "score":
+        if GRIDS[sys.argv[2]].get("floor"):
+            cmd_score_v2(sys.argv[2], sys.argv[3])
+        else:
+            cmd_score(sys.argv[2], sys.argv[3])

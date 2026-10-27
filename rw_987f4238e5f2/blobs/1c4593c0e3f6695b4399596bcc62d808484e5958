@@ -1,0 +1,37 @@
+import json, hashlib, subprocess
+from pathlib import Path
+import numpy as np
+import scipy
+from scipy.special import ndtr
+from scipy.optimize import minimize
+root=Path('/hutian/experiment-repo')
+x=np.memmap('/hutian/review-download/photons.f32',dtype='<f4',mode='r')
+rng=np.random.default_rng(205)
+z=np.concatenate([rng.uniform(0,1200,24000000),rng.normal(600,30,6000000)])
+z.sort(); expected=z.astype('<f4'); del z
+assert np.array_equal(x,expected)
+y=np.histogram(x,np.arange(1201))[0]
+d=np.genfromtxt(root/'results/lightcurve.csv',delimiter=',',names=True)
+assert np.array_equal(y,d['observed'])
+r=json.loads((root/'results/fit.json').read_text()); names=['background_rate','burst_counts','centre','width']
+p=np.array([r['params'][k]['value'] for k in names]); scale=np.array([20000,6000000,600,30])
+def objective(q):
+ b,a,c,s=q*scale
+ m=b+a*np.diff(ndtr((np.arange(1201)-c)/s))
+ delta=(m-y)/y
+ return np.sum(y*(delta-np.log1p(delta)))
+fit=minimize(objective,[1,1,1,1],method='Nelder-Mead',options={'xatol':1e-11,'fatol':1e-9,'maxiter':5000})
+assert fit.success
+profile=[]
+for i,k in enumerate(names):
+ for endpoint in r['params'][k]['ci95']:
+  mask=np.arange(4)!=i
+  def f(v):
+   q=p/scale; q[i]=endpoint/scale[i]; q[mask]=v
+   return objective(q)
+  res=minimize(f,(p/scale)[mask],method='Nelder-Mead',options={'xatol':1e-11,'fatol':1e-9,'maxiter':3000})
+  assert res.success
+  profile.append({'parameter':k,'endpoint':endpoint,'twice_delta_nll':float(2*(res.fun-fit.fun))})
+out={'analysis_revision':subprocess.check_output(['git','-C',str(root),'rev-parse','HEAD'],text=True).strip(),'numpy':np.__version__,'scipy':scipy.__version__,'exact_seeded_array_matches_release':True,'download_sha256':hashlib.file_digest(open('/hutian/review-download/photons.f32','rb'),'sha256').hexdigest(),'bytes':x.nbytes,'all_1200_bin_counts_match':True,'independent_mle':(fit.x*scale).tolist(),'difference_from_reported':(fit.x*scale-p).tolist(),'independent_deviance':float(2*fit.fun),'profile_endpoint_checks':profile}
+Path('review/analysis-verification.json').write_text(json.dumps(out,indent=2)+'\n')
+print(json.dumps(out,indent=2))

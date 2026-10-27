@@ -1,0 +1,16 @@
+# Monte Carlo estimate of π
+
+**Method.** In each of 20 independent runs, 1,000,000 points were drawn uniformly in the unit square [0,1)², and a point counted as inside the quarter circle when x² + y² ≤ 1. Each run gives the estimate 4 × (inside / 1,000,000). The 20 streams come from `numpy.random.Generator(PCG64)` with `SeedSequence(20261019).spawn(20)`, so they are statistically independent.
+
+**Results.**
+
+| Quantity | Value |
+|---|---|
+| Mean estimate of π (20 seeds) | **3.1417146** |
+| 95% confidence interval (across seeds) | **[3.140917, 3.142512]** (± 0.000798) |
+| Error against `math.pi` (3.141592654) | **+0.000122** (signed, estimate − π; absolute error 0.000122, about 0.0039%) |
+| Points drawn in all | **20,000,000** (20 × 1,000,000; 15,708,573 inside) |
+
+The interval is the two-sided Student t interval for the mean of the 20 seed estimates (19 degrees of freedom, t = 2.0930), using the sample standard deviation of the seed estimates, 0.001704, and a standard error of 0.000381. It measures simulation uncertainty only. The seed-to-seed spread (0.001704) is 1.04 times the binomial value (0.001642) expected for 1,000,000 points, which is consistent with independent sampling. `math.pi` lies inside the interval, and the error is about 0.32 standard errors.
+
+**Provenance.** All numbers are copied from `results/pi_mc.json` in `experiment-repo` at commit 818ecf5d8b93fb1bcabe99c68d8492b196e39fb1. That file also holds the per-seed counts and estimates. `analysis/monte_carlo.py` in the same commit produced it, and `results/validation.md` records the independent re-computation of the mean and interval from the integer counts (Python 3.11.2, NumPy 2.4.6, SciPy 1.17.1).

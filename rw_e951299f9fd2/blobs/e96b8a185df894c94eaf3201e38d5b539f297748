@@ -1,0 +1,9 @@
+# Presentation specification
+
+The objective requests one short page, a three-row table of sample count and mean absolute error, and the fitted exponent. A separate figure would add little and is omitted.
+
+The table will use two right-aligned columns: **Samples, N** and **Mean absolute error**. Rows will be ordered as 1,000; 10,000; 100,000. Mean absolute errors will use six significant digits, preserving enough precision to reconstruct the reported log-log slope while avoiding full machine precision. Errors and pi are dimensionless; N is a count of points per estimate.
+
+Caption: Mean absolute error of the quarter-circle Monte Carlo estimate of pi relative to math.pi, averaged over 50 independent runs at each N. The methods prose should state seeds 2026–2075 and RNG reinitialization at each (N, run), so independence within N is not mistaken for independence across N.
+
+The generator will consume the committed aggregate results from experiment-repo. Provenance will record the source repository revision and path. Before handoff, inspect the generated Markdown and check each displayed value against its aggregate input. Paper-repo embeds the table in report/report.md; the supporting table, generator and provenance remain together in presentation/ in this repository. Both neighbors prefer the report as the sole assembled artifact; this split is accepted and needs no assignment correction.

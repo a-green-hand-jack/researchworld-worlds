@@ -1,0 +1,33 @@
+"""Independent re-run and re-aggregation of the experiment-repo Monte Carlo study."""
+import csv, json, math, sys
+import numpy as np
+from scipy import stats
+
+exp = sys.argv[1]
+rows = list(csv.DictReader(open(f'{exp}/results/per_seed.csv')))
+summ = json.load(open(f'{exp}/results/summary.json'))
+seeds = np.random.SeedSequence(20261020).spawn(20)
+ok = True
+est = []
+for s, r in zip(seeds, rows):
+    p = np.random.Generator(np.random.PCG64(s)).random((1_000_000, 2))
+    inside = int(np.count_nonzero(np.hypot(p[:, 0], p[:, 1]) <= 1.0))
+    inside2 = int(np.count_nonzero(p[:, 0] * p[:, 0] + p[:, 1] * p[:, 1] <= 1.0))
+    ok &= inside == int(r['inside']) == inside2
+    est.append(4 * inside / 1_000_000)
+est = np.array(est)
+m, sd = est.mean(), est.std(ddof=1)
+tc = stats.t.ppf(0.975, 19)
+hw = tc * sd / math.sqrt(20)
+out = dict(counts_match=bool(ok), distinct_estimates=len(set(est)), mean=m, sd=sd, t=tc, half_width=hw,
+           lo=m - hw, hi=m + hw, signed_err=m - math.pi, abs_err=abs(m - math.pi),
+           total=20 * 1_000_000, binom_sd=math.sqrt(math.pi * (4 - math.pi) / 1e6),
+           chi2_sd_ratio_p=float(2 * min(stats.chi2.cdf(19 * sd**2 / (math.pi*(4-math.pi)/1e6), 19),
+                                         stats.chi2.sf(19 * sd**2 / (math.pi*(4-math.pi)/1e6), 19))),
+           numpy=np.__version__)
+for k in ['mean_estimate', 'ci_lower', 'ci_upper', 'signed_error', 'half_width', 'sample_sd_ddof1']:
+    pass
+out['matches_summary'] = all(math.isclose(a, summ[b], rel_tol=1e-12, abs_tol=1e-14) for a, b in
+    [(m, 'mean_estimate'), (m - hw, 'ci_lower'), (m + hw, 'ci_upper'), (m - math.pi, 'signed_error'),
+     (sd, 'sample_sd_ddof1'), (hw, 'half_width')]) and summ['total_points'] == 20_000_000
+print(json.dumps(out, indent=1))

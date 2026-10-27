@@ -1,0 +1,157 @@
+"""Post hoc evidence for the A1 held-out result (results/e4/a1/a1_score.json, scored once in 028c9d4); not part of the
+registered scoring. Internal review points 2-4.
+1. A1a reduction: on the 48 registered A1a configs, max |off-diagonal| of W and P in the float64 matrix AdamW run
+   (every 1000 steps and at every checkpoint), so matrix and scalar runs differ only in operation order; and the
+   rounding sensitivity of the 80-bit truth itself: every a0_k perturbed by a relative 1e-15 (random sign per k),
+   alive-pair, rank-equal, rank-within-1 and burst-step changes against the delivered truth, with float64 scalar vs
+   80-bit truth and float64 matrix vs float64 scalar from the delivered records beside them.
+2. Mechanism baselines for the burst wait on the A1b set (h_K < 0, |a_K| <= 1e-3), from the exact state at K:
+   eps floor (sqrt(vhat) decays to eps) and stability crossing alone (sqrt(vhat) decays to
+   eta (1-b1)|h_K| / (2(1+b1)), no regrowth to 1e-3), each in the exact form (v decays as b2^tau with the bias
+   correction 1 - b2^(K+tau)) and in the form 2/(1-b2) ln(sigma_K/target) with the bias correction frozen at K.
+3. Second collapse under two definitions: (C) alive at a checkpoint and dead at a later checkpoint; (S) dead at a
+   checkpoint after the per-step first crossing of 0.05 (alive_from). Directions, and the A1d wrong pairs and
+   rank-error>1 checkpoints each explains.
+Usage: python3 code/checks/e4_a1_posthoc.py [NPROC] > results/e4/a1/posthoc.json"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import e4_a1 as a
+
+K, T, THR, BURST = a.K, a.T, a.THR, a.BURST
+CK = a.CHECKS; RUNS = "results/e4/a1/a1_runs.jsonl.gz"
+
+
+def offdiag(cfg):
+    c, s = a.stats(cfg["stats"]); n = c.size; eta, lam, b1, b2, eps = cfg["eta"], cfg["lam"], cfg["b1"], cfg["b2"], 1e-8
+    W = np.diag(a.init_a(cfg)); P = cfg["p0"] * np.eye(n); S11, S21 = np.diag(s), np.diag(c)
+    m = [np.zeros_like(W), np.zeros_like(P)]; v = [np.zeros_like(W), np.zeros_like(P)]
+    off = lambda X: float(np.abs(X - np.diag(np.diag(X))).max()); mx = 0.0; cks = set(CK)
+    for t in range(1, T + 1):
+        R = P @ W @ S11 - W @ S21; g = [P.T @ R, R @ W.T]; x = [W, P]
+        for i in range(2):
+            m[i] = b1 * m[i] + (1 - b1) * g[i]; v[i] = b2 * v[i] + (1 - b2) * g[i] ** 2
+            x[i] = x[i] * (1 - eta * lam) - eta * (m[i] / (1 - b1 ** t)) / (np.sqrt(v[i] / (1 - b2 ** t)) + eps)
+        W, P = x
+        if t % 1000 == 0 or t in cks:
+            mx = max(mx, off(W), off(P))
+    return mx
+
+
+def perturbed_truth(cfg, rel=1e-15):
+    """a.truth with a0_k -> a0_k (1 + rel xi_k), xi_k = +-1; same map and precision (np.longdouble)."""
+    sign = np.where(np.random.default_rng(1000 + cfg["id"]).random(32) < 0.5, -1.0, 1.0)
+    orig = a.init_a
+    try:
+        a.init_a = lambda c_: orig(c_).astype(np.longdouble) * (1 + np.longdouble(rel) * sign.astype(np.longdouble))
+        return a.truth(cfg)
+    finally:
+        a.init_a = orig
+
+
+def job(cfg):
+    return cfg["id"], offdiag(cfg), perturbed_truth(cfg)
+
+
+def tau_exact(vK, b2, target):
+    """smallest tau >= 0 with sqrt(vK b2^tau / (1 - b2^(K+tau))) <= target (inf if beyond T - K)."""
+    f = lambda tau: np.sqrt(vK * b2 ** tau / (1 - b2 ** (K + tau)))
+    lo = np.zeros_like(vK); hi = np.full_like(vK, float(T - K))
+    ok = f(hi) <= target
+    for _ in range(60):
+        mid = 0.5 * (lo + hi); go = f(mid) <= target
+        hi = np.where(go, mid, hi); lo = np.where(go, lo, mid)
+    return np.where(f(np.zeros_like(vK)) <= target, 0.0, np.where(ok, hi, np.inf))
+
+
+def main():
+    nproc = int(sys.argv[1]) if len(sys.argv) > 1 else 8
+    runs = [json.loads(l) for l in gzip.open(RUNS, "rt")]
+    byid = {r["id"]: r for r in runs}
+    cfgs = [c for c in a.configs() if a.A1A_SUBSET(c)]
+    t0 = time.time()
+    with Pool(nproc) as pool:
+        res = pool.map(job, cfgs)
+    out = dict(source=RUNS + " (028c9d4)", label="post hoc, not part of the registered A1 scoring", a1a_runs=len(cfgs))
+    # 1. A1a
+    per_b2 = {}
+    mxall = 0.0
+    for cid, mx, pt in res:
+        r = byid[cid]; mxall = max(mxall, mx)
+        A = np.array(r["alive"], bool); Pt = np.array(pt["alive"], bool)
+        S = np.array(r["a1a_scalar_absa"]) > THR; M = np.array(r["a1a_matrix_absa"]) > THR
+        d = per_b2.setdefault(str(r["b2"]), dict(runs=0, pairs=0, checkpoints=0, pert_pairs_differ=0, pert_rank_equal=0,
+                                                pert_rank_within1=0, pert_burst_differ=0, pert_alive_from_differ=0,
+                                                f64_pairs_differ=0, f64_rank_equal=0, matrix_vs_f64_pairs_differ=0,
+                                                matrix_vs_f64_rank_equal=0, max_abs_offdiag=0.0))
+        d["runs"] += 1; d["pairs"] += A.size; d["checkpoints"] += A.shape[0]
+        d["pert_pairs_differ"] += int((Pt != A).sum()); d["pert_rank_equal"] += int((Pt.sum(1) == A.sum(1)).sum())
+        d["pert_rank_within1"] += int((np.abs(Pt.sum(1) - A.sum(1)) <= 1).sum())
+        d["pert_burst_differ"] += int(sum(x != y for x, y in zip(pt["burst"], r["burst"])))
+        d["pert_alive_from_differ"] += int(sum(x != y for x, y in zip(pt["alive_from"], r["alive_from"])))
+        d["f64_pairs_differ"] += int((S != A).sum()); d["f64_rank_equal"] += int((S.sum(1) == A.sum(1)).sum())
+        d["matrix_vs_f64_pairs_differ"] += int((M != S).sum()); d["matrix_vs_f64_rank_equal"] += int((M.sum(1) == S.sum(1)).sum())
+        d["max_abs_offdiag"] = max(d["max_abs_offdiag"], mx)
+    tot = {k: sum(d[k] for d in per_b2.values()) for k in next(iter(per_b2.values())) if k != "max_abs_offdiag"}
+    rate = lambda D: dict(pert_state_agreement=1 - D["pert_pairs_differ"] / D["pairs"], pert_rank_equal=D["pert_rank_equal"] / D["checkpoints"],
+                          pert_rank_within1=D["pert_rank_within1"] / D["checkpoints"], f64_state_agreement=1 - D["f64_pairs_differ"] / D["pairs"],
+                          f64_rank_equal=D["f64_rank_equal"] / D["checkpoints"],
+                          matrix_vs_f64_state_agreement=1 - D["matrix_vs_f64_pairs_differ"] / D["pairs"],
+                          matrix_vs_f64_rank_equal=D["matrix_vs_f64_rank_equal"] / D["checkpoints"])
+    out["A1a"] = dict(max_abs_offdiag_W_P_every_1000_steps_and_checkpoints=mxall, by_b2={k: dict(v, **rate(v)) for k, v in per_b2.items()},
+                      all=dict(tot, **rate(tot)), seconds=round(time.time() - t0, 1),
+                      reading="the float64 matrix run stays exactly diagonal, so A1a's matrix-vs-scalar gap is operation order; "
+                              "a relative 1e-15 change of a0 moves the 80-bit truth's rank as much, so rank equality >= 0.99 "
+                              "between two finite-precision runs was not attainable on this grid; the registered fail stands")
+    # 2. mechanism baselines on the A1b set
+    acc = {k: [[], 0, 0] for k in ("model", "eps_exact", "eps_frozen_bc", "stab_exact", "stab_frozen_bc")}
+    for r in runs:
+        if not r["finite"]:
+            continue
+        c, s = a.stats(r["stats"]); b1, b2, eta = r["b1"], r["b2"], r["eta"]
+        st = {k: np.array(v) for k, v in r["state_K"].items()}
+        aK = np.abs(st["a"]); hK = st["p"] * (c - st["p"] * s); setb = (hK < 0) & (aK <= BURST)
+        sc = eta * (1 - b1) * np.abs(hK) / (2 * (1 + b1)); sig = np.sqrt(st["va"] / (1 - b2 ** K))
+        tp = dict(eps_exact=tau_exact(st["va"], b2, 1e-8), stab_exact=tau_exact(st["va"], b2, sc),
+                  eps_frozen_bc=2 / (1 - b2) * np.log(np.maximum(sig, 1e-300) / 1e-8),
+                  stab_frozen_bc=2 / (1 - b2) * np.log(np.maximum(sig, 1e-300) / sc))
+        for k, tau in tp.items():
+            pred = [None if not np.isfinite(x) or K + x > T else float(K + max(x, 1.0)) for x in tau]
+            e, mi, nn = a._waits(pred, r["burst"], setb); acc[k][0] += e; acc[k][1] += mi; acc[k][2] += nn
+        e, mi, nn = a._waits(r["pred_burst"], r["burst"], setb); acc["model"][0] += e; acc["model"][1] += mi; acc["model"][2] += nn
+    out["A1b_mechanism_baselines"] = {k: a._summ(*v) for k, v in acc.items()}
+    # 3. second collapse, two definitions
+    sc_out = {}
+    for name in ("C_checkpoint", "S_step_first_crossing"):
+        D = dict(directions=0, total=0, wrong_pairs=0, wrong_explained=0, rankbad=0, rankbad_explained=0,
+                 rankbad_with_any_second=0)
+        for r in runs:
+            A = np.array(r["alive"], bool); P = np.array(r["pred_alive"], bool)
+            if name == "C_checkpoint":
+                sec = np.maximum.accumulate(A, axis=0) & ~A
+            else:
+                tm = np.array([np.inf if x is None else x for x in r["alive_from"]])
+                tm[np.abs(np.array(r["state_K"]["a"])) > THR] = K
+                sec = (tm[None, :] <= np.array(CK)[:, None]) & ~A
+            W = P != A; bad = np.abs(P.sum(1) - A.sum(1)) > 1
+            D["directions"] += int(sec.any(0).sum()); D["total"] += A.shape[1]
+            D["wrong_pairs"] += int(W.sum()); D["wrong_explained"] += int((W & sec).sum())
+            D["rankbad"] += int(bad.sum()); D["rankbad_explained"] += int((bad & (W & sec).any(1)).sum())
+            D["rankbad_with_any_second"] += int((bad & sec.any(1)).sum())
+        D.update(direction_share=D["directions"] / D["total"], wrong_share=D["wrong_explained"] / D["wrong_pairs"],
+                 rankbad_share=D["rankbad_explained"] / D["rankbad"])
+        sc_out[name] = D
+    sc_out["definitions"] = dict(C_checkpoint="alive (|a| > 0.05) at a checkpoint and dead at a later checkpoint",
+                                 S_step_first_crossing="dead at a checkpoint at or after the per-step first crossing of 0.05 "
+                                                       "(alive_from; directions alive at K count from K)",
+                                 explained="wrong pairs that are second collapses; rank-error>1 checkpoints with at least one "
+                                           "wrongly predicted pair that is a second collapse (rankbad_with_any_second: any "
+                                           "second collapse at that checkpoint, wrong or not)")
+    out["second_collapse"] = sc_out
+    print(json.dumps(out, indent=1))
+
+
+if __name__ == "__main__":
+    main()

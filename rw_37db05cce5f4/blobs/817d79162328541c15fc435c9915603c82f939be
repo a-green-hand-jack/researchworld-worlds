@@ -1,0 +1,26 @@
+{
+  "source": "ICML accepted papers",
+  "url": "https://icml.cc/virtual/2025/papers.html",
+  "start_utc": "2026-10-19T21:30:15.298038+00:00",
+  "end_utc": "2026-10-19T21:30:17.403181+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/icml-accepted-papers.headers",
+    "-o",
+    "/tmp/tmpzu2qlf4o/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://icml.cc/virtual/2025/papers.html"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html; charset=utf-8\n",
+  "stderr": "",
+  "first200": "\n\n\n\n\n\n\n\n\n<!DOCTYPE html>\n<html lang=\"en\"> \n\n<head>\n    <style>html { scroll-padding-top: 70px; /* height of sticky header plus extra */ }</style>\n    \n    <meta charset=\"utf-8\">\n    <meta http-equiv=\"",
+  "body_bytes": 470920
+}

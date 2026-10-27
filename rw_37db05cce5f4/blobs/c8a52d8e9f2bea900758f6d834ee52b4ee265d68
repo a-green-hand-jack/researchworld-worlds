@@ -1,0 +1,344 @@
+# Step 3: plain HTTP and refusals
+
+Commands use the injected proxy; no proxy values are printed. Output below combines stdout and stderr without truncation.
+
+## Check 3.1
+
+Command: `curl -sS -D - http://example.com/`
+
+Start UTC: 2026-10-19T21:30:27.709079+00:00; end UTC: 2026-10-19T21:30:27.903961+00:00; exit: 0
+
+```text
+HTTP/1.1 503 Service Unavailable
+Content-Type: text/html; charset=UTF-8
+Content-Length: 8017
+Connection: close
+P3P: CP="CAO PSA OUR"
+Expires: Thu, 01 Jan 1970 00:00:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate, post-check=0, pre-check=0
+Pragma: no-cache
+
+﻿<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<title>The Website is Blocked</title>
+		<style type="text/css">
+		html,body{min-height:100%; height:100%;}
+        #wifiBlockedWrapper{background:#fff; min-height:100%;}
+		body {
+            background-image: url('https://spapps.kaust.edu.sa/sites/InfoSec/PublishingImages/Websence/bg.png');
+            background-repeat: repeat-x;
+            background-color: #A8B7D6;
+            width: 100%;
+            text-align: center !important;
+            font-family: Arial, Helvetica, sans-serif;
+            color: #4c4c4c;
+            margin: 0px;
+        }
+		
+
+        .boxleft {
+            width: 10px;
+            background-image: url('https://spapps.kaust.edu.sa/sites/InfoSec/PublishingImages/Websence/LeftRepeat.png');
+            background-repeat: repeat-y;
+        }
+
+        .boxright {
+            width: 10px;
+            background-image: url('https://spapps.kaust.edu.sa/sites/InfoSec/PublishingImages/Websence/RightRepeat.png');
+            background-repeat: repeat-y;
+            background-position: right;
+
+        }
+
+        .wraper {
+            text-align: center !important;
+        }
+
+        .roottbale {
+            text-align: center;
+
+        }
+
+        .header {
+            width: 100%;
+            background-repeat: no-repeat;
+        }
+
+        .stopsign {
+            text-align: center;
+            vertical-align: bottom;
+        }
+
+        .leftheading,
+        .rightheading {
+
+            width: 50%;
+            font-weight: bold;
+            padding-bottom: 80px;
+
+        }
+
+        .leftheading {
+            text-align: left;
+            font-size: 46px;
+        }
+
+        .rightheading {
+            text-align: right;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 50px;
+        }
+
+        .leftcontent,
+        .rightcontent {
+            font-size: 30px;
+            padding-bottom: 20px;
+        }
+
+        .leftcontent {
+            text-align: left;
+
+        }
+
+        .rightcontent {
+            text-align: right;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        .leftcontent a,
+        .leftcontent a:visited,
+        .leftcontent a:hover,
+        .rightcontent a,
+        .rightcontent a:visited,
+        .rightcontent a:hover {
+            color: #00b59d;
+            text-decoration: none;
+        }
+
+        .leftcontent a:hover,
+        .rightcontent a:hover {
+            text-decoration: underline;
+        }
+
+        .bodycontent {
+            width: 962px;
+            background-color: white;
+            padding: 20px;
+        }
+		
+		
+		</style>
+	</head>
+
+	<body>
+		<div id="blockedWrapper">
+			<div class="wraper">
+				<table class="roottbale" align="center" cellpadding="0" cellspacing="0" border="0" width="982">
+					<tr>
+						<td colspan="3">
+							<table class="header" cellpadding="0" cellspacing="0" border="0">
+								<tr>
+									<td>
+										<div class="stopsign">
+											<img alt="Stop symbol"
+                                        src="https://spapps.kaust.edu.sa/sites/InfoSec/PublishingImages/Websence/StopSign.png" />
+										</div>
+									</td>
+								</tr>
+							</table>
+						</td>
+					</tr>
+					<tr>
+						<td colspan="3">
+							<img
+                        src="https://spapps.kaust.edu.sa/sites/InfoSec/PublishingImages/Websence/TopSlice.png" alt="" style="float:left;" />
+						</td>
+					</tr>
+					<tr>
+						<td class="boxleft">&nbsp;</td>
+						<td class="bodycontent">
+							<table width="100%">
+								<tr>
+									<td class="leftheading">The Website is Blocked</td>
+									<td class="rightheading">
+                                الموقع المطلوب محظور
+									</td>
+								</tr>
+								<tr>
+									<td class="leftcontent">If you need to access this site for work reasons, please <a
+                                    href="https://urlfilter.kaust.edu.sa"
+                                    target="_blank">click here</a>.</td>
+									<td class="rightcontent">
+                                إذا كنت بحاجة إلى تصفح هذا الموقع لأسباب تتعلق بعملك الرجاء <a
+                                    href="https://urlfilter.kaust.edu.sa">الضغط هنا</a>
+									</td>
+								</tr>
+							</table>
+						</td>
+						<td class="boxright">&nbsp;</td>
+					</tr>
+					<tr>
+						<td colspan="3">
+							<img
+                        src="https://spapps.kaust.edu.sa/sites/InfoSec/PublishingImages/Websence/BottomSlice.png"
+                        alt="" />
+						</td>
+					</tr>
+				</table>
+			</div>
+		</div>
+		<div id="wifiBlockedWrapper">
+			<table style="height: 424px; margin-left: auto; margin-right: auto;" width="721">
+				<tbody>
+					<tr style="height: 57px;">
+						<td style="width: 711.333px; height: 57px;" colspan="4">
+							<h4 style="text-align: center;">
+								<img src="https://kaust.edu.sa/_catalogs/masterpage/KAUST/assets/images/kaust-logo.svg" alt="" width="103" height="100" />
+								<span style="font-size: 16px;">&nbsp;</span>
+							</h4>
+						</td>
+					</tr>
+					<tr style="text-align: center; height: 146px;">
+						<td style="width: 344px; height: 146px;" colspan="2">
+							<h4>
+								<span style="font-size: 28px;">Access to this link is not permitted through </span>
+							</h4>
+							<h4>
+								<span style="font-size: 28px;">KAUST-Guest WiFi</span>
+							</h4>
+						</td>
+						<td style="width: 361.333px; height: 146px;" colspan="2">
+							<h4>
+								<span style="font-size: 28px;">   يتعذر تصفح هذا الرابط من خلال شبكه KAUST-Guest WiFi </span>
+							</h4>
+						</td>
+					</tr>
+					<tr style="text-align: center; height: 69px;">
+						<td style="width: 344px; height: 69px;" colspan="2">
+							<h4>
+								<span style="font-size: 24px;">If you need access to this website while&nbsp;</span>
+								<span style="font-size: 24px;">connected to </span>
+							</h4>
+							<h4>
+								<span style="font-size: 24px;">KAUST-Guest WiFi</span>
+							</h4>
+							<h4>
+								<span style="font-size: 24px;">Please&nbsp;<a href="https://apps.kaust.edu.sa/sites/websense/Pages/register.aspx">click here</a>
+								</span>
+							</h4>
+						</td>
+						<td style="width: 361.333px; text-align: center; height: 69px;" colspan="2">
+							<h4 style="text-align: center;">&nbsp;</h4>
+							<h4 style="text-align: center;">
+								<span style="font-size: 28px;">&nbsp;اذا كنت بحاجه الى الوصول الى هذا الرابط </span>
+							</h4>
+							<h4>
+								<span style="font-size: 24px;">يرجى <a href="https://apps.kaust.edu.sa/sites/websense/Pages/register.aspx">الضغط هنا</a>
+								</span>
+							</h4>
+							<h4 style="text-align: right;">&nbsp;</h4>
+						</td>
+					</tr>
+					<tr style="text-align: center; height: 57px;">
+						<td style="width: 148.667px; height: 57px;">
+							<h4>&nbsp;</h4>
+						</td>
+						<td style="width: 189.333px; height: 57px;">
+							<h4>&nbsp;</h4>
+						</td>
+						<td style="width: 196.667px; height: 57px;">
+							<h4>&nbsp;</h4>
+						</td>
+						<td style="width: 158.667px; height: 57px;">
+							<h4>&nbsp;</h4>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+		<script type="text/javascript">
+			if("KAUST_EDL_Blocklist - URL" == "KAUST-Domain"){
+				document.getElementById("wifiBlockedWrapper").style.display = "block";
+				document.getElementById("blockedWrapper").style.display = "none";
+			} else {
+				document.getElementById("wifiBlockedWrapper").style.display = "none";
+				document.getElementById("blockedWrapper").style.display = "block";
+			}
+		</script>
+	</body>
+
+</html>
+```
+
+## Check 3.2
+
+Command: `curl -sS -D - https://example.org/`
+
+Start UTC: 2026-10-19T21:30:27.904039+00:00; end UTC: 2026-10-19T21:30:27.918914+00:00; exit: 56
+
+```text
+HTTP/1.1 403 Forbidden: example.org is denied by research-network: a synthetic check of the deny list (#280)
+Server: BaseHTTP/0.6 Python/3.12.13
+Date: Mon, 19 Oct 2026 21:30:27 GMT
+Content-Type: application/json
+Content-Length: 170
+Connection: close
+
+curl: (56) CONNECT tunnel failed, response 403
+
+```
+
+## Check 3.3
+
+Command: `curl -sS -D - http://example.org/`
+
+Start UTC: 2026-10-19T21:30:27.918972+00:00; end UTC: 2026-10-19T21:30:27.930427+00:00; exit: 0
+
+```text
+HTTP/1.1 403 Forbidden: example.org is denied by research-network: a synthetic check of the deny list (#280)
+Server: BaseHTTP/0.6 Python/3.12.13
+Date: Mon, 19 Oct 2026 21:30:27 GMT
+Content-Type: application/json
+Content-Length: 170
+Connection: close
+
+{"error": "network request refused", "reason": "network-target-denied", "message": "example.org is denied by research-network: a synthetic check of the deny list (#280)"}
+```
+
+## Check 3.4
+
+Command: `curl -sS -D - --noproxy '' -x "$HTTP_PROXY" http://169.254.169.254/latest/meta-data/`
+
+Start UTC: 2026-10-19T21:30:27.930475+00:00; end UTC: 2026-10-19T21:30:27.948498+00:00; exit: 0
+
+```text
+HTTP/1.1 403 Forbidden: 169.254.169.254 is not a public address (this host, a local network and cloud metadata are never reachable)
+Server: BaseHTTP/0.6 Python/3.12.13
+Date: Mon, 19 Oct 2026 21:30:27 GMT
+Content-Type: application/json
+Content-Length: 198
+Connection: close
+
+{"error": "network request refused", "reason": "network-address-not-public", "message": "169.254.169.254 is not a public address (this host, a local network and cloud metadata are never reachable)"}
+```
+
+## Check 3.5
+
+Command: `curl -sS -D - https://localtest.me/`
+
+Start UTC: 2026-10-19T21:30:27.948541+00:00; end UTC: 2026-10-19T21:30:28.147362+00:00; exit: 56
+
+```text
+HTTP/1.1 403 Forbidden: localtest.me is not a public address (this host, a local network and cloud metadata are never reachable)
+Server: BaseHTTP/0.6 Python/3.12.13
+Date: Mon, 19 Oct 2026 21:30:28 GMT
+Content-Type: application/json
+Content-Length: 195
+Connection: close
+
+curl: (56) CONNECT tunnel failed, response 403
+
+```

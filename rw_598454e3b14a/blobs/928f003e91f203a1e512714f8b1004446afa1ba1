@@ -1,0 +1,17 @@
+# Pilot (working material, not a delivery)
+
+`linear_flow.py`: exact population gradient descent of a linear JEPA
+(encoder W, linear predictor P, stop-gradient target, weight decay lam on W and P),
+Sigma11 = I, Sigma21 = diag(0.9^k), d = n = 32, w0 = 1e-3, eta = 0.05, 4000 steps.
+Run: `python3 pilot/linear_flow.py` (4 s on 1 CPU; numpy 2.4.6). Output: `linear_flow_results.json`.
+
+Observations (single seed, pilot only):
+- lam = 0: final rank equals the number of modes in the initial growth window
+  p0*c_k - p0^2*s_k > 0 exactly (16, 7, 0, 0 for p0 = 0.2, 0.5, 1, 2):
+  an over-scaled predictor collapses the representation through the self-prediction (P^T P) decay term.
+- lam > 0: the collapsed point is locally stable; the outcome is a race between mode growth and the
+  predictor's own weight-decay drift (p0 = 1 starts with an empty window yet reaches rank 5 at lam = 0.01,
+  because P decays into the window; p0 = 0.2 at lam = 0.05 collapses because P decays out of it before modes reach O(1)).
+  The fixed-point bound #{c_k^2 >= 4 lam s_k} is an upper bound only.
+- So the static window criterion is insufficient with weight decay; the theory needs the time-dependent race criterion
+  (integrated growth exponent vs log(1/w0)).

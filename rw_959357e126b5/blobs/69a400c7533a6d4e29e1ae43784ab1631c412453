@@ -1,0 +1,18 @@
+#!/bin/bash
+# Rescore both B1' grids with the delivered scorer (experiment aa9b5d2) from the release runs,
+# then compare against the delivered score files and per-run scores.
+set -e
+W=/hutian/work/b1p
+cd $W/exp
+md5sum code/e5_b1p_a1.py
+for g in b1p_fresh b1p; do
+  mkdir -p $W/out/$g
+  cp $W/e5__${g}__b1p_${g}_runs.jsonl.gz results/e5/$g/b1p_${g}_runs.jsonl.gz
+  cp results/e5/$g/b1p_${g}_score_a1.json $W/out/$g/delivered_score_a1.json
+  python3 code/e5_b1p_a1.py score $g results/e5/$g > $W/out/$g/stdout.txt 2>&1
+  cp results/e5/$g/b1p_${g}_score_a1.json $W/out/$g/rescore_score_a1.json
+  cp results/e5/$g/b1p_${g}_scored_runs.jsonl.gz $W/out/$g/rescore_scored_runs.jsonl.gz
+done
+python3 /hutian/repo/checks/b1p_score/compare.py > /hutian/repo/checks/b1p_score/compare.json
+cat /hutian/repo/checks/b1p_score/compare.json
+echo "HUTIAN_WAKE: B1prime rescore check finished"

@@ -1,0 +1,32 @@
+"""Builds report/tables/results_table.tex (booktabs tabular fragment) from report/results/local/folds.csv and summary.json."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "figures"))
+from stats import summary  # noqa: E402
+
+s, _ = summary()
+
+
+def row(name, key, sign=False):
+    m, lo, hi = (v * 100 for v in s[key])
+    f = "{:+.2f}" if sign else "{:.2f}"
+    t = lambda v: f.format(v).replace("-", "$-$")
+    return f"{name} & {t(m)} & [{t(lo)}, {t(hi)}] \\\\"
+
+
+lines = [
+    "\\begin{tabular}{lcc}",
+    "\\toprule",
+    "Method & Mean accuracy (\\%) & 95\\% interval \\\\",
+    "\\midrule",
+    row("Logistic regression", "logreg"),
+    row("$k$-NN ($k$ by inner CV)", "knn"),
+    "\\midrule",
+    row("LR $-$ $k$-NN (pp)", "diff", sign=True),
+    "\\bottomrule",
+    "\\end{tabular}",
+]
+out = Path(__file__).parent / "results_table.tex"
+out.write_text("\n".join(lines) + "\n")
+print("wrote", out)

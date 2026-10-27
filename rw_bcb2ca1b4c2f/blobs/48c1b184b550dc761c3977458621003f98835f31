@@ -1,0 +1,107 @@
+"""E7 development (exploratory, not registered): candidate early-training race readouts for the ViT, scored on the
+delivered E3 runs' per-direction force exports (results/e3/forces.jsonl: 34 configs x 3 seeds, steps 0-3800 of the
+first 20 epochs of a 50-epoch schedule; per online-token eigendirection k the eigenvalue e_k and the parts of its
+per-step change from the drive, self-prediction and weight-decay terms) against the measured epoch-20 count
+(results/e3/runs.csv `count_seeds`). Readouts, each from quantities at or before step t only:
+  step0     the registered E3 horizon rule (code/e3_grid.py horizon_rule; step-0 forces held over the horizon);
+  early_t   the count read at step t (e_k >= 1e-3 max);
+  rule_t    the horizon rule with the forces of step t held over the rest of the horizon;
+  winavg_t  the same with the per-direction rate averaged over every exported step in (0, t];
+  extrap_t  log e_k extrapolated linearly from steps t/2..t to the horizon (capped at the top eigenvalue);
+  static_t  the p-independent static capacity of the linear model: in the linear model the drive part of
+            d e_k is 2 e_k p c_k and the self-prediction part -2 e_k p^2 s_k, so max_p (p c - p^2 s) = c^2/(4s) gives
+            alive iff M drive^2 / (4 |self|) > |decay| (needs drive > 0 > self; M = 1/(1 - momentum) under SGD).
+Per readout: MAE over the 102 runs and over each arm, and the Arm T weight-decay transition (the first wd of the
+delivered T_wd series at which the seed-mean count is below half the init count), against the observed one.
+usage: e7_dev_e3_readouts.py OUT.json"""
+import os, sys, json, csv
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from e3_grid import schedules, grid, horizon_rule
+
+HERE = os.path.join(os.path.dirname(__file__), "..", "..")
+T = 3900
+STEPS = (200, 400, 800, 1600)
+BASE = dict(width=128, depth=4, pred_depth=3, pred_init_scale=1.0, target="ema", ema=[0.996, 1.0], target_ln=1, pred_norm=1,
+            decay_norm=0, opt="adamw", lr=3e-4, warmup_frac=40 / 300, sched="cosine", wd=[0.04, 0.4], pred_lr_mult=1.0,
+            momentum=0.9, total_full=9750)   # code/vit_jepa.py defaults on the 50-epoch schedule (195 steps/epoch)
+
+
+def cfgof(G, n):
+    c = dict(BASE); c.update(G[n][3]); return c
+
+
+def count(e):
+    return int((e >= 1e-3 * e.max()).sum())
+
+
+def held(cfg, R, ev, t0):
+    """Integrate per-direction log-rates R (per step at the step-t0 lr/wd) over [t0, T): gradient part scaled by lr,
+    decay part by lr*wd, as horizon_rule does."""
+    lr, wd = schedules(cfg, T)
+    G, L = R
+    lr0 = max(lr[t0], 1e-12); wd0 = wd[t0]
+    Gk = G * lr[t0:].sum() / lr0
+    Lk = L * (lr[t0:] * wd[t0:]).sum() / (lr0 * wd0) if wd0 > 0 else 0 * L
+    lg = np.minimum(np.log(np.maximum(ev, 1e-300)) + Gk + Lk, np.log(ev.max()))
+    return count(np.exp(lg))
+
+
+def rates(cfg, f):
+    M = 1.0 / (1.0 - cfg["momentum"]) if cfg["opt"] == "sgd" else 1.0
+    e = np.maximum(np.array(f["eig"]), 1e-300)
+    return M * (np.array(f["d_eig_drive"]) + np.array(f["d_eig_selfpred"])) / e, np.array(f["d_eig_wd"]) / e
+
+
+def readouts(cfg, d):
+    out = dict(step0=horizon_rule(cfg, d[0], T)["count"])
+    M = 1.0 / (1.0 - cfg["momentum"]) if cfg["opt"] == "sgd" else 1.0
+    for t in STEPS:
+        f = d[t]; ev = np.array(f["eig"])
+        out[f"early_{t}"] = count(ev)
+        out[f"rule_{t}"] = held(cfg, rates(cfg, f), ev, t)
+        Rs = [rates(cfg, d[s]) for s in sorted(d) if 0 < s <= t]
+        out[f"winavg_{t}"] = held(cfg, (np.mean([r[0] for r in Rs], 0), np.mean([r[1] for r in Rs], 0)), ev, t)
+        e0 = np.maximum(np.array(d[t // 2]["eig"]), 1e-300); e1 = np.maximum(ev, 1e-300)
+        g = (np.log(e1) - np.log(e0)) / (t - t // 2)
+        out[f"extrap_{t}"] = count(np.exp(np.minimum(np.log(e1) + g * (T - t), np.log(e1.max()))))
+        Dr, Sf, L = np.array(f["d_eig_drive"]), np.array(f["d_eig_selfpred"]), np.array(f["d_eig_wd"])
+        cap = np.where((Dr > 0) & (Sf < 0), M * Dr ** 2 / (4 * np.maximum(-Sf, 1e-300)), 0.0)
+        out[f"static_{t}"] = int((cap > np.abs(L)).sum())
+        out[f"static_ok_{t}"] = int(((Dr > 0) & (Sf < 0)).sum())
+    return out
+
+
+if __name__ == "__main__":
+    G = grid()
+    F = [json.loads(l) for l in open(os.path.join(HERE, "results/e3/forces.jsonl"))]
+    meas = {r["name"]: [int(x) for x in r["count_seeds"].split()] for r in csv.DictReader(open(os.path.join(HERE, "results/e3/runs.csv")))}
+    init = {r["name"]: float(r["count_init"]) for r in csv.DictReader(open(os.path.join(HERE, "results/e3/runs.csv")))}
+    byrun = {}
+    for f in F:
+        byrun.setdefault((f["name"], f["seed"]), {})[f["step"]] = f
+    rows = []
+    for (n, s), d in sorted(byrun.items()):
+        cfg = cfgof(G, n)
+        if None in cfg["wd"]:      # P_wdlarge: wd set at prediction time (fallback 5.5), not in the grid entry
+            cfg["wd"] = [5.5, 5.5]
+        rows.append(dict(name=n, seed=s, arm=G[n][0], measured=meas[n][s], **readouts(cfg, d)))
+    keys = [k for k in rows[0] if k not in ("name", "seed", "arm", "measured") and not k.startswith("static_ok")]
+    mae = {arm: {k: float(np.mean([abs(r[k] - r["measured"]) for r in rows if arm == "all" or r["arm"] == arm])) for k in keys}
+           for arm in ("all", "T", "P")}
+    tw = sorted([n for n in G if n.startswith("T_wd")], key=lambda n: G[n][2])
+    def trans(k):
+        for n in tw:
+            if np.mean([r[k] for r in rows if r["name"] == n]) < 0.5 * init[n]:
+                return G[n][2]
+        return None
+    res = dict(status="development, exploratory; not registered; E3 runs were scored once against their own registration (results/e3/summary.json)",
+               measured="online-token count at epoch 20 (results/e3/runs.csv count_seeds)", horizon_steps=T,
+               mae=mae, best={arm: min(mae[arm], key=mae[arm].get) for arm in mae},
+               T_wd_series={n: dict(wd=G[n][2], measured=float(np.mean(meas[n])), **{k: float(np.mean([r[k] for r in rows if r["name"] == n])) for k in keys})
+                            for n in tw},
+               transition_first_wd_below_half_init=dict(measured=next(G[n][2] for n in tw if np.mean(meas[n]) < 0.5 * init[n]), **{k: trans(k) for k in keys}),
+               static_sign_pattern_share={f"t{t}": float(np.mean([r[f"static_ok_{t}"] / 128 for r in rows])) for t in STEPS},
+               rows=rows, command=" ".join(["code/checks/e7_dev_e3_readouts.py"] + sys.argv[1:]), numpy=np.__version__)
+    json.dump(res, open(sys.argv[1], "w"), indent=1, allow_nan=False)
+    print(json.dumps(dict(mae=mae, best=res["best"], transition=res["transition_first_wd_below_half_init"]), indent=1))

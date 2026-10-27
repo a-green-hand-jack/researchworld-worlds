@@ -1,0 +1,35 @@
+# Review pass 03 (approval)
+
+Date: 2026-10-17. Assembled delivery (`ht-role delivery`, no assembly errors, nothing undelivered) at:
+- paper-repo `34b456a30dabe4f47065cb49030d6f2fb0ea9358` (report/report.pdf, report.tex, numbers.tex, make_numbers.py, references.bib, README.md)
+- experiment-repo `2bcd5889596e53d747a4506a0fd56dde06b3c83c` (report/code/, report/results/)
+- figtab-repo `cfc0fbb0732619493b43ba0de428dac1d9c16823` (report/figures/, report/tables/)
+- venue-repo `169514aed0631f1c3099934204d17871639953e4` (report/neurips_2026.sty)
+
+experiment-repo, figtab-repo and venue-repo are at the same revisions verified in pass 02
+(analysis re-run byte-identical, interval recomputation, robustness re-run, figure/table generators
+reproduce). paper-repo changed only `report/report.pdf` since pass 02 (`git diff --stat
+bd7dea1..34b456a`: one file).
+
+## Checks
+1. G1 (stale PDF): recompiled `report/report.tex` from the assembled delivery with latexmk
+   (TeX Live 2026): exit 0, 0 overfull/underfull boxes, no undefined references. The delivered
+   `report.pdf` and my compile have identical extracted text and identical rendered pixels on both
+   pages at 150 dpi (0 differing bytes). Table 1 now reads `[−2.14, +4.00]` (U+2212). G1 resolved.
+2. Delivered PDF opened and read in full at 150 dpi: 2 pages, US letter, NeurIPS 2026 anonymous
+   submission (line numbers, "Submitted to ... Do not distribute" footer), one table and one
+   figure, both legible and labelled; numbers in abstract, text, table and figure agree with
+   `report/results/` as traced in pass 02; claims follow the corrected interval.
+
+## Against the objective (internal-review-repo#1)
+- Data: OpenML id 61 downloaded from OpenML by `code/fetch_data.py`, MD5 checked (`results/provenance.json`). Met.
+- Study: multinomial LR vs kNN with k by inner stratified 5-fold CV, 10x stratified 5-fold outer
+  CV, identical paired splits; each mean and the paired difference with 95% corrected resampled
+  t intervals (naive interval reported and labelled). Met.
+- Ibex CPU job 53909302 on node cn511-08 and local run; identity checked by code
+  (`results/reproducibility.json`): identical. Met.
+- Paper: `report/report.pdf`, 2 pages, NeurIPS 2026 template, compiled from LaTeX, one figure, one
+  table, LaTeX source and the code that produced every number next to it. Met.
+
+Findings open: none. Pass-01 F1-F6 and pass-02 G1 resolved.
+Conclusion: the delivery meets the objective; approved with `ht-role approve`.

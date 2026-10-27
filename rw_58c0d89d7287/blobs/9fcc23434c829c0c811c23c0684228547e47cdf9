@@ -1,0 +1,71 @@
+import math
+import numpy as np
+from PIL import Image
+
+FIG1 = dict(
+    path="/hutian/repo/report/figures/exp_neg_x2.png",
+    ylim=(2e-18, 6e-2),
+    samples=[
+        ("trapezoid", 1024, 5.847286e-8, (0, 114, 178)),
+        ("trapezoid", 2, 1.545388e-2, (0, 114, 178)),
+        ("simpson", 2, 3.124698e-05, (230, 159, 0)),
+        ("simpson", 256, 1.189789e-13, (230, 159, 0)),
+        ("simpson excluded", 1024, 4.071267e-16, (230, 159, 0)),
+        ("gauss4", 2, 4.650769e-10, (0, 158, 115)),
+        ("gauss4", 4, 1.542729e-12, (0, 158, 115)),
+        ("gauss4 excluded", 1024, 3.696249e-17, (0, 158, 115)),
+    ],
+    cutoff_row_err=1e-14,
+)
+FIG2 = dict(
+    path="/hutian/repo/report/figures/x_cube_root.png",
+    ylim=(3e-15, 4e-1),
+    samples=[
+        ("trapezoid", 2, 1.031497e-1, (0, 114, 178)),
+        ("simpson", 1024, 5.261353e-6, (230, 159, 0)),
+        ("gauss4", 1024, 1.885907e-7, (0, 158, 115)),
+        ("gauss4", 2, 7.724675e-4, (0, 158, 115)),
+    ],
+    cutoff_row_err=1e-14,
+)
+XLIM = (1.7, 2600)
+AX = dict(left=0.088, right=0.975, top=0.91, bottom=0.19)
+W, H = 1800, 1100
+
+
+def to_px(n, err, ylim):
+    ax_l = AX["left"] * W
+    ax_w = (AX["right"] - AX["left"]) * W
+    ax_b = (1 - AX["bottom"]) * H
+    ax_h = (AX["top"] - AX["bottom"]) * H
+    x = ax_l + math.log2(n / XLIM[0]) / math.log2(XLIM[1] / XLIM[0]) * ax_w
+    y = ax_b - (math.log10(err) - math.log10(ylim[0])) / (math.log10(ylim[1]) - math.log10(ylim[0])) * ax_h
+    return x, y
+
+
+fails = []
+for fig in (FIG1, FIG2):
+    im = np.asarray(Image.open(fig["path"]).convert("RGB")).astype(int)
+    assert im.shape == (H, W, 3), (fig["path"], im.shape)
+    print(fig["path"], im.shape[1], "x", im.shape[0], "OK")
+    for name, n, err, col in fig["samples"]:
+        x, y = to_px(n, err, fig["ylim"])
+        ix, iy = int(round(x)), int(round(y))
+        win = im[max(0, iy - 10): iy + 11, max(0, ix - 10): ix + 11]
+        dist = np.sqrt(((win - np.array(col)) ** 2).sum(axis=2))
+        ok = dist.min() < 70
+        print(("PASS " if ok else "FAIL "), f"{name} marker at n={n} err={err:g} -> px({ix},{iy}) mincolor-dist {dist.min():.0f}")
+        if not ok:
+            fails.append((fig["path"], name))
+    cy = to_px(2, fig["cutoff_row_err"], fig["ylim"])[1]
+    band = im[int(cy) - 4: int(cy) + 5, 200:1700]
+    gray = ((abs(band - 102).max(axis=2)) < 60).sum()
+    print(("PASS " if gray > 300 else "FAIL "), f"cutoff dashed gray row near y={int(cy)}: {gray} gray px")
+    if gray <= 300:
+        fails.append((fig["path"], "cutoff"))
+    white = (im == 255).all(axis=2).mean()
+    print(f"white background fraction {white:.2f}")
+    if not 0.25 < white < 0.97:
+        fails.append((fig["path"], "coverage"))
+
+print("RESULT:", "ALL PIXEL CHECKS PASSED" if not fails else f"FAILURES: {fails}")

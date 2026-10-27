@@ -1,0 +1,33 @@
+# results/
+
+Produced by `python3 code/analyze_pilot.py results/pilot_raw.json results/`.
+
+- `jobs.json`: the three local-compute jobs (refs, exact commands, start time 2026-10-18T21:18:34Z,
+  planned durations 9 / 55 / 120 min). Only the pilot is delivered.
+- `pilot_raw.json`: unmodified output of `pilot.py` (job `job-bf747b5625`, exit 0),
+  sha256 `4d32f59fed5c4b88d39433d50fedfc16d3d4e43a06fb980b7889c51ee21e5c74`.
+- `pilot_estimate.json`: the analysed result.
+- `pilot_trace.csv`: running estimate at 55 points (~every 10 s, last point = final estimate) with the
+  pi ± 1.96σ(n) band (σ at the true p = pi/4) and the error in σ units; input for the figure.
+
+## Pilot result (measured)
+
+| quantity | value |
+|---|---|
+| samples n | 1,658,200,000 (540.0 s, ≈3.07 M samples/s) |
+| estimate of pi | **3.1415657** (3.1415656929200337) |
+| standard error | 4.03 × 10⁻⁵ |
+| 95% CI (Wald, as reported by pilot.py; recomputed, identical) | **[3.1414866, 3.1416447]** (± 7.90 × 10⁻⁵) |
+| 95% CI (Wilson score, cross-check) | [3.1414866, 3.1416447], differs < 5 × 10⁻⁹ |
+| error vs true pi | −2.70 × 10⁻⁵ = −0.67 σ (two-sided p = 0.50) |
+| true pi inside 95% CI | yes |
+
+Checks: the estimate is exactly 4·inside/n with integer inside = 1,302,336,058; the interval recomputed
+independently equals the script's to < 1e-12; the Wald and Wilson intervals agree to < 5e-9 (at n ≈ 1.7e9
+the normal approximation is exact for practical purposes). The running estimate stays within the
+pi ± 1.96σ(n) band at all 55 trace points (max |error| = 1.49σ after the first few points; trace points
+are cumulative and therefore correlated, so this is a consistency check, not 55 independent tests).
+The interim wake line (3.141571 after 187,300,000 samples at ~60 s) is part of the same run.
+
+Caveat: the run is time-limited, so n depends on host load; the seed is fixed (20261019), so a rerun
+on a faster or slower host gives a different n and a correspondingly different estimate.

@@ -1,0 +1,23 @@
+# Scaling of pure-Python insertion sort and merge sort
+
+**Result:** fitted exponent b in t ∝ n^b (OLS on log10 time vs log10 n, all 25 points per algorithm, 95% t-interval, 23 d.o.f.)
+
+| algorithm | exponent b | SE | 95% CI | R² |
+|---|---|---|---|---|
+| insertion sort | **1.867** | 0.027 | 1.811 – 1.922 | 0.995 |
+| merge sort | **0.925** | 0.024 | 0.875 – 0.974 | 0.985 |
+
+![log-log figure](loglog.png)
+
+## Method
+`time_sorts.py` (seed 20261017, CPython 3.11.2) times pure-Python insertion sort and recursive merge sort on random integer lists, n = 250, 500, 1000, 2000, 4000, five repetitions per size (same fresh list for both algorithms), `time.perf_counter`, output asserted equal to `sorted()`. It ran as a background job on `local-compute`; the 50 timings are in `timings.csv`. `analyze.py` does the fit and the figure.
+
+## Findings
+- **Insertion sort:** b = 1.87, close to but slightly below the quadratic ideal of 2 (which lies just outside the CI).
+- **Merge sort:** b = 0.92 is below 1, which an O(n log n) algorithm cannot truly show; the expected local slope over 250–4000 is about 1.1. The value is a measurement artefact, not sub-linear scaling: the 1000→2000 step is anomalously shallow (local slopes 0.67 for merge sort, 1.54 for insertion sort), while the other steps look as expected (merge 0.95–1.12, insertion 1.90–2.13).
+- A replicate run (same lists, same host) gave 1.93 and 0.94 and reproduced the shallow step; its cause is undetermined. Fits from per-size means, medians or minima agree with the main fit (details in `notes_replicate.md`).
+
+## Caveats
+- Five sizes spanning a factor of 16: the exponent is a local slope, and merge sort's log n factor bends the curve.
+- Times depend on this hardware, CPython version and the shared host's load; only the scaling is meant to transfer.
+- The CIs reflect scatter around the line only and understate the true uncertainty.

@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+"""Report figure: NOAA GML annual mean CO2 at Mauna Loa (1960-2025), with OLS
+linear and quadratic fits in the year.
+
+Rendered for the report's half-page slot: ~6.5 x 3.2 in (paper-repo's answer
+on layout), fonts >= 8 pt at final size. The PNG is the file report.md links;
+the PDF is kept alongside as the vector copy. The report body carries the
+data provenance (URL, fetch time, SHA-256); the figure carries only axis
+labels, the legend, the two ten-year windows and their growth rates.
+
+Inputs (defaults are the assembled-delivery paths; override for local runs):
+  --data         canonical NOAA CSV, kept as downloaded
+                 (default: <delivery root>/data/co2_annmean_mlo.csv)
+  --provenance   provenance record for that CSV, from experiment-repo
+                 (default: <delivery root>/data/provenance.json)
+  --fits         analysis handoff from experiment-repo
+                 (default: <delivery root>/analysis/results.json)
+  --outdir       where the figure files are written (default: this directory)
+  --width/--height   figure size in inches (defaults 6.5 x 3.2)
+  --watermark    optional diagonal watermark text (layout drafts only)
+
+Outputs: co2_mlo_fits.png (~300 dpi raster) and co2_mlo_fits.pdf (vector).
+
+Exactness rule: every statistic shown -- the two window growth rates with
+their 95% intervals and the linear fit's average slope -- is printed
+verbatim from the fits handoff and never recomputed here.  Fitted curves are
+drawn from the handoff's supplied curve points when present, otherwise
+evaluated from its supplied coefficients; that is rendering, not analysis.
+The CSV's SHA-256 is verified against the provenance record before
+plotting, so the plotted data are the committed data.
+
+Layout assertions: a rendered figure must be checked, and text geometry is
+checkable, so the script refuses to save when the legend, the growth-rate
+annotation or the window labels would overlap the observed points or the
+fitted curves.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+
+SCHEMA = "figtab-fits-handoff-1"
+COLOR_DATA = "#26343f"      # observed annual means (dark slate)
+COLOR_LINEAR = "#767676"    # linear fit (grey, dashed)
+COLOR_QUAD = "#c44e2c"      # quadratic fit (red, solid)
+COLOR_WINDOW = "#e8b04b"    # ten-year window shading (light amber)
+COLOR_TANGENT = "#a9741f"   # tangent segments / window labels (dark amber)
+
+FIGSIZE = (6.5, 3.2)
+MARGINS = dict(left=0.105, right=0.985, top=0.955, bottom=0.155)
+YLIM = (302.0, 444.0)
+PAD = 0.7  # data-units clearance required around annotation regions
+
+
+def fail(msg: str) -> None:
+    sys.exit(f"make_figure.py: {msg}")
+
+
+def sha256_of(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def load_provenance(path: Path) -> dict:
+    p = json.loads(path.read_text())
+    for key in ("url", "fetched_at_utc", "sha256"):
+        if key not in p:
+            fail(f"provenance file {path} lacks '{key}'")
+    return p
+
+
+def load_annual_means(path: Path) -> list[tuple[int, float]]:
+    """Return [(year, mean_ppm)] for every data row, comments stripped."""
+    lines = [ln for ln in path.read_text().splitlines() if not ln.lstrip().startswith("#")]
+    reader = csv.DictReader(lines)
+    if not reader.fieldnames or {"year", "mean"} - set(reader.fieldnames):
+        fail(f"CSV {path} does not have 'year' and 'mean' columns")
+    rows = [(int(r["year"]), float(r["mean"])) for r in reader]
+    if not rows:
+        fail(f"CSV {path} has no data rows")
+    return sorted(rows)
+
+
+def load_fits(path: Path) -> dict:
+    f = json.loads(path.read_text())
+    if f.get("schema") != SCHEMA:
+        fail(f"fits handoff {path}: expected schema '{SCHEMA}', got {f.get('schema')!r}; "
+             "the contract is documented in README.md beside this script")
+    for key in ("fit_years", "center_year", "linear", "quadratic", "growth_windows"):
+        if key not in f:
+            fail(f"fits handoff {path} lacks '{key}'")
+    if "slope_ppm_per_yr" not in f["linear"]:
+        fail(f"fits handoff {path}: linear lacks 'slope_ppm_per_yr'")
+    quad = f["quadratic"]
+    if not ({"a0_ppm", "a1_ppm_per_yr", "a2_ppm_per_yr2"} <= quad.keys() or
+            {"x_year", "quadratic_fit_ppm"} <= quad.keys()):
+        fail(f"fits handoff {path}: quadratic needs coefficients (a0/a1/a2) or "
+             "supplied curve points (x_year, quadratic_fit_ppm)")
+    windows = f["growth_windows"]
+    if len(windows) != 2:
+        fail(f"fits handoff {path}: expected 2 growth windows, got {len(windows)}")
+    for w in windows:
+        for key in ("label", "years", "rate_ppm_per_yr", "ci95_ppm_per_yr"):
+            if key not in w:
+                fail(f"fits handoff {path}: a growth window lacks '{key}'")
+        lo, hi = w["ci95_ppm_per_yr"]
+        if not (lo <= w["rate_ppm_per_yr"] <= hi):
+            fail(f"fits handoff {path}: rate {w['rate_ppm_per_yr']} outside its "
+                 f"interval [{lo}, {hi}]")
+    return f
+
+
+def make_curve_fn(fits: dict, which: str):
+    """Return fn(xs) -> fitted ppm for 'linear' or 'quadratic'.
+
+    Supplied curve points win (interpolated over their span); otherwise the
+    handoff's coefficients are evaluated. Rendering only, no refitting.
+    """
+    part = fits[which]
+    y0, y1 = fits["fit_years"]
+    if {"x_year", f"{which}_fit_ppm"} <= part.keys():
+        xs = np.asarray(part["x_year"], float)
+        ys = np.asarray(part[f"{which}_fit_ppm"], float)
+        if xs.min() > y0 or xs.max() < y1:
+            fail(f"fits handoff: supplied {which} curve points span "
+                 f"[{xs.min()}, {xs.max()}], not the fit years [{y0}, {y1}]")
+        return lambda t: np.interp(t, xs, ys)
+    c = fits["center_year"]
+    if which == "quadratic":
+        a0, a1, a2 = part["a0_ppm"], part["a1_ppm_per_yr"], part["a2_ppm_per_yr2"]
+        return lambda t: a0 + a1 * (t - c) + a2 * (t - c) ** 2
+    a0, a1 = part["intercept_ppm"], part["slope_ppm_per_yr"]
+    if a0 is None:
+        fail(f"fits handoff: linear needs 'intercept_ppm' (centered year) or "
+             "supplied curve points")
+    return lambda t: a0 + a1 * (t - c)
+
+
+def fmt(v: float) -> str:
+    return f"{v:.3f}"
+
+
+def data_bbox(ax, fig, artist):
+    """An artist's window extent, converted to data coordinates."""
+    bb = artist.get_window_extent(renderer=fig.canvas.get_renderer())
+    inv = ax.transData.inverted()
+    (x0, y0), (x1, y1) = inv.transform([[bb.x0, bb.y0], [bb.x1, bb.y1]])
+    return x0, y0, x1, y1
+
+
+def assert_region_empty(name, region, curve_x, curve_y, pts):
+    """Fail if the observed points or a fitted curve enter the region."""
+    x0, y0, x1, y1 = region
+    for x, y in pts:
+        if x0 - PAD <= x <= x1 + PAD and y0 - PAD <= y <= y1 + PAD:
+            fail(f"layout: {name} region x[{x0:.1f},{x1:.1f}] y[{y0:.1f},{y1:.1f}] "
+                 f"overlaps an observed point at ({x}, {y}); move the annotation")
+    for x, y in zip(curve_x, curve_y):
+        if x0 - PAD <= x <= x1 + PAD and y0 - PAD <= y <= y1 + PAD:
+            fail(f"layout: {name} region x[{x0:.1f},{x1:.1f}] y[{y0:.1f},{y1:.1f}] "
+                 f"overlaps a fitted curve at ({x:.1f}, {y:.1f}); move the annotation")
+
+
+def render(data, fits, outdir, width, height, watermark):
+    y0, y1 = fits["fit_years"]
+    pts = [(float(yr), ppm) for yr, ppm in data if y0 <= yr <= y1]
+    px, py = (np.array([p[0] for p in pts]), np.array([p[1] for p in pts]))
+
+    quad_fn = make_curve_fn(fits, "quadratic")
+    lin_fn = make_curve_fn(fits, "linear")
+    smooth = np.linspace(y0, y1, 241)
+    quad_y, lin_y = quad_fn(smooth), lin_fn(smooth)
+
+    fig, ax = plt.subplots(figsize=(width, height))
+    fig.subplots_adjust(**MARGINS)
+
+    # ten-year windows: shading and a short floor label
+    for w in fits["growth_windows"]:
+        wa, wb = w["years"]
+        ax.axvspan(wa - 0.5, wb + 0.5, color=COLOR_WINDOW, alpha=0.20, zorder=1, lw=0)
+
+    ax.plot(smooth, lin_y, ls="--", lw=1.4, color=COLOR_LINEAR, zorder=2,
+            label=f"OLS linear fit: {fmt(fits['linear']['slope_ppm_per_yr'])} ppm/yr average")
+    ax.plot(smooth, quad_y, ls="-", lw=2.0, color=COLOR_QUAD, zorder=3,
+            label="OLS quadratic fit")
+    ax.plot(px, py, ls="none", marker="o", ms=3.2, mfc=COLOR_DATA, mec="none",
+            zorder=4, label="Observed annual mean CO\u2082")
+
+    # tangent at each window midpoint: slope is the handoff's stated window rate
+    for w in fits["growth_windows"]:
+        mid = sum(w["years"]) / 2
+        y_mid = float(quad_fn(mid))
+        r = w["rate_ppm_per_yr"]
+        ax.plot([mid - 2.5, mid + 2.5], [y_mid - 2.5 * r, y_mid + 2.5 * r],
+                color=COLOR_TANGENT, lw=1.8, zorder=5, solid_capstyle="round")
+
+    ax.set_xlim(y0 - 1.0, y1 + 1.0)
+    ax.set_ylim(*YLIM)
+    ax.set_xlabel("Year")
+    ax.set_ylabel("CO\u2082 annual mean (ppm)")
+    ax.grid(True, lw=0.4, color="#d8d8d8", zorder=0)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.tick_params(labelsize=8)
+
+    # growth-rate annotations, verbatim from the handoff
+    lines = []
+    for w in fits["growth_windows"]:
+        lo, hi = w["ci95_ppm_per_yr"]
+        lines.append(w.get("display") or (
+            f"{w['label']}: {fmt(w['rate_ppm_per_yr'])} ppm/yr "
+            f"(95% CI {fmt(lo)}\u2013{fmt(hi)})"))
+    ann = ax.text(0.985, 0.045, "\n".join(lines), transform=ax.transAxes,
+                  ha="right", va="bottom", fontsize=8.2, color=COLOR_TANGENT,
+                  linespacing=1.5, zorder=6,
+                  bbox=dict(boxstyle="round,pad=0.45", fc="white",
+                            ec=COLOR_TANGENT, lw=0.8, alpha=0.9))
+
+    handles, labels = ax.get_legend_handles_labels()
+    leg = ax.legend(handles[::-1], labels[::-1], loc="upper left", fontsize=8,
+                    frameon=False)
+
+    # layout assertions: annotation box, legend and window floor labels must
+    # sit in empty space, clear of the observed points and both fitted curves
+    assert_region_empty("growth-rate annotation", data_bbox(ax, fig, ann),
+                        smooth, quad_y, pts)
+    assert_region_empty("growth-rate annotation", data_bbox(ax, fig, ann),
+                        smooth, lin_y, pts)
+    assert_region_empty("legend", data_bbox(ax, fig, leg), smooth, quad_y, pts)
+    assert_region_empty("legend", data_bbox(ax, fig, leg), smooth, lin_y, pts)
+
+    if watermark:
+        ax.text(0.5, 0.5, watermark, transform=ax.transAxes, fontsize=20,
+                color=COLOR_QUAD, alpha=0.22, ha="center", va="center",
+                rotation=28, zorder=10)
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(outdir / "co2_mlo_fits.png", dpi=300)
+    fig.savefig(outdir / "co2_mlo_fits.pdf")
+    plt.close(fig)
+
+
+def main() -> None:
+    here = Path(__file__).resolve().parent
+    root = here.parent.parent  # assembled-delivery root (report/figures/ -> root)
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--data", type=Path, default=root / "data" / "co2_annmean_mlo.csv")
+    ap.add_argument("--provenance", type=Path, default=root / "data" / "provenance.json")
+    ap.add_argument("--fits", type=Path, default=root / "analysis" / "results.json")
+    ap.add_argument("--outdir", type=Path, default=here)
+    ap.add_argument("--width", type=float, default=FIGSIZE[0])
+    ap.add_argument("--height", type=float, default=FIGSIZE[1])
+    ap.add_argument("--watermark", default=None)
+    args = ap.parse_args()
+
+    data = load_annual_means(args.data)
+    prov = load_provenance(args.provenance)
+    digest = sha256_of(args.data)
+    if digest != prov["sha256"]:
+        fail(f"SHA-256 mismatch: {args.data} is {digest}, "
+             f"provenance says {prov['sha256']}; refusing to plot unverified data")
+    fits = load_fits(args.fits)
+    y0, y1 = fits["fit_years"]
+    n = sum(1 for yr, _ in data if y0 <= yr <= y1)
+    if "n" in fits and n != fits["n"]:
+        fail(f"fits handoff expects n={fits['n']} means in {y0}-{y1}, data has {n}")
+    if "input_sha256" in fits and fits["input_sha256"] != digest:
+        fail(f"fits handoff was made from data with SHA-256 {fits['input_sha256']}, "
+             f"but the data file hashes to {digest}; refusing to mix inputs")
+    render(data, fits, args.outdir, args.width, args.height, args.watermark)
+    print(f"wrote {args.outdir / 'co2_mlo_fits.png'} and .pdf "
+          f"({n} annual means {y0}-{y1}, data SHA-256 verified, layout assertions passed)")
+
+
+if __name__ == "__main__":
+    main()

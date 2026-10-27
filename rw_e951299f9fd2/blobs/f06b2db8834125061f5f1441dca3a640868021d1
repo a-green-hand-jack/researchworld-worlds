@@ -1,0 +1,75 @@
+"""Run from repository root: python3 analysis/estimate_pi.py."""
+import csv
+import hashlib
+import json
+import math
+from pathlib import Path
+import platform
+import time
+import numpy as np
+
+OUT = Path(__file__).resolve().parents[1] / 'results'
+OUT.mkdir(exist_ok=True)
+NS = np.array([1000, 10000, 100000])
+
+def estimate(n, seed):
+    xy = np.random.default_rng(seed).random((int(n), 2))
+    count = int(np.count_nonzero(xy[:, 0]**2 + xy[:, 1]**2 <= 1.0))
+    return count, 4.0 * count / int(n)
+
+start = time.perf_counter()
+estimate(100000, 2026)
+pilot_seconds = time.perf_counter() - start
+print(f'Pilot: one N=100000 estimate {pilot_seconds:.6f} seconds; full simulation approximately {55.5*pilot_seconds:.3f} seconds', flush=True)
+start = time.perf_counter()
+rows = []
+errors = np.empty((50, 3))
+for j, n in enumerate(NS):
+    for i in range(50):
+        count, value = estimate(n, 2026 + i)
+        error = abs(value - math.pi)
+        errors[i, j] = error
+        rows.append(dict(N=int(n), run_index=i, seed=2026+i, inside_count=count,
+                         pi_estimate=value, absolute_error=error))
+    print(f'N={n}, MAE={errors[:, j].mean():.17g}', flush=True)
+with (OUT / 'runs.csv').open('w') as f:
+    writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+    writer.writeheader()
+    writer.writerows(rows)
+mae = errors.mean(axis=0)
+x = np.log(NS)
+y = np.log(mae)
+X = np.column_stack((np.ones(3), x))
+intercept, slope = np.linalg.lstsq(X, y, rcond=None)[0]
+centered_slope = float(np.dot(x-x.mean(), y-y.mean()) / np.dot(x-x.mean(), x-x.mean()))
+assert np.isclose(slope, centered_slope, rtol=0, atol=1e-14)
+# Resample a shared run index at all N to preserve cross-N dependence.
+bootstrap_seed = 92026
+B = 10000
+indices = np.random.default_rng(bootstrap_seed).integers(0, 50, size=(B, 50))
+boot_mae = errors[indices].mean(axis=1)
+boot_slopes = np.log(boot_mae) @ (x-x.mean()) / np.dot(x-x.mean(), x-x.mean())
+summary = []
+for j, n in enumerate(NS):
+    summary.append(dict(N=int(n), runs=50, mean_absolute_error=float(mae[j]),
+                        standard_error_mae=float(errors[:, j].std(ddof=1)/np.sqrt(50)),
+                        normal_approx_expected_mae=float(np.sqrt(2/math.pi)*np.sqrt(math.pi*(4-math.pi)/int(n)))))
+with (OUT / 'summary.csv').open('w') as f:
+    writer = csv.DictWriter(f, fieldnames=list(summary[0]))
+    writer.writeheader()
+    writer.writerows(summary)
+fit = dict(slope=float(slope), intercept=float(intercept), expected_exponent=-0.5,
+           slope_minus_expected=float(slope+0.5), log_residuals=(y-X@np.array([intercept,slope])).tolist(),
+           adjacent_slopes=(np.diff(y)/np.diff(x)).tolist(),
+           paired_bootstrap=dict(seed=bootstrap_seed, replicates=B,
+                                 slope_percentile_95=np.quantile(boot_slopes, [.025,.975]).tolist(),
+                                 slope_standard_deviation=float(boot_slopes.std(ddof=1))))
+(OUT / 'fit.json').write_text(json.dumps(fit, indent=2)+'\n')
+metadata = dict(python=platform.python_version(), numpy=np.__version__, bit_generator=type(np.random.default_rng().bit_generator).__name__,
+                reference_pi=math.pi, seed_convention='default_rng(2026+i) restarted for each (N,i); i=0,...,49',
+                draw_shape='(N,2); consecutive x,y per point; [0,1) uniform',
+                input_source='Research objective, experiment-repo issue #1; no supplied dataset',
+                code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                pilot_seconds=pilot_seconds, analysis_seconds=time.perf_counter()-start)
+(OUT / 'provenance.json').write_text(json.dumps(metadata, indent=2)+'\n')
+print(json.dumps(fit, indent=2), flush=True)

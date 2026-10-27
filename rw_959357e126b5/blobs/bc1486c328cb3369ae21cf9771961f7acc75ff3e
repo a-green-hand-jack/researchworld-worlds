@@ -1,0 +1,301 @@
+{
+ "a3_stats": {
+  "dev2": {
+   "n": 24,
+   "min_c_over_s": 0.2409576021839338,
+   "n_above_thr": 24
+  },
+  "e1b": {
+   "n": 24,
+   "min_c_over_s": 0.14693323109911988,
+   "n_above_thr": 24
+  }
+ },
+ "a3dev": {
+  "rank_tavg": {
+   "theta_effect": {
+    "both 0.25": {
+     "mean": -2.46,
+     "share_lower": 0.885
+    },
+    "both 0.5": {
+     "mean": -3.1,
+     "share_lower": 0.969
+    },
+    "both 1.0": {
+     "mean": -3.44,
+     "share_lower": 0.979
+    },
+    "in 1.0": {
+     "mean": -3.46,
+     "share_lower": 0.979
+    },
+    "out 1.0": {
+     "mean": -3.29,
+     "share_lower": 0.958
+    }
+   },
+   "lam_effect": {
+    "0.005->0.02 all": {
+     "n": 192,
+     "mean": 1.81,
+     "share_higher": 0.833,
+     "share_lower": 0.0
+    },
+    "0.005->0.02 rotated": {
+     "n": 160,
+     "mean": 2.18,
+     "share_higher": 1.0,
+     "share_lower": 0.0
+    },
+    "0.005->0.02 aligned": {
+     "n": 32,
+     "mean": 0.0,
+     "share_higher": 0.0,
+     "share_lower": 0.0
+    },
+    "0.02->0.05 all": {
+     "n": 192,
+     "mean": 1.65,
+     "share_higher": 0.833,
+     "share_lower": 0.0
+    },
+    "0.02->0.05 rotated": {
+     "n": 160,
+     "mean": 1.98,
+     "share_higher": 1.0,
+     "share_lower": 0.0
+    },
+    "0.02->0.05 aligned": {
+     "n": 32,
+     "mean": 0.0,
+     "share_higher": 0.0,
+     "share_lower": 0.0
+    }
+   }
+  },
+  "sv_tavg": {
+   "theta_effect": {
+    "both 0.25": {
+     "mean": -3.5,
+     "share_lower": 0.99
+    },
+    "both 0.5": {
+     "mean": -4.41,
+     "share_lower": 1.0
+    },
+    "both 1.0": {
+     "mean": -4.72,
+     "share_lower": 1.0
+    },
+    "in 1.0": {
+     "mean": -4.73,
+     "share_lower": 1.0
+    },
+    "out 1.0": {
+     "mean": -3.68,
+     "share_lower": 0.969
+    }
+   },
+   "lam_effect": {
+    "0.005->0.02 all": {
+     "n": 192,
+     "mean": 2.07,
+     "share_higher": 0.833,
+     "share_lower": 0.0
+    },
+    "0.005->0.02 rotated": {
+     "n": 160,
+     "mean": 2.49,
+     "share_higher": 1.0,
+     "share_lower": 0.0
+    },
+    "0.005->0.02 aligned": {
+     "n": 32,
+     "mean": 0.0,
+     "share_higher": 0.0,
+     "share_lower": 0.0
+    },
+    "0.02->0.05 all": {
+     "n": 192,
+     "mean": 2.12,
+     "share_higher": 0.833,
+     "share_lower": 0.0
+    },
+    "0.02->0.05 rotated": {
+     "n": 160,
+     "mean": 2.54,
+     "share_higher": 1.0,
+     "share_lower": 0.0
+    },
+    "0.02->0.05 aligned": {
+     "n": 32,
+     "mean": 0.0,
+     "share_higher": 0.0,
+     "share_lower": 0.0
+    }
+   }
+  },
+  "rotated_settling_sv": {
+   "rank_T_minus_rank_halfT": {
+    "mean": 0.2,
+    "share_rising": 0.41
+   },
+   "second_quarter_minus_first_quarter": {
+    "mean": -0.01
+   },
+   "by_lam": {
+    "0.005": 0.15,
+    "0.02": 0.06,
+    "0.05": 0.39
+   }
+  }
+ },
+ "aiv_dev3_float64": {
+  "runs": 48,
+  "directions": 1536,
+  "captured": 1408,
+  "a_over_cs_q": [
+   0.9632,
+   0.995,
+   1.0,
+   1.0062,
+   1.0339
+  ],
+  "p_over_cs_q": [
+   0.9624,
+   0.995,
+   1.0,
+   1.0061,
+   1.0336
+  ],
+  "alive_eq_cs_gt_thr_among_captured": 0.9993,
+  "by_lam": {
+   "0.005": 1.0,
+   "0.02": 1.0,
+   "0.05": 1.0
+  },
+  "r_mean_over_rms_over_lam_cs_q": [
+   1.124,
+   3.011,
+   47.3
+  ]
+ },
+ "aiv_lam_scan_dev3b": [
+  {
+   "lam": 0.05,
+   "one_over_lam": 20.0,
+   "k": [
+    0,
+    8,
+    16,
+    31
+   ],
+   "cs": [
+    1.0,
+    0.4703,
+    0.2211,
+    0.0537
+   ],
+   "a": [
+    1.0,
+    0.4702,
+    0.2211,
+    0.0
+   ],
+   "a_over_min_cs_inv_lam_median": 1.0
+  },
+  {
+   "lam": 0.2,
+   "one_over_lam": 5.0,
+   "k": [
+    0,
+    8,
+    16,
+    31
+   ],
+   "cs": [
+    1.0,
+    0.4703,
+    0.2211,
+    0.0537
+   ],
+   "a": [
+    0.9999,
+    0.4702,
+    0.2211,
+    0.0
+   ],
+   "a_over_min_cs_inv_lam_median": 0.9999
+  },
+  {
+   "lam": 0.5,
+   "one_over_lam": 2.0,
+   "k": [
+    0,
+    8,
+    16,
+    31
+   ],
+   "cs": [
+    1.0,
+    0.4703,
+    0.2211,
+    0.0537
+   ],
+   "a": [
+    0.9997,
+    0.4701,
+    0.2211,
+    0.0
+   ],
+   "a_over_min_cs_inv_lam_median": 0.9986
+  },
+  {
+   "lam": 1.0,
+   "one_over_lam": 1.0,
+   "k": [
+    0,
+    8,
+    16,
+    31
+   ],
+   "cs": [
+    1.0,
+    0.4703,
+    0.2211,
+    0.0537
+   ],
+   "a": [
+    0.9976,
+    0.4701,
+    0.0,
+    0.0
+   ],
+   "a_over_min_cs_inv_lam_median": 0.0
+  },
+  {
+   "lam": 2.0,
+   "one_over_lam": 0.5,
+   "k": [
+    0,
+    8,
+    16,
+    31
+   ],
+   "cs": [
+    1.0,
+    0.4703,
+    0.2211,
+    0.0537
+   ],
+   "a": [
+    0.5,
+    0.4698,
+    0.0,
+    0.0
+   ],
+   "a_over_min_cs_inv_lam_median": 0.0
+  }
+ ]
+}

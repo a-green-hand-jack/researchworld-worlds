@@ -1,0 +1,24 @@
+{
+  "python": "3.11.2",
+  "numpy": "2.4.6",
+  "rng": "numpy.random.default_rng / PCG64",
+  "seeds": [
+    2026,
+    2225
+  ],
+  "runs": 200,
+  "sample_sizes": [
+    1000,
+    10000,
+    100000,
+    1000000,
+    10000000
+  ],
+  "workers": 1,
+  "chunk_points": 100000,
+  "seconds": 25.861866713967174,
+  "input": "Research objective, experiment-repo issue #1; no external data",
+  "point_order": "Interleaved x,y; same seed prefix at all N",
+  "estimator": "4 * count(x*x+y*y <= 1) / N",
+  "reference_pi": 3.141592653589793
+}

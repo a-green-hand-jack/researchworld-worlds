@@ -1,0 +1,14 @@
+# Review record
+
+Inspected the assembled delivery (`ht-role delivery`) at: experiment-repo a899298be19b, figtab-repo c8b5fd4ab603, paper-repo 0bd39b6a8a65.
+
+Checks:
+- Installed numpy/scipy/statsmodels; ran `report/check.py` and `code/analysis.py` (regenerated `results/` is byte-identical to delivered). All numbers in report/report.md (OLS/WLS intercepts, slopes, 95% t-CIs on 38 df, GQ/BP/Spearman, CI widths 4.1->1.2 and 0.18->0.14) match; feasible-WLS, weighted-residual BP p=0.38, and Monte Carlo (slope sd 0.057 vs 0.036; coverage 93.1% vs 95.0%) match results/results.json.
+- Draw order: A then B from default_rng(221); data reproduce.
+- Decision: A -> OLS (no test rejects constant variance; known sd constant so WLS == OLS); B -> WLS (BP p=0.004, White 0.005, Spearman 0.44, GQ p=0.003; weighted residuals pass). Residual check shown in report and figure panel (b). Caveats (single realisation, oracle weights, feasible-WLS robustness) stated.
+- Figure figures/series_and_residuals.png opened: both series, chosen fit lines, residual panel, labelled axes, legend, readable; report image path resolves.
+- Report ~670 words plus code, with code next to numbers; tables/parameters.md matches results/parameters.csv.
+
+Minor, non-blocking: report page length depends on rendering; Monte Carlo numbers are cited to analysis.py rather than computed in the report's inline code.
+
+Conclusion: delivery meets the objective; approved.

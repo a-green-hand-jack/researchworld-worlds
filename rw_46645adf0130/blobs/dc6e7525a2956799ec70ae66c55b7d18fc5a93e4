@@ -1,0 +1,170 @@
+"""Stage 3 analysis: do the L = 256 Binder values agree with the stage-2 crossing?
+
+Usage  : python3 code/stage3_analysis.py [DIR]   (DIR = data/stage3, default; data/stage3_long for the
+         supplementary 50000 + 50000-sweep runs, same temperatures and seeds)
+Inputs : DIR/raw/*.json (ising.py summaries)
+         data/stage3/series_raw/L256-T{T:.4f}-s{seed}-{m,e}.npy, or the lossless pack data/stage3/series.npz
+         data/stage2/crossing.json (stage-2 T_c, U*, their bootstrap distributions' intervals, scaling fit)
+         data/stage2/points.csv (L = 128 values, for the 128/256 comparison)
+Outputs: data/stage3/stage3.json, data/stage3/series.npz, data/stage3/points.csv, data/stage3/check.json
+
+Tests:
+  1. U_256 at the stage-2 T_c (linear fit of U_256 over the 5 points, error by bootstrap over runs'
+     blocks and seeds) against the stage-2 U* (seed-bootstrap interval): if T_c and U* are right,
+     the L = 256 curve passes through (T_c, U*).
+  2. Point-by-point comparison with the stage-2 scaling function evaluated at L = 256 (chi2).
+  3. Crossing of U_256 with U_128 (128 from the stage-2 scaling fit, 256 from the linear fit).
+  4. tau_int(|m|) at L = 256 against the 10000 measured sweeps and the 2000 burn-in.
+  5. Equilibration: |m| averaged in 5 consecutive blocks of each run, against Onsager's spontaneous
+     magnetisation M(T) = (1 - sinh(2/T)^-4)^(1/8) below T_c, and U from the last 40% of each run.
+"""
+import csv
+import itertools
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).parent))
+from mcstats import binder, tau_int  # noqa: E402
+
+D = Path(sys.argv[1] if len(sys.argv) > 1 else 'data/stage3')
+L, SEEDS = 256, (1, 2)
+EXACT = 2 / np.log(1 + np.sqrt(2))
+rng = np.random.default_rng(20261018)
+s2 = json.loads(Path('data/stage2/crossing.json').read_text())
+TC2, US2 = s2['estimate']['fss_Tc'], s2['estimate']['fss_Ustar']
+TC2_CI, US2_CI = s2['ci95_seed_bootstrap']['fss_Tc'], s2['ci95_seed_bootstrap']['fss_Ustar']
+fp = s2['fss_primary_params']
+
+runs = []
+for f in sorted((D / 'raw').glob('*.json')):
+    runs += json.loads(f.read_text())
+BURN = runs[0]['burn']
+(D / 'stage3.json').write_text(json.dumps(runs, indent=1))
+T = np.array(sorted({r['T'] for r in runs}))
+get = {(r['T'], r['seed']): r for r in runs}
+
+series, pack = {}, D / 'series.npz'
+if (D / 'series_raw').exists():
+    for t, s in itertools.product(T, SEEDS):
+        for q in 'me':
+            series[t, s, q] = np.load(D / 'series_raw' / f'L{L}-T{t:.4f}-s{s}-{q}.npy')
+    packed = {f'L{L}_T{t:.4f}_s{s}_{q}': v.astype(np.float32) for (t, s, q), v in series.items()}
+    for (t, s, q), v in series.items():
+        assert np.array_equal(packed[f'L{L}_T{t:.4f}_s{s}_{q}'].astype(np.float64), v)
+    np.savez_compressed(pack, **packed)
+else:
+    z = np.load(pack)
+    for t, s in itertools.product(T, SEEDS):
+        for q in 'me':
+            series[t, s, q] = z[f'L{L}_T{t:.4f}_s{s}_{q}'].astype(np.float64)
+N = len(series[T[0], SEEDS[0], 'm'])
+
+tau, ok, drift = {}, {}, {}
+for t, s in itertools.product(T, SEEDS):
+    x = series[t, s, 'm']
+    tau[t, s], _, ok[t, s] = tau_int(x)
+    h = N // 2
+    err = np.sqrt((x[:h].var() + x[h:].var()) * 2 * tau[t, s] / h)
+    drift[t, s] = float((x[h:].mean() - x[:h].mean()) / err)
+
+U = np.array([binder(np.mean([get[t, s]['m2'] for s in SEEDS]), np.mean([get[t, s]['m4'] for s in SEEDS])) for t in T])
+
+# bootstrap: seeds redrawn per point, then moving blocks within each drawn run (block = N/10, i.e.
+# 10 blocks per run: the most the series allows; still shorter than 20 tau when tau > 50)
+BB, blk = 2000, N // 10
+
+
+def resample(x):
+    st = rng.integers(0, N - blk + 1, N // blk)
+    y = x[(st[:, None] + np.arange(blk)[None, :]).ravel()]
+    return (y ** 2).mean(), (y ** 4).mean()
+
+
+Ub = np.empty((BB, len(T)))
+for b in range(BB):
+    for j, t in enumerate(T):
+        mm = [resample(series[t, s, 'm']) for s in rng.choice(SEEDS, 2)]
+        Ub[b, j] = binder(np.mean([q[0] for q in mm]), np.mean([q[1] for q in mm]))
+sig = Ub.std(axis=0)
+
+
+def lin_at(Uv, t0):
+    p = np.polyfit(T - TC2, Uv, 1, w=1 / np.maximum(sig, 1e-4))
+    return float(np.polyval(p, t0 - TC2)), p
+
+
+def fss(t, Lx):
+    x = (t - fp['Tc']) * Lx
+    return np.polyval(fp['a'][::-1], x)
+
+
+u_tc, p_lin = lin_at(U, TC2)
+u_tc_b = np.array([lin_at(Ub[b], TC2)[0] for b in range(BB)])
+u_ex, _ = lin_at(U, EXACT)
+u_ex_b = np.array([lin_at(Ub[b], EXACT)[0] for b in range(BB)])
+us2_sd = (US2_CI['hi'] - US2_CI['lo']) / (2 * 1.96)
+z1 = (u_tc - US2) / np.sqrt(u_tc_b.std() ** 2 + us2_sd ** 2)
+
+pred = fss(T, L)
+x256 = (T - fp['Tc']) * L
+chi2 = float((((U - pred) / sig) ** 2).sum())
+
+
+def cross_128_256(Uv):
+    # U_128(T) from the stage-2 scaling fit, U_256(T) from the linear fit; solve on a fine grid
+    tt = np.linspace(T.min(), T.max(), 6001)
+    p = np.polyfit(T - TC2, Uv, 1, w=1 / np.maximum(sig, 1e-4))
+    d = fss(tt, 128) - np.polyval(p, tt - TC2)
+    k = np.where(np.diff(np.sign(d)) != 0)[0]
+    return float(tt[k[0]]) if len(k) else np.nan
+
+
+c12 = cross_128_256(U)
+c12_b = np.array([cross_128_256(Ub[b]) for b in range(BB)])
+c12_ok = c12_b[np.isfinite(c12_b)]
+
+check = {
+    'inputs': [str(f) for f in sorted((D / 'raw').glob('*.json'))] + [str(pack), 'data/stage2/crossing.json'],
+    'burn': BURN,
+    'L': L, 'temps': T.tolist(), 'sweeps': N, 'stage2_Tc': TC2, 'stage2_Tc_ci95': [TC2_CI['lo'], TC2_CI['hi']],
+    'stage2_Ustar': US2, 'stage2_Ustar_ci95': [US2_CI['lo'], US2_CI['hi']], 'exact_Tc': EXACT, 'U_star_reference': 0.61069,
+    'U256': U.tolist(), 'U256_err': sig.tolist(),
+    'U256_per_seed': {s: [get[t, s]['binder'] for t in T] for s in SEEDS},
+    'linear_fit_U256': {'slope': float(p_lin[0]), 'intercept_at_stage2_Tc': float(p_lin[1])},
+    'test1_U256_at_stage2_Tc': {'value': u_tc, 'ci95': np.percentile(u_tc_b, [2.5, 97.5]).tolist(), 'sd': float(u_tc_b.std()),
+                                'z_vs_stage2_Ustar': float(z1)},
+    'U256_at_exact_Tc': {'value': u_ex, 'ci95': np.percentile(u_ex_b, [2.5, 97.5]).tolist()},
+    'test2_vs_stage2_scaling_function': {'predicted_U256': pred.tolist(), 'x_scaled': x256.tolist(),
+                                         'chi2': chi2, 'n_points': len(T),
+                                         'note': 'the stage-2 fit covers x in about [-7, 4.5]; points outside are extrapolated'},
+    'test3_crossing_128_256': {'value': c12, 'ci95': (np.percentile(c12_ok, [2.5, 97.5]).tolist() if len(c12_ok) else None),
+                               'n_valid': int(len(c12_ok)), 'n': BB},
+    'tau_int_abs_m': {f'{t:.4f}': [tau[t, s] for s in SEEDS] for t in T},
+    'tau_windows_ok': {f'{t:.4f}': [ok[t, s] for s in SEEDS] for t in T},
+    'max_tau': float(max(tau.values())), 'min_N_over_tau': float(N / max(tau.values())),
+    'burn_over_max_tau': float(BURN / max(tau.values())),
+    'max_abs_drift_sigma': float(max(abs(v) for v in drift.values())),
+    'drift_sigma': {f'{t:.4f}': [drift[t, s] for s in SEEDS] for t in T},
+    'bootstrap': f'{BB} resamples: seeds redrawn per point, moving blocks of {blk} sweeps within runs',
+}
+blocks = {f'{t:.4f}': {s: [float(b.mean()) for b in np.array_split(series[t, s, 'm'], 5)] for s in SEEDS} for t in T}
+onsager = {f'{t:.4f}': float((1 - np.sinh(2 / t) ** -4) ** 0.125) for t in T if t < EXACT}
+late = series[T[0], SEEDS[0], 'm'][int(0.6 * N):]
+U_late = [float(binder(np.mean([(series[t, s, 'm'][int(0.6 * N):] ** 2).mean() for s in SEEDS]),
+                       np.mean([(series[t, s, 'm'][int(0.6 * N):] ** 4).mean() for s in SEEDS]))) for t in T]
+check['test5_equilibration'] = {'abs_m_in_5_blocks_per_run': blocks, 'onsager_M_infinite_L': onsager,
+                                'U256_last_40pct': U_late}
+(D / 'check.json').write_text(json.dumps(check, indent=1, default=float))
+with open(D / 'points.csv', 'w', newline='') as f:
+    w = csv.writer(f)
+    w.writerow(['L', 'T', 'U_pooled', 'U_err_boot', 'U_s1', 'U_s2', 'U_pred_stage2_fss', 'abs_m_mean', 'chi_mean',
+                'tau_abs_m_s1', 'tau_abs_m_s2', 'drift_sigma_s1', 'drift_sigma_s2'])
+    for j, t in enumerate(T):
+        w.writerow([L, f'{t:.4f}', f'{U[j]:.6f}', f'{sig[j]:.6f}'] + [f'{get[t, s]["binder"]:.6f}' for s in SEEDS]
+                   + [f'{pred[j]:.6f}', f'{np.mean([get[t, s]["abs_m"] for s in SEEDS]):.6f}',
+                      f'{np.mean([get[t, s]["chi"] for s in SEEDS]):.4f}']
+                   + [f'{tau[t, s]:.1f}' for s in SEEDS] + [f'{drift[t, s]:.2f}' for s in SEEDS])
+print(json.dumps({k: v for k, v in check.items() if k not in ('inputs',)}, indent=1, default=float))

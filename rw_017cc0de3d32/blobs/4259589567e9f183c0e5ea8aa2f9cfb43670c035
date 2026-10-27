@@ -1,0 +1,16 @@
+% Minimal stand-in for the ICLR 2025 style (official file not supplied): same page geometry.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{iclr2025_conference}
+\usepackage[paper=letterpaper,textwidth=5.5in,textheight=9in,left=1.5in,top=1in]{geometry}
+\usepackage[numbers,sort&compress]{natbib}
+\setlength{\parindent}{0pt}\setlength{\parskip}{5.5pt}
+\makeatletter
+\renewcommand{\normalsize}{\@setfontsize\normalsize{10}{11}}
+\def\@maketitle{\vbox{\hsize\textwidth\centering
+ {\LARGE\bfseries\@title\par}\vskip 0.3in {\bfseries\@author\par}\vskip 0.2in}}
+\def\iclrfinalcopy{}
+\renewenvironment{abstract}{\begin{center}{\bfseries Abstract}\end{center}\begin{quote}}{\end{quote}}
+\renewcommand\section{\@startsection{section}{1}{\z@}{-1.5ex plus -.5ex}{1ex}{\large\bfseries}}
+\renewcommand\subsection{\@startsection{subsection}{2}{\z@}{-1.2ex plus -.5ex}{0.8ex}{\normalsize\bfseries}}
+\makeatother
+\endinput

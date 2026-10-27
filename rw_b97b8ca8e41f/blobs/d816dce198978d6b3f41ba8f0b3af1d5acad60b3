@@ -1,0 +1,115 @@
+# Task brief: a theory of collapse in JEPAs (driving force vs decay near the collapsed solution)
+
+Owner: `idea-repo` (context). Source of truth: the `Research objective` issue, `idea-repo#1`.
+Companion files: `related_work.md` (prior work, what it establishes, what we must compare against),
+`refs.bib` / `refs_index.tsv` (verified bibliography). This brief is updated as the plan and results evolve;
+the git history keeps every version.
+
+## 1. The objective, quoted in full
+
+> Joint-embedding predictive architectures (JEPAs) learn representations by predicting the embedding of one part of an input from the embedding of another part, with no negative examples and no reconstruction loss. They are prone to representation collapse, in which the learned embeddings degenerate to a constant or to very low rank. In practice collapse is avoided with a collection of empirical heuristics (how the predictor is designed and scaled, how much of the input is masked, how the target encoder is updated), and no single account explains why they work. The insight to build on: collapse is decided early in training, near the collapsed solution, where two effects compete in every direction of representation space, a driving force that grows the direction and a decay effect that shrinks it. Whether a direction survives, and therefore how much rank the representation can develop, depends on which of the two is stronger there. The research problem is to turn this insight into a theory that explains and predicts when JEPAs collapse and what the common heuristics change, and to test that theory empirically.
+>
+> Deliver a complete paper that could be submitted to NeurIPS 2026, written to the venue's submission requirements: the LaTeX source in the NeurIPS template, the compiled PDF, and the code and experimental results that the paper's claims rest on.
+>
+> Do not use any paper, preprint, code release or other written work first published after 1 September 2026.
+
+No data, code or related papers are supplied with the objective (the issue maps no frozen material). The study
+therefore chooses its own models and data; everything it uses must be public and first published before 2026-09-01.
+
+## 2. Requirements (each must end with an owning position in `story-repo`'s `assignment.json`)
+
+| ID | Requirement (objective's words) | What meets it (acceptance criterion) |
+|----|---------------------------------|--------------------------------------|
+| R1 | "turn this insight into a theory" | A formal model of JEPA training dynamics **near the collapsed solution** (early training / small representation) in which, **per direction of representation space**, a *driving force* that grows the direction and a *decay effect* that shrinks it are identified explicitly, with stated assumptions, definitions and derivations (proofs or clearly labelled approximations). |
+| R2 | "explains and predicts when JEPAs collapse" | From R1, a **survival criterion** per direction (driving > decay) and from it a **prediction of the rank** the representation can develop (complete collapse = no surviving direction; dimensional collapse = few). Predictions must be *quantitative and falsifiable* (e.g. predicted number of surviving directions, predicted collapse boundary in hyperparameter space, predicted growth/decay rates), stated *before* being compared with measurements. |
+| R3 | "what the common heuristics change" | The theory must say, for each named heuristic, which term (driving or decay, in which directions) it changes and therefore how it moves collapse/rank: **(a) predictor design and scale** (e.g. depth/width, linear vs nonlinear, initialisation scale, learning rate); **(b) how much of the input is masked** (masking ratio / context-vs-target size); **(c) how the target encoder is updated** (EMA momentum, stop-gradient, frozen/shared target). All three are named in the objective; none may be dropped. |
+| R4 | "and to test that theory empirically" | Experiments that test R2 and R3 predictions against measurements: measured per-direction growth/decay early in training vs predicted, measured final rank vs predicted, collapse/no-collapse phase boundaries vs predicted boundaries, for each heuristic in R3. Must include settings beyond the exactly-solvable model (at least one nonlinear JEPA trained on real data), and negative/failed predictions reported as such. |
+| R5 | "a complete paper that could be submitted to NeurIPS 2026, written to the venue's submission requirements" | Full paper (abstract, intro, related work, theory, experiments, limitations, references, appendix with proofs and experimental details, and whatever the NeurIPS 2026 call requires, e.g. paper checklist, page limit, anonymisation). Venue requirements are established by `venue-repo`. |
+| R6 | "the LaTeX source in the NeurIPS template, the compiled PDF" | LaTeX source using the official NeurIPS 2026 style file; a PDF compiled from that source. |
+| R7 | "the code and experimental results that the paper's claims rest on" | Code that regenerates every reported number/figure, plus the raw results (logs/CSV/JSON) behind each claim, with provenance (which script, config, seed produced which file). |
+| R8 | "Do not use any paper, preprint, code release or other written work first published after 1 September 2026" | No citation, code, dataset description or idea taken from work first published on/after 2026-09-01. `refs.bib` here is verified to that cutoff; any added reference must be checked the same way (arXiv first-version date / publication date). **Note:** searching arXiv for JEPA collapse returns post-cutoff hits (e.g. Sept-2026 preprints on spectral anti-collapse regularisation for JEPAs); these must not be read or used. Code dependencies (PyTorch etc.) must be pinned to releases before the cutoff. |
+
+## 3. The research question
+
+**Main question.** In a JEPA (online/context encoder → predictor → prediction of a stop-gradient target encoder's
+embedding of another part of the input), *which directions of representation space survive the early phase of training
+near the collapsed solution, and why?* — and does the answer (driving vs decay per direction) predict (i) whether the
+representation collapses, (ii) the rank it develops, and (iii) how predictor design/scale, masking amount and the
+target-encoder update change (i) and (ii)?
+
+**Claims the study must establish or refute (C-numbers are suggestions for `story-repo`):**
+- C1 (mechanism). Near the collapsed solution the dynamics decouple (approximately) into directions; each direction has
+  a growth rate = driving − decay, with explicit expressions in terms of data statistics (context–target
+  cross-covariance, context covariance), predictor parameters, target-update parameters and regularisation (e.g. weight
+  decay).
+- C2 (rank prediction). Number of directions with positive net rate early in training predicts the rank reached later
+  (effective rank / number of non-negligible eigenvalues of the embedding covariance).
+- C3 (heuristics). Each heuristic of R3 acts through a specific term; the theory predicts the *direction and rough
+  magnitude* of its effect and the location of collapse boundaries (e.g. critical predictor scale, critical masking
+  ratio, critical EMA momentum).
+- C4 (empirical). C1–C3 hold quantitatively in the solvable model and qualitatively (at least) in nonlinear JEPAs on
+  real data; where they fail, the paper says so.
+
+## 4. What the study must produce (quantities, comparisons, figures)
+
+Quantities:
+- Spectrum of the embedding covariance (and/or of the encoder/predictor weights) over training, per direction,
+  in the eigenbasis the theory predicts.
+- Early-time growth/decay rate per direction: measured (fit of log-amplitude slope in the early window) vs predicted.
+- Final rank: effective rank (Roy & Vetterli entropy-based; also used as RankMe, `garrido2023rankme`) and a threshold
+  count of eigenvalues; predicted vs measured.
+- Collapse indicator (complete collapse: embedding std → 0; dimensional collapse: rank ≪ dimension).
+- Downstream sanity metric for the real-data runs (linear probe accuracy) so that "non-collapsed" means useful, as is
+  conventional in the JEPA literature (`assran2023ijepa`, `bardes2024vjepa`).
+
+Comparisons:
+- Theory vs measurement for every heuristic in R3 (predictor, masking, target update), plus the regulariser that sets
+  the decay (weight decay is the standard one in the closest prior theory, `tian2021understanding`,
+  `wang2021demystifying`).
+- Against prior explanations (see `related_work.md` §2): what our account predicts that DirectPred-style eigenmode
+  analysis (`tian2021understanding`), the implicit-bias analysis of deep linear JEPAs (`littwin2024jepa`),
+  loss-landscape-near-origin analysis (`ziyin2023shapes`), stepwise learning (`simon2023stepwise`) and
+  rank-differential (`zhuo2023rank`) do not, or where they agree.
+- Optionally against an explicit anti-collapse regulariser (VICReg / LeJEPA-SIGReg, `bardes2022vicreg`,
+  `balestriero2025lejepa`) as a reference point that does not rely on the heuristics.
+
+Figures/tables conventional for this literature (see `related_work.md` §4):
+- Eigenvalue trajectories over training (log scale), one curve per direction, with predicted survivors marked.
+- Predicted vs measured growth rate scatter (identity line).
+- Phase diagrams: heuristic hyperparameter (× regularisation strength or × second heuristic) coloured by measured
+  final rank, with the theory's predicted boundary overlaid.
+- Rank (and probe accuracy) vs each heuristic, measured with predicted curve.
+- Table of heuristics × (term changed, predicted effect, measured effect).
+- Multiple seeds with dispersion (mean ± std or CI) on every measured quantity.
+
+## 5. Interpretation notes (context, not a method prescription)
+
+- "Near the collapsed solution": the collapsed point is where the embeddings are (nearly) constant / zero; at
+  standard small initialisation training starts near it. Linearising the dynamics there is the classical route
+  (`saxe2014exact`, `tian2021understanding`, `simon2023stepwise`, `jacot2021saddle`).
+- "Driving force": in JEPA the signal that grows a direction comes from the predictability of the target part from the
+  context part, i.e. the context–target cross-covariance as seen through the predictor; its strength depends on
+  how much is masked and on the predictor's state. "Decay": anything shrinking a direction near collapse, e.g. weight
+  decay, the lag/averaging of the EMA target, normalisation effects or the predictor's own regression to zero.
+  These identifications are the theory's job to make precise; they are listed so the plan knows what to vary.
+- "Every direction": the theory must be per-direction (spectral), not just a scalar collapse/no-collapse criterion.
+- "The common heuristics" are exactly the three named; others (normalisation, projector, data augmentation,
+  learning-rate schedule) may be discussed but do not replace them.
+
+## 6. Constraints relevant to feasibility (`idea-review-repo`)
+
+- Compute: CPU only in this world (8 CPUs / 32 GB per sandbox, `local-compute` container for long jobs), no GPU.
+  Large-scale I-JEPA/V-JEPA reproduction on ImageNet is out of reach; the empirical test must use solvable models
+  (linear / deep linear JEPA on synthetic data with controlled spectra), small nonlinear JEPAs, and small public
+  image datasets (e.g. MNIST/CIFAR-10 via Hugging Face) with small ViTs/CNNs. The paper must state this scale limit.
+- Data: none supplied; public datasets only, pinned with source and version.
+- Cutoff R8 applies to code too (e.g. the official I-JEPA repo pre-dates the cutoff; LeJEPA code from Nov 2025 is
+  allowed).
+
+## 7. What I could not establish
+
+- Whether the intended "decay effect" is weight decay only, or also EMA / predictor-induced shrinkage — the objective
+  leaves this open; the theory must define it. (Prior work: weight decay as a per-eigenmode threshold is already in
+  `tian2021understanding` and `wang2021demystifying`; see the novelty risk in `related_work.md` §3.)
+- NeurIPS 2026 submission requirements (page limit, checklist, style file version): owned by `venue-repo`.
+- Whether the objective is derived from a specific post-cutoff paper: irrelevant and must not be searched for (R8).

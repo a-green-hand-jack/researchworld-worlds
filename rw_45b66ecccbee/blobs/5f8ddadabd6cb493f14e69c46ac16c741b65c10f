@@ -1,0 +1,13 @@
+#!/bin/bash
+# Full cross-validation study as a CPU job on KAUST Ibex (same script, data and pinned packages as the local run).
+#SBATCH --partition=batch
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=2G
+#SBATCH --time=00:30:00
+#SBATCH --output=ibex_%j.log
+set -euo pipefail
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+echo "node: $(hostname) SLURM_JOB_NODELIST=${SLURM_JOB_NODELIST} job=${SLURM_JOB_ID}"
+./env/bin/python -u cv_study.py results/ibex

@@ -1,0 +1,159 @@
+{
+ "experiment": "E5 / B1 and B2 held-out grid (stage-wise description under weight-decay schedules)",
+ "status": "registered before the held-out grid runs; scored once by code/e5_b1.py cmd_score_v2 against results/e5/b1_tolerance_v2.json, the v1 statistics (b1_tolerance.json) reported beside it",
+ "frozen_model_commit": "13a06c9984b868396751b4757f6fd1cfe0f4b613",
+ "frozen_model": "stage_model_qs (code/e5_theory.py): quasi-steady predictor on its own nullcline given w, falling no faster than its own weight decay. Chosen on the development grid (results/e5/b1dev/posthoc/sched.json): better than the delivered stage_model on every v2 statistic there (B1a' 0.990 vs 0.985, B1b' post-knot median 0.120 vs 0.165, unmatched 8.6% vs 14.4%, B1d 2.69 vs 11.1, final MAE 0.072 vs 0.096). The delivered stage_model is scored as the baseline stage_v1",
+ "md5": {
+  "code/e5_b1.py": "69b751506f3e9e738775ca619ef37b42",
+  "code/e5_theory.py": "0518e2fc9198675cb8f0db0b56d49294",
+  "code/linjepa.py": "e7d569d4a3537aa3883ddfe847b3df66"
+ },
+ "command": "python3 code/e5_b1.py run heldout results/e5/b1heldout 8; python3 code/e5_b1.py score heldout results/e5/b1heldout",
+ "grid": {
+  "statistics": "n = 18, s linear 1.45 -> 0.6, c_k = 0.9^k s_k (dev: n = 20, s 1.3 -> 0.55, ratio 0.91)",
+  "pairs_lo_hi": [
+   [
+    0.00482,
+    0.0427
+   ],
+   [
+    0.01126,
+    0.0922
+   ],
+   [
+    0.00482,
+    0.1524
+   ]
+  ],
+  "well_posedness": "every plateau value at a geometric midpoint of adjacent static thresholds lam*_k = c_k^2/(4 s_k); min_k |ln(lam/lam*_k)| = 0.00482: 0.144, 0.01126: 0.138, 0.0427: 0.129, 0.0922: 0.126, 0.1524: 0.125",
+  "p0": [
+   0.7,
+   1.5
+  ],
+  "seeds": [
+   205,
+   206,
+   207,
+   208,
+   209
+  ],
+  "variants": {
+   "base": {
+    "alpha": 1.0,
+    "kappa": null,
+    "rho": 1.0
+   },
+   "alpha0.5": {
+    "alpha": 0.5,
+    "kappa": null,
+    "rho": 1.0
+   },
+   "alpha2": {
+    "alpha": 2.0,
+    "kappa": null,
+    "rho": 1.0
+   },
+   "ema0.2": {
+    "alpha": 1.0,
+    "kappa": 0.2,
+    "rho": 1.0
+   },
+   "rhoP0.25": {
+    "alpha": 1.0,
+    "kappa": null,
+    "rho": 0.25
+   },
+   "rhoP0.5": {
+    "alpha": 1.0,
+    "kappa": null,
+    "rho": 0.5
+   },
+   "rhoP2": {
+    "alpha": 1.0,
+    "kappa": null,
+    "rho": 2.0
+   }
+  },
+  "kinds": [
+   "const_lo",
+   "const_hi",
+   "step_up",
+   "step_down",
+   "ramp_up",
+   "ramp_down",
+   "pulse",
+   "short_pulse"
+  ],
+  "ts": "ts = ts_mult x race end time (linjepa.race_end_time) at the lambda in force before the first knot (lo for step_up, ramp_up, pulse, short_pulse; hi for step_down, ramp_down); ts_mult 0.25, 0.5, 1, 2 (pulse: 0.25, 0.5, 1, so that 2 ts stays below the time cap)",
+  "short_pulse": "lo until ts (ts_mult 1, 2 x race end at lo), hi for dur = 0.5, 1, 2 x the frozen model's bottleneck loss delay at hi (e5_b1.loss_delay: from ts = race end at lo, time to the model's first loss, first seed's amplitudes), then lo. Cells where the model loses nothing at hi have no short pulse: pair 0, p0 0.7, alpha0.5; pair 0, p0 0.7, alpha2; pair 0, p0 0.7, base; pair 0, p0 0.7, rhoP0.25; pair 0, p0 0.7, rhoP0.5; pair 0, p0 0.7, rhoP2; pair 0, p0 1.5, alpha0.5; pair 0, p0 1.5, alpha2; pair 0, p0 1.5, base; pair 0, p0 1.5, ema0.2; pair 0, p0 1.5, rhoP0.25; pair 0, p0 1.5, rhoP0.5; pair 0, p0 1.5, rhoP2; pair 1, p0 1.5, alpha0.5; pair 1, p0 1.5, alpha2; pair 1, p0 1.5, base; pair 1, p0 1.5, ema0.2; pair 1, p0 1.5, rhoP0.25; pair 1, p0 1.5, rhoP0.5; pair 1, p0 1.5, rhoP2; pair 2, p0 1.5, alpha0.5; pair 2, p0 1.5, alpha2; pair 2, p0 1.5, base; pair 2, p0 1.5, rhoP0.25; pair 2, p0 1.5, rhoP0.5; pair 2, p0 1.5, rhoP2",
+  "T": "last knot + 3 x race end at the final lambda + 300, capped at 16000, rounded up to 10",
+  "runs": 4890,
+  "runs_by_kind": {
+   "const_lo": 210,
+   "const_hi": 210,
+   "step_up": 840,
+   "step_down": 840,
+   "ramp_up": 840,
+   "ramp_down": 840,
+   "pulse": 630,
+   "short_pulse": 480
+  },
+  "matrix_flow_runs": 50,
+  "truth_floor": "each run re-run twice in 80-bit (b1_tolerance_v2 floor_and_well_posedness): w0 x (1 + d), lam_W, lam_P x (1 + e), from default_rng(seed + 7919)"
+ },
+ "definitions_fixed_here": {
+  "t1": "ts (the first knot); B1a' reference state = the last checkpoint <= t1 (all directions dead if none)",
+  "t_d": "the time the last decrease of lam_W completes: ts for step_down and ramp_down, 2 ts for pulse, ts + dur for short_pulse",
+  "late": "t_d >= race end time at hi (B2c); step_down / ramp_down with t_d < race end at hi are the early decreases of B2d",
+  "R": "directions alive at T and dead at t_d (truth from an extra truth record at t_d; model from its state at t_d)",
+  "fragile_pair": "alive state at a checkpoint differs in either floor re-run",
+  "fragile_final": "final count differs in either floor re-run",
+  "fragile_event": "a floor re-run lacks the truth event (i-th of its type on its direction) or moves it by a knot-referenced |ln| > 0.10 (the B1b' median tolerance)",
+  "ill_posed": "B1a': > 5% of a cell's schedule-affected pairs fragile. B1b': in a cell, > 2.5% of post-knot truth events missing in a floor re-run (half the 5% unmatched allowance), or > 5% moved by > 0.30 (half the 10% the p90 tolerance allows), or median floor shift > 0.05 (half the median tolerance). Ill-posed cells are reported and excluded from the per-cell B1a' requirement",
+  "B1d": "pooled median over post-loss (direction, checkpoint) pairs of |ln(|p_truth| / p_model)|",
+  "B1a_prime_ci": "per-run disagreement on the schedule-affected pairs, normalised by the mean pairs per run; paired bootstrap (2000) of baseline - model over runs; the time-resolved baselines are stage_v1, capture_static, static_now, race_frozen0, race_frozenT"
+ },
+ "pilot_disclosed": "Before this registration the held-out code was run once on 108 configurations of pair 1, p0 0.7, variants base and rhoP0.25, seeds 200 and 201, and their v2 verdicts were read (to test the scorer). After that pilot: (i) the seeds were moved from 200-204 to 205-209 so that no scored run was seen; (ii) the event-floor rule was changed from a single tolerance (|ln| > 0.05, fragile share > 2.5%: 8.8% of the pilot's post-knot events fragile, five of twelve cells ill-posed) to the component rule above. The model, the tolerances and every other definition were not changed. The pilot's own readings are not reported as results",
+ "expected_from_development": "B1a' passes; B1b' and B1d fail (development: post-knot median 0.120, p90 0.57, unmatched 8.6%; B1d 2.69); B2 not scored on development",
+ "environment": "python 3.11, numpy 2.4.6, CPU (local machine), 8 processes",
+ "amendment_2": {
+  "date": "2026-10-18T04:21:43Z (the time of the commit that carries it, 9da9a3c; the date written there before, 04:40Z, was wrong)",
+  "status": "made while the held-out grid is running and BEFORE any held-out record is scored or read (the run command does not score); the run code (configs, truth, predict, floor re-runs) is unchanged, only scoring functions of code/e5_b1.py change, so the md5 of code/e5_b1.py in the grid's meta file is that of the amended scorer",
+  "why": "internal review's early check of the v2 rules (B-a, B-b, C/B-c)",
+  "B1a_prime_absolute_bar": "the absolute bars (>= 0.90 over the non-constant schedules, >= 0.80 per (kind x variant) cell with >= 100 pairs) now sit on the post-knot pairs where the truth OR the frozen model changes alive state relative to t1 ('truth_or_model'). Pairs where only a baseline changes count as agreement for any model right at t1 and diluted the bar. The paired comparison against the time-resolved baselines stays on the registered union subset (truth or any scored member), which is right for a paired comparison. The registered union agreement is reported beside it",
+  "B2a_B2c_nonzero": "beside the registered statistics, B2a's sign(D) agreement is reported on the pairs with measured or predicted D != 0, and B2c's agreement on the runs with measured or predicted R > 0, each with n; the registered statistics and tolerances are unchanged",
+  "ill_posed": "pass/fail is always reported, for every cell. Ill-posed is a flag beside pass/fail, listed with its floor; it no longer excludes a cell from the per-cell B1a' requirement (this replaces 'Ill-posed cells are reported and excluded from the per-cell B1a' requirement' in definitions_fixed_here and the 'instead of pass/fail' wording of b1_tolerance_v2.json)",
+  "development_reference": "on the full development grid the internal review found 0.943 on the pairs where the truth changes after the knot (3.4% of pairs; delivered stage_model); the frozen stage_model_qs on the truth_or_model subset of the development grid is computed with the held-out score and reported beside it",
+  "md5_scorer_after": "8f4fa8395af2adae6cdd75fc19dc2f8e"
+ },
+ "amendment_3": {
+  "date": "2026-10-18T04:37Z (written; the commit time of the commit that adds this entry is the authoritative time)",
+  "status": "made while the held-out grid is running and BEFORE any held-out record is scored or read (the run command does not score); only reported comparators and a sensitivity line of the scorer change. No registered statistic, tolerance, subset or verdict rule changes",
+  "why": "internal review's check of amendment 2 (B-3, B-4)",
+  "B1d_comparators": "the slaved comparator was sqrt(lam_W/lam_P) times the stage model's own W; where that model is still alive at a truth-dead pair its W is O(1), so the comparison measured the model's loss timing, not the post-loss law. Now reported: slaved_truth_w (the slaved relation p = w sqrt(lam_W/lam_P) on the truth's own w, with the share of pairs where truth p lies above it), and slaved_model_W only on the pairs where stage_v1 is dead too (its share alive is reported). The registered B1d statistic (median |ln(p_truth/p_model)| pooled over all post-loss pairs, tolerance 0.5) is unchanged",
+  "sensitivity_without_pilot_cells": "B1a' (truth_or_model, union, paired baseline CIs) and B1b' (median, p90, unmatched) are also reported without the cells of the disclosed scorer pilot (pair index 1, p0 0.7, variants base and rhoP0.25); a sensitivity line, not a verdict",
+  "smoke_test": "the amended scorer was run once on 30 configurations at seed 900 (outside the held-out seeds); its output is not kept",
+  "md5_scorer_after": "d9a5409ace6e9f9d26b970cfd9fa487b"
+ },
+ "amendment_4": {
+  "date": "the commit time of the commit that adds this entry",
+  "status": "made while the held-out grid is running and BEFORE any held-out record is scored or read; reading and development references only. No statistic, tolerance, subset, scorer code or verdict rule changes (code/e5_b1.py unchanged, md5 as in amendment_3)",
+  "why": "internal review's full-grid check of the development B1d (B-2 and the B-3 correction)",
+  "development_reference_corrected": "the development B1d values in frozen_model ('B1d 2.69 vs 11.1') and expected_from_development ('B1d 2.69') are medians of per-run medians (sched.json post_loss), not the registered pooled statistic. On the registered statistic (results/e5/b1dev/posthoc/sched_v3.json): qs 2.03, own decay 1.65, stage-slaved 10.50 over all 320 runs with a loss (2.06 / 1.65 / 10.51 over the 313 schedule runs). The choice of qs and the expected B1d fail (bar 0.5) are unchanged",
+  "per_cell_reading": "B1d and its comparators (model, own_decay, slaved_truth_w, slaved_model_W where stage_v1 is dead) are read per variant (alpha, rho, kappa cell; summ_v2 by_variant, already in the scorer) beside the pooled registered value, grouped by the sign class of lam_W - alpha lam_P: alpha rho < 1 (alpha0.5, rhoP0.5, rhoP0.25), alpha rho = 1 (base, ema0.1, ema0.2), alpha rho = 2 (alpha2, rhoP2). The pooled median mixes cells of opposite sign and the held-out mix of cells differs from development, so the pooled value is not read as a post-loss law",
+  "expected_per_cell_from_development": "post hoc, not scored: signed slaved_truth_w near 0 for alpha rho = 1, large positive for alpha rho < 1, large negative for alpha rho = 2 (theory/ext_B_stagewise.md B-iii sign rule); qs near the 0.5 bar for alpha rho < 1 (development 0.51 / 0.51) and above it otherwise (1.52 to 4.02)"
+ },
+ "amendment_5": {
+  "date": "the commit time of the commit that adds this entry",
+  "status": "made while the held-out grid is running and BEFORE any held-out record is scored or read; adds one reported baseline, computed from each run's inputs only. No registered statistic, tolerance, subset, verdict rule or scorer code changes (code/e5_b1.py unchanged, md5 as in amendment_3)",
+  "why": "plan v2.11 condition P2 (never cut): every held-out score reports the 2610.02344 mu variants beside the race",
+  "baseline": "mu_dvd: their criterion with the predictor held at its initial value (Lemma 3.4), weight decay as an additive floor; on the E5 model (aligned statistics, P0 = p0 I) every variant of code/baselines/dvd_mu.py (dvd, dvd_signed, dvd_sorted, dvd_pq, dvd_pq_signed, dvd_exact) gives the same set, unstable_k(t) iff p0 c_k - p0^2 s_k > lam_W(t); the EMA rate, the predictor's decay and alpha do not move their boundary",
+  "schedule_reading": "the criterion has no time of its own; a schedule enters only through the weight decay in force (the adiabatic reading), so mu_dvd is the alive state at each checkpoint and its crossings are its events",
+  "scored_with": "code/checks/e5_mu_baseline.py heldout results/e5/b1heldout/b1_heldout_runs.jsonl.gz results/e5/b1heldout/mu_baseline.json, which appends mu_dvd to the registered scorer's comparator list and reports, beside the frozen model, static_now and capture_static: B1a' agreement on both pair sets with a bootstrap CI of mu minus model disagreement, B1b' post-knot timing and unmatched share, final-count MAE, and 'exceed' (share of runs whose true final count is above mu's; their r_tight is an upper bound); all runs, schedules, per variant and per kind",
+  "not_applicable": "B1d (post-loss predictor law) and B2 (decision-time statistics): the criterion carries no predictor dynamics and no time",
+  "tested_on": "three configurations of the held-out grid re-seeded 990-992 (no scored seed), whose readings are not reported",
+  "md5": {
+   "code/checks/e5_mu_baseline.py": "111d369d6a2d099a64ea369b21a10484"
+  }
+ }
+}

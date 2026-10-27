@@ -1,0 +1,15 @@
+# Presentation package
+
+The three PNG figures and order table are rendered from experiment-repo commit `76448c1d3e2f979bd80c0cec6b762146cb194713`, `results/errors.csv` and `results/fits.csv`. Exact copied inputs and SHA-256 hashes accompany this generator. No regression is recomputed from rounded errors. The generator verifies 108 observations, nine fits and agreement of every fit count with the error > 1e-15 mask.
+
+Run from the repository root:
+
+```sh
+python -m pip install -r presentation/requirements.txt
+python presentation/render.py
+bash presentation/generate-cover.sh
+```
+
+Rendering uses method-specific colors and marker shapes, logarithmic axes, and reference slopes. Positive errors below the fitting cutoff remain visible as hollow symbols. Computed zeros cannot be put on a logarithmic axis; triangles use an explicitly disclosed display position of 1e-18, with ±3% horizontal method offsets to show coincidences. These points are never fitted. See `report/figures/captions.md` for captions and conventions. Table intervals use Student-t residual regression uncertainty, not stochastic replication uncertainty. Full precision is in `report/tables/orders.csv`.
+
+The decorative cover is generated with the world's image-generation resource, `gpt-image-2`, via its documented Images API route. The exact prompt, request settings and response metadata are retained here. `generate-cover.py` uses environment-provided routing and authentication without recording secrets. `crop-cover.py` crops the central band and resizes to 1024×384. Generation is nondeterministic; the retained source makes the delivered crop reproducible. The illustration encodes no measured values. The initial bundled SDK CLI call failed because its response was a string instead of a typed object; the retained generator uses the documented route and handles both JSON and event-stream responses. The successful response reported low quality and 2048×768, despite the requested medium quality and 1536×1024; both requested and returned settings are preserved in the metadata.

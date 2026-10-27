@@ -1,0 +1,19 @@
+# Review probe
+
+Inspected paper-repo 675674aaf50b: report/report.md says 17 × 23 = 391 with a check; 340+51=391 is correct. Approved.
+
+## ht-role approve --help
+```
+usage: ht-role approve [-h] [--delivery DIGEST]
+
+options:
+  -h, --help         show this help message and exit
+  --delivery DIGEST  the digest of the delivery you inspected, as the bare
+                     command shows it (a prefix of 12 or more characters is
+                     enough); approves only if it is still the delivery's
+                     digest
+```
+## ht-role approve
+```
+{"approver": "internal-review-repo", "confirm": "ht-role approve --delivery 317dab77ecbcd6ae6f80902a16d848b964b6b0c5d52bcc748dd8ba9e7ea31edb", "delivery_digest": "317dab77ecbcd6ae6f80902a16d848b964b6b0c5d52bcc748dd8ba9e7ea31edb", "errors": [], "files": [{"bytes": 44, "commit": "675674aaf50bf5a01485b02e2db9eab7c09b737b", "path": "README.md", "repository": "paper-repo"}, {"bytes": 128, "commit": "675674aaf50bf5a01485b02e2db9eab7c09b737b", "path": "report/report.md", "repository": "paper-repo"}], "not_delivered": [], "note": "Nothing was approved. Approving releases this delivery and ends the world.", "repo_commits": {"experiment-repo": "5490ec427daecf7d65644425cd416a2ea2682e84", "internal-review-repo": "beae6f5475398eea38a5cde1e8a84a0d9ff8afb3", "paper-repo": "675674aaf50bf5a01485b02e2db9eab7c09b737b"}, "status": "unconfirmed"}
+```

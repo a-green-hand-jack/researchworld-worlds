@@ -1,0 +1,32 @@
+"""Operating characteristics of the E8-R reading as amended (experiment-repo afccf8e, prediction.json
+addendum_E8R.amendment_E8R_1, code/e8_analyze.py practice_ref) when B is false: the ramp acts as constant 0.04
+(f_true = 0, early decision), or as the delivered/dose accounts (f_true 0.2, 0.3). Synthetic epoch-50 counts,
+5 seeds per row, normal seed noise at E3's SD (1.5-2 counts), gap R(0.04) - R(0.4) of 10 or 20 counts.
+For each 'inconclusive' reading it records whether the f_ramp CI excludes B's premise (upper bound < 0.5) and
+whether the ramp is TOST-equivalent to constant 0.04 at 0.2 |Delta_R| (both already computed by practice_ref).
+Usage: python3 checks/e8r_rule_operating.py EXPERIMENT_REPO_DIR > checks/e8r_rule_operating.json"""
+import sys, os, json, collections
+import numpy as np
+sys.path.insert(0, os.path.join(sys.argv[1], "code"))
+import e8_analyze as A
+
+REPS = 100
+g = np.random.default_rng(1)
+run = lambda final, sd: dict(ok=True, count={50: final + g.normal(0, sd)})
+out = []
+for gap in (10, 20):
+    for ftrue in (0.0, 0.2, 0.3, 0.6):
+        for sd in (1.5, 2.0):
+            cnt = collections.Counter()
+            for _ in range(REPS):
+                R = {"P_lo": [run(116, sd) for _ in range(5)], "PR_c04": [run(116 - gap, sd) for _ in range(5)],
+                     "PR_ramp": [run(116 - ftrue * gap, sd) for _ in range(5)]}
+                p = A.practice_ref(R)
+                key = p["reading"].split(":")[0]
+                if key.startswith("inconclusive"):
+                    key += " & f CI upper < 0.5" if p["f_ramp"][2] < 0.5 else " & f CI upper >= 0.5"
+                    if p["ramp_minus_c004"]["equivalent"]:
+                        key += " & TOST-equivalent to 0.04"
+                cnt[key] += 1
+            out.append(dict(gap=gap, f_true=ftrue, sd=sd, reps=REPS, readings=dict(sorted(cnt.items()))))
+print(json.dumps(dict(cases=out, code="experiment-repo afccf8e code/e8_analyze.py practice_ref (primary scoring)"), indent=1))

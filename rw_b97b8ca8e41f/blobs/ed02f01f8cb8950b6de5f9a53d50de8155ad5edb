@@ -1,0 +1,115 @@
+# experiment-repo ae59eab281902647a55001cda1218c14d38aaaaa
+trajectory_seed0.csv 0:24/4.8 25:17/1.9 50:13/1.5 100:11/1.4 250:6/1.3 500:5/1.6 1000:9/2.8 2000:29/7.6 4000:75/19.8 6000:98/28.4
+trajectory_seed1.csv 0:27/5.7 25:23/4.1 50:19/2.2 100:15/1.9 250:9/1.3 500:4/1.3 1000:7/1.9 2000:21/6.2 4000:64/16.8 6000:107/31.7
+trajectory_seed2.csv 0:28/6.6 25:33/7.4 50:28/5.5 100:23/3.9 250:19/2.8 500:10/1.4 1000:5/1.5 2000:19/5.7 4000:70/18.5 6000:90/24.2
+trajectory_seed3.csv 0:32/7.4 25:24/4.7 50:17/2.5 100:17/2.4 250:9/1.2 500:3/1.3 1000:10/2.8 2000:30/8.0 4000:72/18.0 6000:70/19.3
+summary_seed0.csv early count 176 rank@250 6 late 98 error -78 wall s 8846
+summary_seed1.csv early count 183 rank@250 9 late 107 error -76 wall s 10451
+summary_seed2.csv early count 151 rank@250 19 late 90 error -61 wall s 10124
+summary_seed3.csv early count 149 rank@250 9 late 70 error -79 wall s 10669
+late rank mean 91.25 sd 15.78 95% t-interval 66.1--116.4
+seed 0 positive 176 above 1e-3 11 and overlap>=0.5 7
+seed 1 positive 183 above 1e-3 21 and overlap>=0.5 16
+seed 2 positive 151 above 1e-3 30 and overlap>=0.5 24
+seed 3 positive 149 above 1e-3 20 and overlap>=0.5 15
+--- one-factor cells and Tier C, every committed seed
+b_depth_deep seed 0 scale 1.0 depth 3 m 0.5 tau 0.99 wd 0.0001 early count 188 rank@250 6 late 130 eff 40.9 probe nan wall s 10887
+b_depth_deep seed 1 scale 1.0 depth 3 m 0.5 tau 0.99 wd 0.0001 early count 25 rank@250 19 late 100 eff 28.9 probe nan wall s 75152
+b_depth_deep seed 2 scale 1.0 depth 3 m 0.5 tau 0.99 wd 0.0001 early count 167 rank@250 8 late 98 eff 26.6 probe nan wall s 167605
+b_depth_shallow seed 0 scale 1.0 depth 1 m 0.5 tau 0.99 wd 0.0001 early count 144 rank@250 8 late 116 eff 33.6 probe nan wall s 10511
+b_depth_shallow seed 1 scale 1.0 depth 1 m 0.5 tau 0.99 wd 0.0001 early count 108 rank@250 10 late 67 eff 19.0 probe nan wall s 10626
+b_depth_shallow seed 2 scale 1.0 depth 1 m 0.5 tau 0.99 wd 0.0001 early count 108 rank@250 8 late 79 eff 22.4 probe nan wall s 159054
+b_ema_fast seed 0 scale 1.0 depth 2 m 0.5 tau 0.9 wd 0.0001 early count 1 rank@250 29 late 89 eff 28.3 probe nan wall s 10761
+b_ema_fast seed 1 scale 1.0 depth 2 m 0.5 tau 0.9 wd 0.0001 early count 1 rank@250 34 late 113 eff 34.8 probe nan wall s 162620
+b_ema_fast seed 2 scale 1.0 depth 2 m 0.5 tau 0.9 wd 0.0001 early count 2 rank@250 39 late 93 eff 29.7 probe nan wall s 10825
+b_ema_slow seed 0 scale 1.0 depth 2 m 0.5 tau 0.999 wd 0.0001 early count 189 rank@250 10 late 39 eff 10.5 probe nan wall s 10801
+b_ema_slow seed 1 scale 1.0 depth 2 m 0.5 tau 0.999 wd 0.0001 early count 190 rank@250 8 late 35 eff 9.5 probe nan wall s 165529
+b_ema_slow seed 2 scale 1.0 depth 2 m 0.5 tau 0.999 wd 0.0001 early count 191 rank@250 12 late 33 eff 9.4 probe nan wall s 11324
+b_mask_high seed 0 scale 1.0 depth 2 m 0.75 tau 0.99 wd 0.0001 early count 152 rank@250 7 late 88 eff 24.2 probe nan wall s 11089
+b_mask_high seed 1 scale 1.0 depth 2 m 0.75 tau 0.99 wd 0.0001 early count 183 rank@250 12 late 73 eff 18.7 probe nan wall s 164001
+b_mask_high seed 2 scale 1.0 depth 2 m 0.75 tau 0.99 wd 0.0001 early count 170 rank@250 24 late 65 eff 18.3 probe nan wall s 162381
+b_mask_high_decay_strong seed 0 scale 1.0 depth 2 m 0.75 tau 0.99 wd 0.0005 early count 154 rank@250 7 late 87 eff 24.2 probe nan wall s 170183
+b_mask_high_decay_strong seed 1 scale 1.0 depth 2 m 0.75 tau 0.99 wd 0.0005 early count 184 rank@250 12 late 73 eff 18.8 probe nan wall s 165310
+b_mask_high_decay_zero seed 0 scale 1.0 depth 2 m 0.75 tau 0.99 wd 0.0 early count 154 rank@250 7 late 88 eff 24.3 probe nan wall s 162255
+b_mask_high_decay_zero seed 1 scale 1.0 depth 2 m 0.75 tau 0.99 wd 0.0 early count 186 rank@250 12 late 74 eff 18.8 probe nan wall s 160668
+b_mask_low seed 0 scale 1.0 depth 2 m 0.25 tau 0.99 wd 0.0001 early count 159 rank@250 3 late 82 eff 23.9 probe nan wall s 11029
+b_mask_low seed 1 scale 1.0 depth 2 m 0.25 tau 0.99 wd 0.0001 early count 164 rank@250 7 late 83 eff 23.3 probe nan wall s 165489
+b_mask_low seed 2 scale 1.0 depth 2 m 0.25 tau 0.99 wd 0.0001 early count 52 rank@250 16 late 114 eff 33.5 probe nan wall s 12610
+b_mask_low_decay_strong seed 0 scale 1.0 depth 2 m 0.25 tau 0.99 wd 0.0005 early count 162 rank@250 3 late 81 eff 23.2 probe nan wall s 164917
+b_mask_low_decay_strong seed 1 scale 1.0 depth 2 m 0.25 tau 0.99 wd 0.0005 early count 158 rank@250 7 late 82 eff 23.0 probe nan wall s 162651
+b_mask_low_decay_strong seed 2 scale 1.0 depth 2 m 0.25 tau 0.99 wd 0.0005 early count 61 rank@250 16 late 101 eff 30.0 probe nan wall s 171197
+b_mask_low_decay_zero seed 0 scale 1.0 depth 2 m 0.25 tau 0.99 wd 0.0 early count 163 rank@250 3 late 84 eff 24.0 probe nan wall s 163407
+b_mask_low_decay_zero seed 2 scale 1.0 depth 2 m 0.25 tau 0.99 wd 0.0 early count 62 rank@250 16 late 104 eff 30.5 probe nan wall s 162423
+b_scale_high seed 0 scale 2.0 depth 2 m 0.5 tau 0.99 wd 0.0001 early count 15 rank@250 11 late 69 eff 19.0 probe nan wall s 10236
+b_scale_high seed 1 scale 2.0 depth 2 m 0.5 tau 0.99 wd 0.0001 early count 27 rank@250 15 late 78 eff 22.0 probe nan wall s 162655
+b_scale_high seed 2 scale 2.0 depth 2 m 0.5 tau 0.99 wd 0.0001 early count 5 rank@250 27 late 28 eff 9.5 probe nan wall s 159670
+b_scale_high_decay_strong seed 0 scale 2.0 depth 2 m 0.5 tau 0.99 wd 0.0005 early count 19 rank@250 11 late 66 eff 19.4 probe nan wall s 165364
+b_scale_high_decay_strong seed 2 scale 2.0 depth 2 m 0.5 tau 0.99 wd 0.0005 early count 3 rank@250 27 late 28 eff 9.4 probe nan wall s 164548
+b_scale_high_decay_zero seed 0 scale 2.0 depth 2 m 0.5 tau 0.99 wd 0.0 early count 24 rank@250 11 late 70 eff 19.7 probe nan wall s 159811
+b_scale_high_decay_zero seed 2 scale 2.0 depth 2 m 0.5 tau 0.99 wd 0.0 early count 5 rank@250 27 late 28 eff 9.4 probe nan wall s 162934
+b_scale_low seed 0 scale 0.5 depth 2 m 0.5 tau 0.99 wd 0.0001 early count 187 rank@250 4 late 112 eff 32.9 probe nan wall s 10429
+b_scale_low seed 1 scale 0.5 depth 2 m 0.5 tau 0.99 wd 0.0001 early count 191 rank@250 6 late 82 eff 23.8 probe nan wall s 9994
+b_scale_low seed 2 scale 0.5 depth 2 m 0.5 tau 0.99 wd 0.0001 early count 172 rank@250 14 late 95 eff 25.5 probe nan wall s 10119
+b_scale_low_decay_strong seed 0 scale 0.5 depth 2 m 0.5 tau 0.99 wd 0.0005 early count 188 rank@250 4 late 111 eff 32.9 probe nan wall s 9946
+b_scale_low_decay_strong seed 1 scale 0.5 depth 2 m 0.5 tau 0.99 wd 0.0005 early count 191 rank@250 6 late 85 eff 25.1 probe nan wall s 164293
+b_scale_low_decay_strong seed 2 scale 0.5 depth 2 m 0.5 tau 0.99 wd 0.0005 early count 169 rank@250 14 late 92 eff 24.8 probe nan wall s 162108
+b_scale_low_decay_zero seed 0 scale 0.5 depth 2 m 0.5 tau 0.99 wd 0.0 early count 187 rank@250 4 late 112 eff 33.2 probe nan wall s 10753
+b_scale_low_decay_zero seed 1 scale 0.5 depth 2 m 0.5 tau 0.99 wd 0.0 early count 191 rank@250 6 late 95 eff 24.6 probe nan wall s 163218
+b_scale_low_decay_zero seed 2 scale 0.5 depth 2 m 0.5 tau 0.99 wd 0.0 early count 167 rank@250 14 late 93 eff 26.5 probe nan wall s 11614
+c_mask_low seed 0 scale 1.0 depth 2 m 0.25 tau 0.99 wd 0.0001 early count 166 rank@250 11 late 154 eff 46.7 probe 0.4406 wall s 20098
+c_mask_low seed 1 scale 1.0 depth 2 m 0.25 tau 0.99 wd 0.0001 early count 172 rank@250 12 late 147 eff 46.0 probe 0.4401 wall s 18651
+c_reference seed 0 scale 1.0 depth 2 m 0.5 tau 0.99 wd 0.0001 early count 184 rank@250 11 late 131 eff 40.1 probe 0.4442 wall s 14827
+c_reference seed 1 scale 1.0 depth 2 m 0.5 tau 0.99 wd 0.0001 early count 186 rank@250 11 late 149 eff 45.3 probe 0.442 wall s 17013
+c_reference seed 2 scale 1.0 depth 2 m 0.5 tau 0.99 wd 0.0001 early count 188 rank@250 10 late 126 eff 40.6 probe 0.4517 wall s 14174
+c_scale_low seed 0 scale 0.5 depth 2 m 0.5 tau 0.99 wd 0.0001 early count 181 rank@250 13 late 149 eff 45.1 probe 0.4618 wall s 17957
+c_scale_low seed 1 scale 0.5 depth 2 m 0.5 tau 0.99 wd 0.0001 early count 180 rank@250 13 late 156 eff 47.8 probe 0.4436 wall s 17331
+--- per configuration, every committed seed
+b_depth_deep n=3 seeds=['0', '1', '2'] late [130, 100, 98] mean 109.3 sd 17.9 eff mean 32.1 sd 7.6 early-late 17.3 wall mean 84548
+b_depth_shallow n=3 seeds=['0', '1', '2'] late [116, 67, 79] mean 87.3 sd 25.5 eff mean 25.0 sd 7.6 early-late 32.7 wall mean 60064
+b_ema_fast n=3 seeds=['0', '1', '2'] late [89, 113, 93] mean 98.3 sd 12.9 eff mean 30.9 sd 3.4 early-late -97.0 wall mean 61402
+b_ema_slow n=3 seeds=['0', '1', '2'] late [39, 35, 33] mean 35.7 sd 3.1 eff mean 9.8 sd 0.6 early-late 154.3 wall mean 62551
+b_mask_high n=3 seeds=['0', '1', '2'] late [88, 73, 65] mean 75.3 sd 11.7 eff mean 20.4 sd 3.3 early-late 93.0 wall mean 112491
+b_mask_high_decay_strong n=2 seeds=['0', '1'] late [87, 73] mean 80.0 sd 9.9 eff mean 21.5 sd 3.9 early-late 89.0 wall mean 167747
+b_mask_high_decay_zero n=2 seeds=['0', '1'] late [88, 74] mean 81.0 sd 9.9 eff mean 21.5 sd 3.9 early-late 89.0 wall mean 161461
+b_mask_low n=3 seeds=['0', '1', '2'] late [82, 83, 114] mean 93.0 sd 18.2 eff mean 26.9 sd 5.7 early-late 32.0 wall mean 63043
+b_mask_low_decay_strong n=3 seeds=['0', '1', '2'] late [81, 82, 101] mean 88.0 sd 11.3 eff mean 25.4 sd 4.0 early-late 39.0 wall mean 166255
+b_mask_low_decay_zero n=2 seeds=['0', '2'] late [84, 104] mean 94.0 sd 14.1 eff mean 27.2 sd 4.6 early-late 18.5 wall mean 162915
+b_reference n=4 seeds=['0', '1', '2', '3'] late [98, 107, 90, 70] mean 91.2 sd 15.8 eff mean 25.9 sd 5.4 early-late 73.5 wall mean 10023
+b_scale_high n=3 seeds=['0', '1', '2'] late [69, 78, 28] mean 58.3 sd 26.7 eff mean 16.8 sd 6.5 early-late -42.7 wall mean 110854
+b_scale_high_decay_strong n=2 seeds=['0', '2'] late [66, 28] mean 47.0 sd 26.9 eff mean 14.4 sd 7.1 early-late -36.0 wall mean 164956
+b_scale_high_decay_zero n=2 seeds=['0', '2'] late [70, 28] mean 49.0 sd 29.7 eff mean 14.5 sd 7.3 early-late -34.5 wall mean 161373
+b_scale_low n=3 seeds=['0', '1', '2'] late [112, 82, 95] mean 96.3 sd 15.0 eff mean 27.4 sd 4.8 early-late 87.0 wall mean 10181
+b_scale_low_decay_strong n=3 seeds=['0', '1', '2'] late [111, 85, 92] mean 96.0 sd 13.5 eff mean 27.6 sd 4.5 early-late 86.7 wall mean 112116
+b_scale_low_decay_zero n=3 seeds=['0', '1', '2'] late [112, 95, 93] mean 100.0 sd 10.4 eff mean 28.1 sd 4.5 early-late 81.7 wall mean 61862
+c_mask_low n=2 seeds=['0', '1'] late [154, 147] mean 150.5 sd 4.9 eff mean 46.3 sd 0.5 early-late 18.5 wall mean 19374
+c_reference n=3 seeds=['0', '1', '2'] late [131, 149, 126] mean 135.3 sd 12.1 eff mean 42.0 sd 2.8 early-late 50.7 wall mean 15338
+c_scale_low n=2 seeds=['0', '1'] late [149, 156] mean 152.5 sd 4.9 eff mean 46.4 sd 1.9 early-late 28.0 wall mean 17644
+b_reference primary seeds 0-2 late [98, 107, 90] mean 98.3 sd 8.5
+committed nonlinear runs 54, summed wall-clock 4513141 s = 1253.7 h
+--- Tier C probe against same-seed initialization
+c_mask_low n=2 trained [0.4406, 0.4401] mean 0.4404 sd 0.0004; init [0.414, 0.4201] mean 0.4170 sd 0.0043; paired gain 2.33 pp sd 0.47 95% t-interval -1.86--6.52 pp
+c_reference n=3 trained [0.4442, 0.442, 0.4517] mean 0.4460 sd 0.0051; init [0.414, 0.4201, 0.4107] mean 0.4149 sd 0.0048; paired gain 3.10 pp sd 0.96 95% t-interval 0.72--5.48 pp
+c_scale_low n=2 trained [0.4618, 0.4436] mean 0.4527 sd 0.0129; init [0.414, 0.4201] mean 0.4170 sd 0.0043; paired gain 3.57 pp sd 1.72 95% t-interval -11.87--19.00 pp
+--- paired same-seed contrasts, late numerical rank (cell minus reference)
+b_scale_low - b_reference: seeds ['0', '1', '2'] diffs [14, -25, 5] mean -2.00 sd 20.42 95% t-interval -52.7--48.7
+b_scale_high - b_reference: seeds ['0', '1', '2'] diffs [-29, -29, -62] mean -40.00 sd 19.05 95% t-interval -87.3--7.3
+b_depth_shallow - b_reference: seeds ['0', '1', '2'] diffs [18, -40, -11] mean -11.00 sd 29.00 95% t-interval -83.0--61.0
+b_depth_deep - b_reference: seeds ['0', '1', '2'] diffs [32, -7, 8] mean 11.00 sd 19.67 95% t-interval -37.9--59.9
+b_mask_low - b_reference: seeds ['0', '1', '2'] diffs [-16, -24, 24] mean -5.33 sd 25.72 95% t-interval -69.2--58.5
+b_mask_high - b_reference: seeds ['0', '1', '2'] diffs [-10, -34, -25] mean -23.00 sd 12.12 95% t-interval -53.1--7.1
+b_ema_fast - b_reference: seeds ['0', '1', '2'] diffs [-9, 6, 3] mean 0.00 sd 7.94 95% t-interval -19.7--19.7
+b_ema_slow - b_reference: seeds ['0', '1', '2'] diffs [-59, -72, -57] mean -62.67 sd 8.14 95% t-interval -82.9---42.4
+b_scale_low_decay_strong - b_scale_low_decay_zero: seeds ['0', '1', '2'] diffs [-1, -10, -1] mean -4.00 sd 5.20 95% t-interval -16.9--8.9
+b_scale_low - b_scale_low_decay_zero: seeds ['0', '1', '2'] diffs [0, -13, 2] mean -3.67 sd 8.14 95% t-interval -23.9--16.6
+b_scale_low_decay_strong - b_scale_low: seeds ['0', '1', '2'] diffs [-1, 3, -3] mean -0.33 sd 3.06 95% t-interval -7.9--7.3
+b_scale_high_decay_strong - b_scale_high_decay_zero: seeds ['0', '2'] diffs [-4, 0] mean -2.00 sd 2.83 95% t-interval -27.4--23.4
+b_scale_high - b_scale_high_decay_zero: seeds ['0', '2'] diffs [-1, 0] mean -0.50 sd 0.71 95% t-interval -6.9--5.9
+b_scale_high_decay_strong - b_scale_high: seeds ['0', '2'] diffs [-3, 0] mean -1.50 sd 2.12 95% t-interval -20.6--17.6
+b_mask_low_decay_strong - b_mask_low_decay_zero: seeds ['0', '2'] diffs [-3, -3] mean -3.00 sd 0.00 95% t-interval -3.0---3.0
+b_mask_low - b_mask_low_decay_zero: seeds ['0', '2'] diffs [-2, 10] mean 4.00 sd 8.49 95% t-interval -72.2--80.2
+b_mask_low_decay_strong - b_mask_low: seeds ['0', '1', '2'] diffs [-1, -1, -13] mean -5.00 sd 6.93 95% t-interval -22.2--12.2
+b_mask_high_decay_strong - b_mask_high_decay_zero: seeds ['0', '1'] diffs [-1, -1] mean -1.00 sd 0.00 95% t-interval -1.0---1.0
+b_mask_high - b_mask_high_decay_zero: seeds ['0', '1'] diffs [0, -1] mean -0.50 sd 0.71 95% t-interval -6.9--5.9
+b_mask_high_decay_strong - b_mask_high: seeds ['0', '1'] diffs [-1, 0] mean -0.50 sd 0.71 95% t-interval -6.9--5.9
+AdamW coefficient 0.0001: (1 - 3e-4*0.0001)^6000 = 0.9998200
+AdamW coefficient 0.0005: (1 - 3e-4*0.0005)^6000 = 0.9991004

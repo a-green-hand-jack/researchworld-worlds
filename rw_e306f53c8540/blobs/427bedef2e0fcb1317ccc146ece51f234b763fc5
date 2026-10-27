@@ -1,0 +1,40 @@
+{
+ "convention": "95% two-sided t intervals, df = n-2 = 38 (t=2.0244); WLS weights 1/(0.5+0.15x)^2 known by construction, scale estimated from residuals (statsmodels WLS default)",
+ "A": {
+  "method": "OLS",
+  "weights": null,
+  "intercept": [
+   3.1004168138073176,
+   1.3855626384315993,
+   4.815270989183036,
+   0.8470950005417466
+  ],
+  "slope": [
+   0.7551635997726552,
+   0.6794878084004328,
+   0.8308393911448777,
+   0.037381945038798894
+  ]
+ },
+ "B": {
+  "method": "WLS",
+  "weights": "1/(0.5+0.15*x)^2",
+  "intercept": [
+   2.6091758249234287,
+   1.9865739599081427,
+   3.2317776899387147,
+   0.307549723326687
+  ],
+  "slope": [
+   0.8472550870569986,
+   0.7769208483613151,
+   0.917589325752682,
+   0.03474335183804745
+  ]
+ },
+ "fields_order": "[estimate, ci_low, ci_high, std_error]",
+ "truth": {
+  "intercept": 2.5,
+  "slope": 0.8
+ }
+}

@@ -1,0 +1,242 @@
+"""Stage 2 analysis: Binder-cumulant crossing of L = 32, 64, 128 and tau_int of |m| per point.
+
+Inputs : data/stage2/raw/L{L}-s{seed}.json (ising.py summaries)
+         data/stage2/series_raw/L{L}-T{T:.4f}-s{seed}-{m,e}.npy (ising.py --series), or, if absent,
+         the lossless float32 pack data/stage2/series.npz written by this script
+Outputs: data/stage2/stage2.json   all run summaries merged
+         data/stage2/series.npz    every run's per-sweep |m| and e (float32; exact, values are k/L^2)
+         data/stage2/points.csv    per (L, T): seed-pooled U, its seed and block errors, per-seed U,
+                                   |m|, chi, tau_int(|m|) per seed, N/tau, first/second-half drift
+         data/stage2/crossing.json T_c estimates, bootstrap 95% intervals over seeds and over
+                                   time-series blocks, robustness checks, sweep-sufficiency verdict
+
+Estimators (primary first):
+  fss      joint fit of all sizes to U_L(T) = sum_k a_k x^k, x = (T - T_c) L^(1/nu), nu = 1 (exact),
+           cubic, weighted by the block-bootstrap error of each point, over the 4 grid points
+           nearest the crossing region (T in WINDOW); T_c is the common crossing, a_0 = U*.
+  interp   pairwise crossings by linear interpolation of U_a - U_b between the adjacent grid
+           points where it changes sign from negative (low T) to positive (model-free).
+  global   polynomial fit of each size over all 9 points (the first plan): rejected, because U(T)
+           is sigmoidal over the window and all sizes merge at 2/3 below T ~ 2.22, so low-order
+           polynomials cross spuriously on the plateau. Kept for the record only.
+"""
+import csv
+import itertools
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).parent))
+from mcstats import binder, common_crossing, crossing, tau_int  # noqa: E402
+
+D = Path('data/stage2')
+SIZES, SEEDS = (32, 64, 128), (1, 2, 3)
+EXACT = 2 / np.log(1 + np.sqrt(2))
+B = 4000
+rng = np.random.default_rng(20261017)
+
+runs = []
+for L in SIZES:
+    for s in SEEDS:
+        runs += json.loads((D / 'raw' / f'L{L}-s{s}.json').read_text())
+(D / 'stage2.json').write_text(json.dumps(runs, indent=1))
+T = np.array(sorted({r['T'] for r in runs}))
+centre = float(json.loads(Path('data/stage1/peak.json').read_text())['stage2_centre'])
+get = {(r['L'], r['T'], r['seed']): r for r in runs}
+
+# --- series: load raw npy (and pack losslessly) or the pack --------------------------------------
+series = {}
+pack = D / 'series.npz'
+if (D / 'series_raw').exists():
+    for L, t, s in itertools.product(SIZES, T, SEEDS):
+        for q in 'me':
+            series[L, t, s, q] = np.load(D / 'series_raw' / f'L{L}-T{t:.4f}-s{s}-{q}.npy')
+    packed = {f'L{L}_T{t:.4f}_s{s}_{q}': v.astype(np.float32) for (L, t, s, q), v in series.items()}
+    for (L, t, s, q), v in series.items():
+        assert np.array_equal(packed[f'L{L}_T{t:.4f}_s{s}_{q}'].astype(np.float64), v)
+    np.savez_compressed(pack, **packed)
+else:
+    z = np.load(pack)
+    for L, t, s in itertools.product(SIZES, T, SEEDS):
+        for q in 'me':
+            series[L, t, s, q] = z[f'L{L}_T{t:.4f}_s{s}_{q}'].astype(np.float64)
+N = len(series[SIZES[0], T[0], SEEDS[0], 'm'])
+
+# consistency of series with the program's summaries
+for (L, t, s), r in [((L, t, s), get[L, t, s]) for L, t, s in itertools.product(SIZES, T, SEEDS)]:
+    assert abs(series[L, t, s, 'm'].mean() - r['abs_m']) < 1e-12
+
+# --- per-run moments and tau_int --------------------------------------------------------------------
+m2 = {k: get[k]['m2'] for k in get}
+m4 = {k: get[k]['m4'] for k in get}
+tau, win, tau_ok, drift = {}, {}, {}, {}
+for L, t, s in itertools.product(SIZES, T, SEEDS):
+    x = series[L, t, s, 'm']
+    tau[L, t, s], win[L, t, s], tau_ok[L, t, s] = tau_int(x)
+    # drift: first vs second half of |m|, in units of the combined error with tau-corrected N_eff
+    h = N // 2
+    a, b = x[:h], x[h:]
+    err = np.sqrt(a.var() * 2 * tau[L, t, s] / h + b.var() * 2 * tau[L, t, s] / h)
+    drift[L, t, s] = float((b.mean() - a.mean()) / err) if err > 0 else 0.0
+
+
+def pooled_U(L, t, seeds):
+    return binder(np.mean([m2[L, t, s] for s in seeds]), np.mean([m4[L, t, s] for s in seeds]))
+
+
+U = {L: np.array([pooled_U(L, t, SEEDS) for t in T]) for L in SIZES}
+
+
+# --- block-bootstrap replicates of U per point (also give the per-point errors used as weights) ----
+def block_resample_moments(x, blk):
+    nb = len(x) // blk
+    starts = rng.integers(0, len(x) - blk + 1, nb)
+    idx = (starts[:, None] + np.arange(blk)[None, :]).ravel()
+    y = x[idx]
+    return (y ** 2).mean(), (y ** 4).mean()
+
+
+blk = {k: int(min(max(200, 20 * np.ceil(tau[k])), N // 10)) for k in tau}  # >= 10 blocks per run
+BB = 1000
+Ublock = {L: np.empty((BB, len(T))) for L in SIZES}
+for b in range(BB):
+    for L in SIZES:
+        for j, t in enumerate(T):
+            mm = [block_resample_moments(series[L, t, s, 'm'], blk[L, t, s]) for s in SEEDS]
+            Ublock[L][b, j] = binder(np.mean([q[0] for q in mm]), np.mean([q[1] for q in mm]))
+sigma = {L: Ublock[L].std(axis=0) for L in SIZES}
+
+# --- estimators ---------------------------------------------------------------------------------------
+WINDOW = (2.215, 2.315)  # grid points 2.22, 2.25, 2.28, 2.31
+
+
+def fss_fit(Ud, window=WINDOW, deg=3, nu=1.0, free_nu=False, params=False):
+    """Weighted joint scaling fit; returns (T_c, U*, chi2/dof, nu) [, all parameters]."""
+    from scipy.optimize import least_squares
+    sel = (T > window[0]) & (T < window[1])
+    Ls = np.concatenate([[L] * sel.sum() for L in SIZES])
+    Ts = np.concatenate([T[sel] for L in SIZES])
+    ys = np.concatenate([Ud[L][sel] for L in SIZES])
+    ws = 1 / np.concatenate([np.maximum(sigma[L][sel], 1e-4) for L in SIZES])
+
+    def res(p):
+        tc, a, v = p[0], p[1:deg + 2], (p[-1] if free_nu else nu)
+        x = (Ts - tc) * Ls ** (1 / v)
+        return (np.polyval(a[::-1], x) - ys) * ws
+    p0 = [2.27, 0.61, -0.05] + [0.0] * (deg - 1) + ([1.0] if free_nu else [])
+    r = least_squares(res, p0)
+    dof = len(ys) - len(p0)
+    out = float(r.x[0]), float(r.x[1]), float((r.fun ** 2).sum() / max(dof, 1)), (float(r.x[-1]) if free_nu else nu)
+    return (*out, r.x.tolist()) if params else out
+
+
+def interp_cross(Ua, Ub):
+    d = Ua - Ub  # smaller size minus larger: negative below T_c, positive above
+    cands = [j for j in range(len(T) - 1) if d[j] < 0 <= d[j + 1]]
+    if not cands:
+        return np.nan
+    j = min(cands, key=lambda j: abs(T[j] - centre))
+    return float(T[j] + (T[j + 1] - T[j]) * (-d[j]) / (d[j + 1] - d[j]))
+
+
+def estimates(Ud):
+    tc, us, chi2, _ = fss_fit(Ud)
+    out = {'fss_Tc': tc, 'fss_Ustar': us, 'fss_chi2_dof': chi2}
+    for a, b in itertools.combinations(SIZES, 2):
+        out[f'interp_{a}_{b}'] = interp_cross(Ud[a], Ud[b])
+    return out
+
+
+point = estimates(U)
+robust = {}
+for name, kw in {'fss_window_2.25-2.31_quadratic': dict(window=(2.245, 2.315), deg=2),
+                 'fss_window_2.19-2.34_quartic': dict(window=(2.185, 2.345), deg=4),
+                 'fss_window_2.22-2.34_cubic': dict(window=(2.215, 2.345), deg=3),
+                 'fss_window_2.22-2.31_quadratic': dict(window=WINDOW, deg=2),
+                 'fss_nu_free': dict(free_nu=True)}.items():
+    tc, us, chi2, nu = fss_fit(U, **kw)
+    robust[name] = {'Tc': tc, 'Ustar': us, 'chi2_dof': chi2, 'nu': nu}
+x0 = T - centre
+for deg in (1, 2, 3):
+    fits = {L: np.polyfit(x0, U[L], deg) for L in SIZES}
+    tc, uc = common_crossing(T, [U[L] for L in SIZES], deg, centre)
+    robust[f'global_deg{deg}_REJECTED'] = {'common_T': tc, 'common_U': uc, **{
+        f'cross_{a}_{b}': crossing(T, U[a], U[b], deg, centre) for a, b in itertools.combinations(SIZES, 2)}}
+
+# --- bootstrap 1: seeds resampled with replacement independently at each (L, T) ----------------------
+boot_seed, Useed_err = [], {}
+for _ in range(B):
+    Ub = {L: np.array([pooled_U(L, t, rng.choice(SEEDS, len(SEEDS))) for t in T]) for L in SIZES}
+    boot_seed.append(estimates(Ub))
+for L in SIZES:
+    for t in T:
+        Useed_err[L, t] = float(np.std([pooled_U(L, t, rng.choice(SEEDS, 3)) for _ in range(1000)]))
+
+# --- bootstrap 2: moving-block resampling of each run's series (block >= 20 tau, >= 200 sweeps) -----
+boot_block = [estimates({L: Ublock[L][b] for L in SIZES}) for b in range(BB)]
+
+
+def ci(samples, key):
+    v = np.array([d[key] for d in samples], float)
+    good = v[np.isfinite(v)]
+    lo, hi = np.percentile(good, [2.5, 97.5]) if len(good) else (np.nan, np.nan)
+    return {'lo': float(lo), 'hi': float(hi), 'sd': float(good.std()) if len(good) else np.nan,
+            'n_valid': int(len(good)), 'n': int(len(v))}
+
+
+keys = [k for k in point if k != 'fss_chi2_dof']
+result = {
+    'inputs': [f'data/stage2/raw/L{L}-s{s}.json' for L in SIZES for s in SEEDS] + ['data/stage2/series.npz'],
+    'sizes': SIZES, 'seeds': SEEDS, 'temps': T.tolist(), 'centre': centre, 'sweeps': N, 'exact_Tc': EXACT,
+    'U_star_reference': 0.61069,
+    'primary': 'fss_Tc: joint cubic scaling fit, nu = 1, T in 2.22-2.31, weighted by block-bootstrap errors',
+    'estimate': point,
+    'fss_primary_params': {'Tc': fss_fit(U, params=True)[4][0], 'a': fss_fit(U, params=True)[4][1:],
+                           'form': 'U = sum_k a[k] * ((T - Tc) * L)**k, nu = 1, valid for T in 2.22-2.31 at L <= 128'},
+    'ci95_seed_bootstrap': {k: ci(boot_seed, k) for k in keys},
+    'ci95_block_bootstrap': {k: ci(boot_block, k) for k in keys},
+    'robustness': robust,
+    'bootstrap': {'B_seed': B, 'B_block': BB,
+                  'seed': 'seeds drawn with replacement independently at every (L, T), U from pooled moments; '
+                          'only 3 seeds per point, so few distinct resamples per point',
+                  'block': 'moving blocks of min(max(200, 20*ceil(tau_int)), N/10) sweeps per run, seeds kept',
+                  'block_capped_runs': int(sum(blk[k] < 20 * np.ceil(tau[k]) for k in tau))},
+}
+tc = point['fss_Tc']
+c95 = result['ci95_seed_bootstrap']['fss_Tc']
+result['deviation_from_exact'] = tc - EXACT
+result['exact_inside_seed_ci'] = bool(c95['lo'] <= EXACT <= c95['hi'])
+result['exact_inside_block_ci'] = bool(result['ci95_block_bootstrap']['fss_Tc']['lo'] <= EXACT
+                                       <= result['ci95_block_bootstrap']['fss_Tc']['hi'])
+result['stage3_centre'] = round(tc, 3)
+result['stage3_temps'] = [round(round(tc, 3) - 0.03 + 0.015 * k, 4) for k in range(5)]
+
+# --- tau summary and verdict -------------------------------------------------------------------------
+tau_tab = {L: {f'{t:.4f}': [tau[L, t, s] for s in SEEDS] for t in T} for L in SIZES}
+tmax = {L: max(tau[L, t, s] for t in T for s in SEEDS) for L in SIZES}
+result['tau_int_abs_m'] = {'per_L_T_seed': tau_tab, 'max_per_L': tmax,
+                           'min_N_over_tau_per_L': {L: N / tmax[L] for L in SIZES},
+                           'min_N_eff_per_run_per_L': {L: N / (2 * tmax[L]) for L in SIZES},
+                           'all_windows_ok': bool(all(tau_ok.values())),
+                           'max_abs_drift_sigma_per_L': {L: max(abs(drift[L, t, s]) for t in T for s in SEEDS) for L in SIZES},
+                           'burn_over_max_tau_per_L': {L: 2000 / tmax[L] for L in SIZES}}
+(D / 'crossing.json').write_text(json.dumps(result, indent=1, default=float))
+
+with open(D / 'points.csv', 'w', newline='') as f:
+    w = csv.writer(f)
+    w.writerow(['L', 'T', 'U_pooled', 'U_err_seed_boot', 'U_err_block_boot'] + [f'U_s{s}' for s in SEEDS]
+               + ['abs_m_mean', 'chi_mean', 'c_mean'] + [f'tau_abs_m_s{s}' for s in SEEDS]
+               + ['N_over_max_tau', 'max_abs_drift_sigma'])
+    for L in SIZES:
+        for j, t in enumerate(T):
+            taus = [tau[L, t, s] for s in SEEDS]
+            w.writerow([L, f'{t:.4f}', f'{U[L][j]:.6f}', f'{Useed_err[L, t]:.6f}', f'{sigma[L][j]:.6f}']
+                       + [f'{get[L, t, s]["binder"]:.6f}' for s in SEEDS]
+                       + [f'{np.mean([get[L, t, s][k] for s in SEEDS]):.6f}' for k in ('abs_m', 'chi', 'c')]
+                       + [f'{x:.1f}' for x in taus] + [f'{N / max(taus):.1f}',
+                                                        f'{max(abs(drift[L, t, s]) for s in SEEDS):.2f}'])
+print(json.dumps({k: result[k] for k in ('estimate', 'ci95_seed_bootstrap', 'ci95_block_bootstrap', 'robustness',
+                                         'deviation_from_exact', 'exact_inside_seed_ci', 'exact_inside_block_ci',
+                                         'stage3_temps')}, indent=1, default=float))

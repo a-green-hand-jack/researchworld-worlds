@@ -1,0 +1,40 @@
+"""Flat views of the results for the figure/table generators (figtab-repo's schema).
+
+Writes results/fold_results.csv (one row per run x repeat x fold x method) and
+results/summary.json (primary corrected intervals, Ibex node, identity check),
+both derived from results/{local,ibex}/folds.csv, local/summary.json and
+reproducibility.json. Run from report/ after compare_runs.py.
+"""
+import csv, json, pathlib
+
+R = pathlib.Path(__file__).resolve().parents[1] / "results"
+rows = []
+for run in ("local", "ibex"):
+    for r in csv.DictReader(open(R / run / "folds.csv")):
+        for method, acc, k in (("logreg", r["acc_lr"], ""), ("knn", r["acc_knn"], r["k_selected"])):
+            rows.append({"run": run, "repeat": r["repeat"], "fold": r["fold"], "method": method,
+                         "accuracy": acc, "k": k})
+with open(R / "fold_results.csv", "w", newline="") as fh:
+    w = csv.DictWriter(fh, fieldnames=list(rows[0]), lineterminator="\n")
+    w.writeheader(); w.writerows(rows)
+
+s = json.loads((R / "local" / "summary.json").read_text())
+rep = json.loads((R / "reproducibility.json").read_text())
+ci = lambda d: {"mean": d["mean"], "ci_lower": d["corrected"]["lo"], "ci_upper": d["corrected"]["hi"]}
+out = {
+    "source": "local/summary.json (local run; identical to ibex/summary.json, see reproducibility.json)",
+    "interval_method": "corrected resampled t (Nadeau & Bengio 2003; Bouckaert & Frank 2004), "
+                       "mean +- t(0.975, 49) * s * sqrt(1/50 + 30/120) over the 50 outer folds",
+    "interval_level": 0.95, "df": s["difference_lr_minus_knn"]["corrected"]["df"],
+    "n_folds": s["logistic_regression"]["n_folds"], "n_train": s["protocol"]["n_train"], "n_test": s["protocol"]["n_test"],
+    "logreg": ci(s["logistic_regression"]), "knn": ci(s["knn"]),
+    "difference_logreg_minus_knn": {**ci(s["difference_lr_minus_knn"]),
+                                    "p_two_sided_vs_0": s["difference_lr_minus_knn"]["corrected"]["p_two_sided_vs_0"]},
+    "folds_logreg_better": s["folds_lr_better"], "folds_knn_better": s["folds_knn_better"], "folds_tied": s["folds_tied"],
+    "k_selected_counts": s["k_selected_counts"], "k_selected_median": s["k_selected_median"],
+    "ibex_node": rep["ibex_node"], "ibex_job_id": rep["ibex_job_id"],
+    "local_vs_ibex_identical": rep["identical"],
+    "max_abs_fold_accuracy_difference": max(rep["max_abs_difference_folds"][k] for k in ("acc_lr", "acc_knn")),
+}
+(R / "summary.json").write_text(json.dumps(out, indent=2) + "\n")
+print(len(rows), "rows;", json.dumps({k: out[k] for k in ("logreg", "knn", "difference_logreg_minus_knn", "ibex_node", "local_vs_ibex_identical")}))

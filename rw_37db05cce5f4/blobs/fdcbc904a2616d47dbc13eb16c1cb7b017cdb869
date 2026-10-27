@@ -1,0 +1,26 @@
+{
+  "source": "NeurIPS proceedings",
+  "url": "https://proceedings.neurips.cc/",
+  "start_utc": "2026-10-19T21:30:15.148976+00:00",
+  "end_utc": "2026-10-19T21:30:16.533149+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/neurips-proceedings.headers",
+    "-o",
+    "/tmp/tmp5udk29_m/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://proceedings.neurips.cc/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html; charset=utf-8\n",
+  "stderr": "",
+  "first200": "\n\n\n\n<!doctype html>\n<html lang=\"en\">\n<head>\n\n    <!-- Required meta tags -->\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1, shrink-to-fit=no\">\n    <",
+  "body_bytes": 17341
+}

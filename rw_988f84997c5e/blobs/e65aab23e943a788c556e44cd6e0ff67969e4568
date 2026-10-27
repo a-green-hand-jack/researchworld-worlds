@@ -1,0 +1,12 @@
+# Supplementary notes: robustness and replicate run (not part of the one-page report)
+
+## Where the deviation sits (primary run)
+Local slopes between consecutive sizes (per-size means): insertion 2.13, 1.90, 1.54, 2.04; merge 1.09, 0.95, 0.67, 1.12. Only the 1000->2000 step is anomalously shallow.
+In the primary run, reps 4 and 5 at n = 1000 were ~35% faster than reps 1-3 for both algorithms (insertion 17.2, 16.7 vs 25.4, 24.2, 25.6 ms; merge 1.52, 1.59 vs 2.18, 2.17, 2.17 ms), a step change within one size that points to a change in machine state (shared host; load average ~13 on a 2-CPU placement when checked). No point was discarded.
+
+## Robustness to summary statistic (primary run)
+Exponent from per-size means: insertion 1.867, merge 0.926; medians 1.864, 0.914; minima 1.863, 0.893. All agree with the 25-point OLS fit.
+
+## Replicate run
+`timings_replicate.csv`: same script and seed (same lists), a second `local-compute` job; fits in `fits_replicate.json` (`python3 analyze.py timings_replicate.csv`).
+Insertion 1.928 (SE 0.025, 95% CI 1.876-1.981); merge 0.944 (SE 0.022, CI 0.899-0.990). The fast n = 1000 reps did not recur (all five reps ~25 ms and 2.17 ms), but the shallow 1000->2000 step did (local slopes 1.63 insertion, 0.56 merge), so it is not only the transient slowdown. Cause undetermined; cache, allocator, CPU-frequency and host-contention explanations were not tested. Both runs share lists and host, so they are not independent evidence about the algorithms.

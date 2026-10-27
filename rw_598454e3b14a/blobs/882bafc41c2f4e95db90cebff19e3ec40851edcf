@@ -1,0 +1,24 @@
+\section{What the heuristics change}
+\label{sec:heuristics}
+
+Each design choice enters the race through the data $(c_k,\sigma_k)$, the start $(p_0,a_0)$ or the clock $1/(\alpha\lambda_P)$.
+At initialisation these are the doses of \citet{demelocosta2026drive} (\cref{app:related}); the race adds the clock. \Cref{tab:heuristics} (\cref{app:more}) maps each choice to a signed prediction.
+We write $F_k^*$ for the value of \eqref{eq:F} at $p=p_-^k$, so that $\partial F_k^*/\partial p_0=g_k(p_0)/(\alpha\lambda_Pp_0)$.
+
+
+\paragraph{Weight decay and the predictor.}
+Weight decay acts twice: $\lambda_W$ narrows the window \eqref{eq:window} and $\lambda_P$ sets the race clock, so each direction should be lost at its race threshold \eqref{eq:lamrace}, well below the static threshold $c_k^2/(4\sigma_k)$; with $\lambda_W>0$, predictor weight decay is also necessary for any survivor (\cref{prop:fixed}(c)).
+The initial gain $p_0$ multiplies the drive and, squared, the self-prediction decay; $F_k^*$ increases with $p_0$ while $p_0<p_+^k$ and decreases beyond it, so the rank should be non-monotone in $p_0$.
+A predictor learning-rate ratio $\alpha$ shortens the clock without changing the window, and a deep predictor with $L$ identity factors decays at rate $L\alpha\lambda_P$ and needs a larger capture amplitude (App.~\ref{app:more}).
+An EMA target of rate $\kappa$ keeps the sign of the growth rate and lowers its magnitude (\cref{app:proofs}), so a slower target should lower the rank if $p_0$ is inside the window and can raise it if $p_0>p_+^k$.
+These roles hold for gradient descent and a one-layer encoder; \cref{sec:ext} changes each.
+
+\paragraph{Masking.}
+The mask distribution sets $(\sigma_k,c_k)$ through $\Sigma_c=\Sigma\circ G$ and $\Sigma_{tc}=\Sigma\circ F$.
+For independent coordinate masks that keep each coordinate in the context with probability $q=1-r$ and use the complement as the target,
+\begin{equation}
+\sigma_k=q^2\hat\Sigma_k+q(1-q)\,\bar\sigma,\qquad c_k=q(1-q)\big(\hat\Sigma_k-\bar\sigma\big),
+\label{eq:bernoulli}
+\end{equation}
+where $\hat\Sigma_k$ are the eigenvalues of $\Sigma$ and $\bar\sigma=\Sigma_{ii}$ (\cref{app:proofs}).
+Only smooth directions, $\hat\Sigma_k>\bar\sigma$, are driven; the drive vanishes as $r\to0$ and the context as $r\to1$, so the rank can peak in $r$ (\cref{sec:e2}).

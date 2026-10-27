@@ -1,0 +1,16 @@
+# Optimizer provenance fact sheet
+
+For each optimizer: the paper that introduced it. "First appeared" is the year of the earliest (v1) arXiv submission, not a later conference or revision date. Every fact was read from the cited arXiv abstract page, opened during this task after a search found it.
+
+| Optimizer | Paper title | First author | First appeared | arXiv id | Source URL |
+|---|---|---|---|---|---|
+| Adam | Adam: A Method for Stochastic Optimization | Diederik P. Kingma | 2014 (v1 submitted 22 Dec 2014) | 1412.6980 | https://arxiv.org/abs/1412.6980 |
+| AdamW (decoupled weight decay) | Decoupled Weight Decay Regularization | Ilya Loshchilov | 2017 (v1 submitted 14 Nov 2017) | 1711.05101 | https://arxiv.org/abs/1711.05101 |
+| Lion (EvoLved Sign Momentum) | Symbolic Discovery of Optimization Algorithms | Xiangning Chen | 2023 (v1 submitted 13 Feb 2023) | 2302.06675 | https://arxiv.org/abs/2302.06675 |
+
+## How each entry was found
+- No general web-search tool exists in this environment (a DuckDuckGo fetch was refused), so discovery used arXiv's own search, and the abstract page it returned was then opened.
+- Adam (experiment-repo, `adam-provenance.md`): arXiv title search `Adam`, submission-date ascending, 200 results (https://arxiv.org/search/?query=Adam&searchtype=title&order=submitted_date&size=200), then https://arxiv.org/abs/1412.6980. Conference publication (2015) and later revisions are not the first-appearance year.
+- AdamW (paper-repo, `adamw-lookup.md`): arXiv API query `all:"decoupled weight decay regularization"`, top hit, then https://arxiv.org/abs/1711.05101. Second author: Frank Hutter.
+- Lion (internal-review-repo, `lion-lookup.md`): arXiv API query `all:"Lion" AND all:"symbolic discovery"`, then https://arxiv.org/abs/2302.06675; the abstract names the algorithm Lion (EvoLved Sign Momentum).
+- Cross-check: the paper-repo position re-opened the Adam and Lion pages itself and confirmed title, first author, v1 date and id for both.

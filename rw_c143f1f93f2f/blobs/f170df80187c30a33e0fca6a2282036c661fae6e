@@ -1,0 +1,16 @@
+#!/bin/bash
+#SBATCH --partition=batch
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=2G
+#SBATCH --time=00:20:00
+#SBATCH --output=results/ibex/%x-%j.out
+#SBATCH --error=results/ibex/%x-%j.err
+# Full 10x5 CV on one Ibex CPU node. Submit from report/ (holding code/ and results/data/):
+#   mkdir -p results/ibex && sbatch --job-name <tag>-cv code/ibex_job.sbatch
+set -euo pipefail
+echo "node=$(hostname) SLURMD_NODENAME=${SLURMD_NODENAME:-} job=${SLURM_JOB_ID:-}"
+echo "cpu=$(grep -m1 "model name" /proc/cpuinfo | cut -d: -f2)"
+./env/bin/python code/cv_compare.py results/ibex
+sacct -j "$SLURM_JOB_ID" -o JobID,JobName%30,NodeList,Partition,State,Start 2>/dev/null || true

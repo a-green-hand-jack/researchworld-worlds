@@ -1,0 +1,92 @@
+"""A2 two-stage captures, post hoc (no registered reading changes): 80-bit re-simulation, exactly as code/e4_a1.py
+truth(), of every direction with c/s > thr in a few runs, to 3 T_h. Per direction: |a| when p first comes within 5%
+of c/s; the plateau of |a| after that (the 400-step window, while thr/2 < |a| < 0.5 c/s, where |log|a|| changes
+least; level = its median |a|); how many steps |a| stays within 10% of that level; |a| at T_h and when |a| reaches
+0.9 c/s. The question is whether the plateau level is set by c/s or by thr.
+Usage: python3 code/checks/e4_a2_plateau.py results/e4/a2/plateau.json"""
+import sys, os, json, gzip
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import e4_a1 as A
+import e4_a2 as A2
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+RUNS = [187, 27, 59, 91, 63, 186, 188, 3, 100]
+EVERY, WIN = 10, 40   # sample |a| every 10 steps; plateau window 40 samples = 400 steps
+
+
+def run(cfg, ext=3):
+    A.STATS = dict(A2.A2_STATS)
+    c, s = A.stats(cfg["stats"]); L = np.longdouble
+    c, s = c.astype(L), s.astype(L); eta, lam, b1, b2, eps = L(cfg["eta"]), L(cfg["lam"]), L(cfg["b1"]), L(cfg["b2"]), L(1e-8)
+    a = A.init_a(cfg).astype(L); p = np.full(c.shape, L(cfg["p0"]))
+    ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c); dec = 1 - eta * lam
+    cs = c / s; ks = [int(k) for k in np.nonzero(cs > A.THR)[0]]; Th = cfg["T_h"]
+    p_set = {k: None for k in ks}; a_at_p = {}; a_set = {k: None for k in ks}; samp = []; aTh = None
+    for t in range(1, ext * Th + 1):
+        r_ = c - p * s; ga = -a * p * r_; gp = -a * a * r_
+        ma = b1 * ma + (1 - b1) * ga; va = b2 * va + (1 - b2) * ga * ga
+        mp = b1 * mp + (1 - b1) * gp; vp = b2 * vp + (1 - b2) * gp * gp
+        bc1, bc2 = 1 - b1 ** t, 1 - b2 ** t
+        a = a * dec - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps)
+        p = p * dec - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+        if t > A.K:
+            for k in ks:
+                if p_set[k] is None and abs(abs(p[k]) - cs[k]) <= 0.05 * cs[k]:
+                    p_set[k] = t; a_at_p[k] = float(abs(a[k]))
+                if a_set[k] is None and abs(a[k]) >= 0.9 * cs[k]:
+                    a_set[k] = t
+        if t % EVERY == 0:
+            samp.append(np.abs(a).astype(float))
+        if t == Th:
+            aTh = np.abs(a).astype(float)
+    S = np.array(samp); tt = EVERY * np.arange(1, len(S) + 1); out = []
+    for k in ks:
+        csk = float(cs[k]); x = S[:, k]; t0 = p_set[k] or A.K
+        ok = (tt >= t0) & (x > A.THR / 2) & (x < 0.5 * csk); best = None
+        lx = np.log(np.maximum(x, 1e-300))
+        for i in range(len(x) - WIN):
+            if ok[i:i + WIN].all():
+                d = abs(lx[i + WIN] - lx[i])
+                if best is None or d < best[0]:
+                    best = (d, i)
+        row = dict(run=cfg["id"], k=k, c_over_s=csk, p_within_5pct_at=p_set[k],
+                   abs_a_at_p_within_5pct_over_c_over_s=(a_at_p[k] / csk if k in a_at_p else None),
+                   abs_a_T_h=float(aTh[k]), alive_at_T_h=bool(aTh[k] > A.THR), abs_a_0p9_c_over_s_at=a_set[k])
+        if best is not None:
+            i = best[1]; lev = float(np.median(x[i:i + WIN]))
+            near = np.abs(x - lev) <= 0.1 * lev
+            row.update(plateau_level=lev, plateau_over_c_over_s=lev / csk, plateau_over_thr=lev / A.THR,
+                       plateau_at=int(tt[i]), steps_within_10pct=int(EVERY * near[tt >= t0].sum()))
+        out.append(row)
+    return out
+
+
+def main(out):
+    R = {}
+    for l in gzip.open(os.path.join(ROOT, "results/e4/a2/a2_runs.jsonl.gz"), "rt"):
+        r = json.loads(l)
+        if r["id"] in RUNS:
+            R[r["id"]] = r
+    rows, cells = [], {}
+    for i in RUNS:
+        r = R[i]; cfg = {k: r[k] for k in ("id", "stats", "p0", "lam", "a0", "eta", "b1", "b2", "seed", "T_h")}
+        rr = run(cfg); rows += rr; cells[i] = cfg
+        pl = [x for x in rr if "plateau_level" in x]
+        print(i, cfg["stats"], cfg["eta"], cfg["lam"], cfg["b2"], "dirs", len(rr),
+              "a/(c/s) at p-set max %.3f" % max(x["abs_a_at_p_within_5pct_over_c_over_s"] or 0 for x in rr),
+              "plateau/(c/s) %.3f-%.3f" % (min(x["plateau_over_c_over_s"] for x in pl), max(x["plateau_over_c_over_s"] for x in pl)) if pl else "",
+              "plateau/thr %.2f-%.2f" % (min(x["plateau_over_thr"] for x in pl), max(x["plateau_over_thr"] for x in pl)) if pl else "",
+              "steps %d-%d" % (min(x["steps_within_10pct"] for x in pl), max(x["steps_within_10pct"] for x in pl)) if pl else "",
+              "dead at T_h", sum(not x["alive_at_T_h"] for x in rr), flush=True)
+    sel = [x for x in rows if x["abs_a_at_p_within_5pct_over_c_over_s"] is not None]
+    res = dict(status="post hoc; no registered reading changes", thr=A.THR, runs=cells,
+               n_directions=len(rows), n_p_within_5pct=len(sel),
+               share_abs_a_below_half_c_over_s_when_p_within_5pct=float(np.mean([x["abs_a_at_p_within_5pct_over_c_over_s"] < 0.5 for x in sel])),
+               directions=rows)
+    json.dump(res, open(out, "w"), indent=1)
+    print("dirs", len(rows), "p within 5%", len(sel), "share |a|<0.5 c/s then", res["share_abs_a_below_half_c_over_s_when_p_within_5pct"])
+
+
+if __name__ == "__main__":
+    main(sys.argv[1])

@@ -1,0 +1,66 @@
+"""T-DVD: arXiv 2610.02344's drive-vs-decay criterion (every variant) vs the race on the E1b/E2 held-out arms, scored retrospectively.
+Every number is read from results/baselines/dvd_mu.json (bootstrap 95% CI over runs, experiment-repo's analysis); the E2 non-cyclic-block row is not
+in that file, so it is scored here from results/baselines/dvd_e2_runs.csv with the same bootstrap (2000 resamples, seed 0, mean |pred - meas|)."""
+import os, sys, json, csv
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import common
+
+E1B = [("grid", "grid"), ("ema_alpha", "EMA rate"), ("depth", "depth"), ("N1_aligned_all (grid+ema_alpha+depth)", "aligned, pooled"),
+       ("noncomm", "non-commuting"), ("randpred", "random predictor"), ("batch", "finite batch"), ("balanced", "balanced init")]
+E2 = [("pop cyclic (bern+block+multiblock)", "pop., cyclic masks"), ("__block_nc__", "pop., non-cyclic block"), ("sgd", "SGD"),
+      ("tanh", "tanh encoder"), ("mlp", "two-layer tanh"), ("nopred", "no predictor")]
+A = [("rank_pred", "race"), ("rank_window", "window"), ("rank_bound", "static"), ("dvd_signed", "$\\mu$ signed")]
+B = [("dvd", "$\\mu$ (Eq.~51, $q{=}s$)"), ("dvd_pq", "$\\mu$ (Eq.~51, $q$ paired)"), ("dvd_pq_signed", "$\\mu$ signed, $q$ paired")]
+C = [("dvd_sorted", "$\\mu$ sorted (Eq.~31)"), ("dvd_nowd", "$\\mu$, no decay floor"), ("dvd_exact", "$\\mu$ exact linearisation")]
+
+def boot(x, B_=2000, seed=0):
+    x = np.asarray(x, float); m = np.random.default_rng(seed).choice(x, (B_, x.size)).mean(1)
+    return [float(x.mean()), float(np.quantile(m, 0.025)), float(np.quantile(m, 0.975))]
+
+def block_nc(path):
+    rows = [r for r in csv.DictReader(open(path)) if r["exp"] == "pop" and r["fam"] == "block_nc"]
+    out = {"runs": len(rows)}
+    for k in {k for k, _ in A + B + C}:
+        e = np.array([abs(float(r[k]) - float(r["rank_meas"])) for r in rows if r.get(k, "") != ""], float)
+        if e.size: 
+            pr = np.array([float(r[k]) for r in rows if r.get(k, "") != ""]); me = np.array([float(r["rank_meas"]) for r in rows if r.get(k, "") != ""])
+            out[k] = dict(n=int(e.size), mae=boot(e), exceed=float((me > pr).mean()))
+    return out
+
+def make(outdir, tabdir):
+    base = os.path.join(common.results_dir(), "baselines")
+    D = json.load(open(os.path.join(base, "dvd_mu.json")))["results"]
+    nc = block_nc(os.path.join(base, "dvd_e2_runs.csv"))
+    src = lambda grp, key: nc if key == "__block_nc__" else D[grp][key]
+    cell = lambda v: f"{v[0]:.2f}" + r"{\tiny\,[" + f"{v[1]:.2f},{v[2]:.2f}" + "]}"
+    def panel(cols, grp_rows, extra):
+        ncol = len(cols) + (1 if extra else 0)
+        L = [r"\begin{tabular}{@{}lr" + "c" * ncol + r"@{}}", r"\toprule",
+             "Arm & $n$ & " + " & ".join(c[1] for c in cols) + (r" & \shortstack{measured $>$\\ $\mu$ signed} " if extra else "") + r" \\", r"\midrule"]
+        for grp, rows in grp_rows:
+            for key, lab in rows:
+                s = src(grp, key)
+                best = min(round(s[k]["mae"][0], 6) for k, _ in A + B + C if k in s)
+                cs = []
+                for k, _ in cols:
+                    if k not in s: cs.append("--"); continue
+                    t = cell(s[k]["mae"]); cs.append(r"\textbf{" + t + "}" if round(s[k]["mae"][0], 6) == best else t)
+                if extra: cs.append(f"{100 * s['dvd_signed']['exceed']:.1f}\\%")
+                L.append(f"{lab} & {s['runs']} & " + " & ".join(cs) + r" \\")
+            L.append(r"\midrule" if grp == "e1b" else "")
+        L = [l for l in L if l != ""]
+        L += [r"\bottomrule", r"\end{tabular}"]
+        return L
+    gr = [("e1b", E1B), ("e2", E2)]
+    out = [r"{\scriptsize", r"\setlength{\tabcolsep}{2pt}", r"\textbf{(a)} race, the two static baselines and the signed form of $\mu$\\[2pt]"] + panel(A, gr, True) + \
+          [r"\\[6pt]", r"\textbf{(b)} variants of $\mu$ with the predictor side of Eq.~51 (same runs)\\[2pt]"] + panel(B, gr, False) + \
+          [r"\\[6pt]", r"\textbf{(c)} further variants of $\mu$ (same runs)\\[2pt]"] + panel(C, gr, False) + [r"}"]
+    os.makedirs(tabdir, exist_ok=True)
+    open(os.path.join(tabdir, "tab_dvd.tex"), "w").write("\n".join(out) + "\n")
+    common.record_inputs(tabdir, "tab_dvd", [os.path.join(base, "dvd_mu.json"), os.path.join(base, "dvd_e2_runs.csv")])
+    return nc
+
+if __name__ == "__main__":
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    make(None, os.path.join(root, "paper", "tables"))

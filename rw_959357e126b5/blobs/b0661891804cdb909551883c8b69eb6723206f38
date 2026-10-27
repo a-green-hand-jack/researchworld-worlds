@@ -1,0 +1,42 @@
+"""Pilot: population gradient flow of a linear JEPA near collapse.
+Loss = 1/2 E||P W x1 - sg(Wbar) x2||^2 + lam/2 (||W||^2 + ||P||^2), Wbar = EMA of W (kappa=inf -> stopgrad copy).
+Data: Sigma11 = diag(s), Sigma21 = diag(c) (aligned eigenbasis).
+Theory (mode k, isotropic predictor p): growth rate g_k = p c_k - p^2 s_k - lam;
+nonzero fixed point exists iff c_k^2 >= 4 lam s_k.
+"""
+import numpy as np, time, json, sys
+rng = np.random.default_rng(0)
+n = d = 32
+k = np.arange(n)
+s = np.ones(n)
+c = 0.9 ** k          # cross-view correlation spectrum
+def run(lam, p0, w0=1e-3, eta=0.05, T=4000, alpha=1.0, kappa=None, seed=0):
+    r = np.random.default_rng(seed)
+    W = w0 * r.standard_normal((d, n)) / np.sqrt(n)
+    P = p0 * np.eye(d)
+    Wb = W.copy()
+    S11, S21 = np.diag(s), np.diag(c)
+    for t in range(T):
+        tgt = W if kappa is None else Wb
+        R = P @ W @ S11 - tgt @ S21          # residual cross-moment
+        gW = P.T @ R + lam * W
+        gP = R @ W.T + lam * P
+        W -= eta * gW
+        P -= eta * alpha * gP
+        if kappa is not None:
+            Wb += eta * kappa * (W - Wb)
+    sv = np.linalg.svd(W, compute_uv=False)
+    return sv
+t0 = time.time()
+res = []
+for lam in [0.0, 0.01, 0.03, 0.05, 0.1, 0.15, 0.2]:
+    for p0 in [0.2, 0.5, 1.0, 2.0]:
+        sv = run(lam, p0)
+        rank = int((sv > 1e-2 * max(sv.max(), 1e-12)).sum()) if sv.max() > 1e-6 else 0
+        rank_abs = int((sv > 1e-3).sum())
+        bound = int((c**2 >= 4 * lam * s).sum())
+        window = int((p0 * c - p0**2 * s - lam > 0).sum())
+        res.append(dict(lam=lam, p0=p0, rank=rank_abs, bound=bound, init_window=window, svmax=float(sv.max())))
+        print(res[-1], flush=True)
+print("elapsed", time.time() - t0)
+json.dump(res, open("pilot/linear_flow_results.json", "w"), indent=1)

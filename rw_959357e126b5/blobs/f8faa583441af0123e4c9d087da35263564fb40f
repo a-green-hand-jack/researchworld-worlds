@@ -1,0 +1,40 @@
+"""Referee check of experiment-repo's derivation note rev. 2 (theory/derivations.md at a61cb8a), Sec. 3 "leading
+order for small lambda" and the Sec. 4 row "to leading order rank depends on alpha*lambda only":
+ - lambda at which N1 (code/linjepa.py escape_score, untruncated) changes sign, against h(p0)/(alpha log(1/w0));
+ - E1's measured ranks (results/e1/e1_runs.jsonl, orthogonal race runs, at E1's horizon) for grid pairs with
+   equal alpha*lambda.
+Usage: python3 checks/e1b_alpha_lam.py E1_RUNS_JSONL LINJEPA_PY
+"""
+import sys, json, importlib.util, numpy as np, collections
+spec = importlib.util.spec_from_file_location("linjepa", sys.argv[2]); lin = importlib.util.module_from_spec(spec); spec.loader.exec_module(lin)
+def lam_N1(c, s, a, p0, w0):
+    lo, hi = 1e-7, c * c / (4 * s) * 0.999999
+    if lin.escape_score(c, s, hi, hi, a, p0, np.log(w0)) >= 0: return hi
+    if lin.escape_score(c, s, lo, lo, a, p0, np.log(w0)) < 0: return 0.0
+    for _ in range(60):
+        mid = np.sqrt(lo * hi)
+        if lin.escape_score(c, s, mid, mid, a, p0, np.log(w0)) >= 0: lo = mid
+        else: hi = mid
+    return float(np.sqrt(lo * hi))
+res = []
+for c in (1.0, 0.5, 0.25):
+    for p0 in (c, 0.5 * c):
+        for w0 in (1e-2, 1e-4):
+            row = dict(c=c, p0=p0, w0=w0, static=c * c / 4)
+            for a in (0.25, 1.0, 4.0):
+                h = c * p0 - 0.5 * p0 ** 2
+                row[f"a{a}"] = (round(lam_N1(c, 1.0, a, p0, w0), 5), round(h / (a * np.log(1 / w0)), 5))
+            res.append(row); print(row)
+# curve collapse in alpha*lam in E1 measured ranks (orthogonal race runs): pairs with equal alpha*lam
+R = [json.loads(l) for l in open(sys.argv[1])]
+R = [r for r in R if r["exp"] == "race" and r["init"] == "orthogonal"]
+m = collections.defaultdict(list)
+for r in R: m[(r["alpha"], r["lam"], r["p0"], r["w0"])].append(sum(r["surv"]))
+pairs = []
+for (a1, l1), (a2, l2) in [((0.25, 0.02), (1.0, 0.005)), ((1.0, 0.02), (4.0, 0.005))]:
+    for p0 in (0.1, 0.25, 0.5, 1.0, 1.5, 2.5):
+        for w0 in (1e-4, 1e-2):
+            r1 = np.mean(m[(a1, l1, p0, w0)]); r2 = np.mean(m[(a2, l2, p0, w0)])
+            pairs.append(dict(alpha_lam=a1 * l1, A=(a1, l1), B=(a2, l2), p0=p0, w0=w0, rank_A=r1, rank_B=r2))
+for p in pairs: print(p)
+json.dump(dict(thresholds=res, e1_alpha_lam_pairs=pairs), open("checks/e1b_alpha_lam.json", "w"), indent=1)

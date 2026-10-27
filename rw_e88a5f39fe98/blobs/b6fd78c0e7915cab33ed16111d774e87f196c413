@@ -1,0 +1,64 @@
+"""Independent reviewer reproduction of the Monte Carlo pi error-scaling study.
+
+Computes the mean absolute error (MAE) of 200 estimates of pi for each N under
+several plausible readings of the seeding / draw convention, so that the
+delivered numbers can be checked against whichever convention the study states.
+Fits log(MAE) = a + b log(N) by OLS with a t(n-2) 95% interval for b.
+"""
+import json, math, sys
+import numpy as np
+from scipy import stats
+
+NS = [10**3, 10**4, 10**5, 10**6, 10**7]
+RUNS = 200
+CHUNK = 10**6
+
+
+def estimate(rng, n, draw):
+    inside = 0
+    left = n
+    while left > 0:
+        m = min(left, CHUNK) if draw != "pairs_full" else left
+        if draw in ("xy", "xy_chunked"):
+            if draw == "xy":
+                m = left
+            x = rng.random(m); y = rng.random(m)
+        else:  # pairs_full: rng.random((n, 2))
+            p = rng.random((m, 2)); x, y = p[:, 0], p[:, 1]
+        inside += int(np.count_nonzero(x * x + y * y <= 1.0))
+        left -= m
+    return 4.0 * inside / n
+
+
+def fit(ns, mae):
+    lx, ly = np.log(ns), np.log(mae)
+    r = stats.linregress(lx, ly)
+    t = stats.t.ppf(0.975, len(ns) - 2)
+    return dict(slope=r.slope, se=r.stderr, lo=r.slope - t * r.stderr,
+                hi=r.slope + t * r.stderr, intercept=r.intercept, t=t,
+                r2=r.rvalue ** 2)
+
+
+out = {}
+for seeding in ("per_N_run_index", "global_run_index"):
+    for draw in ("xy", "pairs_full"):
+        key = f"{seeding}/{draw}"
+        maes, ses = [], []
+        for k, n in enumerate(NS):
+            errs = []
+            for r in range(RUNS):
+                idx = r if seeding == "per_N_run_index" else k * RUNS + r
+                rng = np.random.default_rng(2026 + idx)
+                errs.append(abs(estimate(rng, n, draw) - math.pi))
+            errs = np.array(errs)
+            maes.append(errs.mean()); ses.append(errs.std(ddof=1) / math.sqrt(RUNS))
+            print(key, n, maes[-1], ses[-1], flush=True)
+        f = fit(NS, maes)
+        out[key] = dict(N=NS, mae=maes, mae_se=ses, fit=f)
+        print(key, json.dumps(f), flush=True)
+
+# theory: E|X| for normal = sqrt(2/pi) sigma, sigma = 4 sqrt(p(1-p)/N), p = pi/4
+p = math.pi / 4
+out["theory_mae"] = [math.sqrt(2 / math.pi) * 4 * math.sqrt(p * (1 - p) / n) for n in NS]
+json.dump(out, open(sys.argv[1] if len(sys.argv) > 1 else "check/reproduce.json", "w"), indent=1)
+print("HUTIAN_WAKE: reviewer reproduction finished", flush=True)

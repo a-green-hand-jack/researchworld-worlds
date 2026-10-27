@@ -1,0 +1,55 @@
+# Step 5: size payload
+
+Command: `mkdir -p data/many`
+
+Start UTC: 2026-10-19T21:30:49.674321+00:00; end UTC: 2026-10-19T21:30:49.677051+00:00; exit: 0
+
+```text
+
+```
+
+Command: `head -c 167772160 /dev/urandom > data/large.bin`
+
+Start UTC: 2026-10-19T21:30:49.677089+00:00; end UTC: 2026-10-19T21:30:50.464207+00:00; exit: 0
+
+```text
+
+```
+
+Command: `sha256sum data/large.bin > checks/large.sha256`
+
+Start UTC: 2026-10-19T21:30:50.464244+00:00; end UTC: 2026-10-19T21:30:51.410273+00:00; exit: 0
+
+```text
+
+```
+
+Command: `for i in $(seq 1 1500); do printf "%s\n" "$i" > "data/many/$(printf "f%04d.txt" "$i")"; done`
+
+Start UTC: 2026-10-19T21:30:51.410318+00:00; end UTC: 2026-10-19T21:30:51.888455+00:00; exit: 0
+
+```text
+
+```
+
+Command: `wc -c data/large.bin`
+
+Start UTC: 2026-10-19T21:30:51.888498+00:00; end UTC: 2026-10-19T21:30:51.890350+00:00; exit: 0
+
+```text
+167772160 data/large.bin
+
+```
+
+Command: `sha256sum -c checks/large.sha256`
+
+Start UTC: 2026-10-19T21:30:51.890379+00:00; end UTC: 2026-10-19T21:30:52.828005+00:00; exit: 0
+
+```text
+data/large.bin: OK
+
+```
+
+Verification UTC: 2026-10-19T21:30:52.866518+00:00
+
+Python verification: 1500 text files; all names and contents match 1..1500: True

@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""A5: every number the paper prints, as LaTeX macros in report/results/numbers.tex.
+
+Inputs (all in report/results/): summary.json (local run, primary), identity.json,
+data_provenance.json, run_local/run_info.json, run_ibex/run_info.json, sensitivity.json,
+ibex_other_node/{identity,run_info}.json.
+Accuracies are printed in percent with one decimal, the difference in percentage points
+with one decimal, p-values with two decimals. `result_macros` is also used by
+compare_runs.py for the printed-precision (L2) identity check.
+"""
+import json
+import os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+RES = os.path.join(HERE, "..", "results")
+
+
+def pct(x):
+    return f"{100 * x:.1f}"
+
+
+def signed_pp(x):
+    s = f"{100 * x:.1f}"
+    return "$-$" + s[1:] if s.startswith("-") else s
+
+
+def result_macros(summary):
+    """Macros that depend on the CV results only (compared across runs for L2)."""
+    m = {}
+    q = summary["quantities"]
+    for key, tag in [("LR", "LR"), ("kNN", "KNN"), ("LR_minus_kNN", "Diff")]:
+        f = signed_pp if tag == "Diff" else pct
+        for meth, mt in [("corrected_t", ""), ("naive_t", "Naive"), ("repetition_t", "Rep")]:
+            c = q[key][meth]
+            m[f"{tag}{mt}Mean"] = f(c["mean"])
+            m[f"{tag}{mt}Lo"] = f(c["lo"])
+            m[f"{tag}{mt}Hi"] = f(c["hi"])
+        m[f"{tag}FoldSD"] = f(q[key]["fold_sd"])
+    m["DiffP"] = f"{q['LR_minus_kNN']['corrected_t']['p_two_sided_vs_0']:.2f}"
+    m["DiffNaiveP"] = f"{q['LR_minus_kNN']['naive_t']['p_two_sided_vs_0']:.3f}"
+    m["DiffCoversZero"] = "yes" if q["LR_minus_kNN"]["corrected_t_covers_0"] else "no"
+    pc = summary["paired_fold_counts"]
+    m["FoldsLRBetter"], m["FoldsTie"], m["FoldsKNNBetter"] = (
+        str(pc["lr_better"]), str(pc["tie"]), str(pc["knn_better"]))
+    k = summary["k_selected"]
+    m["KMedian"] = f"{k['median']:g}"
+    m["KMin"], m["KMax"], m["KMode"] = str(k["min"]), str(k["max"]), str(k["mode"])
+    m["KModeCount"] = str(k["counts"][str(k["mode"])] if str(k["mode"]) in k["counts"]
+                          else k["counts"][k["mode"]])
+    m["KDistinct"] = str(k["n_distinct"])
+    return m
+
+
+def sci(x):
+    """x as $a.b\\times10^{e}$ (or 0)."""
+    if x == 0:
+        return "0"
+    if x != x:
+        return "PENDING"
+    mant, exp = f"{x:.1e}".split("e")
+    return f"${mant}\\times10^{{{int(exp)}}}$"
+
+
+def blas_arch(info):
+    """OpenBLAS kernel family selected at run time (numpy's and scipy's copies agree)."""
+    archs = {d["architecture"] for d in info["blas"] if d["internal_api"] == "openblas"}
+    assert len(archs) == 1, archs
+    return archs.pop()
+
+
+def tex_escape(s):
+    return str(s).replace("\\", r"\textbackslash{}").replace("_", r"\_").replace("%", r"\%") \
+        .replace("&", r"\&").replace("#", r"\#")
+
+
+def main():
+    def load(p):
+        with open(os.path.join(RES, p)) as fh:
+            return json.load(fh)
+    summary, prov = load("summary.json"), load("data_provenance.json")
+    loc = load("run_local/run_info.json")
+    if os.path.exists(os.path.join(RES, "identity.json")):
+        ident, ibex = load("identity.json"), load("run_ibex/run_info.json")
+    else:  # before the Ibex job has finished: placeholders, never printed in a final paper
+        ibex = dict(slurmd_nodename="PENDING", slurm_job_id="PENDING", cpu_model="PENDING",
+                    python="PENDING", wall_seconds=float("nan"))
+        ident = dict(identical=None, L1_raw_identical=None, L2_printed_identical=None,
+                     diagnostics=dict(max_abs_diff_fold_accuracy=float("nan"),
+                                      max_abs_diff_lr_probability=float("nan"),
+                                      max_abs_diff_summary=float("nan")))
+    sens = load("sensitivity.json")
+    m = result_macros(summary)
+    m.update(
+        NFolds=str(summary["n_folds"]), NRepeats=str(summary["n_repetitions"]),
+        NTrain=str(summary["n_train"]), NTest=str(summary["n_test"]),
+        CorrDF=str(summary["quantities"]["LR"]["corrected_t"]["df"]),
+        KGrid=f"$\\{{{loc['k_grid'][0]}, {loc['k_grid'][1]}, \\dots, {loc['k_grid'][-1]}\\}}$",
+        KGridSize=str(len(loc["k_grid"])), OuterSeed=str(loc["outer_seed"]),
+        InnerSeedBase=str(loc["inner_seed_base"]),
+        DataID=str(prov["openml_id"]), DataName=prov["name"], DataVersion=str(prov["version"]),
+        DataMDFive=prov["computed_md5"], DataSHA=prov["sha256"], DataSHAShort=prov["sha256"][:12],
+        DataURL=prov["downloaded_from"],
+        IbexNode=tex_escape(ibex["slurmd_nodename"]), IbexJobID=str(ibex["slurm_job_id"]),
+        IbexCPU=tex_escape(ibex["cpu_model"]), IbexPython=ibex["python"],
+        IbexWall=f"{ibex['wall_seconds']:.0f}",
+        LocalCPU=tex_escape(loc["cpu_model"]), LocalPython=loc["python"],
+        LocalWall=f"{loc['wall_seconds']:.0f}",
+        VerNumpy=loc["numpy"], VerScipy=loc["scipy"], VerSklearn=loc["sklearn"],
+        VerPandas=loc["pandas"],
+        IdenticalVerdict={True: "identical", False: "not identical"}.get(ident["identical"], "PENDING"),
+        IdenticalLOne={True: "yes", False: "no"}.get(ident["L1_raw_identical"], "PENDING"),
+        IdenticalLTwo={True: "yes", False: "no"}.get(ident["L2_printed_identical"], "PENDING"),
+        MaxAbsDiffAcc=f"{ident['diagnostics']['max_abs_diff_fold_accuracy']:.3g}",
+        MaxAbsDiffProb=sci(ident["diagnostics"]["max_abs_diff_lr_probability"]),
+        MaxAbsDiffSummary=f"{ident['diagnostics']['max_abs_diff_summary']:.3g}",
+    )
+    m["LocalBLAS"] = tex_escape(blas_arch(loc))
+    m["IbexBLAS"] = tex_escape(blas_arch(ibex)) if "blas" in ibex else "PENDING"
+    # second Ibex replicate on a node with another CPU (results/ibex_other_node/, see README)
+    other = os.path.join(RES, "ibex_other_node")
+    if os.path.exists(os.path.join(other, "identity.json")):
+        oi, orun = load("ibex_other_node/identity.json"), load("ibex_other_node/run_info.json")
+        m.update(OtherIbexNode=tex_escape(orun["slurmd_nodename"]),
+                 OtherIbexJobID=str(orun["slurm_job_id"]), OtherIbexCPU=tex_escape(orun["cpu_model"]),
+                 OtherIbexBLAS=tex_escape(blas_arch(orun)),
+                 OtherIdenticalLOne="yes" if oi["L1_raw_identical"] else "no",
+                 OtherIdenticalLTwo="yes" if oi["L2_printed_identical"] else "no",
+                 OtherMaxAbsDiffProb=sci(oi["diagnostics"]["max_abs_diff_lr_probability"]))
+    # robustness checks (sensitivity.py), corrected-t, percent / percentage points
+    for key, tag in [("lr_raw", "SensLRRaw"), ("lr_tunedC", "SensLRTuned"),
+                     ("knn_raw", "SensKNNRaw"), ("knn_fixed5", "SensKNNFive")]:
+        a = sens[key]["acc"]
+        m[f"{tag}Mean"], m[f"{tag}Lo"], m[f"{tag}Hi"] = pct(a["mean"]), pct(a["lo"]), pct(a["hi"])
+    for key, tag in [("pair_lr_raw_minus_knn_raw", "SensDiffRaw"),
+                     ("pair_lr_tunedC_minus_knn", "SensDiffTuned")]:
+        a = sens[key]
+        m[f"{tag}Mean"], m[f"{tag}Lo"], m[f"{tag}Hi"] = (signed_pp(a["mean"]), signed_pp(a["lo"]),
+                                                       signed_pp(a["hi"]))
+    lines = ["% Generated by report/code/make_numbers.py from report/results/*.json; do not edit.",
+             "% Accuracies in percent, differences in percentage points (LR - kNN), 95% intervals.",
+             "% Primary interval: corrected resampled t (Nadeau & Bengio 2003), J = 50 folds."]
+    for k in sorted(m):
+        lines.append(f"\\newcommand{{\\{k}}}{{{m[k]}}}")
+    with open(os.path.join(RES, "numbers.tex"), "w") as fh:
+        fh.write("\n".join(lines) + "\n")
+    print("\n".join(lines))
+
+
+if __name__ == "__main__":
+    main()

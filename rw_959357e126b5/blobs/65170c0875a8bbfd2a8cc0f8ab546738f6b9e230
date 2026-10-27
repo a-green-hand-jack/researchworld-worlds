@@ -1,0 +1,251 @@
+{
+ "source": "/hutian/x83 code/checks/e5_b1_sched.py one() + additions; runs /hutian/x83/results/e5/b1dev/b1_dev_runs.jsonl.gz",
+ "seconds": 720.2237632274628,
+ "reproduce_schedules": {
+  "runs": 2700,
+  "state_agree": {
+   "stage": 0.9951361111111111,
+   "stage_qs": 0.9964282407407408,
+   "capture_static": 0.9895046296296296,
+   "static_now": 0.4259435185185185,
+   "race_frozen0": 0.9141569444444444,
+   "race_frozenT": 0.8329837962962963
+  },
+  "sched_pairs": 502440,
+  "sched_share_of_pairs": 0.2326111111111111,
+  "sched_agree": {
+   "stage": 0.9853952710771435,
+   "stage_qs": 0.9904207467558316,
+   "capture_static": 0.9640912347743014,
+   "static_now": 0.3451317570257145,
+   "race_frozen0": 0.69957009792214,
+   "race_frozenT": 0.7008558235809251
+  },
+  "sched_disagree_minus_stage_ci": {
+   "stage_qs": [
+    -0.006183972215587931,
+    -0.003930767852877955
+   ],
+   "capture_static": [
+    0.016953218294721756,
+    0.026192679722951986
+   ],
+   "static_now": [
+    0.60895305907173,
+    0.6735804772709177
+   ],
+   "race_frozen0": [
+    0.270968971419473,
+    0.3013214015603853
+   ],
+   "race_frozenT": [
+    0.2684026450919513,
+    0.3014495760687843
+   ]
+  },
+  "sched_disagree_minus_qs_ci": {
+   "stage": [
+    0.003930767852877955,
+    0.006183972215587931
+   ],
+   "capture_static": [
+    0.021851265822784807,
+    0.03128751691744287
+   ],
+   "static_now": [
+    0.6140564545020301,
+    0.6788326964413661
+   ],
+   "race_frozen0": [
+    0.27578954701058833,
+    0.30637339781864503
+   ],
+   "race_frozenT": [
+    0.27337677135578375,
+    0.30643425085582354
+   ]
+  },
+  "truth_changed_pairs": 78136,
+  "truth_changed_agree": {
+   "stage": 0.9459404115900482,
+   "stage_qs": 0.9740452544281765,
+   "capture_static": 0.8251254223405344,
+   "static_now": 0.8487892904679021,
+   "race_frozen0": 0.19446861881847036,
+   "race_frozenT": 0.5892802293437084
+  },
+  "events_post": {
+   "stage": {
+    "events": 2536,
+    "matched": 2172,
+    "unmatched_share": 0.14353312302839116,
+    "median": 0.16497291845934045,
+    "p90": 0.8487076835889161
+   },
+   "stage_qs": {
+    "events": 2533,
+    "matched": 2315,
+    "unmatched_share": 0.08606395578365575,
+    "median": 0.1199405337964046,
+    "p90": 0.5698146074141984
+   },
+   "capture_static": {
+    "events": 2871,
+    "matched": 2119,
+    "unmatched_share": 0.2619296412399861,
+    "median": 0.4115584009238243,
+    "p90": 6.633318433267219
+   },
+   "static_now": {
+    "events": 24062,
+    "matched": 686,
+    "unmatched_share": 0.9714903166819051,
+    "median": 6.08677472688958,
+    "p90": 7.414572881344565
+   },
+   "race_frozen0": {
+    "events": 5795,
+    "matched": 431,
+    "unmatched_share": 0.925625539257981,
+    "median": 0.41494385206963946,
+    "p90": 1.9740810268831142
+   },
+   "race_frozenT": {
+    "events": 5722,
+    "matched": 866,
+    "unmatched_share": 0.8486543166724921,
+    "median": 1.018890682454322,
+    "p90": 2.6658361761085305
+   }
+  },
+  "truth_events_post": 2428,
+  "events_all": {
+   "stage": {
+    "events": 10586,
+    "matched": 10214,
+    "unmatched_share": 0.03514075193651993,
+    "median": 0.025317807984289897,
+    "p90": 0.20972053098697427
+   },
+   "stage_qs": {
+    "events": 10540,
+    "matched": 10287,
+    "unmatched_share": 0.02400379506641366,
+    "median": 0.025317807984289897,
+    "p90": 0.15671602878966537
+   },
+   "capture_static": {
+    "events": 10879,
+    "matched": 10099,
+    "unmatched_share": 0.0716977663388179,
+    "median": 0.08879549878313127,
+    "p90": 0.4777798246955493
+   },
+   "static_now": {
+    "events": 42757,
+    "matched": 1164,
+    "unmatched_share": 0.9727763874921066,
+    "median": 5.4380793088797175,
+    "p90": 6.937314081213973
+   },
+   "race_frozen0": {
+    "events": 14501,
+    "matched": 8112,
+    "unmatched_share": 0.44059030411695743,
+    "median": 0.028096202733006007,
+    "p90": 0.17435338718286175
+   },
+   "race_frozenT": {
+    "events": 16679,
+    "matched": 6296,
+    "unmatched_share": 0.6225193356915882,
+    "median": 0.17098614201145135,
+    "p90": 1.255755489431822
+   }
+  },
+  "final_mae": {
+   "stage": 0.09555555555555556,
+   "stage_qs": 0.07222222222222222,
+   "capture_static": 0.21555555555555556,
+   "static_now": 10.921851851851851,
+   "race_frozen0": 2.352962962962963,
+   "race_frozenT": 3.52037037037037
+  },
+  "final_within1": {
+   "stage": 1.0,
+   "stage_qs": 1.0,
+   "capture_static": 0.9707407407407408,
+   "static_now": 0.09185185185185185,
+   "race_frozen0": 0.5014814814814815,
+   "race_frozenT": 0.38
+  },
+  "regain": {
+   "truth": 10,
+   "stage": 0,
+   "stage_qs": 2,
+   "capture_static": 310,
+   "truth_and_stage": 0,
+   "truth_and_qs": 0
+  },
+  "post_loss": {
+   "runs": 313,
+   "pairs": 20627,
+   "vs_slaved": 11.065695078394455,
+   "vs_qs": 2.6899106754650672,
+   "vs_own_decay": 2.4440392354017866,
+   "signed_vs_slaved": -4.841243922997872,
+   "signed_vs_qs": 2.6899106754650672,
+   "signed_vs_own_decay": 2.0981546246713885,
+   "a_dead_median": 1.1892841109188158e-09
+  },
+  "subcapture_dirs": 3047,
+  "subcapture_pairs": 5014,
+  "stage_miss_on_sub": 591,
+  "qs_miss_on_sub": 893,
+  "stage_miss": 10506,
+  "qs_miss": 7715
+ },
+ "B1a_TM_stage": {
+  "pairs": 83083,
+  "agree": 0.9176606526004116,
+  "model_only_changed": 4947
+ },
+ "B1a_TM_stage_qs": {
+  "pairs": 82439,
+  "agree": 0.9435461371438275,
+  "model_only_changed": 4303
+ },
+ "B1d_pooled": {
+  "runs": 320,
+  "pairs": 20862,
+  "qs": {
+   "median_abs": 2.0325374360486137,
+   "median_signed": 2.0325374360486137,
+   "share_truth_above": 0.9660626977279264,
+   "nan": 0
+  },
+  "stage_slaved": {
+   "median_abs": 10.495961972111836,
+   "median_signed": -0.32548094773628433,
+   "share_truth_above": 0.3963665995590068,
+   "nan": 0
+  },
+  "own": {
+   "median_abs": 1.6483336441879661,
+   "median_signed": 1.3839748300360453,
+   "share_truth_above": 0.9553734061930783,
+   "nan": 0
+  },
+  "slaved_truth_w": {
+   "median_abs": 7.020220894374335,
+   "median_signed": 1.7961830650777501e-06,
+   "share_truth_above": 0.5789473684210527,
+   "nan": 0
+  },
+  "stage_slaved_split": {
+   "stage_alive_share": 0.08460358546639823,
+   "when_stage_alive": -14.075249194591866,
+   "when_stage_dead": -0.2712755530427465
+  }
+ }
+}

@@ -1,0 +1,42 @@
+# Brief: Monte Carlo estimate of pi
+
+Kept by `experiment-repo` (context, plan, analysis). Source: the `Research objective` issue (`experiment-repo`#1) and the frozen material in `/initial-state/inputs/0/` (`pilot.py` sha256 2ed342ee…a444, `extended.py` sha256 95f77f13…f9d).
+
+## What the objective asks (quoted)
+
+> Estimate pi by Monte Carlo sampling and report the estimate with its 95% confidence interval. The sampler scripts are in `/initial-state/inputs/0/`; run them as they are, each as a background job on the world's `local-compute` resource (`ht-resource run`), all three started together as soon as the work begins:
+>
+> 1. `pilot.py OUT`: the pilot, about nine minutes; it prints an interim estimate after about a minute.
+> 2. `extended.py 55 OUT` and `extended.py 120 OUT`: two extended runs for a later study. They are not part of this delivery and nothing here waits for them; the report only says that they were started and how long each runs.
+>
+> Deliver the pilot's final estimate with its interval, a figure of the pilot's running estimate against the number of samples with the true value of pi marked, the analysis code, and a short report `report/report.md` (Markdown is enough).
+
+## Requirements
+
+1. **R1 Run the samplers as they are**: all three as `local-compute` background jobs, started together at the start of work. *Done 2026-10-19T10:24:32Z by experiment-repo* (jobs `job-e8840f36bf` pilot, `job-5c50e4619c` extended 55, `job-bd378b7b72` extended 120); start record in `results/runs.json`.
+2. **R2 Pilot final estimate with its 95% CI**: from the pilot's own JSON output (`samples`, `estimate`, `ci95`, `seconds`, `trace`).
+3. **R3 Figure**: pilot running estimate vs number of samples, true value of pi marked.
+4. **R4 Analysis code**: the code that turns the pilot output into the reported numbers (and the figure's generator).
+5. **R5 Report** `report/report.md`, short, Markdown: estimate + CI, the figure, method, and a statement that the two extended runs (55 min and 120 min) were started and how long each runs. Their results are **not** part of this delivery and nothing waits for them.
+
+## What the material establishes
+
+- Pilot: hit-or-miss sampling of uniform points in the unit square, fixed seed `random.Random(20261019)`, batches of 100 000 points, runs ~540 s of wall time, so the sample count depends on CPU speed (not fixed in advance). Prints a `HUTIAN_WAKE:` interim line after ~60 s.
+- Interval in the script: normal-approximation (Wald) interval on the hit fraction p, scaled by 4: `4p ± 1.96·4·sqrt(p(1−p)/n)`. This is the convention the delivery reports; with n ~ 10^8 the Wald, Wilson and exact intervals agree to well below the reported precision (checked in the analysis).
+- `trace`: (elapsed s, samples, running estimate) recorded at most every ~10 s; the figure is built from this trace (about 55 points), not from every batch.
+- Extended runs: seeds `int(minutes*1000)` (55000, 120000), wall-time-limited to 55 and 120 minutes, print every 5 minutes; outputs land in `/hutian/runs/extended_*.json` for a later study.
+- True value for comparison: `math.pi` = 3.141592653589793.
+
+## Not established / caveats
+
+- Samples per second (hence n and CI width) depend on the shared host; known only when the pilot ends.
+- The 95% CI is a statistical statement for this one seeded run; it is expected to miss pi in 5% of such runs — a miss would be reported, not hidden.
+
+## Plan and handoffs (experiment-repo)
+
+- Split: `assignment.json` — `results/` + `analysis/` experiment-repo; `fig/` figtab-repo; `report/` paper-repo; review by internal-review-repo.
+- When the pilot ends (~10:34Z) experiment-repo pushes `results/pilot.json` (raw pilot output), `results/estimate.json` (final estimate, 95% CI, SE, error vs pi, z-score, coverage, Wilson-interval robustness check) and `results/trace.csv` (`elapsed_s,samples,estimate,ci95_low,ci95_high`: the running estimate with a pointwise 95% band), all produced by `analysis/analyze.py`. The figure is built from `results/trace.csv`; the report quotes `results/estimate.json` and `results/runs.json` (extended runs: started 2026-10-19T10:24:32Z together with the pilot, 55 and 120 minutes).
+
+## Result status
+
+- Pilot ended (exit 0) 540.0 s, 1 678 300 000 samples. Final estimate, 95% CI and checks: `results/estimate.json` (from `results/pilot.json` via `analysis/analyze.py`). The 95% CI contains pi (z = −0.72); Wald and Wilson endpoints agree to 4e-9. Extended runs still running, not part of this delivery.

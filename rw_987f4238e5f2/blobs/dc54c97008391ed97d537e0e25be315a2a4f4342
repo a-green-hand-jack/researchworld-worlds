@@ -1,0 +1,12 @@
+"""Download only the generator's published release assets; never read generator-local data."""
+import json, os, subprocess, pathlib, hashlib, datetime
+out=pathlib.Path('/hutian/experiment-download'); out.mkdir(exist_ok=True)
+r=json.loads(subprocess.check_output(['forge','api','repos/world/paper-repo/releases/tags/photons-v1']))
+assets={a['name']:a for a in r['assets']}
+for name in ('photons.f32','photons.sha256'):
+    subprocess.run(['curl','-fsSL','-u',os.environ['HT_FORGEJO_USER']+':'+os.environ['FORGEJO_TOKEN'],'-o',str(out/name),assets[name]['browser_download_url']],check=True)
+p=out/'photons.f32'; actual=hashlib.file_digest(p.open('rb'),'sha256').hexdigest(); expected=(out/'photons.sha256').read_text().split()[0]
+assert actual==expected and p.stat().st_size==120000000
+record=dict(repository='world/paper-repo',tag=r['tag_name'],release_id=r['id'],downloaded_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),download_url=assets['photons.f32']['browser_download_url'],sha256=actual,published_sha256=expected,matches=True,bytes=p.stat().st_size,analysing_position='experiment-repo',generating_position='paper-repo')
+pathlib.Path('results/download_provenance.json').write_text(json.dumps(record,indent=2)+'\n')
+print(json.dumps(record,indent=2))

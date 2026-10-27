@@ -1,0 +1,84 @@
+{
+  "n": 40,
+  "df": 37,
+  "t_crit_95": 2.0261924630291093,
+  "quadratic": {
+    "a": {
+      "estimate": 4.971576851274031,
+      "se": 1.2717761424626137,
+      "ci95": [
+        2.394713616756048,
+        7.548440085792013
+      ],
+      "p_value": 0.00038059563783290245
+    },
+    "b": {
+      "estimate": 0.5862601480399033,
+      "se": 0.1508667894027526,
+      "ci95": [
+        0.2805749964306461,
+        0.8919452996491606
+      ],
+      "p_value": 0.0004072871148667617
+    },
+    "c": {
+      "estimate": 0.004157398809497982,
+      "se": 0.0037397837688511347,
+      "ci95": [
+        -0.0034201228763067835,
+        0.011734920495302748
+      ],
+      "p_value": 0.2734522919178209
+    }
+  },
+  "cov_abc": [
+    [
+      1.6174145565370865,
+      -0.16374508752639422,
+      0.0034545377115273042
+    ],
+    [
+      -0.16374508752639452,
+      0.02276078814469451,
+      -0.0005454533228727331
+    ],
+    [
+      0.003454537711527311,
+      -0.0005454533228727333,
+      1.3985982637762396e-05
+    ]
+  ],
+  "cov_note": "sigma^2 (RSS/(n-3)) * inv(X^T X), X = [1, x, x^2]; order (a, b, c)",
+  "residual_sd_quadratic": 2.8163129417141697,
+  "r_squared_quadratic": 0.9107616726741666,
+  "line_check": {
+    "intercept": 3.944699345328098,
+    "slope": 0.7483987016103215
+  },
+  "aic_quadratic": {
+    "k": 4,
+    "rss": 293.4698876696686,
+    "loglik": -96.61545297844938,
+    "aic": 201.23090595689877,
+    "aicc": 202.3737630997559
+  },
+  "aic_line": {
+    "k": 3,
+    "rss": 303.2718315500418,
+    "loglik": -97.2725429889854,
+    "aic": 200.5450859779708,
+    "aicc": 201.21175264463747
+  },
+  "delta_aic_line_minus_quadratic": -0.6858199789279524,
+  "delta_aicc_line_minus_quadratic": -1.162010455118434,
+  "akaike_weight_quadratic": 0.41510277946743895,
+  "akaike_weight_line": 0.584897220532561,
+  "akaike_weight_aicc_quadratic": 0.35870132363169144,
+  "conclusion": "Line mildly preferred: dAIC = 0.69 (AICc 1.16) in favour of the line, below the usual threshold of 2; c is not distinguishable from 0 (CI includes 0, F-test p = 0.27). Not strong evidence either way, but no support for curvature.",
+  "F_c_zero": 1.2358062575129805,
+  "F_p_value": 0.27345229191782877,
+  "true_a": 2.5,
+  "true_b": 0.8,
+  "true_c": 0.0,
+  "aic_note": "AIC = 2k - 2 logL, Gaussian logL at MLE sigma^2 = RSS/n, k = coefficients + 1 (variance); same constant for both models, so differences are exact."
+}

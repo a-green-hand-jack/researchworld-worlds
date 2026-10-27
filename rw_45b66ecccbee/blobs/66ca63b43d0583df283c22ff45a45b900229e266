@@ -1,0 +1,60 @@
+"""Robustness checks for the main comparison (not part of the primary result).
+
+Re-runs the paired 10x5 CV comparison under variations of choices made in
+cv_study.py and reports the same statistics:
+  seed_<s>    : different outer/inner split seeds (same methods);
+  no_scaling  : both methods on the raw features (no StandardScaler);
+  lr_tuned_C  : logistic regression with C also chosen by inner CV
+                (C in 10^-2..10^3), so both methods get tuning.
+Usage: python sensitivity.py OUTFILE  (writes JSON)
+"""
+import json
+import sys
+
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer, StandardScaler
+
+import cv_study as cs
+
+
+def run(seed, scale=True, tune_c=False):
+    X, y, *_ = cs.load_iris_arff()
+    scaler = StandardScaler if scale else (lambda: FunctionTransformer())
+    outer = RepeatedStratifiedKFold(n_splits=cs.N_SPLITS, n_repeats=cs.N_REPEATS, random_state=seed)
+    acc = {"lr": [], "knn": []}
+    ks = []
+    for i, (tr, te) in enumerate(outer.split(X, y)):
+        inner = StratifiedKFold(n_splits=cs.INNER_SPLITS, shuffle=True, random_state=seed + 1000 + i)
+        lr = Pipeline([("scale", scaler()), ("lr", LogisticRegression(C=1.0, max_iter=10000))])
+        if tune_c:
+            lr = GridSearchCV(lr, {"lr__C": list(np.logspace(-2, 3, 11))}, cv=inner, n_jobs=1)
+        knn = GridSearchCV(Pipeline([("scale", scaler()), ("knn", KNeighborsClassifier())]),
+                           {"knn__n_neighbors": cs.K_GRID}, cv=inner, n_jobs=1)
+        for name, m in (("lr", lr), ("knn", knn)):
+            acc[name].append(float(np.mean(m.fit(X[tr], y[tr]).predict(X[te]) == y[te])))
+        ks.append(int(knn.best_params_["knn__n_neighbors"]))
+    rng = np.random.default_rng(seed)
+    n_tr, n_te = len(tr), len(te)
+    d = np.subtract(acc["lr"], acc["knn"])
+    return {"acc_lr": cs.intervals(acc["lr"], n_tr, n_te, rng),
+            "acc_knn": cs.intervals(acc["knn"], n_tr, n_te, rng),
+            "diff_lr_minus_knn": cs.intervals(d, n_tr, n_te, rng, test_zero=True),
+            "folds_lr_better": int((d > 0).sum()), "folds_knn_better": int((d < 0).sum()),
+            "median_k": float(np.median(ks))}
+
+
+if __name__ == "__main__":
+    variants = {f"seed_{s}": dict(seed=s) for s in (1, 2, 3, 4, 5)}
+    variants["no_scaling"] = dict(seed=cs.SEED, scale=False)
+    variants["lr_tuned_C"] = dict(seed=cs.SEED, tune_c=True)
+    res = {}
+    for name, kw in variants.items():
+        res[name] = run(**kw)
+        r = res[name]
+        print(name, round(r["acc_lr"]["mean"], 4), round(r["acc_knn"]["mean"], 4),
+              round(r["diff_lr_minus_knn"]["mean"], 4), np.round(r["diff_lr_minus_knn"]["corrected_t"], 4), flush=True)
+    json.dump({"variants": variants, "results": res}, open(sys.argv[1], "w"), indent=2, default=float)

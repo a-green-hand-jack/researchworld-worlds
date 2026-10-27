@@ -1,0 +1,6 @@
+step1: researchworld definition install exit 0, image digests in output, noteworld command available
+step2: noteworld run exit 0, world nw_c87334e98392
+step3: continue exit 0 -> rw_5566eec23f74 (status: infrastructure-ready, waiting-for-execution, scheduler starting HTTP 503 at the time). stop rw_399c28e983a7 refused HTTP 422 "given you to read: ... not stop". capture refused HTTP 422 "a world given you to read stays as it is".
+step4: started capped execute cmd on rw_5566eec23f74
+step2 result: drive cmd-329dd852fd exit 0; monitor: release_status=verified delivery_complete=True world_complete=True accepted=True, model_seconds=45/600, 19 requests; note.md (release 7308e945...) is a 3-sentence Rayleigh-scattering note.
+step5: noteworld run refused HTTP 422: "worlds holds its limit of 2 worlds that have not ended (nw_c87334e98392, rw_5566eec23f74): finish or end one first (stop --release)"

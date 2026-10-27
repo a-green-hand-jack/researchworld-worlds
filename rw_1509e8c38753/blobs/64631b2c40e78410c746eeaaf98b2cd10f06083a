@@ -1,0 +1,8 @@
+#!/bin/bash
+# Full 10 x 5-fold CV locally (same code, same requirements.txt). Run from report/code/.
+set -euo pipefail
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+mkdir -p ../results/run_local
+echo "hostname=$(hostname)" | tee ../results/run_local/run_local.log
+md5sum data/iris.arff | tee -a ../results/run_local/run_local.log
+python3 -u cv_compare.py --data data/iris.arff --out ../results/run_local 2>&1 | tee -a ../results/run_local/run_local.log

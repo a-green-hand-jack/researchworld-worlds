@@ -1,0 +1,63 @@
+\section{Beyond gradient descent, encoder depth and the near-collapse window}
+\label{sec:ext}
+
+The race assumes gradient descent, a one-layer encoder and that collapse is decided early; we leave each in turn: AdamW (\cref{sec:adamw}), a deep linear encoder (\cref{sec:deep}), weight-decay schedules, which act after capture (\cref{sec:sched}), and a direct test of the premise in the ViT (\cref{sec:e8}).
+Every prediction was frozen before its held-out runs and scored once, with the count of \citet{demelocosta2026drive} ($\mu$ count) among the baselines where defined; \cref{tab:ext-tests} (\cref{app:ext}) lists every test and verdict.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=0.84\linewidth]{fig12_ext_main}
+  \caption{(a)~AdamW alive count at $T_h$ against weight decay on the A2$'$ sets: truth on converged runs (dots; $n$ converged of 24 written at each point), closed form $\#\{k:c_k/\sigma_k>\theta\}$ (dashed), static bound (open squares), gradient-descent flow (open triangles); set c (green) is a control where the static bound equals the closed form. (b)~Deep linear encoder, $L\ge2$: error of the count read from the run at a fraction of $T$ (lines; filled if the 95\% CI of reading minus A1 lies below 0) against A1 at $t=0$ (dashed; band: bootstrap 95\% CI), aligned (blue) and generic (vermillion) factors; open diamonds: registered readings at $t=25$, $50$. (c)~ViT weight-decay switch: share $f(e)$ of the gap between constant schedules covered by a switch at epoch $e$ (5 seeds, 95\% CI), T blue, P vermillion, solid low$\to$high, dashed high$\to$low; dotted: learning-rate share left; grey: bar $f(20)\ge0.5$, premise $D\le5$.}
+  \label{fig:ext}
+\end{figure}
+
+\subsection{AdamW: weight decay leaves the count}
+\label{sec:adamw}
+
+\paragraph{Theory.}
+AdamW acts coordinate by coordinate, so in the aligned basis of \cref{prop:reduction} (diagonal statistics and encoder, $\Pred_0=p_0I$) the matrix dynamics reduce exactly to scalar AdamW maps on $(a_k,p_k)$ with gradients $-a_k\gamma_k(p_k)$ and $-a_k^2(c_k-p_k\sigma_k)$, $\gamma_k(p)=p(c_k-p\sigma_k)$; Adam is not rotation-invariant~\citep{xie2024adam}, so a rotated encoder breaks the reduction.
+(i)~While a gradient keeps its sign the step is close to $\eta\,\mathrm{sign}$: the gain moves towards $c_k/\sigma_k$ at speed $\eta$ \emph{whatever the amplitude}, as under sign descent~\citep{kunstner2024heavy,sabanayagam2026optimizer}, so the factor $a_k^2$ through which weight decay wins the gradient-descent race is normalised away and the window becomes $0<p<c_k/\sigma_k$, independent of $\lambda$.
+(ii)~Outside the window $a_k$ follows heavy-ball descent with a frozen preconditioner $s_t$ and shrinks by $\sqrt{\beta_1}$ per step; as $s_t$ decays like $\beta_2^{t/2}$ it loses stability at $\eta(1-\beta_1)|\gamma_k|/s_t=2(1+\beta_1)$, the adaptive edge of stability of \citet{cohen2022adaptive}, and the direction re-escapes.
+(iii)~A re-escaped direction is captured, hovers and (iv)~settles at $|a_k|=|p_k|=c_k/\sigma_k$ when $\lambda c_k/\sigma_k<1$ and $\eta\lambda(t-t_c)\gg1$: the KKT point of \citet{xie2024implicit}, reached through the balance of \citet[Lemma~4.5]{jacobs2026never}.
+Weight decay thus sets only the waits (ii)--(iii), i.e.\ which directions are captured by a given time, and the settled count is $\#\{k:c_k/\sigma_k>\theta\}$, with $\theta$ the counting threshold; a phase model integrates (ii)--(iii) in closed form (\cref{app:ext}).
+
+\paragraph{Held-out tests.}
+On a first grid the frozen model (v3) predicted the re-escape and return waits (median $|\log|$ ratio \ExtAoneBMed{} and \ExtAoneCMed{}) but not the count (within one in \ExtAoneDWithin{} of runs, tolerance $0.90$), as it lacked stage (iv); with (iv) added and frozen (v4), a new grid passes (\ExtHtwoDWithin{}; majority oracle \ExtHtwoDWithinBase{}).
+The rank \emph{at convergence} is not predicted: at the derived horizon \ExtAtwoNonconv{} of \ExtAtwoRuns{} runs are still capturing, and the registered test fails (within one: \ExtAtwoStrict{}).
+The count at a fixed horizon is: on \ExtAtwopRuns{} prospective runs v4 is within one in \ExtAtwopWithin{} of runs with error \ExtAtwopMae{}, against \ExtAtwopStaticMae{} for the static bound and \ExtAtwopRaceMae{} for the gradient-descent race, and \ExtAtwopMuMae{} for the $\mu$ count, which as a bound is exceeded in \ExtAtwopMuOver{} of runs (\cref{fig:ext-a}).
+AdamW keeps \ExtAtwoAdamGd{} ($\ExtAtwoAdamGdCI$) more directions than gradient descent; across $\lambda=0.0045$--$0.028$ its converged count is $\ExtAtwoLamTruth$, against $\ExtAtwoLamStatic$ (static) and $\ExtAtwoLamGd$ (gradient descent; \cref{fig:ext}a shows the A2$'$ sets).
+Under a rotated encoder we have no level model, but the registered sign test passes (\ExtAthreeHits{} of \ExtAthreePairs{} signs right, none opposite; gradient-descent account: \ExtAthreeGdOpp{} opposite).
+
+\subsection{A deep linear encoder}
+\label{sec:deep}
+
+With $\Wc=W_L\cdots W_1$ and weight decay on every factor, the factor imbalances decay as $e^{-2\lambda t}$ \citep{kunin2020neural}, so from balanced factors direction $k$ obeys exactly $\dot a=L[\gamma_k(p)\,a^{3-2/L}-\lambda a]$, $p^2-a^{2/L}=e^{-2\lambda t}(p_0^2-a_0^{2/L})$.
+For $L\ge2$ the drive is of higher order at $a=0$: the collapsed point attracts \emph{every} direction \citep{ziyin2022exact}.
+Along the freely decaying gain the equation is of Bernoulli type, and with $m=2-2/L$ direction $k$ escapes if and only if
+\begin{equation}
+a_0^{-m}\le(2L-2)\max_t\int_0^t\gamma_k\big(p_0e^{-\lambda\tau}\big)e^{-(2L-2)\lambda\tau}d\tau
+\label{eq:deep}
+\end{equation}
+(closed form A1): survival depends on the initial scale as a power law, as does the early phase of deep homogeneous networks~\citep{kumar2024early}, not logarithmically as in \eqref{eq:lamrace}.
+On \ExtCRuns{} held-out runs ($L=1,2,3$; aligned or generic Gaussian factors) A1 passes with aligned factors: error \ExtCAlMae{} ($\ExtCAlMaeCI$), against \ExtCAlRaceOne{} for the depth-one race, \ExtCAlStaticL{} for the depth-$L$ static bound, \ExtCAlWindow{} for the initial window, which is the $\mu$ count of the end-to-end map, and \ExtCAlEarlyFifty{} for the count read at $t=50$.
+With generic factors it fails against that reading (\ExtCGeMae{} against \ExtCGeEarlyFifty{}, difference CI $\ExtCGeEarlyFiftyCI$): where $a_0$ equals the counting threshold, the coupled factors rather than a direction's own amplitude decide whether it crosses \eqref{eq:deep}.
+As a function of time (\cref{fig:ext}b) A1 gives at $t=0$ the count a measurement gives from about a tenth of training (error \ExtCAlTrajTen{} and \ExtCGeTrajTen{} at $0.1T$), not a better count; \ExtCAlZero{} of aligned and \ExtCGeZero{} of generic runs end at rank zero.
+A depth-$M$ predictor with random factors enters capture through a factor product (\cref{app:ext}); this rule passes both held-out cells (\ExtCbRuns{} runs, $M=2$--$4$: error \ExtCbGaMae{} and \ExtCbNiMae{}; depth-one rule \ExtCbGaDone{} and \ExtCbNiDone{}; $\mu$ count $\ge\ExtCbGaMu$), but with Gaussian factors the run read at $0.1T$ does better (\ExtCbGaEarlyTen{}).
+
+\subsection{Weight-decay schedules: after capture}
+\label{sec:sched}
+
+With $\lambda_W(t)$ and $\lambda_P(t)=\rho\lambda_W(t)$ the race runs on the clock $\int_0^t\lambda_P$; a stage model adds what follows capture: a captured direction stays at its fixed point while it exists and is lost, after a bottleneck delay, once $\lambda_W(t)$ passes $c_k^2/(4\sigma_k)$; after a loss the predictor decays at the slower of its own rate $\alpha\lambda_P$ and that of its drive.
+So an increasing schedule ends at most at the static count of its final value, and a warm-up switched before the low-decay race completes can end \emph{below} the constant high-decay count, since low decay also slows the predictor's clock.
+On \ExtBRuns{} held-out runs (steps, ramps and pulses either way; $\alpha\in\{0.5,1,2\}$, $\rho\in\{0.25,0.5,1,2\}$, an EMA target) the frozen model follows the alive state after the first schedule change on \ExtBAgree{} of the \ExtBPairs{} pairs where it or the truth changes (bar $0.90$; capture then static threshold \ExtBAgreeCapStatic{}), times post-change events to a median $|\log|$ ratio of \ExtBTimeMed{}, and gives the final count with error \ExtBFinalMae{} (static threshold at the final value: \ExtBFinalStaticNow{}; $\mu$ count: \ExtBMuFinal{}, exceeded in \ExtBMuExceed{} of runs).
+As registered it nevertheless fails: \ExtBCellsFail{} of \ExtBCells{} cells, all short high pulses with $\alpha\rho\le1$, fall below the per-cell bar of $0.80$ (\ExtBShort{}), and the predictor after a loss is missed by a median $|\log|$ ratio of \ExtBPostLoss{} (bar $0.5$), so we draw no schedule recommendation from it.
+The warm-up sign (\ExtBWarmSign{} of \ExtBWarmPairs{} pairs) and the bound for increasing schedules (\ExtBIncViol{} violations in \ExtBIncRuns{} runs) hold; an early decrease does not act as the lower constant (within one in \ExtBEarlyWithin{} of pairs), and a late decrease revives what the model predicts in \ExtBLateAgree{} of runs (bar $0.90$; \cref{app:ext}).
+
+\subsection{Is collapse decided early? Switching weight decay in the ViT}
+\label{sec:e8}
+
+If collapse is decided early, as weight decay's effect on supervised networks is~\citep{golatkar2019time}, a weight-decay change in E3's ViT after the first few epochs should not move the final count. For each arm we switched weight decay low$\to$high or high$\to$low at epoch $e\in\{2,5,10,20\}$ of 50 (5 seeds per row) and measured $f(e)$, the share of the gap between the constant schedules ($\ExtEeightTlo$ vs $\ExtEeightThi$ directions in T, $\ExtEeightPlo$ vs $\ExtEeightPhi$ in P) that the switched run covers, and the decision time $D$, the earliest switch epoch after which later switches are equivalent (TOST) to none.
+We registered the premise as $D\le5$ and a stage-wise account as $D>20$ with $f(20)\ge0.5$; the premise holds in no cell (\cref{fig:ext}c).
+Raising weight decay as late as epoch 20 still removes directions, fully in T ($f(e)=\ExtEeightFTup$ for $e=2,5,10,20$) and $\ExtEeightFPupTwenty$ ($\ExtEeightFPupTwentyCI$) of the way in P, so the registered exit applies: for raising weight decay the premise holds in linear models only.
+Lowering it undoes losses only partly ($D=\ExtEeightDTdown$ in T, $\ExtEeightDPdown$ in P): T does not regrow ($f(20)=\ExtEeightFTdownTwenty$), and P regrows but too slowly to close the gap ($f(10)=\ExtEeightFPdownTen$, $f(20)=\ExtEeightFPdownTwenty$).
+The stage-wise account thus holds only in Arm T for raising decay. Post hoc, T's lost directions keep shrinking and P's would need \ExtEeightPneedTen{} ($e=10$) and $\ExtEeightPneedTwenty$ ($e=20$) times the learning-rate time left (\cref{fig:ext-e8}), so a weight-decay warm-up is not supported as a way to keep rank.

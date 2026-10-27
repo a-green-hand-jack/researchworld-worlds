@@ -1,0 +1,30 @@
+# Monte Carlo estimate of pi: how the error scales with N
+
+**Result.** The mean absolute error (MAE) of the hit-or-miss estimate of pi falls as N^b with fitted exponent **b = -0.5012**. The 95% interval is **[-0.5192, -0.4831]** (OLS t, 3 df) and **[-0.5161, -0.4860]** (paired bootstrap). Both contain the Monte Carlo value -1/2, so the data are consistent with it. The standardized difference from -1/2, (b+0.5)/SE, is -0.20 with the OLS SE (0.00566) and -0.15 with the bootstrap SE (0.00764).
+
+**Method.** Points (x, y) are drawn uniformly in the unit square, and pi_hat = 4 * #{x^2 + y^2 <= 1} / N. For each N in 10^3 ... 10^7 there are 200 independent runs, run index i = 0..199, with `numpy.random.default_rng(2026 + i)` (NumPy 2.4.6). The error is |pi_hat - `math.pi`|, and MAE(N) is its mean over the 200 runs. Reading the objective literally, run i uses the same seed at every N. Its estimate for N is the first N points of one 10^7-point stream (x, y adjacent draws), which is the same as re-seeding at each N. Runs are independent, but the five errors within one run are dependent. The fit is unweighted least squares of ln MAE on ln N over the five points.
+
+| N | MAE (200 runs) | s.e. of MAE | exact expectation* | fitted MAE |
+|---|---|---|---|---|
+| 10^3 | 4.189e-2 | 2.27e-3 | 4.145e-2 | 4.355e-2 |
+| 10^4 | 1.441e-2 | 7.51e-4 | 1.310e-2 | 1.374e-2 |
+| 10^5 | 4.310e-3 | 2.19e-4 | 4.143e-3 | 4.332e-3 |
+| 10^6 | 1.399e-3 | 7.33e-5 | 1.310e-3 | 1.366e-3 |
+| 10^7 | 4.195e-4 | 2.23e-5 | 4.143e-4 | 4.309e-4 |
+
+*Analytic, not simulated: the MAE of the binomial count, which tends to sqrt(2(4 - pi)/N). Every measured MAE lies within 1.74 standard errors of it.
+
+![Mean absolute error of the Monte Carlo pi estimate against N on log-log axes, with the least-squares fit](figures/mae_loglog.png)
+
+**Exponent.** OLS slope -0.5012 (R^2 = 0.9996), prefactor 1.388. The two intervals are:
+
+| interval | 95% CI | contains -1/2 |
+|---|---|---|
+| headline: OLS t (3 df), assumes independent log errors | [-0.5192, -0.4831] | yes |
+| dependence-aware check: paired bootstrap over 200 run vectors (50,000 resamples, seed 42026), which keeps the dependence across N | [-0.5161, -0.4860] | yes |
+
+Both intervals include -1/2, so they agree on the verdict. The OLS interval uses only 3 residual degrees of freedom and assumes independent log errors. The paired-bootstrap check retains the dependence across N and is approximate, with no finite-sample coverage guarantee.
+
+**Checks and limits.** Leave-one-N-out slopes range from -0.5096 to -0.4953, and a delta-method slope SE (0.00764) matches the bootstrap SE. None of these checks contradicts N^(-1/2) scaling. Only five N and 200 runs each were used. "Consistent with -1/2" is the strongest claim the data support, and it does not prove an exact power law.
+
+**Provenance.** All values are copied from `analysis/mae_table.csv` and `analysis/fit.json` (experiment-repo `6cb94ccdef05`; run data in `analysis/runs_*.csv`, SHA-256 hashes in `fit.json`). Logarithms are natural. The figure is `report/figures/mae_loglog.png` (figtab-repo).

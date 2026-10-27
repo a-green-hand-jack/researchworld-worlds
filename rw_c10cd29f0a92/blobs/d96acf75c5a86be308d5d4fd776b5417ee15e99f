@@ -1,0 +1,109 @@
+"""Extra check (beyond the objective's three stages): is the stage-2 crossing biased by too-short runs?
+
+Input : data/extra_long/summary-L{32,64,128}.json, data/extra_long/series/*.npz (100,000 sweeps after 20,000
+        burn-in, seeds 11 12 13, T = 2.21 2.24 2.27 2.30); results/stage2_binder.csv, results/stage2_crossing.json
+Output: results/extra_long_binder.csv  U per (L, T) from the long runs, seed and block errors, tau_int(|m|) per seed,
+                                       and the stage-2 (20,000-sweep) U at the same point with its difference in sigma
+        results/extra_long_check.json  crossing from the long runs with the same estimator as stage 2 (cubic4 on
+                                       the four temperatures), seed-bootstrap 95% interval, comparison with stage 2
+                                       and with the exact T_c
+"""
+import csv
+import json
+import os
+import sys
+from itertools import combinations
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import TC_EXACT, U_STAR_LIT, binder, crossings, load_series, tau_int  # noqa: E402
+
+ROOT = Path(os.environ.get('ISING_ROOT', Path(__file__).resolve().parents[1]))
+SIZES = [32, 64, 128]
+BLOCK = 5000
+B = 4000
+rng = np.random.default_rng(100000)
+
+
+def main():
+    rows = {L: json.loads((ROOT / f'data/extra_long/summary-L{L}.json').read_text()) for L in SIZES}
+    temps = sorted({r['T'] for r in rows[32]})
+    seeds = sorted({r['seed'] for r in rows[32]})
+    get = lambda L, T, s, k: next(r[k] for r in rows[L] if r['T'] == T and r['seed'] == s)
+    M2 = np.array([[[get(L, T, s, 'm2') for s in seeds] for T in temps] for L in SIZES])
+    M4 = np.array([[[get(L, T, s, 'm4') for s in seeds] for T in temps] for L in SIZES])
+    U = binder(M2.mean(2), M4.mean(2))
+    U_err_seed = binder(M2, M4).std(2, ddof=1) / np.sqrt(len(seeds))
+    ser = {(L, T, s): load_series(ROOT / 'data/extra_long/series', L, T, s)[0]
+           for L in SIZES for T in temps for s in seeds}
+    N = len(next(iter(ser.values())))
+    nb = N // BLOCK
+    U_err_block = np.empty_like(U)
+    for li, L in enumerate(SIZES):
+        b2 = np.array([[(ser[L, T, s] ** 2).reshape(nb, BLOCK).mean(1) for s in seeds] for T in temps])
+        b4 = np.array([[(ser[L, T, s] ** 4).reshape(nb, BLOCK).mean(1) for s in seeds] for T in temps])
+        d = []
+        for _ in range(1000):
+            pick = rng.integers(0, nb, (len(seeds), nb))
+            d.append(binder(np.take_along_axis(b2, pick[None], 2).mean(2).mean(1),
+                            np.take_along_axis(b4, pick[None], 2).mean(2).mean(1)))
+        U_err_block[li] = np.std(d, axis=0, ddof=1)
+    tau = {k: tau_int(v) for k, v in ser.items()}
+
+    pairs, comb = crossings(temps, U)
+    boot, bootp = [], []
+    for _ in range(B):
+        m2 = np.empty((3, len(temps))); m4 = np.empty((3, len(temps)))
+        for li in range(3):
+            pick = rng.integers(0, len(seeds), len(seeds))
+            m2[li] = M2[li][:, pick].mean(1); m4[li] = M4[li][:, pick].mean(1)
+        p, c = crossings(temps, binder(m2, m4))
+        boot.append(c); bootp.append([p[q][0] for q in combinations(range(3), 2)])
+    boot, bootp = np.array(boot), np.array(bootp)
+    ci = np.nanpercentile(boot[:, 0], [2.5, 97.5]).tolist()
+
+    s2 = json.loads((ROOT / 'results/stage2_crossing.json').read_text())
+    s2b = {(int(r['L']), round(float(r['T']), 4)): r for r in csv.DictReader(open(ROOT / 'results/stage2_binder.csv'))}
+    # stage-2 crossing restricted to the same four temperatures, for a like-for-like comparison
+    U2 = np.array([[float(s2b[L, round(T, 4)]['U']) for T in temps] for L in SIZES])
+    _, comb2_same = crossings(temps, U2)
+    out = ROOT / 'results'
+    with open(out / 'extra_long_binder.csv', 'w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['L', 'T', 'U_long', 'U_long_err_seed', 'U_long_err_block', *[f'tau_abs_m_s{s}' for s in seeds],
+                    'U_stage2', 'U_stage2_err', 'diff_sigma'])
+        for li, L in enumerate(SIZES):
+            for ti, T in enumerate(temps):
+                r2 = s2b[L, round(T, 4)]
+                e2 = max(float(r2['U_err_seed']), float(r2['U_err_block']))
+                e1 = max(U_err_seed[li, ti], U_err_block[li, ti])
+                w.writerow([L, f'{T:.4f}', f'{U[li, ti]:.6f}', f'{U_err_seed[li, ti]:.6f}', f'{U_err_block[li, ti]:.6f}',
+                            *[f'{tau[L, T, s][0]:.1f}' for s in seeds], r2['U'], f'{e2:.6f}',
+                            f'{(float(r2["U"]) - U[li, ti]) / np.hypot(e1, e2):.2f}'])
+    names = [f'{a}/{b}' for a, b in combinations(SIZES, 2)]
+    res = {
+        'inputs': [f'data/extra_long/summary-L{L}.json' for L in SIZES] + ['data/extra_long/series/*.npz',
+                                                                          'results/stage2_binder.csv', 'results/stage2_crossing.json'],
+        'sizes': SIZES, 'temps': temps, 'seeds': seeds, 'sweeps': N, 'burn': get(32, temps[0], seeds[0], 'burn'),
+        'estimator': 'same as stage 2 (cubic4 pairwise crossings, mean of the three)',
+        'Tc_long': comb[0], 'U_at_crossing_long': comb[1],
+        'pairwise_long': {n: {'T': pairs[q][0], 'U': pairs[q][1]} for n, q in zip(names, combinations(range(3), 2))},
+        'bootstrap_seeds_ci95': ci, 'bootstrap_sd': float(np.nanstd(boot[:, 0], ddof=1)),
+        'bootstrap_U_ci95': np.nanpercentile(boot[:, 1], [2.5, 97.5]).tolist(),
+        'bootstrap_failed_resamples': int(np.isnan(boot[:, 0]).sum()),
+        'stage2_Tc': s2['Tc'], 'stage2_ci95': s2['bootstrap_seeds']['ci95'],
+        'stage2_Tc_same_four_temps': comb2_same[0],
+        'tc_exact': TC_EXACT, 'deviation_long_from_exact': comb[0] - TC_EXACT,
+        'exact_inside_long_ci': bool(ci[0] <= TC_EXACT <= ci[1]),
+        'U_star_literature': U_STAR_LIT,
+        'tau_abs_m_max_by_L': {L: max(tau[L, T, s][0] for T in temps for s in seeds) for L in SIZES},
+        'N_over_tau_min_by_L': {L: N / max(tau[L, T, s][0] for T in temps for s in seeds) for L in SIZES},
+    }
+    (out / 'extra_long_check.json').write_text(json.dumps(res, indent=1))
+    print(json.dumps(res, indent=1))
+
+
+if __name__ == '__main__':
+    main()

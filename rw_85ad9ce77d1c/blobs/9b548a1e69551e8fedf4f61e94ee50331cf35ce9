@@ -1,0 +1,16 @@
+# Child world run report
+
+## Deviation from the objective
+The exact `child.json` (provider `anthropic-claude-code`, auth `claude-oauth`) was refused by `researchworld run` (refs `cmd-f4ceecc15f`, `cmd-1ece58b7e8`, both exit 1):
+
+> a world made in a world uses the agents and providers of its parent ... for claude-code it has {"base_url":"https://api.anthropic.com/v1","credential_env":"ANTHROPIC_PROMO_API_KEY","id":"anthropic","protocol":"anthropic"} (give the provider as it stands there)
+
+I therefore reran with `child-fixed.json`, identical to `child.json` except the provider block, which is the parent's as quoted above (`cmd-5bdd749129`, exit 0).
+
+## Results
+- Child world id: `rw_77239d48b68d`
+- Drive reference: `cmd-a3d288147d` (`researchworld execute rw_77239d48b68d --loop`)
+- Full answer of `ht-resource stop worlds cmd-a3d288147d` (exit 1), issued after waiting ~125 s:
+  `{"error": "stop refused (HTTP 422): worlds cmd-a3d288147d is not tracked by paper-repo"}`
+  The drive had already ended by itself with `exit 0` (state `succeeded`, spend 33.341, note "Driver termination alone does not establish scientific or delivery completion") before I could stop it; the `ht-resource status worlds` check after the wait showed no tracked jobs, so I never observed it running.
+- `researchworld status rw_77239d48b68d`: `container_status` is `running` (volume present, bootstrap status was `starting` in the run output). So the child world's container is still running. `ht-resource status worlds` lists the world with `concluded: false`, `world_status: null`, and no tracked jobs.

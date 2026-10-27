@@ -1,0 +1,73 @@
+"""Stage 1 analysis: locate the susceptibility peak of the L = 64 pilot and design the stage-2 grid.
+
+Input : data/stage1/summary-L64.json (from code/stage1.sh)
+Output: results/stage1_pilot.csv (per T: mean and seed half-difference of chi, c, |m|, U)
+        results/stage1_peak.json (grid maximum of the seed-mean chi, a quadratic refinement through the
+        three points around it, the peak of c, and the stage-2 temperature grid centred on the grid maximum)
+"""
+import csv
+import json
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+TC_EXACT = 2 / np.log(1 + np.sqrt(2))
+
+
+def main():
+    src = ROOT / 'data/stage1/summary-L64.json'
+    rows = json.loads(src.read_text())
+    temps = sorted({r['T'] for r in rows})
+    seeds = sorted({r['seed'] for r in rows})
+    qty = ['chi', 'c', 'abs_m', 'binder']
+    table = []
+    for T in temps:
+        rs = [r for r in rows if r['T'] == T]
+        assert len(rs) == len(seeds)
+        rec = {'T': T}
+        for q in qty:
+            v = np.array([r[q] for r in rs])
+            rec[q] = v.mean()
+            rec[q + '_err'] = v.std(ddof=1) / np.sqrt(len(v))  # standard error over seeds
+            for r in rs:
+                rec[f'{q}_s{r["seed"]}'] = r[q]
+        table.append(rec)
+    out = ROOT / 'results'
+    out.mkdir(exist_ok=True)
+    with open(out / 'stage1_pilot.csv', 'w', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=list(table[0]))
+        w.writeheader()
+        w.writerows({k: (f'{v:.6g}' if isinstance(v, float) else v) for k, v in rec.items()} for rec in table)
+
+    T = np.array(temps)
+    chi = np.array([r['chi'] for r in table])
+    c = np.array([r['c'] for r in table])
+    i = int(np.argmax(chi))
+    a, b, _ = np.polyfit(T[i - 1:i + 2], chi[i - 1:i + 2], 2)
+    t_quad = -b / (2 * a)
+    j = int(np.argmax(c))
+    a2, b2, _ = np.polyfit(T[j - 1:j + 2], c[j - 1:j + 2], 2)
+    # per-seed grid maxima, to show whether the peak location depends on the seed
+    per_seed = {s: float(T[np.argmax([r[f'chi_s{s}'] for r in table])]) for s in seeds}
+    t_peak = round(float(T[i]), 4)
+    grid2 = [round(t_peak + 0.03 * k, 4) for k in range(-4, 5)]
+    res = {
+        'input': 'data/stage1/summary-L64.json',
+        'L': 64, 'seeds': seeds, 'sweeps': rows[0]['sweeps'], 'burn': rows[0]['burn'],
+        'chi_peak_T_grid': t_peak,
+        'chi_peak_value': float(chi[i]), 'chi_peak_value_err': float(table[i]['chi_err']),
+        'chi_peak_T_quadratic': float(t_quad),
+        'chi_peak_T_grid_per_seed': per_seed,
+        'c_peak_T_grid': float(T[j]), 'c_peak_value': float(c[j]),
+        'c_peak_T_quadratic': float(-b2 / (2 * a2)),
+        'tc_exact': TC_EXACT,
+        'stage2_temps': grid2,
+        'stage2_rule': 'T_peak(grid max of seed-mean chi) - 0.12 ... + 0.12, 9 equally spaced (step 0.03)',
+    }
+    (out / 'stage1_peak.json').write_text(json.dumps(res, indent=1))
+    print(json.dumps(res, indent=1))
+
+
+if __name__ == '__main__':
+    main()

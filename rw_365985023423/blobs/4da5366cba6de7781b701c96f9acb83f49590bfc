@@ -1,0 +1,142 @@
+{
+  "method": "Unweighted ordinary least squares of natural log(MAE) on natural log(N)",
+  "slope": -0.5011584081803624,
+  "intercept": 0.3281259480421346,
+  "prefactor": 1.3883638229834052,
+  "r_squared": 0.9996174546625595,
+  "paired_bootstrap": {
+    "method": "Paired-run percentile bootstrap; resample 200 entire five-N vectors",
+    "confidence": 0.95,
+    "replicates": 50000,
+    "seed": 42026,
+    "ci": [
+      -0.5161464783001017,
+      -0.4860153418456996
+    ],
+    "contains_minus_half": true,
+    "bootstrap_slope_se": 0.007644735791152021,
+    "first_half_ci": [
+      -0.5161032257536549,
+      -0.4861222445851498
+    ],
+    "second_half_ci": [
+      -0.5161848317120072,
+      -0.48592047432426355
+    ]
+  },
+  "headline_interval": {
+    "method": "Residual OLS Student-t interval",
+    "confidence": 0.95,
+    "df": 3,
+    "slope_se": 0.005660293289460721,
+    "standardized_difference_from_minus_half": -0.20465515144229524,
+    "ci": [
+      -0.5191719876462288,
+      -0.48314482871449593
+    ],
+    "contains_minus_half": true,
+    "caveat": "Residual interval assumes independent homoskedastic log errors; nested samples induce dependence."
+  },
+  "diagnostics": {
+    "log_residuals": [
+      -0.0390249975304191,
+      0.047623477049540064,
+      -0.005131609819056138,
+      0.023492778611175602,
+      -0.026959648311236428
+    ],
+    "leave_one_N_out": [
+      {
+        "omitted_N": 1000,
+        "slope": -0.5096325787222371
+      },
+      {
+        "omitted_N": 10000,
+        "slope": -0.49820374913869653
+      },
+      {
+        "omitted_N": 100000,
+        "slope": -0.5011584081803624
+      },
+      {
+        "omitted_N": 1000000,
+        "slope": -0.5026159487682779
+      },
+      {
+        "omitted_N": 10000000,
+        "slope": -0.4953041949325509
+      }
+    ],
+    "delta_method_slope_se": 0.0076449404466171645,
+    "delta_method_normal_ci": [
+      -0.516142491455732,
+      -0.48617432490499274
+    ],
+    "absolute_error_correlation": [
+      [
+        1.0,
+        0.19125828681070048,
+        -0.022387225387784374,
+        0.04457060764863416,
+        -0.06953177493387652
+      ],
+      [
+        0.1912582868107005,
+        1.0,
+        0.1945515631171827,
+        0.11100590078641419,
+        0.006962115599326887
+      ],
+      [
+        -0.022387225387784374,
+        0.1945515631171827,
+        1.0,
+        0.18011333461648765,
+        0.0076583768156319645
+      ],
+      [
+        0.04457060764863416,
+        0.11100590078641417,
+        0.18011333461648762,
+        1.0,
+        -0.00167387154168171
+      ],
+      [
+        -0.06953177493387652,
+        0.006962115599326888,
+        0.007658376815631964,
+        -0.00167387154168171,
+        1.0
+      ]
+    ],
+    "mae_minus_exact_in_empirical_se": [
+      0.1942334112549631,
+      1.7362770166179315,
+      0.7593969480812248,
+      1.2078276003435953,
+      0.2295696192662728
+    ]
+  },
+  "provenance": {
+    "input_sha256": {
+      "runs_000_099.csv": "748aca7b613b90af7db08c65d48d6eebf45235b5233dd0cdd41176b18534e2da",
+      "runs_100_199.csv": "413aef430c59006ebada454bc39e66a2c3abeaefb222035264c38f86bb9f8927"
+    },
+    "numpy": "2.4.6",
+    "scipy": "1.17.1",
+    "pandas": "3.0.6",
+    "python": "3.11.2",
+    "reference_pi": 3.141592653589793,
+    "run_indices": [
+      0,
+      199
+    ],
+    "simulation_seeds": [
+      2026,
+      2225
+    ],
+    "unique_points_generated": 2000000000,
+    "draw_order": "rng.random((chunk,2)); x and y adjacent; nested prefixes",
+    "bootstrap_quantile_method": "NumPy default linear interpolation"
+  }
+}

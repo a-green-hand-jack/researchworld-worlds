@@ -1,0 +1,36 @@
+# E7-G check (experiment 846d728)
+
+Inputs: experiment-repo 846d728 `results/e7/e7g.json`, `score.json`, `score_rows.json`, `prediction.json` (amendments 6, 7),
+`code/e7g.py` (md5 644603c819e9d807a2874059539df4c7, = amendment 7 `code_md5`), raw V100 runs
+`e7__e7g__runs7g.tar.gz` from release ext-runs-3 (sha256 0e8d5c303003735377a993cc32a03e41dbe2f21fd60b1a3cdbcb70da5d18bc40,
+= `release_assets.json`), P100 production runs `e7__production__runs7.tar.gz` (unpacked for the E7 full rescore).
+
+Checked by hand (this turn):
+- `config.json` of each V100 run equals the P100 production run of the same seed except `out` and `gpu`.
+- `gpu_env.csv`: one Tesla V100-SXM2-32GB, driver 570.86.15; ibex job 53970632 spend 1170 s = 0.33 GPU-h (bound 1.5).
+- Measured counts V100 = P100 on seeds 20/21/22: e20 23/22/24, e50 10/10/9; the race prediction `headroom_200` at e50 is
+  equal too (7/8/8), so every toggle statistic against the V100 reference equals the P100 one.
+- The registered toggle threshold 3.16 = 2 x sd of the reference row's e50 race error over its 5 P100 seeds 20-24
+  (errors -3, -2, -1, -5, -4; sd 1.581). `e7g.py` replaces the reference row by the 3 V100 runs, so
+  `e7_score.toggles` recomputes sd over seeds 20-22 only (1.0, 2 sd = 2.0) and writes that reading as
+  `toggles_v100.*.hypothesis`: T_ema and T_tln "not borne out". The registered reading (amendment 6: "read with the
+  registered threshold 3.16") is `hypothesis_registered_threshold`: borne out, as the README says.
+
+`check.py` (job on local-compute): rescore with the frozen scorer, leaf comparison with the delivered `e7g.json`,
+and the V100-vs-P100 per-check training loss comparison. Output in `check.json`.
+
+## Result (job-e3580e2578, ended exit 0)
+
+- Frozen scorer exit 0. Of 370 leaves of the delivered `e7g.json` (846d728), 364 reproduce exactly. The 6 that differ:
+  3 x per-run diagnostic `rows[i]/k2_positive_drive` (61 vs 70, 68 vs 69, 65 vs 66), the same diagnostic that differed in
+  the E7 full rescore (`checks/e7_prod/`) and enters no statistic, verdict or text; 3 x `provenance/node_md5`
+  (f67f47bb vs 4d0ac52d, the machine). `gpu_check` (e20 and e50: 0/0/0, sd 0), the counts and every toggle statistic
+  reproduce.
+- Training loss logs, V100 vs P100, seeds 20/21/22: 66 checks each at the same steps; 45/56/45 checks differ; max
+  relative difference 2.7e-6, 1.0e-3, 2.1e-6. The families do not give identical training, but the counts read at
+  e20 and e50 are equal.
+- Toggle readings against the V100 reference (mean race-error difference; registered 2 sd = 3.16, three-seed 2 sd = 2.0):
+  T_ema +2.67 and T_tln +2.67 borne out at 3.16 (the three-seed field reads "not borne out"); T_pln +3.33 not borne out;
+  T_nodn +14.33 borne out; T_adamw +17.33, no direction registered. All equal the P100 readings.
+- Later experiment f240a05/ca56c6b renamed the three-seed fields to `*_3seed_sd_posthoc` (values unchanged,
+  `gpu_check` unchanged), which resolves E7G-W1.

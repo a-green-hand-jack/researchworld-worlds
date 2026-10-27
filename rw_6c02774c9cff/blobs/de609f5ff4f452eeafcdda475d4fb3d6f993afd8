@@ -1,0 +1,87 @@
+# Study plan: multinomial logistic regression vs k-nearest neighbours on Iris (OpenML 61)
+
+Owner: `story-repo` (plan). The objective (`story-repo`#1) is the standard; where this plan and the
+objective disagree, the objective wins. Who delivers which path is in `assignment.json`.
+Choices marked *(default)* are proposals the owning position may change, saying why in its repository.
+
+## Questions
+- **Q1 (main comparison).** On Iris, does multinomial logistic regression (LR) differ in accuracy from
+  k-nearest neighbours (kNN) with k chosen by inner cross-validation? Estimand: mean outer-fold accuracy
+  of each method and the mean paired difference LR − kNN, each with a 95% interval.
+- **Q2 (computational reproducibility).** Does the full cross-validation give identical numbers when run
+  once as a CPU job on Ibex and once locally? Report the Ibex node name and the identity verdict.
+
+## Data
+- OpenML dataset id 61 (`iris`, version 1), downloaded from OpenML itself by the delivered code (API/ARFF at
+  openml.org or Parquet at data.openml.org), not sklearn's bundled copy. Record dataset id, version, URL and
+  checksum (`idea-repo` brief: ARFF md5 `ad484452702105cbf3d30f8deaba39a9`); n = 150, 4 features, `class`
+  with 3 x 50. Use it as is: it is the UCI version with the two Bezdek et al. (1999) transcription errors and
+  duplicate rows (one sentence in the paper). Both runs (Ibex, local) use byte-identical data (same file or
+  same checksum verified in each run's output), so data provenance is not a source of difference.
+
+## Design (analysis owner: `experiment-repo`)
+1. **Outer resampling:** `RepeatedStratifiedKFold(n_splits=5, n_repeats=10)` with a fixed, recorded seed
+   → 50 outer folds (120 train / 30 test). Both methods are fit on exactly the same folds (paired design).
+2. **LR:** multinomial logistic regression, features standardised inside the fold (pipeline).
+   Hyperparameters fixed at stated values *(default: L2, C = 1, lbfgs, max_iter large enough to converge)*;
+   the objective tunes only kNN, so LR is not tuned; say so in the paper.
+3. **kNN:** standardisation + `KNeighborsClassifier` inside the fold; k chosen on each outer training set by
+   an inner stratified 5-fold CV (seeded) *(default grid: odd k = 1…31, uniform weights, Euclidean;
+   ties → smallest k)*. Record the chosen k for every outer fold.
+   Unit of analysis: the outer fold (50 paired fold scores); repetition means are the sensitivity unit.
+4. **Per-fold record:** repetition, fold, test indices or a hash of them, accuracy of each method,
+   chosen k, and the predictions; this file is the single source for the figure, table and text.
+5. **Intervals (95%).** Fold accuracies from repeated CV are correlated (overlapping training sets), so a
+   naive t interval over 50 folds is too narrow. *(default primary)*: corrected repeated-CV t interval
+   (Nadeau & Bengio 2003; Bouckaert & Frank 2004): variance factor (1/50 + 30/120), df = 49, for each
+   method's mean and for the paired difference. *(default sensitivity, reported in code output and one
+   sentence in the paper)*: naive t over 50 folds and t over the 10 repetition means (df = 9). Also report
+   wins/ties/losses of LR vs kNN over the 50 folds. `idea-repo` supplies the convention the field uses;
+   `experiment-repo` decides and states the method; the caption states it.
+6. **Reproducibility (Q2):** one script, one pinned environment (Python and package versions recorded,
+   single-threaded BLAS, `n_jobs=1`), run (a) as a SLURM CPU job on Ibex and (b) locally. Each run writes
+   its per-fold file, summary, `hostname`/`SLURM_JOB_NODELIST`, job id and versions. Comparison script:
+   "identical" means per-fold accuracies, chosen k's and predictions are equal exactly and the summary
+   numbers are equal to full float precision (also compare file SHA-256); if not identical, report the
+   maximum absolute difference and which quantities differ. The paper reports the node name and verdict.
+   The node name and job id are written by the job itself (`$SLURMD_NODENAME`/`hostname`, `$SLURM_JOB_ID`),
+   never typed. A local stand-in does not satisfy the Ibex run. Submit the Ibex job as soon as the code is
+   fixed (small CPU request); any later code change reruns both.
+
+## Claims the delivery must support
+- **C1:** each method's mean accuracy with its 95% interval (table).
+- **C2:** the paired difference LR − kNN with its 95% interval, and whether the interval excludes 0
+  (table + figure). No claim of superiority beyond what the interval supports; on Iris both methods are
+  expected near ceiling, so a "no detectable difference" result is a valid finding, not a failure.
+- **C3:** Ibex node name and whether Ibex and local results are identical (table + text).
+- **C4:** chosen-k summary (distribution over the 50 outer folds) (table or text).
+
+## Presentation (owner: `figtab-repo`)
+- **One figure** supporting C2 (and C1): per-fold (or per-repetition) paired accuracies / differences with the
+  mean difference and its 95% interval against a zero reference. Built only from the committed per-fold file.
+- **One table** supporting C1, C3, C4 (and C2's numbers): mean accuracy ± 95% CI per method, paired
+  difference ± CI, chosen-k summary, Ibex node, identical yes/no. Generated, never typed.
+
+## Paper (owner: `paper-repo`; format: `venue-repo`)
+- `report/report.pdf` compiled from LaTeX with the unmodified official NeurIPS 2026 style in submission
+  (anonymous, default-option) mode; at most two pages for the whole PDF, references included, no checklist
+  (`venue-repo` VENUE.md); exactly one figure and one table; LaTeX source and all code next to the PDF in `report/`.
+- Numbers in the text come from the generated results (e.g. a generated macros file), not retyped.
+- Sections: question, data and method (folds, inner CV, interval method), results (C1–C4), reproducibility,
+  limitations (one small dataset; correlated folds; LR untuned), code availability.
+
+## Delivered layout (see `assignment.json`)
+- `report/` — `paper-repo`: `report.tex`, `report.pdf`, `neurips_2026.sty` (unmodified copy of the official
+  file `venue-repo` fetched; `venue-repo` checks its sha256), bibliography, number-macro script, build files.
+- `report/code/` — `experiment-repo`: data download, CV script, SLURM script, local runner, comparison script,
+  environment lock.
+- `report/results/` — `experiment-repo`: per-fold files and summaries of both runs, job log with node name and
+  job id, the identity check (e.g. `reproducibility.json`).
+- `report/figures/`, `report/tables/` — `figtab-repo`: the figure, the table fragment, and the script that
+  renders each from `report/results/`.
+
+## Order of work and checks
+1. `experiment-repo`: download + CV script, local run, then the Ibex job (can queue; start early).
+2. `figtab-repo`: figure/table scripts against the per-fold file schema as soon as a first local result exists.
+3. `paper-repo`: draft against the venue requirements; fill numbers from the generated outputs.
+4. `internal-review-repo`: checks every requirement of `story-repo`#1 against the assembled delivery.

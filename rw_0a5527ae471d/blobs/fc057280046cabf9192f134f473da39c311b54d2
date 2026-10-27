@@ -1,0 +1,108 @@
+"""OLS vs WLS for two noisy straight-line series. Writes results/data.csv and results/results.json."""
+import json, csv, os
+import numpy as np
+import statsmodels.api as sm
+from scipy import stats
+from statsmodels.stats.diagnostic import het_breuschpagan, het_white
+
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results")
+os.makedirs(OUT, exist_ok=True)
+A0, B0 = 2.5, 0.8
+x = np.arange(40, dtype=float)
+rng = np.random.default_rng(221)
+sdA = np.full(40, 3.0)
+sdB = 0.5 + 0.15 * x
+yA = A0 + B0 * x + rng.normal(0, sdA)          # A first
+yB = A0 + B0 * x + rng.normal(0, sdB)          # then B
+X = sm.add_constant(x)
+
+def ci(res):
+    c = res.conf_int(0.05)
+    return {"intercept": [float(c[0, 0]), float(c[0, 1])], "slope": [float(c[1, 0]), float(c[1, 1])]}
+
+def fit_summary(res):
+    return {"intercept": float(res.params[0]), "slope": float(res.params[1]),
+            "se_intercept": float(res.bse[0]), "se_slope": float(res.bse[1]),
+            "ci95": ci(res), "df_resid": int(res.df_resid)}
+
+def diagnostics(res, name):
+    r = res.resid
+    bp = het_breuschpagan(r, X)
+    wh = het_white(r, X)
+    rho, p_rho = stats.spearmanr(x, np.abs(r))
+    lo, hi = r[:20], r[20:]
+    F = np.var(hi, ddof=2) / np.var(lo, ddof=2)       # Goldfeld-Quandt style, halves of 20
+    p_F = 1 - stats.f.cdf(F, 18, 18)
+    slope_absr = stats.linregress(x, np.abs(r))
+    return {"breusch_pagan_LM_p": float(bp[1]), "white_p": float(wh[1]),
+            "spearman_abs_resid_vs_x": [float(rho), float(p_rho)],
+            "sd_resid_first20": float(lo.std(ddof=2)), "sd_resid_last20": float(hi.std(ddof=2)),
+            "gq_F_last_over_first": float(F), "gq_p_one_sided": float(p_F),
+            "shapiro_p_standardised_resid": float(stats.shapiro(res.get_influence().resid_studentized_internal)[1])}
+
+out = {"numpy": np.__version__, "statsmodels": sm.__version__, "n": 40, "seed": 221,
+       "truth": {"intercept": A0, "slope": B0}, "series": {}}
+for name, y, sd in [("A", yA, sdA), ("B", yB, sdB)]:
+    ols = sm.OLS(y, X).fit()
+    wls = sm.WLS(y, X, weights=1.0 / sd**2).fit()        # weights from the stated noise model
+    # feasible WLS: sd model estimated from OLS residuals (|r| regressed on x), no knowledge of truth
+    g = sm.OLS(np.abs(ols.resid), X).fit()
+    sd_hat = np.clip(g.fittedvalues, 0.05, None)
+    fwls = sm.WLS(y, X, weights=1.0 / sd_hat**2).fit()
+    # OLS with heteroscedasticity-robust (HC3) errors
+    hc3 = sm.OLS(y, X).fit(cov_type="HC3")
+    s = {"ols": fit_summary(ols), "wls_known_variance": fit_summary(wls), "wls_feasible": fit_summary(fwls),
+         "ols_hc3": {**{k: v for k, v in fit_summary(hc3).items() if k != "df_resid"}},
+         "diag_ols_resid": diagnostics(ols, name),
+         "diag_wls_weighted_resid": {
+             "breusch_pagan_LM_p": float(het_breuschpagan(wls.resid * np.sqrt(wls.model.weights), X)[1]),
+             "spearman_abs_wresid_vs_x": [float(v) for v in stats.spearmanr(x, np.abs(wls.resid * np.sqrt(wls.model.weights)))]}}
+    # hc3 CI uses normal quantiles in statsmodels by default; record as is
+    out["series"][name] = s
+
+# Monte Carlo: 20000 replicates per series, same designs, to compare sampling sd of slope and 95% CI coverage
+mc_rng = np.random.default_rng(2210)
+R = 20000
+mc = {}
+for name, sd in [("A", sdA), ("B", sdB)]:
+    est = {"ols": [], "wls": []}; cov = {"ols": 0, "wls": 0}; tcrit = stats.t.ppf(0.975, 38)
+    Wt = 1.0 / sd**2
+    for _ in range(R):
+        y = A0 + B0 * x + mc_rng.normal(0, sd)
+        # closed-form fits with classical SE (as the CIs reported)
+        for m, w in (("ols", np.ones(40)), ("wls", Wt)):
+            XtW = X.T * w
+            cov_b = np.linalg.inv(XtW @ X)
+            b = cov_b @ XtW @ y
+            r = y - X @ b
+            s2 = (w * r**2).sum() / 38
+            se = np.sqrt(s2 * cov_b[1, 1])
+            est[m].append(b[1])
+            cov[m] += abs(b[1] - B0) <= tcrit * se
+    mc[name] = {m: {"slope_mean": float(np.mean(est[m])), "slope_sd": float(np.std(est[m], ddof=1)),
+                    "ci_coverage": cov[m] / R} for m in est}
+out["monte_carlo"] = {"replicates": R, "seed": 2210, "note": "classical (model-based) 95% t intervals", "series": mc}
+
+out["chosen"] = {"A": {"method": "OLS", "key": "ols", "reason": "no heteroscedasticity detected (BP, White, Spearman, GQ all p>0.15); known-variance WLS is identical for constant sd"},
+                 "B": {"method": "WLS", "key": "wls_known_variance", "weights": "1/(0.5+0.15x)^2", "reason": "BP, White, Spearman, GQ all p<0.01; weighted residuals pass (BP p=0.38)"}}
+out["interval_construction"] = "estimate +/- t(0.975, 38) * model-based SE (scale estimated from residuals); statsmodels conf_int"
+ols_fits = {n: sm.OLS(y, X).fit() for n, y in (("A", yA), ("B", yB))}
+wls_B = sm.WLS(yB, X, weights=1.0 / sdB**2).fit()
+with open(os.path.join(OUT, "residuals.csv"), "w", newline="") as f:
+    w = csv.writer(f); w.writerow(["x", "ols_resid_A", "ols_resid_B", "ols_fitted_A", "ols_fitted_B", "wls_fitted_B", "wls_weighted_resid_B"])
+    for i in range(40):
+        w.writerow([int(x[i]), repr(float(ols_fits["A"].resid[i])), repr(float(ols_fits["B"].resid[i])),
+                    repr(float(ols_fits["A"].fittedvalues[i])), repr(float(ols_fits["B"].fittedvalues[i])),
+                    repr(float(wls_B.fittedvalues[i])), repr(float(wls_B.resid[i] / sdB[i]))])
+with open(os.path.join(OUT, "parameters.csv"), "w", newline="") as f:
+    w = csv.writer(f); w.writerow(["series", "method", "parameter", "estimate", "se", "ci95_low", "ci95_high"])
+    for n in ("A", "B"):
+        k = out["chosen"][n]["key"]; r = out["series"][n][k]
+        for par in ("intercept", "slope"):
+            w.writerow([n, out["chosen"][n]["method"], par, repr(r[par]), repr(r["se_" + par]), repr(r["ci95"][par][0]), repr(r["ci95"][par][1])])
+with open(os.path.join(OUT, "data.csv"), "w", newline="") as f:
+    w = csv.writer(f); w.writerow(["x", "yA", "yB", "true_sd_A", "true_sd_B"])
+    for row in zip(x, yA, yB, sdA, sdB): w.writerow([repr(float(v)) if i else int(v) for i, v in enumerate(row)])
+with open(os.path.join(OUT, "results.json"), "w") as f:
+    json.dump(out, f, indent=2)
+print(json.dumps(out, indent=1))

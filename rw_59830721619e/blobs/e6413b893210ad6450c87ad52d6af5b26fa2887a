@@ -1,0 +1,25 @@
+# Research brief
+
+## Frozen objective (experiment-repo issue #1, read in full)
+
+> Monte Carlo estimate of pi and how its error scales with the number of samples.
+>
+> Estimate pi by sampling points uniformly in the unit square and counting those inside the quarter circle. For each N in 10^3, 10^4, 10^5, 10^6 and 10^7, run 200 independent estimates with `numpy.random.default_rng` seeded from 2026 plus the run index, and record the mean absolute error against `math.pi`.
+>
+> Fit log(mean absolute error) against log(N) by least squares and give the exponent with a 95% interval; compare it with the -1/2 expected for Monte Carlo.
+>
+> Report: `report/report.md`, one page with the table of N and mean absolute error, the fitted exponent with its interval, and one log-log figure of the error with the fit.
+
+## Inputs and conventions
+
+The objective is the only supplied material; no datasets, attachments, or related papers are supplied. All data must be generated, without substituting binomial draws for sampled points. The estimate is four times the fraction satisfying x*x+y*y <= 1 for uniform (x,y) in [0,1)^2. Absolute errors use Python math.pi. Runs are indexed 0 through 199, giving seeds 2026 through 2225.
+
+The intended question is whether mean absolute error decreases with the Monte Carlo exponent -1/2 over the five specified sizes. The figure must show all five measured mean absolute errors and the fitted power law on logarithmic axes. The table must report these same five means. A one-page report should state the run count, seeding, fit, interval method, and comparison with -1/2.
+
+## Settled analysis interpretation
+
+Reset default_rng(2026 + run_index) for each sample size; interleaved point draws then share prefixes across sizes for a given run. This preserves 200 independent estimates within each size while inducing dependence across sizes. Compute each run's cumulative counts at all five sizes, exactly equivalent to resetting and using the same prefixes. Fit ordinary least squares to the five natural-log mean absolute errors. For a 95% uncertainty interval, bootstrap whole run vectors (paired across sizes), refit the five log means in each bootstrap sample, and use percentile endpoints. This interval describes finite-run uncertainty without pretending the five means are independent. Also report the conventional regression t interval as a sensitivity check, explicitly noting its assumptions. Compare the measurements to the asymptotic mean absolute error sqrt(32*p*(1-p)/pi)/sqrt(N) with p=pi/4, derived from the normal approximation to the binomial estimator. No external empirical finding is claimed.
+
+## Settled ownership
+
+experiment-repo owns brief, assignment, generation, provenance, numerical results, fit, uncertainty, and diagnostics. figtab-repo owns the final log-log figure and table formatting. paper-repo owns the one-page report and integration. internal-review-repo independently checks compliance and claims. Experiment owns computational feasibility. Full results and diagnostics are now supplied in results/; all objective requirements for simulation and inference have been completed. The primary paired-bootstrap and conventional t intervals both include -1/2. Figure and report delivery remain with their assigned owners.

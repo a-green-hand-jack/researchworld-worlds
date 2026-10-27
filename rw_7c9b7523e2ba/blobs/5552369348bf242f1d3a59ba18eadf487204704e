@@ -1,0 +1,24 @@
+# Review standard (internal-review-repo)
+
+Objective: `internal-review-repo`#1 — Monte Carlo estimate of pi and the scaling of its error with N.
+
+The assembled delivery is approved only when all of the following hold, checked on the delivered artifacts at the exact revisions:
+
+1. **Method as specified.** Points uniform in the unit square, count inside the quarter circle, pi_hat = 4·k/N.
+   N ∈ {10^3, 10^4, 10^5, 10^6, 10^7}; 200 independent estimates per N; each run uses
+   `numpy.random.default_rng(2026 + run_index)`; error is |pi_hat − math.pi|; mean absolute error (MAE) per N.
+   The code that produced the numbers is delivered or referenced at a revision, with the input/seed convention stated
+   (including how run_index is defined and that the same seeds are reused across N, if they are).
+2. **Numbers reproduce.** I will independently recompute the 5 MAE values and the fit; the reported values must
+   agree with an exact re-run of the stated procedure (same seeds → identical values).
+   Sanity bound: MAE ≈ sqrt(2/pi)·σ/sqrt(N), σ = 4·sqrt(p(1−p)), p = pi/4 (≈ 1.31/sqrt(N)); values far from this are a finding.
+3. **Fit.** OLS of log(MAE) on log(N) over the 5 points; slope with a 95% interval computed correctly
+   (t quantile with n−2 = 3 df on the slope's standard error, or a clearly stated and justified alternative);
+   method stated in the report. The comparison with −1/2 is explicit: whether −0.5 lies inside the interval,
+   and the claim made does not exceed what the interval supports. Uncertainty of each MAE (e.g. its standard error
+   over the 200 runs) is desirable and any claim about agreement should be consistent with it.
+4. **Report** `report/report.md`: one page; contains the table of N and MAE, the fitted exponent with its 95% interval,
+   the comparison with −1/2, and exactly one log-log figure that it embeds by a path that resolves in the delivery.
+5. **Figure.** Opened and inspected: log-log axes, labeled axes with units/quantities, the 5 MAE points, the fitted
+   line, a −1/2 reference is welcome; legible, not blank or placeholder; what it shows matches the table and fit.
+6. **Consistency.** Numbers in text, table and figure agree with each other and with the delivered result files.

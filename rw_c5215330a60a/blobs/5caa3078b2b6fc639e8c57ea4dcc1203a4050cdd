@@ -1,0 +1,51 @@
+"""Render committed float64 errors and fitted-order table; no fits are recomputed."""
+import csv,json,platform
+from pathlib import Path
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+root=Path(__file__).resolve().parents[1]
+rows=list(csv.DictReader((root/'presentation/inputs/errors.csv').open()))
+fits=json.loads((root/'presentation/inputs/fits.json').read_text())['fits']
+plt.rcParams.update({'font.size':13,'axes.titlesize':16,'axes.labelsize':14,'legend.fontsize':12,'svg.fonttype':'none'})
+rules=['trapezoid','simpson','gauss-legendre-4']; labels=['Trapezoid','Simpson','GL4']; colors=['#0072B2','#D55E00','#009E73']; markers=['o','s','D']
+functions=['exp(x)','1/(1+25x^2)','sqrt(x)']; names=['fig_exp','fig_runge','fig_sqrt']; titles=[r'$e^x$',r'$1/(1+25x^2)$',r'$\sqrt{x}$']
+for function,name,title in zip(functions,names,titles):
+ fig,ax=plt.subplots(figsize=(4.6,3.7)); fig.subplots_adjust(left=.19,right=.95,bottom=.18,top=.90)
+ smooth=function!='sqrt(x)'; ymin=1e-18 if smooth else 1e-9
+ if smooth:
+  ax.axhspan(ymin,1e-15,color='.93',zorder=0); ax.axhline(1e-15,color='.55',lw=.7)
+ for ri,(rule,label,color,marker) in enumerate(zip(rules,labels,colors,markers)):
+  data=[r for r in rows if r['function']==function and r['rule']==rule]
+  n=np.array([int(r['n']) for r in data]); err=np.array([float(r['abs_error']) for r in data]); good=err>1e-15; positive=err>0
+  # NaNs break lines at exact zeros; no pseudo-error enters any curve.
+  ax.plot(n,np.where(positive,err,np.nan),color=color,lw=1.4)
+  ax.scatter(n[good],err[good],color=color,marker=marker,s=26,label=label,zorder=4)
+  ax.scatter(n[positive&~good],err[positive&~good],edgecolor=color,facecolor='white',marker=marker,s=26,zorder=4)
+  if np.any(~positive):
+   ax.scatter(n[~positive],np.full(sum(~positive),ymin*([1.5,1.8,5][ri])),color=color,marker='v',s=22,clip_on=False,zorder=5)
+ # Short slope guides are deliberately offset from data and labelled as references.
+ guides=[(2,32,1e-3),(4,32,2e-8),(8,3,2e-9)] if smooth else [(1.5,32,2e-7)]
+ for p,x,y in guides:
+  xx=np.array([x,x*4]); ax.plot(xx,y*(xx/x)**(-p),color='.35',ls='--',lw=1)
+  ax.text(x*1.05,y*1.7,rf'$n^{{-{p:g}}}$',color='.3',fontsize=11)
+ ax.set_xscale('log',base=2); ax.set_yscale('log'); ax.set_xlim(1.6,5200); ax.set_ylim(ymin,.2)
+ ax.set_xticks([2,8,32,128,512,4096]); ax.set_xticklabels(['2','8','32','128','512','4096'])
+ ax.set_yticks([1e-2,1e-6,1e-10,1e-14,1e-17] if smooth else [1e-2,1e-4,1e-6,1e-8])
+ ax.set_xlabel('Equal panels, n'); ax.set_ylabel('Absolute integral error'); ax.set_title(title)
+ ax.grid(True,which='major',alpha=.16); ax.legend(loc='upper right',frameon=False,handletextpad=.3)
+ note='Filled: fitted • open: excluded (≤10⁻¹⁵)\n▼ at bottom: exact zero (not a positive error)' if smooth else 'All points fitted (error >10⁻¹⁵)\nDashed guide: order 1.5'
+ # Marker semantics are in the shared caption, to preserve legibility at report size.
+ for ext in ['png']: fig.savefig(root/f'report/figures/{name}.{ext}',dpi=200)
+ plt.close(fig)
+lines=['| Integrand | Rule | Order | 95% interval | Fit points |','|---|---|---:|---:|---:|']
+for function in functions:
+ for rule,label in zip(rules,labels):
+  f=fits[function+'|'+rule]['1e-15']; digits=8 if function=='sqrt(x)' and rule=='gauss-legendre-4' else 4
+  ci=f"[{f['ci_lo']:.{digits}f}, {f['ci_hi']:.{digits}f}]" if 'ci_lo' in f else 'Unavailable (2 points)'
+  lines.append(f"| `{function}` | {label} | {f['order']:.{digits}f} | {ci} | {f['npts']} |")
+lines+=['','Order is minus the OLS slope of ln(absolute error) against ln(n), using only errors >10⁻¹⁵. Intervals use the Student t critical value with N−2 degrees of freedom; they describe regression residuals, not stochastic quadrature uncertainty. Extra decimal places resolve the narrow GL4 interval for sqrt(x); exact endpoints are preserved in presentation/inputs/fits.json.']
+(root/'report/tables/orders.md').write_text('\n'.join(lines)+'\n')
+(root/'presentation/versions.json').write_text(json.dumps({'python':platform.python_version(),'numpy':np.__version__,'matplotlib':matplotlib.__version__},indent=2)+'\n')

@@ -1,0 +1,247 @@
+"""Referee rescoring of E3 (sweep and follow-up) from the per-run trajectory lines alone, against the frozen
+pre-registrations, to compare with experiment-repo's summary.json / summary_followup.json.
+Written before any E3 sweep result was delivered (experiment-repo at ae11e11); independent of code/e3_grid.py:
+my own Spearman (average ranks) and bootstrap (another generator), per-seed values read from the trajectory lines
+(step-0 and last full evaluation), counts and centred RankMe also recomputed from the logged spectra.
+Inputs (experiment-repo results/e3 at the delivered commit): prediction.json (frozen at 8668858, sha256 f4f720b5...),
+prediction_followup.json (bd947e1, sha256 80937948...), trajectories.jsonl, summary.json, and when present
+trajectories_followup.jsonl, summary_followup.json.
+Usage: python3 checks/e3_results.py E3_DIR [OUT_JSON]
+"""
+import sys, os, json, hashlib, math
+import numpy as np
+
+d = sys.argv[1]
+outp = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.path.dirname(__file__), "e3_results.json")
+SHA = dict(prediction="f4f720b5f206803a4a97de3978b439372d1fcc6ea90fd61f0e5220b57bc17e8f",
+           prediction_followup="809379488fde160f7783de14a2c2df0e688f783d18ae7641019b8c8c45d6968e")
+STEPS = dict(sweep=20 * 195, full=50 * 195)
+ld = lambda f: json.load(open(os.path.join(d, f))) if os.path.exists(os.path.join(d, f)) else None
+out = {}
+for k in SHA:
+    raw = open(os.path.join(d, k + ".json"), "rb").read()
+    out[k + "_unchanged"] = hashlib.sha256(raw).hexdigest() == SHA[k]
+P = ld("prediction.json"); F = ld("prediction_followup.json"); S = ld("summary.json"); SF = ld("summary_followup.json")
+C = P["configs"]
+
+
+def rankme(eig):
+    s = np.sqrt(np.clip(np.asarray(eig, float), 0, None)); p = s / s.sum() + 1e-7
+    return float(np.exp(-(p * np.log(p)).sum()))
+
+
+def read(fname, horizon):
+    """(name, seed) -> per-seed record from the trajectory lines (finished runs only, as exported)."""
+    R = {}
+    if not os.path.exists(os.path.join(d, fname)):
+        return R
+    for line in open(os.path.join(d, fname)):
+        t = json.loads(line)
+        fi = [i for i, f in enumerate(t["full"]) if f]
+        i0, i1 = fi[0], fi[-1]
+        g = lambda k, i: t[f"online_tok_{k}"][i]
+        loss = [x for x in t["loss"] if x is not None]
+        r = dict(name=t["name"], seed=t["seed"], step0=t["step"][i0], steps=t["step"][i1], horizon_ok=t["step"][i1] >= horizon,
+                 count0=g("count_1e3", i0), count=g("count_1e3", i1), rankme_c=g("rankme_c", i1), rankme_c0=g("rankme_c", i0),
+                 tv0=g("total_var", i0), tv=g("total_var", i1), target_count=t["target_tok_count_1e3"][i1],
+                 nonfinite_loss=any(not math.isfinite(x) for x in loss))
+        r["complete"] = bool(r["nonfinite_loss"] or r["tv"] < 1e-6 * r["tv0"] or r["rankme_c"] < 1.5)
+        r["dim"] = bool(r["complete"] or r["count"] < 0.5 * r["count0"])
+        sp = t.get("spectra", {}).get(str(t["step"][i1]))
+        if sp:
+            e = np.asarray(sp["online"], float)
+            r["count_from_spectrum"] = int((e >= 1e-3 * e.max()).sum()); r["rankme_c_from_spectrum"] = rankme(e)
+        ep = [i for i in fi if t["epoch"][i] is not None and abs(t["epoch"][i] - 20) < 1e-6]
+        r["count_epoch20"] = g("count_1e3", ep[0]) if ep else None
+        pr = [p for p in t.get("probe", []) if p.get("online") is not None]
+        r["probe_final"] = pr[-1]["online"] if pr else None
+        r["probe_curve"] = [(p["epoch"], p["online"]) for p in pr]
+        R[(t["name"], t["seed"])] = r
+    return R
+
+
+def ranks(v):
+    v = np.asarray(v, float); o = np.argsort(v, kind="mergesort"); r = np.empty(len(v)); r[o] = np.arange(len(v))
+    for u in np.unique(v):
+        m = v == u; r[m] = r[m].mean()
+    return r
+
+
+def rho(x, y):
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    if len(x) < 3 or np.ptp(x) == 0 or np.ptp(y) == 0:
+        return None
+    return float(np.corrcoef(ranks(x), ranks(y))[0, 1])
+
+
+def boot(x, y, B=4000, seed=12345):
+    x, y = np.asarray(x, float), np.asarray(y, float); g = np.random.default_rng(seed); bs = []
+    for _ in range(B):
+        i = g.integers(0, len(x), len(x)); r = rho(x[i], y[i])
+        if r is not None:
+            bs.append(r)
+    return [float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))] if bs else None
+
+
+SW = read("trajectories.jsonl", STEPS["sweep"])
+FU = read("trajectories_followup.jsonl", STEPS["sweep"])
+by = lambda R, n: sorted([r for (m, s), r in R.items() if m == n], key=lambda r: r["seed"])
+mean = lambda rs, k: float(np.mean([r[k] for r in rs]))
+
+# per-run consistency: horizon reached, logged count / RankMe against the logged spectrum
+runs = list(SW.values()) + list(FU.values())
+out["runs"] = dict(sweep=len(SW), followup=len(FU), not_at_horizon=[(r["name"], r["seed"], r["steps"]) for r in runs if not r["horizon_ok"]],
+                   step0_not_zero=[(r["name"], r["seed"]) for r in runs if r["step0"] != 0],
+                   nonfinite=[(r["name"], r["seed"]) for r in runs if r["nonfinite_loss"]],
+                   count_vs_spectrum_mismatch=[(r["name"], r["seed"], r["count"], r["count_from_spectrum"]) for r in runs
+                                               if "count_from_spectrum" in r and r["count"] != r["count_from_spectrum"]],
+                   rankme_vs_spectrum_max_rel=max([abs(r["rankme_c"] - r["rankme_c_from_spectrum"]) / r["rankme_c"] for r in runs
+                                                   if "rankme_c_from_spectrum" in r] or [None]) if runs else None,
+                   init_count_by_seed=sorted({(r["seed"], r["count0"]) for r in SW.values()}),
+                   seeds_per_config={n: len(by(SW, n)) for n in C})
+
+rows = {}
+for n, c in C.items():
+    rs = by(SW, n)
+    if rs:
+        rows[n] = dict(arm=c["arm"], factor=c["factor"], value=c["value"], seeds=len(rs), count_pred=c["count_pred"],
+                       count=mean(rs, "count"), rankme_c=mean(rs, "rankme_c"), target_count=mean(rs, "target_count"),
+                       dim=sum(r["dim"] for r in rs), complete=sum(r["complete"] for r in rs),
+                       counts=[r["count"] for r in rs], rankmes=[round(r["rankme_c"], 2) for r in rs])
+out["rows"] = rows
+
+crit = {}
+for arm in ("P", "T"):
+    rr = [(n, r) for n, r in rows.items() if r["arm"] == arm and r["value"] != "nosg"]
+    x = [r["count_pred"] for _, r in rr]; y = [r["count"] for _, r in rr]
+    rh = rho(x, y); ci = boot(x, y) if rh is not None else None
+    loo = {n: rho([a for m, a in zip([q for q, _ in rr], x) if m != n], [b for m, b in zip([q for q, _ in rr], y) if m != n]) for n, _ in rr}
+    crit[f"C-rank arm {arm}"] = dict(n=len(rr), rho=rh, ci=ci, passed=None if rh is None else bool(rh >= 0.5 and ci[0] > 0),
+                                     leave_one_out_min=min((v, k) for k, v in loo.items() if v is not None) if any(v is not None for v in loo.values()) else None,
+                                     distinct_predictions=len(set(np.round(x, 6))))
+dres, nres = [], []
+for dd in P["directions"]:
+    lo, hi = by(SW, dd["low"]), by(SW, dd["high"])
+    if not lo or not hi:
+        continue
+    if dd["sign"] != 0:
+        L = {r["seed"]: r["rankme_c"] for r in lo}; H = {r["seed"]: r["rankme_c"] for r in hi}
+        k = sum(np.sign(H[s] - L[s]) == dd["sign"] for s in L if s in H)
+        dres.append(dict(low=dd["low"], high=dd["high"], sign=dd["sign"], seeds_agree=int(k), holds=bool(k >= 2),
+                         d_count_meas=mean(hi, "count") - mean(lo, "count")))
+    else:
+        a = [r["count"] for r in lo]; b = [r["count"] for r in hi]
+        tol = max(2.0, float(np.std(a, ddof=1) + np.std(b, ddof=1))) if min(len(a), len(b)) > 1 else 2.0
+        dm = float(np.mean(b) - np.mean(a))
+        nres.append(dict(low=dd["low"], high=dd["high"], d_count_meas=dm, tol=tol, holds=bool(abs(dm) <= tol)))
+crit["C-dir"] = dict(signed=len(dres), signed_held=sum(x["holds"] for x in dres), nulls=len(nres),
+                     nulls_held=sum(x["holds"] for x in nres), signed_list=dres, null_list=nres)
+seq = sorted([n for n in C if n.startswith("T_wd") and n in rows], key=lambda n: C[n]["value"])
+coll = [n for n in seq if rows[n]["dim"] >= 2]; obs = None
+if coll:
+    first = coll[0]; prev = [n for n in seq if C[n]["value"] < C[first]["value"] and rows[n]["dim"] < 2]
+    if prev:
+        obs = math.sqrt(C[prev[-1]]["value"] * C[first]["value"]) if C[prev[-1]]["value"] > 0 else C[first]["value"] / 2 ** 0.5
+pc = P["critical_wd"]["arm_T"]
+crit["C-loc wd arm T"] = dict(sequence=[(n, rows[n]["dim"], rows[n]["count"]) for n in seq], observed=obs, predicted=pc,
+                              ratio=obs / pc if obs else None, passed=None if obs is None else bool(0.5 <= obs / pc <= 2),
+                              monotone=all(rows[n]["dim"] >= 2 for n in seq[seq.index(coll[0]):]) if coll else None)
+ts = []
+for t in P["theory_signs"]:
+    rn = [n for n in t["runs"] if n in rows]
+    if "sign" in t:
+        hold = []
+        for a, b in zip(rn, rn[1:]):
+            L = {r["seed"]: r["rankme_c"] for r in by(SW, a)}; H = {r["seed"]: r["rankme_c"] for r in by(SW, b)}
+            k = sum(np.sign(H[s] - L[s]) == t["sign"] for s in L if s in H)
+            hold.append(dict(low=a, high=b, seeds_agree=int(k), holds=bool(k >= 2), count_low=rows[a]["count"], count_high=rows[b]["count"]))
+        ts.append(dict(test=t["test"], runs=rn, pairs=hold, passed=bool(hold) and all(h["holds"] for h in hold)))
+    elif t["test"].startswith("nosg"):
+        ts.append(dict(test=t["test"], result={n: rows[n]["complete"] for n in rn}, passed=bool(rn) and all(rows[n]["complete"] >= 2 for n in rn)))
+    elif t["test"].startswith("frozen"):
+        ts.append(dict(test=t["test"], result={n: rows[n]["dim"] for n in rn}, passed=bool(rn) and all(rows[n]["dim"] <= 1 for n in rn)))
+    else:
+        v = {n: rows[n]["counts"] for n in rn}
+        sd0 = max(np.std(x) for x in v.values()) if v else None; sd1 = max(np.std(x, ddof=1) for x in v.values() if len(x) > 1) if v else None
+        ms = {n: float(np.mean(x)) for n, x in v.items()}; rg = float(np.ptp(list(ms.values()))) if ms else None
+        ts.append(dict(test=t["test"], means=ms, range=rg, max_seed_std_ddof0=float(sd0) if v else None,
+                       max_seed_std_ddof1=float(sd1) if v else None, passed=None if not v else bool(rg <= 2 * sd0 + 1e-9),
+                       order_post_hoc=sorted(ms, key=ms.get)))
+crit["C-theory signs"] = ts
+out["criteria"] = crit
+
+# follow-up
+if F:
+    c4, full = [], []
+    for n, f in F["configs"].items():
+        m = by(FU, n); par = by(SW, f["parent"])
+        if not m:
+            continue
+        if f["kind"] in ("rescue", "break") and par:
+            L = {r["seed"]: r["rankme_c"] for r in par}; H = {r["seed"]: r["rankme_c"] for r in m}
+            k = sum(np.sign(H[s] - L[s]) == f["sign"] for s in L if s in H)
+            pd, cd = sum(r["dim"] for r in par), sum(r["dim"] for r in m)
+            elig = pd >= 2 if f["kind"] == "rescue" else pd <= 1
+            cross = cd <= 1 if f["kind"] == "rescue" else cd >= 2
+            c4.append(dict(name=n, arm=f["arm"], source=f["source"], kind=f["kind"], sign=f["sign"], seeds_agree=int(k),
+                           direction_holds=bool(k >= 2), parent_dim=pd, child_dim=cd, crossing_eligible=bool(elig),
+                           crossing_holds=bool(cross) if elig else None, count=mean(m, "count"), parent_count=mean(par, "count")))
+        if f["kind"] == "full":
+            cd = sum(r["dim"] for r in m)
+            full.append(dict(name=n, count_pred=f["count_pred"], count=mean(m, "count"), counts=[r["count"] for r in m],
+                             count_epoch20=[r["count_epoch20"] for r in m], collapse_pred=f["collapse_pred"], collapsed=bool(cd >= 2),
+                             flag_right=bool((cd >= 2) == f["collapse_pred"]), probe_final=[r["probe_final"] for r in m]))
+    fc = {}
+    for arm in ("T", "P"):
+        for src in ("theory", "rule"):
+            cc = [c for c in c4 if c["arm"] == arm and c["source"] == src]
+            if cc:
+                ce = [c for c in cc if c["crossing_eligible"]]
+                fc[f"C4 arm {arm} {src}"] = dict(n=len(cc), direction_held=sum(c["direction_holds"] for c in cc),
+                                                 crossing_eligible=len(ce), crossing_held=sum(bool(c["crossing_holds"]) for c in ce))
+    a = {r["seed"]: r["probe_final"] for r in by(FU, "F_T_wd0.03") if r["probe_final"] is not None}
+    b = {r["seed"]: r["probe_final"] for r in by(FU, "F_T_wd0.01") if r["probe_final"] is not None}
+    if a and b:
+        k = sum(a[s] < b[s] for s in a if s in b)
+        fc["C-full probe"] = dict(seeds_lower=int(k), passed=bool(k >= 2), wd003=a, wd001=b, random_init_ref=43.65)
+    fc["C-full count"] = full
+    out["followup"] = dict(c4=c4, criteria=fc)
+
+# agreement with the delivered summaries
+mis = []
+if S:
+    sc = S["criteria"]
+    for arm in ("P", "T"):
+        a, b = crit[f"C-rank arm {arm}"], sc.get(f"C-rank arm {arm}", {})
+        if (a["rho"] is None) != (b.get("rho") is None) or (a["rho"] is not None and abs(a["rho"] - b["rho"]) > 1e-9) or a["passed"] != b.get("passed"):
+            mis.append((f"C-rank {arm}", a["rho"], a["passed"], b.get("rho"), b.get("passed")))
+    for k1, k2 in (("signed_held", "signed_held"), ("signed", "signed_pairs"), ("nulls_held", "nulls_held"), ("nulls", "nulls")):
+        if crit["C-dir"][k1] != sc["C-dir"][k2]:
+            mis.append(("C-dir " + k1, crit["C-dir"][k1], sc["C-dir"][k2]))
+    a, b = crit["C-loc wd arm T"], sc["C-loc wd arm T"]
+    if a["passed"] != b["passed"] or (a["observed"] or 0) != (b["observed"] or 0):
+        mis.append(("C-loc", a["observed"], a["passed"], b["observed"], b["passed"]))
+    for a, b in zip(ts, sc["C-theory signs"]):
+        if a["passed"] != b.get("passed"):
+            mis.append(("theory sign: " + a["test"], a["passed"], b.get("passed")))
+    for r in S["rows"]:
+        q = rows.get(r["name"])
+        if q is None or abs(q["count"] - r["count"]) > 1e-9 or abs(q["rankme_c"] - r["rankme_c"]) > 1e-6 or q["dim"] != r["dim_collapse"]:
+            mis.append(("row " + r["name"], q and q["count"], r["count"], q and q["dim"], r["dim_collapse"]))
+if SF and F:
+    for k, v in out["followup"]["criteria"].items():
+        w = SF["criteria"].get(k)
+        if k == "C-full count":
+            for a in v:
+                b = next((x for x in w or [] if x["name"] == a["name"]), None)
+                if b is None or abs(a["count"] - b["count"]) > 1e-9 or a["flag_right"] != b["flag_right"]:
+                    mis.append(("full " + a["name"], a["count"], a["flag_right"], b and b["count"], b and b["flag_right"]))
+        elif w is None or any(v[x] != w.get(x) for x in v if x in ("direction_held", "crossing_held", "crossing_eligible", "passed", "seeds_lower")):
+            mis.append((k, v, w))
+out["summary_mismatches"] = mis
+json.dump(out, open(outp, "w"), indent=1, default=lambda o: o.item() if hasattr(o, "item") else str(o))
+print(json.dumps(dict(runs={k: v for k, v in out["runs"].items() if k != "seeds_per_config"},
+                      crank={k: v for k, v in crit.items() if k.startswith("C-rank")},
+                      cdir={k: crit["C-dir"][k] for k in ("signed", "signed_held", "nulls", "nulls_held")},
+                      cloc=crit["C-loc wd arm T"], signs=[(t["test"], t["passed"]) for t in ts],
+                      followup=out.get("followup", {}).get("criteria"), mismatches=mis), indent=1, default=str)[:6000])

@@ -1,0 +1,50 @@
+# Review standard (internal-review-repo)
+
+Derived from the `Research objective` issue (#1). The delivery is approved only when
+every item below is met by the assembled delivery at the inspected revisions. No
+conclusion is predetermined: either method may win, or neither.
+
+## A. Data
+A1. Iris, OpenML dataset id 61, fetched from OpenML itself by the delivered code
+    (URL or `openml`/`fetch_openml(data_id=61)` call visible); 150 rows, 4 numeric
+    features, 3 classes; provenance (download source, version/checksum) recorded.
+
+## B. Methods and protocol
+B1. Multinomial logistic regression (multinomial loss, not one-vs-rest); settings
+    (regularisation, solver, scaling) stated.
+B2. k-NN with k chosen by inner cross-validation **inside each outer training fold**
+    (nested; no use of the outer test fold for selection; any scaling fitted
+    within the fold, e.g. in a pipeline). The k grid and inner CV scheme stated;
+    selected k per outer fold recorded.
+B3. Outer protocol: 10 repetitions x stratified 5-fold = 50 outer folds, the same
+    splits for both methods (paired), seeds fixed and recorded.
+
+## C. Statistics
+C1. Each method's mean accuracy with a 95% interval; the paired difference
+    (LR - kNN or stated sign) with a 95% interval.
+C2. The interval method is stated and suits repeated CV: fold scores overlap in
+    training data, so a naive t-interval over 50 folds is anti-conservative. A
+    corrected method (e.g. Nadeau-Bengio corrected resampled t, or repetition-level
+    intervals) is used, or the choice is justified and its limitation stated.
+C3. Claims in the text do not exceed what the intervals support (e.g. "no
+    detectable difference" rather than "equivalent" unless shown).
+
+## D. Ibex vs local runs
+D1. The full cross-validation is run once as a CPU job on Ibex (SLURM) and once
+    locally; evidence kept: job id, script, log, node name taken from the job
+    itself (e.g. `SLURMD_NODENAME`/`hostname` inside the job).
+D2. The report states the Ibex node name and whether the two runs give identical
+    numbers, judged on per-fold results (not only rounded means); software
+    versions of both environments recorded; any difference explained.
+
+## E. Paper and artefacts
+E1. `report/report.pdf`, compiled from LaTeX with the official NeurIPS 2026
+    submission template (style as the venue position specifies), at most two
+    pages in total.
+E2. Exactly one figure and one table; the figure is readable, labelled (axes,
+    units, legend), shows what the text says; the table matches the results files.
+E3. Every number in the PDF is produced by delivered code and traceable to a
+    results file; LaTeX source and code are delivered next to the PDF and the
+    code runs to regenerate the numbers.
+E4. The PDF opens, has no unresolved references/citations, overfull text or
+    placeholders; any cited prior work exists and is cited correctly.

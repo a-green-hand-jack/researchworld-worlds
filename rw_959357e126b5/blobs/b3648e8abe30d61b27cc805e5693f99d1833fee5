@@ -1,0 +1,482 @@
+{
+ "question": [
+  "B1' development reference (before the B1' registration): the post-loss model stage_model_pl (code/e5_b1p.py)",
+  "against stage_model_qs (E5's frozen model) on E5's held-out runs, which were scored and read before B1' existed, so",
+  "this is development use of them, never a test. Copy-target runs only (the model's scope). Per run: B1d's log error of"
+ ],
+ "source": "b1_heldout_runs.jsonl.gz",
+ "all": {
+  "runs": 4140,
+  "runs_post_loss": 629,
+  "pl": {
+   "median_abs": 0.5969975677342491,
+   "median_signed": 0.5104372977925961,
+   "median_abs_both_dead": 0.5967150909017283,
+   "pairs": 32213
+  },
+  "qs": {
+   "median_abs": 1.1428381263281568,
+   "median_signed": 1.1292121896900906,
+   "median_abs_both_dead": 1.142257361259832,
+   "pairs": 32213
+  },
+  "agree": {
+   "pl": 0.997674785292539,
+   "qs": 0.997602657004831
+  },
+  "regain": {
+   "truth": 70,
+   "pl": 102,
+   "qs": 63,
+   "truth_and_pl": 60,
+   "truth_and_qs": 50
+  }
+ },
+ "by_class": {
+  "<1": {
+   "runs": 2070,
+   "runs_post_loss": 325,
+   "pl": {
+    "median_abs": 0.4192044894295705,
+    "median_signed": 0.3895067648759303,
+    "median_abs_both_dead": 0.4199201582854332,
+    "pairs": 15588
+   },
+   "qs": {
+    "median_abs": 0.5226209472541548,
+    "median_signed": 0.5226185971695607,
+    "median_abs_both_dead": 0.5226845723242668,
+    "pairs": 15588
+   },
+   "agree": {
+    "pl": 0.9990136876006441,
+    "qs": 0.9988593666129898
+   },
+   "regain": {
+    "truth": 50,
+    "pl": 65,
+    "qs": 40,
+    "truth_and_pl": 50,
+    "truth_and_qs": 40
+   }
+  },
+  "=1": {
+   "runs": 690,
+   "runs_post_loss": 104,
+   "pl": {
+    "median_abs": 0.9432661196574088,
+    "median_signed": 0.9432661196574088,
+    "median_abs_both_dead": 0.9432661196574088,
+    "pairs": 5562
+   },
+   "qs": {
+    "median_abs": 1.4669934250129737,
+    "median_signed": 1.4669934250129737,
+    "median_abs_both_dead": 1.4669934250129737,
+    "pairs": 5562
+   },
+   "agree": {
+    "pl": 0.9963003220611917,
+    "qs": 0.9963123993558776
+   },
+   "regain": {
+    "truth": 10,
+    "pl": 15,
+    "qs": 10,
+    "truth_and_pl": 0,
+    "truth_and_qs": 0
+   }
+  },
+  "1-2": {
+   "runs": 0,
+   "runs_post_loss": 0,
+   "agree": {
+    "pl": 0.0,
+    "qs": 0.0
+   },
+   "regain": {}
+  },
+  "=2": {
+   "runs": 1380,
+   "runs_post_loss": 200,
+   "pl": {
+    "median_abs": 0.7062134559984212,
+    "median_signed": 0.496485041416479,
+    "median_abs_both_dead": 0.7059359957451616,
+    "pairs": 11063
+   },
+   "qs": {
+    "median_abs": 3.5388351591265392,
+    "median_signed": 3.5388351591265392,
+    "median_abs_both_dead": 3.539185501311938,
+    "pairs": 11063
+   },
+   "agree": {
+    "pl": 0.9963536634460548,
+    "qs": 0.9963627214170693
+   },
+   "regain": {
+    "truth": 10,
+    "pl": 22,
+    "qs": 13,
+    "truth_and_pl": 10,
+    "truth_and_qs": 10
+   }
+  },
+  ">2": {
+   "runs": 0,
+   "runs_post_loss": 0,
+   "agree": {
+    "pl": 0.0,
+    "qs": 0.0
+   },
+   "regain": {}
+  }
+ },
+ "by_variant": {
+  "alpha0.5": {
+   "runs": 690,
+   "runs_post_loss": 110,
+   "pl": {
+    "median_abs": 0.602748413781098,
+    "median_signed": 0.602748413781098,
+    "median_abs_both_dead": 0.602748413781098,
+    "pairs": 5265
+   },
+   "qs": {
+    "median_abs": 0.6890482659939703,
+    "median_signed": 0.6890482659939703,
+    "median_abs_both_dead": 0.6890482659939703,
+    "pairs": 5265
+   },
+   "agree": {
+    "pl": 0.998743961352657,
+    "qs": 0.9982709339774557
+   },
+   "regain": {
+    "truth": 30,
+    "pl": 40,
+    "qs": 20,
+    "truth_and_pl": 30,
+    "truth_and_qs": 20
+   }
+  },
+  "alpha2": {
+   "runs": 690,
+   "runs_post_loss": 100,
+   "pl": {
+    "median_abs": 0.7785404518427891,
+    "median_signed": 0.509150906627198,
+    "median_abs_both_dead": 0.7780117192005608,
+    "pairs": 5399
+   },
+   "qs": {
+    "median_abs": 3.627861190204221,
+    "median_signed": 3.627861190204221,
+    "median_abs_both_dead": 3.6326025790745105,
+    "pairs": 5399
+   },
+   "agree": {
+    "pl": 0.9952818035426731,
+    "qs": 0.9952858293075685
+   },
+   "regain": {
+    "truth": 10,
+    "pl": 15,
+    "qs": 13,
+    "truth_and_pl": 10,
+    "truth_and_qs": 10
+   }
+  },
+  "base": {
+   "runs": 690,
+   "runs_post_loss": 104,
+   "pl": {
+    "median_abs": 0.9432661196574088,
+    "median_signed": 0.9432661196574088,
+    "median_abs_both_dead": 0.9432661196574088,
+    "pairs": 5562
+   },
+   "qs": {
+    "median_abs": 1.4669934250129737,
+    "median_signed": 1.4669934250129737,
+    "median_abs_both_dead": 1.4669934250129737,
+    "pairs": 5562
+   },
+   "agree": {
+    "pl": 0.9963003220611917,
+    "qs": 0.9963123993558776
+   },
+   "regain": {
+    "truth": 10,
+    "pl": 15,
+    "qs": 10,
+    "truth_and_pl": 0,
+    "truth_and_qs": 0
+   }
+  },
+  "rhoP0.25": {
+   "runs": 690,
+   "runs_post_loss": 105,
+   "pl": {
+    "median_abs": 0.18579919717679227,
+    "median_signed": 0.06914392161406757,
+    "median_abs_both_dead": 0.18579919717679227,
+    "pairs": 5073
+   },
+   "qs": {
+    "median_abs": 0.197714085438121,
+    "median_signed": 0.17793154444019482,
+    "median_abs_both_dead": 0.19773056658324178,
+    "pairs": 5073
+   },
+   "agree": {
+    "pl": 0.9992129629629629,
+    "qs": 0.9992129629629629
+   },
+   "regain": {
+    "truth": 5,
+    "pl": 5,
+    "qs": 5,
+    "truth_and_pl": 5,
+    "truth_and_qs": 5
+   }
+  },
+  "rhoP0.5": {
+   "runs": 690,
+   "runs_post_loss": 110,
+   "pl": {
+    "median_abs": 0.5447828597131924,
+    "median_signed": 0.5447828597131924,
+    "median_abs_both_dead": 0.5447828597131924,
+    "pairs": 5250
+   },
+   "qs": {
+    "median_abs": 0.7134636617311667,
+    "median_signed": 0.6970305965669623,
+    "median_abs_both_dead": 0.7134636617311667,
+    "pairs": 5250
+   },
+   "agree": {
+    "pl": 0.9990841384863124,
+    "qs": 0.9990942028985508
+   },
+   "regain": {
+    "truth": 15,
+    "pl": 20,
+    "qs": 15,
+    "truth_and_pl": 15,
+    "truth_and_qs": 15
+   }
+  },
+  "rhoP2": {
+   "runs": 690,
+   "runs_post_loss": 100,
+   "pl": {
+    "median_abs": 0.6332941017258901,
+    "median_signed": 0.4841969661513079,
+    "median_abs_both_dead": 0.6332941017258901,
+    "pairs": 5664
+   },
+   "qs": {
+    "median_abs": 3.4654848885634526,
+    "median_signed": 3.4654848885634526,
+    "median_abs_both_dead": 3.4654848885634526,
+    "pairs": 5664
+   },
+   "agree": {
+    "pl": 0.9974255233494363,
+    "qs": 0.9974396135265701
+   },
+   "regain": {
+    "truth": 0,
+    "pl": 7,
+    "qs": 0,
+    "truth_and_pl": 0,
+    "truth_and_qs": 0
+   }
+  }
+ },
+ "by_kind": {
+  "const_hi": {
+   "runs": 180,
+   "runs_post_loss": 4,
+   "pl": {
+    "median_abs": 1.4497636007865924,
+    "median_signed": 1.4497636007865924,
+    "median_abs_both_dead": 1.4497636007865924,
+    "pairs": 146
+   },
+   "qs": {
+    "median_abs": 2.329589620530093,
+    "median_signed": 2.329589620530093,
+    "median_abs_both_dead": 2.329589620530093,
+    "pairs": 146
+   },
+   "agree": {
+    "pl": 0.999837962962963,
+    "qs": 0.999837962962963
+   },
+   "regain": {
+    "truth": 0,
+    "pl": 0,
+    "qs": 0,
+    "truth_and_pl": 0,
+    "truth_and_qs": 0
+   }
+  },
+  "const_lo": {
+   "runs": 180,
+   "runs_post_loss": 0,
+   "agree": {
+    "pl": 0.9982253086419753,
+    "qs": 0.9982253086419753
+   },
+   "regain": {
+    "truth": 0,
+    "pl": 0,
+    "qs": 0,
+    "truth_and_pl": 0,
+    "truth_and_qs": 0
+   }
+  },
+  "pulse": {
+   "runs": 540,
+   "runs_post_loss": 155,
+   "pl": {
+    "median_abs": 0.43435984188435917,
+    "median_signed": 0.2505361519384798,
+    "median_abs_both_dead": 0.43435984188435917,
+    "pairs": 16285
+   },
+   "qs": {
+    "median_abs": 0.7675169640178107,
+    "median_signed": 0.7675169640178107,
+    "median_abs_both_dead": 0.7675169640178107,
+    "pairs": 16285
+   },
+   "agree": {
+    "pl": 0.9980812757201646,
+    "qs": 0.9980812757201646
+   },
+   "regain": {
+    "truth": 0,
+    "pl": 0,
+    "qs": 0,
+    "truth_and_pl": 0,
+    "truth_and_qs": 0
+   }
+  },
+  "ramp_down": {
+   "runs": 720,
+   "runs_post_loss": 0,
+   "agree": {
+    "pl": 0.9959066358024692,
+    "qs": 0.9959066358024692
+   },
+   "regain": {
+    "truth": 0,
+    "pl": 0,
+    "qs": 0,
+    "truth_and_pl": 0,
+    "truth_and_qs": 0
+   }
+  },
+  "ramp_up": {
+   "runs": 720,
+   "runs_post_loss": 140,
+   "pl": {
+    "median_abs": 1.1893155969273974,
+    "median_signed": 1.1893155969273974,
+    "median_abs_both_dead": 1.1893155969273974,
+    "pairs": 3844
+   },
+   "qs": {
+    "median_abs": 1.5918842799490895,
+    "median_signed": 1.5918842799490895,
+    "median_abs_both_dead": 1.5918842799490895,
+    "pairs": 3844
+   },
+   "agree": {
+    "pl": 0.9986439043209877,
+    "qs": 0.9986439043209877
+   },
+   "regain": {
+    "truth": 0,
+    "pl": 0,
+    "qs": 0,
+    "truth_and_pl": 0,
+    "truth_and_qs": 0
+   }
+  },
+  "short_pulse": {
+   "runs": 360,
+   "runs_post_loss": 105,
+   "pl": {
+    "median_abs": 0.7451808631105233,
+    "median_signed": 0.7451808631105233,
+    "median_abs_both_dead": 0.7451227096615675,
+    "pairs": 3525
+   },
+   "qs": {
+    "median_abs": 2.1508980847306325,
+    "median_signed": 2.150724233864013,
+    "median_abs_both_dead": 2.1508980847306325,
+    "pairs": 3525
+   },
+   "agree": {
+    "pl": 0.9984413580246914,
+    "qs": 0.997608024691358
+   },
+   "regain": {
+    "truth": 70,
+    "pl": 102,
+    "qs": 63,
+    "truth_and_pl": 60,
+    "truth_and_qs": 50
+   }
+  },
+  "step_down": {
+   "runs": 720,
+   "runs_post_loss": 0,
+   "agree": {
+    "pl": 0.9968557098765433,
+    "qs": 0.9968576388888889
+   },
+   "regain": {
+    "truth": 0,
+    "pl": 0,
+    "qs": 0,
+    "truth_and_pl": 0,
+    "truth_and_qs": 0
+   }
+  },
+  "step_up": {
+   "runs": 720,
+   "runs_post_loss": 225,
+   "pl": {
+    "median_abs": 0.6171288150101175,
+    "median_signed": 0.579854551794487,
+    "median_abs_both_dead": 0.6172353336774598,
+    "pairs": 8413
+   },
+   "qs": {
+    "median_abs": 1.3402634879115878,
+    "median_signed": 1.3402634879115878,
+    "median_abs_both_dead": 1.341303958820026,
+    "pairs": 8413
+   },
+   "agree": {
+    "pl": 0.9979263117283951,
+    "qs": 0.9979263117283951
+   },
+   "regain": {
+    "truth": 0,
+    "pl": 0,
+    "qs": 0,
+    "truth_and_pl": 0,
+    "truth_and_qs": 0
+   }
+  }
+ }
+}

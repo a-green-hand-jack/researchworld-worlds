@@ -1,0 +1,37 @@
+# Error scaling of the composite trapezoidal and Simpson rules for ∫₀² eˣ sin 3x dx
+
+**Setup.** f(x) = eˣ sin 3x on [0, 2], uniform grid, n = 4, 8, …, 4096. Exact value from the antiderivative eˣ(sin 3x − 3 cos 3x)/10: I = [e²(sin 6 − 3 cos 6) + 3]/10 = −2.034887312886015 (evaluated at 80 digits; not a quadrature). Rule errors are |Q_n − I| computed with 60-digit arithmetic.
+
+| n | Trapezoid error | Simpson error |
+|---:|---:|---:|
+| 4 | 3.423377e-01 | 5.610729e-03 |
+| 8 | 8.477517e-02 | 1.078999e-03 |
+| 16 | 2.113823e-02 | 7.408631e-05 |
+| 32 | 5.281016e-03 | 4.720459e-06 |
+| 64 | 1.320032e-03 | 2.963858e-07 |
+| 128 | 3.299940e-04 | 1.854512e-08 |
+| 256 | 8.249764e-05 | 1.159398e-09 |
+| 512 | 2.062436e-05 | 7.246748e-11 |
+| 1024 | 5.156086e-06 | 4.529298e-12 |
+| 2048 | 1.289021e-06 | 2.830823e-13 |
+| 4096 | 3.222553e-07 | 1.769267e-14\* |
+
+\* below the 1e-13 fit threshold; shown but excluded from the Simpson fit. All other points are fitted.
+
+**Fits.** For each rule, ordinary least squares of ln(error) on ln(n) over the points with error > 1e-13 (trapezoid: all 11, n = 4–4096; Simpson: 10, n = 4–2048); 95% interval = slope ± t(0.975, m−2)·SE.
+
+| Rule | Points (dof) | Fitted exponent | 95% interval | Expected |
+|---|---|---:|---|---:|
+| Trapezoid | 11 (9) | −2.001080 | [−2.002078, −2.000083] | −2 |
+| Simpson | 10 (8) | −3.893577 | [−4.017581, −3.769572] | −4 |
+
+![Absolute error of both rules against n on log-log axes, with the fitted power laws over their fitted ranges, the 1e-13 threshold, and dashed guide slopes −2 and −4 (guides shifted up 4× for visibility, not fits).](figures/error_scaling.png)
+
+**Comparison with theory.**
+- *Trapezoid:* the exponent is within 0.0011 of −2, but the interval narrowly excludes −2 (upper end −2.000083). The reason is a pre-asymptotic h⁴ term: the local order log₂(Eₙ/E₂ₙ) is 2.0137 for n = 4→8 and falls to 2.00000006 for 2048→4096. Fitting only n ≥ 64 gives −2.000010 [−2.000021, −1.999999], which contains −2.
+- *Simpson:* the interval contains −4, but it is wide and the point estimate (−3.894) lies above −4. This comes from the coarsest step (local order 2.38 for n = 4→8; 3.86 for 8→16). The log residuals are systematic, not random. Fitting n ≥ 16 gives −3.9963 [−4.0000, −3.9927] and n ≥ 64 gives −3.99964 [−4.00003, −3.99925]; both contain −4. Local orders reach 3.999998 at 2048→4096.
+- Both exponents are the Euler–Maclaurin orders: Tₙ − I ≈ h²[f′(2) − f′(0)]/12 and Sₙ − I ≈ h⁴[f‴(2) − f‴(0)]/180, with h = 2/n and nonzero endpoint differences.
+
+**Caveats.** The errors are deterministic and only approximately a power law at coarse n, so the intervals are descriptive regression-model intervals, not probabilistic bounds on the true convergence order; the global fits are the required ones and the restricted fits are diagnostics. In 60-digit arithmetic the Simpson error shows no round-off plateau down to 1.8e-14. A binary64 recomputation selects the same points and gives −2.001080 and −3.89364, but its Simpson error at n = 4096 differs from the high-precision value by about 0.4%.
+
+**Provenance.** Code `analysis/compute.py`, results `results/errors.csv`, `results/fits.json`, `results/methods.md` in `experiment-repo` at commit f537049ac52de0cbc289a9aa5e8c3f727b5ad833; the figure is from `figtab-repo` (`report/figures/`). Table values are errors.csv rounded to 7 significant digits.

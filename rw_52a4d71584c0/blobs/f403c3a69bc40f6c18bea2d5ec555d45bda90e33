@@ -1,0 +1,9 @@
+# Comment check (figtab-repo, step 4)
+
+Command run:
+
+    forge api -X PATCH repos/world/internal-review-repo/issues/comments/1 -f body=check
+
+World answered: HTTP 403, `repository-not-visible` — "figtab-repo reaches its own repository and its direct neighbors' (experiment-repo, paper-repo); another position is reached through a neighbor."
+
+Next: no retry or workaround (internal-review-repo is not a neighbor, so the refusal is by design); the comment was not changed. I continued with the figure work.

@@ -1,0 +1,111 @@
+{
+ "inputs": [
+  "data/stage3/summary-L256.json",
+  "data/stage3/series/*.npz",
+  "results/stage2_crossing.json",
+  "data/stage2/summary-L128.json"
+ ],
+ "L": 256,
+ "block_sweeps": 1000,
+ "temps": [
+  2.2293,
+  2.2443,
+  2.2593,
+  2.2743,
+  2.2893
+ ],
+ "seeds": [
+  1,
+  2
+ ],
+ "sweeps": 10000,
+ "burn": 2000,
+ "stage2_Tc": 2.2592630568951466,
+ "stage2_Tc_ci95": [
+  2.2542888800379948,
+  2.2683747652572017
+ ],
+ "stage2_U_at_crossing": 0.620349995718909,
+ "stage2_U_sigma": 0.005638580818944684,
+ "U256": [
+  0.6302549486263239,
+  0.322228712672614,
+  0.6187747698992807,
+  -0.3383650495989765,
+  0.382794507494317
+ ],
+ "U256_err_seed": [
+  0.03710843823940102,
+  0.10132581080158957,
+  0.04041743696008148,
+  0.18683852883311497,
+  0.19359963285631746
+ ],
+ "U256_err_block": [
+  0.02172465029430768,
+  0.11737491502211157,
+  0.01981224702556502,
+  0.29112362380799134,
+  0.0723781588175344
+ ],
+ "linear_fit": {
+  "U256_at_stage2_Tc": 0.5666175560525482,
+  "err": 0.03620639606427178,
+  "slope": -2.0518568271832742,
+  "chi2": 16.580409778492996,
+  "dof": 3
+ },
+ "U256_minus_Ustar_in_sigma": -1.4663836086026687,
+ "T_where_L256_line_meets_Ustar": 2.2330758303038434,
+ "crossing_L128_L256": {
+  "T": 2.259376018748171,
+  "ci95": [
+   2.2213142235872265,
+   2.2935028014373584
+  ],
+  "note": "L=256 linear fit vs stage-2 L=128 cubic; resampled L=256 errors and L=128 seeds"
+ },
+ "slope_ratio_256_over_128": 0.45126945644304095,
+ "slope_ratio_expected": 2.0,
+ "tau_abs_m_L256": {
+  "max": 1663.2333312602698,
+  "min": 275.33010300004565,
+  "N_over_tau_min": 6.01238552165304,
+  "burn_over_tau_min": 1.202477104330608,
+  "windows_not_converged": 6
+ },
+ "tc_exact": 2.269185314213022,
+ "U_star_literature": 0.61069,
+ "formal_agreement": true,
+ "formal_criterion": "|U256(T*) - U*| <= 2 sigma and the L128/L256 crossing interval overlaps the stage-2 T_c interval",
+ "linear_fit_p_value": 0.0008619865550176776,
+ "validity_problems": [
+  "linear fit of U(256) vs T fails (chi2 = 16.6 on 3 dof, p = 0.00086)",
+  "L=256 curve is not steeper than L=128 (slope ratio 0.45, expected ~2)",
+  "runs short against tau_int(|m|): N/tau_max = 6, burn/tau_max = 1.2",
+  "6 of 10 tau_int windows not converged (tau underestimated)"
+ ],
+ "verdict": "inconclusive",
+ "U256_first_half_second_half": {
+  "2.2293": [
+   0.5889606146373559,
+   0.6657101677200616
+  ],
+  "2.2443": [
+   0.15909493579106515,
+   0.5884976612820384
+  ],
+  "2.2593": [
+   0.5721882937070225,
+   0.659029902545909
+  ],
+  "2.2743": [
+   0.3271855272654648,
+   -0.01040707438760391
+  ],
+  "2.2893": [
+   0.47187642075588376,
+   0.26182617734231206
+  ]
+ }
+}

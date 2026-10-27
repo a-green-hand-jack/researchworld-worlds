@@ -1,0 +1,8 @@
+# Brief
+Synthetic verification of world commands (not research). Steps (from objective #1):
+1. Install note world definition (`researchworld definition install <initial-state note dir>`).
+2. `noteworld run` with note-config.json, drive with `ht-resource run worlds -- noteworld execute <id> --loop`, then status/artifacts/monitor --summary.
+3. `researchworld continue rw_399c28e983a7 --checkpoint g1 --config continue-config.json`; report new id + status; try `stop` and `capture` on rw_399c28e983a7.
+4. Drive step-3 world via `ht-resource run capped -- researchworld execute <id> --loop`; report ending and `ht-resource status capped`.
+5. Try one more `noteworld run`.
+Deliverable: report/report.md with per-step commands, exit status, decisive output lines, world ids. Outcomes (refusals, limits) are findings. Review will ask for world ids and try `researchworld stop` on the step-3 world.

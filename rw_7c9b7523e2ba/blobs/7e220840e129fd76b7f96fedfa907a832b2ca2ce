@@ -1,0 +1,37 @@
+"""Independent reproduction of the MC-pi error scaling (review working material, not a delivery).
+Variants of the sampling convention are computed because the objective does not fix one:
+  A: pts = rng.random((N, 2)); inside = x^2 + y^2 <= 1
+  B: x = rng.random(N); y = rng.random(N); inside = x^2 + y^2 <= 1
+Seed for run i (i = 0..199) is 2026 + i, reused for every N."""
+import json, math, sys, platform
+import numpy as np, scipy
+from scipy import stats
+
+NS = [10**3, 10**4, 10**5, 10**6, 10**7]
+R = 200
+
+def est(N, seed, variant):
+    rng = np.random.default_rng(seed)
+    if variant == "A":
+        p = rng.random((N, 2)); k = np.count_nonzero(p[:, 0]**2 + p[:, 1]**2 <= 1.0)
+    else:
+        x = rng.random(N); y = rng.random(N); k = np.count_nonzero(x*x + y*y <= 1.0)
+    return 4.0 * k / N
+
+def fit(ns, mae):
+    lx, ly = np.log(ns), np.log(mae)
+    r = stats.linregress(lx, ly)
+    t = stats.t.ppf(0.975, len(ns) - 2)
+    return dict(slope=r.slope, intercept=r.intercept, se=r.stderr, ci=[r.slope - t*r.stderr, r.slope + t*r.stderr], r2=r.rvalue**2)
+
+out = dict(numpy=np.__version__, scipy=scipy.__version__, python=platform.python_version())
+for v in ["A", "B"]:
+    rows = []
+    for N in NS:
+        e = np.array([abs(est(N, 2026 + i, v) - math.pi) for i in range(R)])
+        rows.append(dict(N=N, mae=e.mean(), se=e.std(ddof=1)/math.sqrt(R), pred=math.sqrt(2/math.pi)*4*math.sqrt(math.pi/4*(1-math.pi/4))/math.sqrt(N)))
+        print(v, rows[-1], flush=True)
+    out[v] = dict(rows=rows, fit=fit(NS, [r["mae"] for r in rows]))
+    print(v, out[v]["fit"], flush=True)
+json.dump(out, open("/hutian/repo/review/repro.json", "w"), indent=1)
+print("HUTIAN_WAKE: repro done", flush=True)

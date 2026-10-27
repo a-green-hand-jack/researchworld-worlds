@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+"""Download Iris (OpenML dataset 61) from OpenML and check it against OpenML's md5.
+
+Usage (from report/code/): python fetch_data.py   -> data/iris.arff, data/openml_61_meta.json
+"""
+import hashlib, json, os, urllib.request
+
+META = "https://www.openml.org/api/v1/json/data/61"
+os.makedirs("data", exist_ok=True)
+meta = json.load(urllib.request.urlopen(META))
+open("data/openml_61_meta.json", "w").write(json.dumps(meta, indent=1))
+d = meta["data_set_description"]
+raw = urllib.request.urlopen(d["url"]).read()   # https://openml.org/data/v1/download/61/iris.arff
+assert hashlib.md5(raw).hexdigest() == d["md5_checksum"], "md5 mismatch with OpenML"
+open("data/iris.arff", "wb").write(raw)
+print(d["name"], "v" + d["version"], d["url"], d["md5_checksum"])

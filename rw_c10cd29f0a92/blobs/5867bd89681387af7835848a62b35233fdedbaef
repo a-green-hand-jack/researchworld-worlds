@@ -1,0 +1,287 @@
+"""Stage-3 verdict from the equilibrated L = 256 rerun, by single-histogram reweighting.
+
+The specified stage-3 runs (10,000 sweeps) are not equilibrated (results/stage3_check.json). This analyses the
+repeat with 100,000 sweeps after 30,000 burn-in (code/extra_long256.sh, seeds 11-14) together with the long
+L = 32, 64, 128 runs (code/extra_long.sh, 100,000 sweeps after 20,000 burn-in, seeds 11-13).
+
+Each run's per-sweep (|m|, E) is reweighted (Ferrenberg-Swendsen single histogram) to temperatures T' near its
+own T: <O>(T') = sum O w / sum w, w = exp(-(1/T' - 1/T) E). A T' is taken from the nearest simulated T, and
+only while the Kish effective sample fraction (sum w)^2 / (N sum w^2) of every seed's run stays >= KISH_MIN;
+elsewhere the curve is left undefined. This gives U_L(T') on a fine grid without assuming a curve shape, which
+the coarse grids (0.015 at L = 256, 0.03 below) cannot give near T_c where U changes steeply.
+Errors: bootstrap over 10,000-sweep blocks of every run (all T' and sizes resampled jointly).
+
+Output: results/{OUT}_binder.csv      U(256) at each simulated T (seeds pooled), seed and block errors, per seed U, tau
+        results/{OUT}_reweighted.csv  U_L(T') on the grid with block-bootstrap errors (empty = not reachable)
+        results/{OUT}_verdict.json   validity of the L = 256 runs (tau_int, burn-in, half-run drift);
+                                              U_256 at the stage-2 T_c vs the stage-2 crossing value U*;
+                                              crossings of L = 256 with L = 32, 64, 128 with 95 % intervals,
+                                              compared with the stage-2 interval and the exact T_c; the verdict
+"""
+import csv
+import json
+import os
+import sys
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import TC_EXACT, U_STAR_LIT, binder, load_series, tau_int  # noqa: E402
+
+ROOT = Path(os.environ.get('ISING_ROOT', Path(__file__).resolve().parents[1]))
+KISH_MIN = float(os.environ.get('KISH_MIN', 0.1))
+BLOCK = int(os.environ.get('BLOCK', 10000))
+OUT = os.environ.get('OUT', 'extra_long256')
+B = 1000
+GRID = np.round(np.arange(2.200, 2.310 + 1e-9, 0.0005), 4)
+rng = np.random.default_rng(2560)
+RUNS = {L: ('data/extra_long', f'summary-L{L}.json') for L in (32, 64, 128)}
+RUNS[256] = ('data/extra_long256', 'summary-L256.json')
+
+
+def reweight(m, E, T, Tp):
+    x = -(1 / Tp - 1 / T) * (E - E.mean())
+    w = np.exp(x - x.max())
+    return w, w.sum() ** 2 / (len(w) * (w ** 2).sum())
+
+
+def block_stats(L):
+    """Per run: block sums of w, w m^2, w m^4 for every grid T' it can reach; returns arrays (T', seed, block).
+
+    Also U at each T' reweighted from the second-nearest simulated T, where that is reachable too (U_alt): where
+    both exist the two must agree, which checks the reweighting where the reaches of neighbouring runs meet."""
+    d, f = RUNS[L]
+    rows = json.loads((ROOT / d / f).read_text())
+    temps = sorted({r['T'] for r in rows})
+    seeds = sorted({r['seed'] for r in rows})
+    N = L * L
+    ser = {(T, s): load_series(ROOT / d / 'series', L, T, s) for T in temps for s in seeds}
+    n = len(ser[temps[0], seeds[0]][0])
+    nb = n // BLOCK
+    S = np.full((3, len(GRID), len(seeds), nb), np.nan)
+    src = np.full(len(GRID), np.nan)
+    kish = np.full(len(GRID), np.nan)
+    U_alt = np.full(len(GRID), np.nan)
+    for g, Tp in enumerate(GRID):
+        T2 = sorted(temps, key=lambda x: abs(x - Tp))[1]
+        a = [reweight(ser[T2, s][0], ser[T2, s][1] * N, T2, Tp) + (ser[T2, s][0],) for s in seeds]
+        if min(k for _, k, _ in a) >= KISH_MIN:
+            U_alt[g] = binder(np.mean([(w * m ** 2).sum() / w.sum() for w, _, m in a]),
+                              np.mean([(w * m ** 4).sum() / w.sum() for w, _, m in a]))
+        T = min(temps, key=lambda x: abs(x - Tp))
+        ks = []
+        for j, s in enumerate(seeds):
+            m, e = ser[T, s]
+            w, k = reweight(m, e * N, T, Tp)
+            ks.append(k)
+            for k, v in enumerate((w, w * m ** 2, w * m ** 4)):
+                S[k, g, j] = v[:nb * BLOCK].reshape(nb, BLOCK).sum(1)
+        if min(ks) >= KISH_MIN:
+            src[g], kish[g] = T, min(ks)
+        else:
+            S[:, g] = np.nan
+    return dict(rows=rows, temps=temps, seeds=seeds, ser=ser, n=n, nb=nb, S=S, src=src, kish=kish, U_alt=U_alt)
+
+
+def curve(S, pick=None):
+    """U(T') from block sums; pick = block indices (seed, block) for a bootstrap draw. Seeds weighted equally."""
+    if pick is not None:
+        S = np.take_along_axis(S, pick[None, None], axis=3)
+    w, a2, a4 = S.sum(3)
+    return binder((a2 / w).mean(1), (a4 / w).mean(1))
+
+
+def crossing(ua, ub, near):
+    """T' where ua - ub changes sign (the sign change nearest to `near`), linear between grid points."""
+    d = ua - ub
+    ok = np.isfinite(d[:-1]) & np.isfinite(d[1:]) & (np.sign(d[:-1]) != np.sign(d[1:]))
+    idx = np.nonzero(ok)[0]
+    if not len(idx):
+        return np.nan, np.nan
+    i = idx[np.argmin(np.abs(GRID[idx] - near))]
+    t = GRID[i] - d[i] * (GRID[i + 1] - GRID[i]) / (d[i + 1] - d[i])
+    u = ua[i] + (ua[i + 1] - ua[i]) * (t - GRID[i]) / (GRID[i + 1] - GRID[i])
+    return float(t), float(u)
+
+
+def main():
+    s2 = json.loads((ROOT / 'results/stage2_crossing.json').read_text())
+    Tstar, Ustar, ci2 = s2['Tc'], s2['U_at_crossing'], s2['bootstrap_seeds']['ci95']
+    Ustar_sig = (s2['bootstrap_seeds']['U_ci95'][1] - s2['bootstrap_seeds']['U_ci95'][0]) / (2 * 1.96)
+    st = {L: block_stats(L) for L in RUNS}
+    U = {L: curve(st[L]['S']) for L in RUNS}
+    draws = {L: [] for L in RUNS}
+    for _ in range(B):
+        for L in RUNS:
+            S = st[L]['S']
+            draws[L].append(curve(S, rng.integers(0, S.shape[3], S.shape[2:])))
+    draws = {L: np.array(v) for L, v in draws.items()}
+    err_block = {L: np.nanstd(draws[L], 0, ddof=1) for L in RUNS}
+    # seed error: spread of the single-seed reweighted curves
+    err_seed = {}
+    for L in RUNS:
+        S = st[L]['S']
+        per = np.array([binder(*(S[1:, :, j].sum(2) / S[0, :, j].sum(1))) for j in range(S.shape[2])])
+        err_seed[L] = np.nanstd(per, 0, ddof=1) / np.sqrt(S.shape[2])
+    err = {L: np.fmax(err_block[L], err_seed[L]) for L in RUNS}
+    # seed bootstrap: whole seeds drawn with replacement per size
+    sdraws = {L: [] for L in RUNS}
+    for _ in range(B):
+        for L in RUNS:
+            S = st[L]['S']
+            sdraws[L].append(curve(S[:, :, rng.integers(0, S.shape[2], S.shape[2])]))
+    sdraws = {L: np.array(v) for L, v in sdraws.items()}
+    # reweighting consistency where the reaches of two neighbouring runs overlap
+    rw_check = {}
+    for L in RUNS:
+        dd = (st[L]['U_alt'] - U[L]) / err[L]
+        ok = np.isfinite(dd)
+        rw_check[L] = {'points': int(ok.sum()), 'max_abs_diff': float(np.nanmax(np.abs(st[L]['U_alt'] - U[L]))) if ok.any() else None,
+                       'max_abs_diff_in_sigma': float(np.nanmax(np.abs(dd))) if ok.any() else None}
+
+    # validity of the L = 256 runs
+    r256 = st[256]
+    taus = {(T, s): tau_int(r256['ser'][T, s][0]) for T in r256['temps'] for s in r256['seeds']}
+    tmax = max(v[0] for v in taus.values())
+    burn = r256['rows'][0]['burn']
+    halves = {}
+    for T in r256['temps']:
+        h = r256['n'] // 2
+        a = [r256['ser'][T, s][0] for s in r256['seeds']]
+        halves[f'{T:.4f}'] = [float(binder(np.mean([(x[:h] ** 2).mean() for x in a]), np.mean([(x[:h] ** 4).mean() for x in a]))),
+                              float(binder(np.mean([(x[h:] ** 2).mean() for x in a]), np.mean([(x[h:] ** 4).mean() for x in a])))]
+    U_direct = [float(binder(np.mean([r['m2'] for r in r256['rows'] if r['T'] == T]),
+                             np.mean([r['m4'] for r in r256['rows'] if r['T'] == T]))) for T in r256['temps']]
+    problems, caveats = [], []
+    Tdec = min(r256['temps'], key=lambda x: abs(x - Tstar))   # the simulated L = 256 point at the stage-2 T_c
+    tdec = max(v[0] for (T, s), v in taus.items() if T == Tdec)
+    if r256['n'] / tdec < 50 or burn / tdec < 10:
+        problems.append(f'runs at T = {Tdec} short against tau_int(|m|): N/tau = {r256["n"] / tdec:.0f}, burn/tau = {burn / tdec:.1f}')
+    if burn / tmax < 10:
+        problems.append(f'burn-in short against tau_int(|m|): burn/tau_max = {burn / tmax:.1f}')
+    if r256['n'] / tmax < 50:
+        caveats.append(f'N/tau_max = {r256["n"] / tmax:.0f} (< 50) at the highest-tau point; its errors are less certain')
+    # half-run drift, with the block error of each half (seeds pooled)
+    half_z = {}
+    for T in r256['temps']:
+        h = r256['n'] // 2
+        d = []
+        for part in (slice(0, h), slice(h, None)):
+            xs = [r256['ser'][T, s][0][part] for s in r256['seeds']]
+            nb = h // BLOCK
+            b2 = np.array([(x[:nb * BLOCK] ** 2).reshape(nb, BLOCK).mean(1) for x in xs])
+            b4 = np.array([(x[:nb * BLOCK] ** 4).reshape(nb, BLOCK).mean(1) for x in xs])
+            bs = [binder(np.take_along_axis(b2, p, 1).mean(), np.take_along_axis(b4, p, 1).mean())
+                  for p in rng.integers(0, nb, (300, len(xs), nb))]
+            d.append((binder(b2.mean(), b4.mean()), np.std(bs, ddof=1)))
+        half_z[f'{T:.4f}'] = float((d[1][0] - d[0][0]) / np.hypot(d[0][1], d[1][1]))
+        if abs(half_z[f'{T:.4f}']) > 3:
+            problems.append(f'U(256, {T}) drifts between run halves by {half_z[f"{T:.4f}"]:.1f} sigma')
+    nc = sum(1 for v in taus.values() if v[1] < 0)
+    if nc:
+        problems.append(f'{nc} tau_int windows not converged')
+    if np.any(np.diff(U_direct) > 0.005):
+        problems.append('U(256) not monotonically decreasing in T')
+
+    # U_256 at the stage-2 T_c against the stage-2 crossing value
+    g = int(np.argmin(np.abs(GRID - Tstar)))
+    U256_T = float(np.interp(Tstar, GRID[g - 1:g + 2], U[256][g - 1:g + 2]))
+    U256_T_err = float(err[256][g])
+    U256_direct = U_direct[r256['temps'].index(Tdec)]
+    U128_T = float(np.interp(Tstar, GRID[g - 1:g + 2], U[128][g - 1:g + 2]))
+    z256_128 = (U256_T - U128_T) / np.hypot(U256_T_err, err[128][g])
+    U_at_Tstar = {L: [float(np.interp(Tstar, GRID[g - 1:g + 2], U[L][g - 1:g + 2])), float(err[L][g])] for L in RUNS}
+    zU = (U256_T - Ustar) / np.hypot(U256_T_err, Ustar_sig)
+
+    # crossings of L = 256 with each smaller size
+    cross = {}
+    for L in (32, 64, 128):
+        t, u = crossing(U[L], U[256], TC_EXACT)
+        bt = np.array([crossing(draws[L][i], draws[256][i], TC_EXACT)[0] for i in range(B)])
+        ci = np.nanpercentile(bt, [2.5, 97.5]).tolist() if np.isfinite(bt).mean() > 0.9 else [np.nan, np.nan]
+        bs = np.array([crossing(sdraws[L][i], sdraws[256][i], TC_EXACT)[0] for i in range(B)])
+        cross[f'{L}/256'] = {'T': t, 'U': u, 'ci95': ci, 'boot_sd': float(np.nanstd(bt)),
+                             'ci95_seed_bootstrap': np.nanpercentile(bs, [2.5, 97.5]).tolist(),
+                             'failed_draws': int(np.isnan(bt).sum()),
+                             'overlaps_stage2_ci': bool(ci[0] <= ci2[1] and ci2[0] <= ci[1]),
+                             'contains_stage2_Tc': bool(ci[0] <= Tstar <= ci[1]),
+                             'contains_exact': bool(ci[0] <= TC_EXACT <= ci[1])}
+    # the smaller-size crossings from the same reweighted long runs, for comparison
+    small = {}
+    for a, b in ((32, 64), (32, 128), (64, 128)):
+        t, u = crossing(U[a], U[b], TC_EXACT)
+        bt = np.array([crossing(draws[a][i], draws[b][i], TC_EXACT)[0] for i in range(B)])
+        small[f'{a}/{b}'] = {'T': t, 'U': u, 'ci95': np.nanpercentile(bt, [2.5, 97.5]).tolist(),
+                             'failed_draws': int(np.isnan(bt).sum())}
+    c = cross['128/256']
+    if problems:
+        verdict = 'inconclusive'
+    elif (ci2[0] <= c['T'] <= ci2[1] or c['contains_stage2_Tc']) and abs(zU) <= 2:
+        verdict = 'agree'
+    else:
+        verdict = 'disagree'
+
+    with open(ROOT / f'results/{OUT}_binder.csv', 'w', newline='') as f:
+        wr = csv.writer(f)
+        sd = r256['seeds']
+        wr.writerow(['L', 'T', 'U', 'U_err_seed', 'U_err_block', *[f'U_s{s}' for s in sd], *[f'tau_abs_m_s{s}' for s in sd]])
+        for i, T in enumerate(r256['temps']):
+            us = [binder(next(r['m2'] for r in r256['rows'] if r['T'] == T and r['seed'] == s),
+                         next(r['m4'] for r in r256['rows'] if r['T'] == T and r['seed'] == s)) for s in sd]
+            gi = int(np.argmin(np.abs(GRID - T)))
+            wr.writerow([256, f'{T:.4f}', f'{U_direct[i]:.6f}', f'{np.std(us, ddof=1) / np.sqrt(len(sd)):.6f}',
+                         f'{err_block[256][gi]:.6f}', *[f'{u:.6f}' for u in us], *[f'{taus[T, s][0]:.1f}' for s in sd]])
+    with open(ROOT / f'results/{OUT}_reweighted.csv', 'w', newline='') as f:
+        wr = csv.writer(f)
+        wr.writerow(['T', *[x for L in RUNS for x in (f'U_L{L}', f'U_L{L}_err', f'src_T_L{L}', f'kish_L{L}')]])
+        for g, Tp in enumerate(GRID):
+            wr.writerow([f'{Tp:.4f}', *[x for L in RUNS for x in (
+                '' if np.isnan(U[L][g]) else f'{U[L][g]:.6f}', '' if np.isnan(U[L][g]) else f'{err[L][g]:.6f}',
+                '' if np.isnan(st[L]['src'][g]) else f'{st[L]["src"][g]:.4f}',
+                '' if np.isnan(st[L]['kish'][g]) else f'{st[L]["kish"][g]:.3f}')]])
+    res = {
+        'inputs': ['data/extra_long256/summary-L256.json', 'data/extra_long256/series/*.npz',
+                   *[f'data/extra_long/summary-L{L}.json' for L in (32, 64, 128)], 'data/extra_long/series/*.npz',
+                   'results/stage2_crossing.json'],
+        'method': 'single-histogram reweighting of each run to T\' near its T (nearest run, Kish fraction >= '
+                  f'{KISH_MIN} for every seed), grid step 0.0005; block bootstrap ({BLOCK}-sweep blocks, {B} draws)',
+        'L256_runs': {'temps': r256['temps'], 'seeds': r256['seeds'], 'sweeps': r256['n'], 'burn': burn,
+                      'U_direct': U_direct, 'U_first_half_second_half': halves,
+                      'tau_abs_m_max': tmax, 'N_over_tau_min': r256['n'] / tmax, 'burn_over_tau_min': burn / tmax,
+                      'tau_abs_m': {f'{T:.4f}-s{s}': v[0] for (T, s), v in taus.items()},
+                      'windows_not_converged': nc},
+        'half_run_drift_in_sigma': half_z,
+        'reweighting_consistency': rw_check,
+        'validity_problems': problems, 'caveats': caveats,
+        'decisive_point': {'T': Tdec, 'tau_abs_m_max': tdec, 'N_over_tau': r256['n'] / tdec, 'burn_over_tau': burn / tdec,
+                           'U256_direct': U256_direct},
+        'U_by_L_at_stage2_Tc': {str(L): v for L, v in U_at_Tstar.items()},
+        'U256_minus_U128_at_stage2_Tc_in_sigma': float(z256_128),
+        'U128_at_stage2_Tc_reweighted': U128_T, 'U128_at_stage2_Tc_err': float(err[128][g]),
+        'stage2_Tc': Tstar, 'stage2_ci95': ci2, 'stage2_U_at_crossing': Ustar, 'stage2_U_sigma': Ustar_sig,
+        'U256_at_stage2_Tc': U256_T, 'U256_at_stage2_Tc_err': U256_T_err,
+        'U256_minus_Ustar_in_sigma': float(zU),
+        'crossings_with_256': cross,
+        'crossings_long_smaller_sizes': small,
+        'tc_exact': TC_EXACT, 'U_star_literature': U_STAR_LIT,
+        'robust_test': 'at the stage-2 T_c (a simulated L=256 point, L=128 reweighted by 0.011 from its run at 2.27) '
+                       'a crossing of all sizes requires U equal for all L; U increasing with L means T* is below the '
+                       'crossing (U_by_L_at_stage2_Tc, U256_minus_U128_at_stage2_Tc_in_sigma)',
+        'criterion': 'inconclusive if the L=256 runs fail a validity check (tau_int at the stage-2 T_c point, burn-in, '
+                     'half-run drift); otherwise agree if U_256(stage-2 T_c) is within 2 sigma of the stage-2 crossing '
+                     'value U* and the L=128/L=256 crossing and the stage-2 T_c lie in each other\'s 95% interval, '
+                     'disagree if not',
+        'errors': 'per T\': larger of the block-bootstrap and the seed standard error; crossing intervals from the block '
+                  'bootstrap (ci95) and from resampling whole seeds (ci95_seed_bootstrap)',
+        'verdict': verdict,
+    }
+    (ROOT / f'results/{OUT}_verdict.json').write_text(json.dumps(res, indent=1))
+    print(json.dumps({k: res[k] for k in ('U_by_L_at_stage2_Tc', 'U256_minus_U128_at_stage2_Tc_in_sigma', 'validity_problems', 'caveats', 'decisive_point', 'half_run_drift_in_sigma',
+                                          'reweighting_consistency', 'U128_at_stage2_Tc_reweighted', 'U256_at_stage2_Tc', 'U256_at_stage2_Tc_err',
+                                          'U256_minus_Ustar_in_sigma', 'crossings_with_256',
+                                          'crossings_long_smaller_sizes', 'verdict')}, indent=1))
+
+
+if __name__ == '__main__':
+    main()

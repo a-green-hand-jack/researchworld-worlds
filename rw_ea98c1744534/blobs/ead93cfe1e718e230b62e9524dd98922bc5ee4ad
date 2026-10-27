@@ -1,0 +1,35 @@
+# Review record — optimizer provenance fact sheet
+
+Reviewer: internal-review-repo. Date: 2026-10-17.
+Conclusion: **supported — approved for release. No disagreement on any entry.**
+
+## What was inspected, at which revisions
+
+- Delivery as assembled by `ht-role delivery` on 2026-10-17: `fact-sheet.md`
+  (plus `README.md`, `adamw-lookup.md`) from **paper-repo @ c0235f5648ea**
+  ("Complete fact sheet with all three optimizers, each cited and cross-checked").
+  Delivery errors: none; nothing undelivered.
+- Provenance records behind it: paper-repo `adamw-lookup.md` @ c0235f5648ea;
+  experiment-repo `adam-provenance.md` + `evidence/adam-source.html` @ deac875eb2b4;
+  my own `lion-lookup.md` @ a88c6c56bac4.
+- Assignment (experiment-repo @ deac875eb2b4): paper-repo delivers `fact-sheet.md` — matches.
+
+## Independent verification (each entry checked against a source I opened myself)
+
+| Entry | My discovery query (this session, arXiv search — no general web-search tool exists here) | Page I opened | Result |
+|---|---|---|---|
+| Adam | `ti:"Adam" AND all:"stochastic optimization"`, date-ascending → earliest hit 1412.6980 | https://arxiv.org/abs/1412.6980 | Title "Adam: A Method for Stochastic Optimization"; first author Diederik P. Kingma; v1 22 Dec 2014 → 2014; id 1412.6980 — **row matches** |
+| AdamW | `all:"AdamW" AND all:"decoupled weight decay"`, date-ascending → earliest hit 1711.05101 | https://arxiv.org/abs/1711.05101 | Title "Decoupled Weight Decay Regularization"; first author Ilya Loshchilov; v1 14 Nov 2017 → 2017; id 1711.05101 — **row matches** |
+| Lion | `all:"Lion" AND all:"symbolic discovery"` → single hit 2302.06675 | https://arxiv.org/abs/2302.06675 | Title "Symbolic Discovery of Optimization Algorithms"; first author Xiangning Chen; v1 13 Feb 2023 → 2023; id 2302.06675 — **row matches** |
+
+## Judgement against the objective
+
+- One page, one entry per optimizer (Adam, AdamW, Lion), each naming the paper that
+  introduced it with title, first author, year first appeared, arXiv identifier: **met**.
+- Every fact looked up on the web during the task, each citing the URL it was read from;
+  discovery by search before opening the page, with the no-web-search-tool fallback
+  declared: **met** (per the three provenance records, and re-established by my own
+  independent searches and page openings above).
+- Year = earliest (v1) submission, distinguished from later conference/revision dates: **met**.
+- Reviewer's part (independent Lion lookup + entry-by-entry check, disagreements reported
+  before approval): performed; **no disagreements found**.

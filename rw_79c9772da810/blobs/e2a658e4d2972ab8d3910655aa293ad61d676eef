@@ -1,0 +1,22 @@
+# What two web pages say
+
+## 1. NeurIPS 2026 Call for Papers — https://neurips.cc/Conferences/2026/CallForPapers
+
+Read with: **WebFetch** (succeeded). I cross-checked the raw HTML with `curl`, which returned the same text.
+
+**Deadline for full papers** (exact quote from the page's "Key dates" list):
+
+> Full paper submission deadline, including all supplementary materials: May 6, 2026 AOE
+
+(The same list also gives "Abstract submission deadline: May 4, 2026 (AOE). All authors must have an OpenReview profile when submitting" and "Author notification: September 24, 2026 AoE".)
+
+**Page limit of a submission:** the page does **not state one**. I searched the page text for "page"/"pages": the only hit is unrelated page-template boilerplate ("Successful Page Load"). The page only links to a "Paper template" and to the "MainTrackHandbook, including our policies regarding reciprocal reviewing, dual submissions and LLMs." Those linked documents were not read, so I make no claim about the limit.
+
+## 2. https://www.example.com/
+
+Read with: **not read by any tool.**
+
+- WebFetch failed with this exact error: `proxy refused the connection`
+- As a secondary attempt after that failure, `curl -sS https://www.example.com/` also failed: `curl: (56) CONNECT tunnel failed, response 403`. The sandbox's network allowlist does not include this host, and I did not try to work around it.
+
+Its first paragraph is therefore **not quoted**: I did not read the page and will not guess its content.

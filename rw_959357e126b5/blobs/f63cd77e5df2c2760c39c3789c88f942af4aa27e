@@ -1,0 +1,16 @@
+{\small
+\newcolumntype{R}[1]{>{\raggedright\arraybackslash}p{#1}}
+\begin{tabular}{@{}R{0.25\linewidth}R{0.27\linewidth}R{0.27\linewidth}c@{}}
+\toprule
+Arm (runs) & Pre-registered criterion & Observed & Verdict \\
+\midrule
+aligned: $p_0\times\lambda$, EMA$\times\alpha$, depth (600) & mode acc.\ $\ge0.95$, MAE $\le0.5$, below static baselines & acc.\ 0.989 [0.988, 0.991]; MAE 0.25 [0.21, 0.30]; window 3.7, bound 11.2 & \textbf{pass} \\ \addlinespace[1.5pt]
+balanced regime (60) & exact rank $\ge90\%$ (Tian basin, Cor.~3a) & exact in 60/60 runs (both) & \textbf{pass} \\ \addlinespace[1.5pt]
+no stop-grad., no predictor (30) & rank 0 in every run & max rank 0 & \textbf{pass} \\ \addlinespace[1.5pt]
+random predictors, non-commuting stats (195$^\dagger$) & MAE $\le1$, exact $\ge50\%$, below bound & MAE 0.42; exact 0.65; bound 13.0 & \textbf{pass} \\ \addlinespace[1.5pt]
+EMA rate$\times\alpha$, two regimes & rank order over $\kappa$ matches prediction at each adjacent pair & 13/14 pairs agree & \textbf{fail} \\ \addlinespace[1.5pt]
+AdamW (i), (ii): one criterion & (i) $|\Delta\text{rank}|\le1$ at each $(p_0,\lambda)$ ($w_0$-insensitivity); (ii) MAE to static bound $<$ MAE to SGD-clock N1 & (i) 11/12 cells, max $|\Delta|=2$; (ii) 5.1 vs 13.7 & \textbf{fail} \\ \addlinespace[1.5pt]
+finite batch $B=8,32,128$ & rank non-decreasing in $B$; $B{=}128$ within 1 of N1 & monotone at both $p_0$; within 1 of N1 & \textbf{pass} \\ \addlinespace[1.5pt]
+\bottomrule
+\end{tabular}
+}

@@ -1,0 +1,33 @@
+# Monte Carlo estimate of pi: how the mean absolute error scales with N
+
+## Method
+
+Points (x, y) are drawn uniformly in [0,1)^2, as interleaved (x, y) pairs from one stream, with `numpy.random.default_rng(2026 + r)`, run index r = 0..199 (seeds 2026..2225), and pi is estimated as 4·#(x²+y² ≤ 1)/N. For each N in 10^3 … 10^7 there are 200 independent estimates, and the error is |estimate − `math.pi`|. The generator is reset per N, so for a given run the points at smaller N are a prefix of those at larger N (common random numbers): runs are independent within each N, but the five per-N means are positively dependent. Points were actually sampled, not drawn from a binomial. Code, raw per-run estimates and metadata are in `experiment-repo` (`code/simulate.py`, `code/analyze.py`, `results/runs.csv`, `results/summary.csv`, `results/fit.json`; revision 0ceece50963ed7752e013704f3e17ecd4d7cf9c2; NumPy 2.4.6).
+
+## Results
+
+| N | runs | mean absolute error | standard error | theory (1.3103/√N) | (obs − theory)/SE |
+|---:|---:|---:|---:|---:|---:|
+| 10^3 | 200 | 4.1887e-02 | 2.27e-03 | 4.1434e-02 | +0.20 |
+| 10^4 | 200 | 1.4406e-02 | 7.51e-04 | 1.3103e-02 | +1.74 |
+| 10^5 | 200 | 4.3101e-03 | 2.19e-04 | 4.1434e-03 | +0.76 |
+| 10^6 | 200 | 1.3988e-03 | 7.33e-05 | 1.3103e-03 | +1.21 |
+| 10^7 | 200 | 4.1946e-04 | 2.23e-05 | 4.1434e-04 | +0.23 |
+
+Standard error is that of the mean over the 200 runs. The theory column is the normal-approximation value √(32·p(1−p)/π)/√N ≈ 1.3103/√N with p = π/4.
+
+## Scaling fit
+
+An unweighted least-squares line of ln(mean absolute error) on ln N through the five points gives
+
+**exponent = −0.5012**, 95% interval **[−0.5162, −0.4861]** (paired bootstrap over runs, B = 50,000 replicates, bootstrap seed 20261018, percentile endpoints; whole run vectors are resampled so the dependence across N is kept), R² = 0.9996.
+
+The expected exponent −1/2 lies inside the interval; the deviation is −0.0012, well under the interval half-width of about 0.015. As a sensitivity check, the conventional regression t interval (3 degrees of freedom, t = 3.182) is [−0.5192, −0.4831], which also contains −0.5; it assumes independent homoscedastic log residuals, which the shared seeds violate, so it is descriptive only. Dropping any one N moves the slope between −0.4953 and −0.5096.
+
+![Mean absolute error of the Monte Carlo pi estimate versus N on log-log axes, with the fitted power law](figures/error_scaling.png)
+
+*Figure 1. Mean absolute error versus N (log-log) with the fitted line.*
+
+## Conclusion and limits
+
+Over 10^3 to 10^7 the mean absolute error falls as N^−0.50, consistent with the Monte Carlo rate N^−1/2, and the measured values agree with the theoretical amplitude 1.31/√N to within about 2 standard errors at every N (largest at N = 10^4, +1.74 SE). With five sizes and 200 runs each, this shows consistency with −1/2 and not proof of the exact exponent; the interval reflects finite-run sampling noise only, not model discrepancy.

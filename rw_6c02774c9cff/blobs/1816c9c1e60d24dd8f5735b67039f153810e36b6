@@ -1,0 +1,88 @@
+# Brief: logistic regression vs. k-NN on Iris (OpenML 61)
+
+Owner: `idea-repo` (context). Source: `idea-repo`#1 "Research objective". When this brief and the objective disagree, the objective wins.
+
+## 1. The objective, quoted in full
+
+> Logistic regression against k-nearest neighbours on the Iris data: a small comparison written up as a short paper.
+>
+> Data. Use the Iris dataset from OpenML (dataset id 61), downloaded from OpenML itself.
+>
+> Study. Compare multinomial logistic regression with k-nearest neighbours (choose k by inner cross-validation) by 10 repetitions of stratified 5-fold cross-validation. Report each method's mean accuracy with a 95% interval and the paired difference with its 95% interval. Run the full cross-validation once as a CPU job on the Ibex cluster and once locally, and report the node name of the Ibex job and whether the two runs give identical numbers.
+>
+> Paper. `report/report.pdf`, at most two pages in the NeurIPS 2026 submission template, compiled from LaTeX, with one figure, one table and the code that produced every number. Deliver the LaTeX source and the code next to the PDF.
+
+## 2. Requirements checklist (each must end with a position)
+
+| # | Requirement (from the objective) | Kind |
+|---|---|---|
+| R1 | Data = OpenML dataset id 61, **downloaded from OpenML itself** by the code (not a bundled copy such as `sklearn.datasets.load_iris`) | data |
+| R2 | Method A: **multinomial** logistic regression | analysis |
+| R3 | Method B: k-nearest neighbours, **k chosen by inner cross-validation** (nested inside each outer training fold) | analysis |
+| R4 | Outer protocol: **10 repetitions of stratified 5-fold CV** (= 50 outer folds), same splits for both methods (paired) | analysis |
+| R5 | Each method's **mean accuracy with a 95% interval** | analysis/result |
+| R6 | **Paired difference** (LR − kNN, or stated direction) **with its 95% interval** | analysis/result |
+| R7 | Full CV run **once as a CPU job on Ibex** (SLURM) | compute |
+| R8 | Full CV run **once locally** | compute |
+| R9 | Report the **Ibex node name** of that job | result |
+| R10 | Report **whether the two runs give identical numbers** (and, if not, how they differ) | result |
+| R11 | `report/report.pdf`, **≤ 2 pages**, **NeurIPS 2026 submission template**, compiled from LaTeX | report/venue |
+| R12 | **Exactly one figure** and **exactly one table** | presentation |
+| R13 | **The code that produced every number**, delivered **next to the PDF** (i.e. under `report/`) | code |
+| R14 | **The LaTeX source**, delivered next to the PDF | report |
+
+"Every number" covers the accuracies, intervals, difference, chosen k values, the node name and the identical/not-identical verdict, and also the figure and the table, which should be produced by the delivered code rather than typed in by hand.
+
+## 3. Established facts about the supplied material (verified 2026-10-17)
+
+**Dataset (OpenML 61, `iris`, version 1).** The values are measured. Source: `https://www.openml.org/api/v1/json/data/61` and the ARFF download.
+- ARFF: `https://openml.org/data/v1/download/61/iris.arff` (redirects to www.openml.org), md5 `ad484452702105cbf3d30f8deaba39a9` (matches OpenML's `md5_checksum`). Parquet: `https://data.openml.org/datasets/0000/0061/dataset_61.pq`.
+- 150 instances, 4 numeric features (`sepallength`, `sepalwidth`, `petallength`, `petalwidth`, all in cm), target `class` with 3 levels (`Iris-setosa`, `Iris-versicolor`, `Iris-virginica`), 50 each. No missing values. Majority-class baseline is 33.3%.
+- Licence on OpenML: "Public". Citation policy: UCI. Original: UCI Iris (Fisher 1936).
+- This is the **original UCI `iris.data`** version. It contains the two known transcription errors documented by Bezdek et al. (1999): samples 35 and 38 differ from Fisher's published values. Because of this, the row `4.9,3.1,1.5,0.1,Iris-setosa` appears 3 times, and `5.8,2.7,5.1,1.9,Iris-virginica` appears twice. The objective prescribes this dataset, so **use it as is** (do not correct it). The paper may mention it in one sentence. Duplicate rows can fall into both training and test folds, which matters slightly for k-NN with small k.
+- `openml` Python package or a direct ARFF/Parquet download are both "from OpenML itself". The code should record the dataset id, version and md5 of what it downloaded.
+
+**Template (NeurIPS 2026).** Fetched from `https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip`. It contains `neurips_2026.sty`, `neurips_2026.tex` and `checklist.tex`.
+- "Submission template" means the default (anonymous) option, `\usepackage{neurips_2026}`, not `[final]` or `[preprint]`. The style file declares the options `final`, `preprint`, `nonatbib`, `main`, `position`, `eandd`, `creativeai`, `education` and workshop variants. The default is anonymous.
+- `checklist.tex` states that NeurIPS submissions must include the paper checklist and that it does not count towards the page limit. **Open point for `venue-repo`:** whether "at most two pages" counts the whole PDF (the safe reading: the entire `report.pdf` ≤ 2 pages, references included, no checklist appended), or only the main content. Recommendation: make the whole PDF ≤ 2 pages unless the venue owner decides otherwise and records why.
+
+**Compute.** The resources include `ibex` (SLURM, CPU nodes) and `local-compute`. The node name comes from SLURM (`$SLURMD_NODENAME` / `$SLURM_JOB_NODELIST` / `hostname` inside the job) and should be captured by the job itself into its output, together with the job id.
+
+## 4. What the study must produce (derived from the objective)
+
+1. **Per-fold results table (data file).** For each of the 50 outer folds: repetition, fold, accuracy of LR, accuracy of kNN, their difference, and the k selected by the inner CV. This is produced twice (Ibex, local), and the two files are compared value by value.
+2. **Summary quantities.** Mean accuracy of LR and of kNN, each with a 95% interval. Mean paired difference with its 95% interval. The distribution of the selected k. The Ibex node name and job id. The identical-or-not verdict (bitwise/exact equality of the per-fold numbers, with the maximum absolute difference if they differ).
+3. **One table**, e.g. method × {mean accuracy, 95% interval} plus the difference row (and optionally the run-agreement line).
+4. **One figure**, e.g. per-fold (or per-repetition) paired accuracies or differences, with the means and intervals marked, or the selected-k distribution. The figure must support a claim in the text. The choice belongs to `figtab-repo` / `story-repo`.
+5. **The code** that downloads the data, runs both CV runs, computes every number, and builds the figure and table, plus the SLURM script used on Ibex and the environment (library versions, seeds).
+
+## 5. Conventions and prior work to follow or compare against
+
+**Interval for a repeated-CV mean (the main methodological point).** The 50 fold accuracies are not independent: training sets overlap, and the 10 repetitions reuse the same 150 points. A naive t-interval over 50 folds, `mean ± t·sd/√50`, is known to be too narrow (Dietterich 1998; Nadeau & Bengio 2003; Bouckaert & Frank 2004). The established convention for r×k-fold CV is the **corrected repeated k-fold t interval** (Nadeau & Bengio's variance correction as applied by Bouckaert & Frank 2004):
+  `mean ± t_{0.975, n−1} · sqrt( (1/n + n_test/n_train) · s² )`, with n = r·k = 50 and n_test/n_train = 1/4 for 5-fold. The same formula applies to the paired differences.
+  Acceptable alternatives, if stated: an interval over the 10 repetition means, a bootstrap, or Wilson/binomial intervals over pooled predictions (the last ignores training-set variability). Whichever is used, the paper must name it, and ideally note that the naive interval is optimistic. The choice is `experiment-repo`'s, recorded in the plan.
+- **Paired design.** Both methods are evaluated on identical outer splits (same seed per repetition), and the difference is computed per fold. This is what "paired difference" requires.
+- **Nested CV for k.** k is tuned only on the outer training fold (Varma & Simon 2006; Cawley & Talbot 2010). The inner CV should also be stratified. The candidate grid (e.g. odd k in 1..30) and the tie-break rule must be stated.
+- **Preprocessing.** Feature standardisation is fitted inside each training fold (within the pipeline). It matters for kNN distances and LR regularisation. Whatever is chosen (standardise or not, LR regularisation C, solver, max_iter) must be stated and be identical between the two runs.
+- **Reproducibility (R10).** Fixed seeds for every repetition and inner split, a single thread (or deterministic BLAS) where possible, and the same library versions locally and on Ibex (pin them and record them in the output). "Identical numbers" should be checked on the raw per-fold accuracies (exact equality) and on the reported summaries. lbfgs can differ in the last bits across BLAS/CPU, but on 150 points the accuracies (multiples of 1/30) will very likely match. Report what is observed; do not assume.
+- **Expected magnitude (prior knowledge, not a result).** Both methods are typically about 95–97% accurate on Iris. A difference near 0 with an interval spanning 0 is the likely outcome. The paper should not overclaim, and a null difference is a valid finding.
+
+**References (DOIs verified via Crossref).**
+- Fisher, R. A. (1936). The use of multiple measurements in taxonomic problems. *Annals of Eugenics*. doi:10.1111/j.1469-1809.1936.tb02137.x
+- Bezdek, J. C. et al. (1999). Will the real iris data please stand up? *IEEE Trans. Fuzzy Systems*. doi:10.1109/91.771092
+- Dietterich, T. G. (1998). Approximate statistical tests for comparing supervised classification learning algorithms. *Neural Computation*. doi:10.1162/089976698300017197
+- Nadeau, C., Bengio, Y. (2003). Inference for the generalization error. *Machine Learning*. doi:10.1023/A:1024068626366
+- Bouckaert, R. R., Frank, E. (2004). Evaluating the replicability of significance tests for comparing learning algorithms. *PAKDD, LNCS*. doi:10.1007/978-3-540-24775-3_3
+- Varma, S., Simon, R. (2006). Bias in error estimation when using cross-validation for model selection. *BMC Bioinformatics*. doi:10.1186/1471-2105-7-91
+- Vanschoren, J. et al. (2014). OpenML: networked science in machine learning. *SIGKDD Explorations*. doi:10.1145/2641190.2641198
+- Pedregosa, F. et al. (2011). Scikit-learn: Machine learning in Python. *JMLR* 12:2825–2830 (no DOI), if scikit-learn is used.
+- (Cawley, G. C., Talbot, N. L. C. (2010), On over-fitting in model selection…, *JMLR* 11:2079–2107, as optional support for nested CV.)
+
+## 6. Not established / open (to be settled by their owners)
+
+- How the 2-page limit treats references and the NeurIPS checklist (owner: `venue-repo`). Safe default: the whole PDF ≤ 2 pages.
+- Which interval method to use for R5/R6 (owner: `experiment-repo`). Recommended: the corrected repeated-CV t interval, stated explicitly.
+- The k grid, LR hyperparameters, scaling and seeds (owner: `experiment-repo`, recorded in the plan).
+- The figure's content (owner: `figtab-repo`, with `story-repo`).
+- Ibex access details: account/partition, Python environment on Ibex, queue time (owners: `experiment-repo`; feasibility check: `idea-review-repo`). The run must actually happen on Ibex. A local stand-in does not satisfy R7/R9.
+- Where the code lives in the delivery: the objective requires the code "next to the PDF", so the assignment should map the code into `report/` (e.g. `report/code/`) in the assembled delivery (owner: `story-repo`).

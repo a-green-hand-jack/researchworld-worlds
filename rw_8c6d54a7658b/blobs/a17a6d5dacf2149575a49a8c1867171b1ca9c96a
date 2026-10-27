@@ -1,0 +1,55 @@
+"""Compare the local and Ibex runs of cv_study.py number by number.
+
+Usage: python compare_runs.py ../results/local ../results/ibex ../results/comparison.json
+Writes the comparison JSON: whether the output CSVs are byte-identical,
+whether every per-fold number and every summary statistic is exactly equal,
+and the largest absolute difference.
+"""
+import json
+import pathlib
+import sys
+
+import numpy as np
+import pandas as pd
+
+
+def flatten(obj, prefix=""):
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield from flatten(v, f"{prefix}{k}.")
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from flatten(v, f"{prefix}{i}.")
+    else:
+        yield prefix[:-1], obj
+
+
+def main(a, b, out):
+    a, b = pathlib.Path(a), pathlib.Path(b)
+    ra, rb = (json.loads((p / "run.json").read_text()) for p in (a, b))
+    files = {}
+    for f in ("folds.csv", "inner_cv.csv", "predictions.csv"):
+        da, db = pd.read_csv(a / f), pd.read_csv(b / f)
+        num = da.select_dtypes("number").columns
+        files[f] = {
+            "bytes_identical": (a / f).read_bytes() == (b / f).read_bytes(),
+            "values_identical": bool(da.equals(db)),
+            "max_abs_diff": float(np.max(np.abs(da[num].to_numpy() - db[num].to_numpy()))) if len(num) else 0.0,
+        }
+    sa, sb = dict(flatten(ra["summary"])), dict(flatten(rb["summary"]))
+    diffs = {k: (sa[k], sb.get(k)) for k in sa if sa[k] != sb.get(k)}
+    num_d = [abs(x - y) for x, y in diffs.values() if isinstance(x, (int, float)) and isinstance(y, (int, float))]
+    result = {
+        "runs": {str(a): ra["environment"], str(b): rb["environment"]},
+        "files": files,
+        "summary_values_compared": len(sa),
+        "summary_values_different": len(diffs),
+        "summary_max_abs_diff": max(num_d) if num_d else 0.0,
+        "identical": all(v["values_identical"] for v in files.values()) and not diffs,
+    }
+    pathlib.Path(out).write_text(json.dumps(result, indent=2) + "\n")
+    print(json.dumps({k: result[k] for k in ("files", "summary_values_different", "identical")}, indent=1))
+
+
+if __name__ == "__main__":
+    main(*sys.argv[1:4])

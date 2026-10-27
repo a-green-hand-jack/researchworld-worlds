@@ -1,0 +1,41 @@
+"""E5 held-out, the three failing short-pulse cells (c396): on the truth-or-model pairs, how often the frozen model's
+state equals the adiabatic mu criterion's, and the sign of the model's errors (truth alive / model dead and the
+reverse), against stage_v1 on the same pairs. Inputs: raw runs asset (sha256 8c844511...), frozen code at 76abca2.
+usage: e5_heldout_shortpulse.py EXP_TREE RUNS.jsonl.gz OUT.json"""
+import sys, os, json, gzip
+import numpy as np
+EXP, RUNS, OUTP = sys.argv[1:4]
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e5_b1 as B, e5_theory as th
+acc = {}
+for line in gzip.open(RUNS, "rt"):
+    if '"short_pulse"' not in line[:400]:
+        continue
+    rec = json.loads(line); cfg, tr, pr = rec["cfg"], rec["truth"], rec["pred"]
+    if cfg["kind"] != "short_pulse" or cfg["ts"] is None:
+        continue
+    c, s = B.stats(B.GRIDS[cfg["grid"]]); n = c.size
+    t = np.array(tr["t"], float); am = np.array(tr["a"], float) > th.THR
+    mod = B.unbits(pr["model"]["chk"], n); sv = B.unbits(pr["stage_v1"]["chk"], n)
+    mu = (cfg["p0"] * c - cfg["p0"] ** 2 * s)[None, :] > th.lam_of(cfg["kW"], t)[:, None]
+    t1 = cfg["ts"]; bef = np.nonzero(t <= t1)[0]; aft = (t > t1)[:, None]
+    ref = am[bef[-1]] if bef.size else np.zeros(n, bool); mref = mod[bef[-1]] if bef.size else np.zeros(n, bool)
+    U = aft & ((am != ref[None, :]) | (mod != mref[None, :]))
+    a = acc.setdefault(cfg["variant"], dict(runs=0, pairs=0, model_agree=0, mu_agree=0, model_eq_mu=0, stage_v1_agree=0,
+                                            truth_alive_model_dead=0, truth_dead_model_alive=0, truth_changed_pairs=0,
+                                            model_changed_truth_not=0))
+    a["runs"] += 1; a["pairs"] += int(U.sum())
+    a["model_agree"] += int(((mod == am) & U).sum()); a["mu_agree"] += int(((mu == am) & U).sum())
+    a["model_eq_mu"] += int(((mod == mu) & U).sum()); a["stage_v1_agree"] += int(((sv == am) & U).sum())
+    a["truth_alive_model_dead"] += int((am & ~mod & U).sum()); a["truth_dead_model_alive"] += int((~am & mod & U).sum())
+    Ut = aft & (am != ref[None, :]); a["truth_changed_pairs"] += int(Ut.sum())
+    a["model_changed_truth_not"] += int((U & ~Ut).sum())
+for v, a in acc.items():
+    P = max(a["pairs"], 1)
+    for k in ("model_agree", "mu_agree", "model_eq_mu", "stage_v1_agree"):
+        a[k + "_share"] = a[k] / P
+json.dump(dict(source=f"{RUNS}; frozen code {EXP}", by_variant=acc), open(OUTP, "w"), indent=1)
+for v in sorted(acc):
+    a = acc[v]; print(v, a["runs"], a["pairs"], round(a["model_agree_share"], 3), round(a["mu_agree_share"], 3),
+                      round(a["model_eq_mu_share"], 3), round(a["stage_v1_agree_share"], 3), a["truth_alive_model_dead"],
+                      a["truth_dead_model_alive"], a["truth_changed_pairs"], a["model_changed_truth_not"])

@@ -1,0 +1,30 @@
+# Monte Carlo estimate of pi
+
+## Result
+The pilot (`pilot.py`, unmodified) drew n = 1,678,300,000 uniform points in the unit square in 540 s; 1,318,121,554 fell inside the quarter circle.
+
+| Quantity | Value |
+|---|---|
+| Estimate of pi | **3.141564** (3.1415636) |
+| Standard error | 4.01e-05 |
+| 95% confidence interval | **[3.141485, 3.141642]** (half-width 7.86e-05) |
+| True pi | 3.141593 |
+| Error (estimate - pi) | -2.90e-05 (z = -0.72) |
+
+The interval covers the true value of pi. A Wilson interval agrees with the Wald interval to within 4.1e-09 at the endpoints, so the choice of interval method does not matter at this n.
+
+## Method
+Hit-or-miss sampling: pi is estimated as 4p, where p is the fraction of points inside the quarter circle. The interval is the normal-approximation (Wald) interval, 4p +/- 1.96 * 4 * sqrt(p(1-p)/n). It describes this one seeded run (seed 20261019), which would miss pi in about 5% of such runs; here it does not. The sample count depends on the speed of the shared host. Numbers are from `results/estimate.json`, computed from `results/pilot.json` by `analysis/analyze.py`.
+
+## Figure
+![Running estimate of pi against number of samples](../fig/running_estimate.png)
+
+Running estimate (left: full run, log x-axis; right: zoom on the later part) with a pointwise 95% band and the true value of pi marked. The band narrows as 1/sqrt(n) and the estimate stays inside it. Built from `results/trace.csv` (55 points, one about every 10 s) by `fig/make_figure.py`.
+
+## Extended runs
+Two further runs, `extended.py 55` and `extended.py 120`, were started together with the pilot at 2026-10-19T10:24:32Z as `local-compute` background jobs. They run for 55 and 120 minutes respectively. They are for a later study and are not part of this delivery.
+
+## Files
+- `analysis/analyze.py`: pilot output to estimate, interval and trace
+- `results/`: `pilot.json`, `estimate.json`, `trace.csv`, `runs.json` (start record)
+- `fig/`: figure and generator

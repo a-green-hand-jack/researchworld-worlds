@@ -1,0 +1,45 @@
+"""Figure: per-fold accuracies (LR vs kNN) with mean and 95% interval, and paired difference.
+
+usage (from report/figures): python make_figure.py [PER_FOLD_CSV] [OUT_STEM] [RUN]
+defaults: ../results/folds_long.csv, fig_accuracy, local (runs are byte-identical)
+"""
+import sys, numpy as np, matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from common_stats import load, wide, interval
+
+import pathlib
+here = pathlib.Path(__file__).resolve().parent
+csv = sys.argv[1] if len(sys.argv) > 1 else here.parent / "results" / "folds_long.csv"
+out = sys.argv[2] if len(sys.argv) > 2 else str(here / "fig_accuracy")
+run = sys.argv[3] if len(sys.argv) > 3 else "local"
+w = wide(load(csv), run)
+lr, knn = w["logreg"].to_numpy(), w["knn"].to_numpy()
+diff = lr - knn
+
+plt.rcParams.update({"font.size": 8, "pdf.fonttype": 42, "ps.fonttype": 42,
+                     "axes.spines.top": False, "axes.spines.right": False})
+fig, (a, b) = plt.subplots(1, 2, figsize=(5.5, 2.2), gridspec_kw={"width_ratios": [1.5, 1]})
+rng = np.random.default_rng(0)
+cols = {"Logistic regression": "#1f77b4", "k-NN": "#d95f02"}
+marks = {"Logistic regression": "o", "k-NN": "^"}
+for i, (name, x) in enumerate([("Logistic regression", lr), ("k-NN", knn)]):
+    a.scatter(i + rng.uniform(-0.22, 0.22, len(x)), 100 * x, s=9, alpha=0.4, color=cols[name], marker=marks[name], lw=0)
+    m, lo, hi = interval(x)
+    a.errorbar(i, 100 * m, yerr=[[100 * (m - lo)], [100 * (hi - m)]], color="k", marker="D", ms=4, capsize=4, lw=1.2, zorder=5)
+    a.annotate(f"{100*m:.1f}", (i + 0.3, 100 * m), va="center", fontsize=7)
+a.set_xticks([0, 1]); a.set_xticklabels(list(cols)); a.set_xlim(-0.5, 1.7)
+a.set_ylabel("Outer-fold accuracy (%)"); a.set_title("(a) 50 outer folds", fontsize=8, loc="left")
+
+m, lo, hi = interval(diff)
+vals, counts = np.unique(np.round(100 * diff, 6), return_counts=True)
+b.scatter(np.zeros(len(vals)), vals, s=9 * counts, color="0.55", alpha=0.6, lw=0)
+for v, c in zip(vals, counts):
+    b.annotate(f"{c}", (0.17, v), va="center", fontsize=6.5, color="0.25", bbox=dict(fc="white", ec="none", pad=0.5))
+b.errorbar(0, 100 * m, yerr=[[100 * (m - lo)], [100 * (hi - m)]], color="k", marker="D", ms=4, capsize=4, lw=1.2, zorder=5)
+b.axhline(0, color="0.5", lw=0.8, ls="--")
+b.set_xticks([0]); b.set_xticklabels(["LR $-$ k-NN"]); b.set_xlim(-0.5, 0.5)
+b.set_ylabel("Paired difference (pct. points)"); b.set_title("(b) paired difference", fontsize=8, loc="left")
+fig.tight_layout(pad=0.4, w_pad=1.0)
+fig.savefig(out + ".pdf"); fig.savefig(out + ".png", dpi=200)
+print(f"LR {interval(lr)}\nkNN {interval(knn)}\ndiff {interval(diff)}")

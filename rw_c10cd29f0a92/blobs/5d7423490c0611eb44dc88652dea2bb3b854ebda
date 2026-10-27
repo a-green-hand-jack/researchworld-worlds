@@ -1,0 +1,146 @@
+{
+ "method": "Stage-3 verdict from the equilibrated L = 256 rerun, by single-histogram reweighting.",
+ "kish_min": 0.1,
+ "tc_exact": 2.269185314213022,
+ "stage2": {
+  "data": "data/stage2",
+  "block_sweeps": 2000,
+  "seeds": [
+   1,
+   2,
+   3
+  ],
+  "temps": [
+   2.18,
+   2.21,
+   2.24,
+   2.27,
+   2.3,
+   2.33,
+   2.36,
+   2.39,
+   2.42
+  ],
+  "sweeps": 20000,
+  "pairwise": {
+   "32/64": {
+    "T": 2.2643271332060153,
+    "U": 0.6129807575525674
+   },
+   "32/128": {
+    "T": 2.2614082916843143,
+    "U": 0.6160493478084639
+   },
+   "64/128": {
+    "T": 2.2601019226965393,
+    "U": 0.621107881944605
+   }
+  },
+  "Tc": 2.2619457825289566,
+  "U_at_crossing": 0.6167126624352121,
+  "ci95_block_bootstrap": [
+   2.256304022371591,
+   2.27128564657162
+  ],
+  "failed_block_draws": 0,
+  "ci95_seed_bootstrap": [
+   2.2588631461053654,
+   2.2691414296976333
+  ],
+  "failed_seed_draws": 0,
+  "reweighting_consistency": {
+   "32": {
+    "points": 221,
+    "max_abs_diff": 0.012065359696895817
+   },
+   "64": {
+    "points": 221,
+    "max_abs_diff": 0.02782248219922756
+   },
+   "128": {
+    "points": 51,
+    "max_abs_diff": 0.03674663375957021
+   }
+  }
+ },
+ "long": {
+  "data": "data/extra_long",
+  "block_sweeps": 10000,
+  "seeds": [
+   11,
+   12,
+   13
+  ],
+  "temps": [
+   2.21,
+   2.24,
+   2.27,
+   2.3
+  ],
+  "sweeps": 100000,
+  "pairwise": {
+   "32/64": {
+    "T": 2.274264993484133,
+    "U": 0.6068419366518772
+   },
+   "32/128": {
+    "T": 2.2668394606888516,
+    "U": 0.6147908918696272
+   },
+   "64/128": {
+    "T": 2.2639309309567417,
+    "U": 0.6257257977399181
+   }
+  },
+  "Tc": 2.268345128376575,
+  "U_at_crossing": 0.6157862087538075,
+  "ci95_block_bootstrap": [
+   2.265451675558512,
+   2.27221241709283
+  ],
+  "failed_block_draws": 0,
+  "ci95_seed_bootstrap": [
+   2.2659747446117344,
+   2.2714400918536466
+  ],
+  "failed_seed_draws": 0,
+  "reweighting_consistency": {
+   "32": {
+    "points": 221,
+    "max_abs_diff": 0.006805723280875586
+   },
+   "64": {
+    "points": 215,
+    "max_abs_diff": 0.02876843543173524
+   },
+   "128": {
+    "points": 44,
+    "max_abs_diff": 0.008542211881718664
+   }
+  }
+ },
+ "grid_cubic_estimates": {
+  "stage2": {
+   "Tc": 2.2592630568951466,
+   "ci95": [
+    2.2542888800379948,
+    2.2683747652572017
+   ]
+  },
+  "long": {
+   "Tc": 2.2611380508961236,
+   "ci95": [
+    2.2581511236824796,
+    2.26991640329867
+   ]
+  }
+ },
+ "inputs": [
+  "data/stage2/summary-L*.json",
+  "data/stage2/series/*.npz",
+  "data/extra_long/summary-L*.json",
+  "data/extra_long/series/*.npz",
+  "results/stage2_crossing.json",
+  "results/extra_long_check.json"
+ ]
+}

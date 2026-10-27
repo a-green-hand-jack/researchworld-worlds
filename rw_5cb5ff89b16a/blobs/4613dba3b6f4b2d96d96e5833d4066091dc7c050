@@ -1,0 +1,10 @@
+# Brief
+
+Objective (quoted): "Integrate exp(-x^2) and x^(1/3) on [0, 1] with the composite trapezoid rule, the composite Simpson rule and 4-node Gauss-Legendre panels, for n = 2^k panels, k = 1..10, and record the absolute error." References from `mpmath.quad` at `mp.dps = 40` (not closed form), mpmath installed via pip. Error sweep must run as a job via `ht-resource run local-compute`, writing a CSV. For each function and rule, fit log(error) vs log(n) over points with error > 1e-14, give the convergence order.
+Report: `report/report.md`, at most one page: reference values with the mpmath version, a table of fitted orders, one log-log figure per function.
+
+No supplied data or related material beyond the issue.
+
+Expected: smooth f -> trapezoid order 2, Simpson 4, Gauss4 order 8 (but hits the 1e-14 floor almost at once, so likely too few points to fit); x^(1/3) singular at 0 -> all rules limited to order 4/3 (error ~ n^(-4/3)), Gauss may be ~4/3 too.
+Gauss4 on exp(-x^2) has only 2 points above 1e-14: its order is a two-point slope (n=2,4), with caveat, no R^2.
+Results: results/errors.csv, results/reference.csv, results/fits.csv; code sweep.py.

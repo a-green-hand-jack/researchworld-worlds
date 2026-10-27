@@ -1,0 +1,111 @@
+"""E8 (plan v2.4, direction C rung 6): is collapse decided early in the ViT? Weight-decay switch grid.
+
+Two arms as in E3 (code/e3_grid.py): Arm T (SGD, copy target, decay on every parameter) and Arm P (the I-JEPA
+recipe: AdamW, EMA 0.996->1, target LN, warmup+cosine lr). Per arm a low and a high weight decay, chosen from the
+delivered E3 runs (results/e3/runs.csv): Arm T low 1e-3 (count 39, no collapse), high 3e-2 (count 5, dimensional
+collapse 3/3); Arm P low 0.04 (count 116), high 5.5 (count 28). Rows: constant low, constant high, low->high and
+high->low at switch epoch e in {2, 5, 10, 20}; 50 epochs on the 50-epoch schedule (lr and EMA schedules of the
+recipe unchanged; weight decay is constant at its level before and after the switch, replacing Arm P's ramp).
+Usage:
+  python3 code/e8_grid.py list
+  python3 code/e8_grid.py sbatch-pilot DIR          # timing/instrumentation pilot (<= 1 GPU-h)
+  python3 code/e8_grid.py sbatch-grid DIR COMMIT     # production: 20 rows x 5 seeds, 3 runs per GPU, one array job
+  python3 code/e8_grid.py sbatch-ref DIR COMMIT      # E8-R practice reference (plan v2.7): Arm P recipe ramp 0.04 -> 0.4
+                                                     # and constant 0.4, 5 seeds each; same code, horizon and statistic
+Analysis and the registered decision-time statistic: code/e8_analyze.py; registration: results/e8/prediction.json.
+"""
+import sys, os, json
+sys.path.insert(0, os.path.dirname(__file__))
+from e3_grid import ARM_T, cli_args, sbatch
+
+EPOCHS = 50
+SWITCH = [2, 5, 10, 20]
+LEVELS = dict(T=(1e-3, 3e-2), P=(0.04, 5.5))
+SEEDS = [0, 1, 2, 3, 4]
+COMMON = ["--epochs", str(EPOCHS), "--full-epochs", str(EPOCHS), "--threads", "2", "--probe-every", "10",
+          "--instrument", "1", "--force-steps"]
+
+
+def grid():
+    G = {}
+    for arm, (lo, hi) in LEVELS.items():
+        base = dict(ARM_T) if arm == "T" else dict()
+        G[f"{arm}_lo"] = (arm, "const", None, dict(base, wd=[lo, lo]))
+        G[f"{arm}_hi"] = (arm, "const", None, dict(base, wd=[hi, hi]))
+        for e in SWITCH:
+            G[f"{arm}_lo2hi_e{e}"] = (arm, "lo2hi", e, dict(base, wd=[lo, lo], wd_switch_epoch=e, wd_after=hi))
+            G[f"{arm}_hi2lo_e{e}"] = (arm, "hi2lo", e, dict(base, wd=[hi, hi], wd_switch_epoch=e, wd_after=lo))
+    return G
+
+
+def grid_ref():
+    """E8-R rows (registration: results/e8/prediction.json addendum_E8R). The never-switched reference is E8's P_lo."""
+    return {"PR_ramp": ("P", "ramp", None, dict(wd=[0.04, 0.4])),    # the recipe's cosine increase over the 50 epochs
+            "PR_c04": ("P", "const", None, dict(wd=[0.4, 0.4]))}
+
+
+def run_line(name, over, seed, epochs=EPOCHS, root="runs8"):
+    out = f"{root}/{name}/s{seed}"
+    common = list(COMMON); common[1] = str(epochs)
+    return (f"mkdir -p {out}; prov {out}; venv/bin/python -u vit_jepa.py --out {out} --data data --seed {seed} "
+            + " ".join(common + cli_args(over)) + f" > {out}.log 2>&1 &")
+
+
+PROV = r'''prov() { venv/bin/python - "$1" <<'PY'
+import json, sys, subprocess, hashlib, os, socket
+json.dump(dict(code_commit=os.environ.get('CODE_COMMIT'), vit_jepa_md5=hashlib.md5(open('vit_jepa.py','rb').read()).hexdigest(),
+               pip_freeze=subprocess.run([sys.executable, '-m', 'pip', 'freeze'], capture_output=True, text=True).stdout.split(),
+               node=socket.gethostname(), gpu=os.environ.get('GPU'), slurm_job=os.environ.get('SLURM_JOB_ID'),
+               array=os.environ.get('SLURM_ARRAY_JOB_ID'), task=os.environ.get('SLURM_ARRAY_TASK_ID')),
+          open(os.path.join(sys.argv[1], 'provenance.json'), 'w'), indent=1)
+PY
+}
+GPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1); export GPU'''
+
+
+def cmd_pilot(d, commit):
+    """Pilot: 5 epochs, switch at epoch 2, 3 runs packed per GPU (as production), one job per arm."""
+    G = grid()
+    for arm in "TP":
+        lines = [PROV, f"export CODE_COMMIT={commit}"]
+        for name in [f"{arm}_lo", f"{arm}_hi", f"{arm}_lo2hi_e2"]:
+            lines.append(run_line(name, G[name][3], 0, epochs=5, root="pilot8"))
+        open(os.path.join(d, f"e8pilot{arm}.sbatch"), "w").write(sbatch(f"e8pilot{arm}", lines, "00:40:00"))
+        print(os.path.join(d, f"e8pilot{arm}.sbatch"))
+
+
+def cmd_grid(d, commit, per_job=3, ref=False):
+    """Production grid as one SLURM array: task i runs runs[3i:3i+3] in parallel on one GPU (as in the pilot)."""
+    G = grid_ref() if ref else grid()
+    # priority (go/no-go condition 1): constant rows and the e = 20, e = 5 rows first, then e = 10, e = 2
+    prio = lambda name: 0 if G[name][1] == "const" else (1 if G[name][2] in (20, 5) else 2)
+    runs = [(name, G[name][3], s) for name in sorted(G, key=lambda n: (prio(n), n)) for s in SEEDS]
+    jobs = [runs[i:i + per_job] for i in range(0, len(runs), per_job)]
+    lines = [PROV, f"export CODE_COMMIT={commit}", 'case "$SLURM_ARRAY_TASK_ID" in']
+    for i, job in enumerate(jobs):
+        lines.append(f"{i})")
+        for name, over, s in job:
+            out = f"runs8/{name}/s{s}"
+            lines.append(f"  if [ ! -f {out}/final.json ]; then " + run_line(name, over, s).replace(" &", "") + " & fi")
+        lines.append("  ;;")
+    lines.append("esac")
+    name = "e8ref" if ref else "e8grid"
+    txt = sbatch(name, lines, "02:00:00").replace("#SBATCH --output=%x_%j.out", f"#SBATCH --output=%x_%A_%a.out\n#SBATCH --array=0-{len(jobs) - 1}")
+    txt = txt.replace(f"echo ${{JOB_DONE_PREFIX:-done:}} {name} done", f"echo {name} task $SLURM_ARRAY_TASK_ID done")  # one wake: the array's end
+    if ref:  # behind E8's pending tasks in the queue (plan v2.7: E8-R must not delay E8)
+        txt = txt.replace("#SBATCH --time=", "#SBATCH --nice=1000\n#SBATCH --time=")
+    open(os.path.join(d, f"{name}.sbatch"), "w").write(txt)
+    print(os.path.join(d, f"{name}.sbatch"), len(runs), "runs", len(jobs), "array tasks")
+
+
+if __name__ == "__main__":
+    c = sys.argv[1]
+    if c == "list":
+        for k, v in grid().items():
+            print(k, v[:3], " ".join(cli_args(v[3])))
+    elif c == "sbatch-pilot":
+        cmd_pilot(sys.argv[2], sys.argv[3])
+    elif c == "sbatch-grid":
+        cmd_grid(sys.argv[2], sys.argv[3])
+    elif c == "sbatch-ref":
+        cmd_grid(sys.argv[2], sys.argv[3], ref=True)

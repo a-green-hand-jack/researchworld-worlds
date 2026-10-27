@@ -1,0 +1,19 @@
+"""Render report/report.md to PDF with the venue page model and count pages.
+usage: render.py REPORT_MD OUT_PDF   (images resolve relative to REPORT_MD)
+Needs weasyprint + markdown; libpango on LD_LIBRARY_PATH (conda-forge pango)."""
+import re, sys, pathlib, markdown, weasyprint
+CSS = """
+@page { size: A4; margin: 15mm 18mm; }
+body { font: 9.5pt/1.28 'DejaVu Serif', serif; }
+h1 { font-size: 13pt; margin: 4pt 0; } h2 { font-size: 10.5pt; margin: 6pt 0 2pt; }
+p, ul { margin: 2pt 0; } li { margin: 0; }
+table { border-collapse: collapse; font-size: 8.5pt; margin: 3pt 0; }
+td, th { border: 0.5pt solid #888; padding: 1pt 4pt; }
+img { display: block; margin: 2pt auto; max-width: 100%; }
+"""
+src, out = pathlib.Path(sys.argv[1]), sys.argv[2]
+html = markdown.markdown(src.read_text(), extensions=["tables"])
+html = re.sub(r'width="(\d+)"', r'style="width:\1px"', html)  # weasyprint ignores the width attribute
+doc = weasyprint.HTML(string=f"<style>{CSS}</style>{html}", base_url=str(src.parent)).render()
+doc.write_pdf(out)
+print("pages:", len(doc.pages))

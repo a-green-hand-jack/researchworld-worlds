@@ -1,0 +1,39 @@
+# Review pass 02 (full delivery present)
+
+Date: 2026-10-17. Assembled delivery (`ht-role delivery`, no assembly errors) at:
+- paper-repo `bd7dea1e17d076bc27607e3e829b994ff13851c1` (report/report.pdf, report.tex, numbers.tex, make_numbers.py, references.bib, README.md)
+- experiment-repo `2bcd5889596e53d747a4506a0fd56dde06b3c83c` (report/code/, report/results/)
+- figtab-repo `cfc0fbb07326` (report/figures/, report/tables/; full SHA in the delivery manifest)
+- venue-repo `169514aed0631f1c3099934204d17871639953e4` (report/neurips_2026.sty)
+
+## Checks and outcome
+1. Analysis: unchanged since pass 01 (re-download, byte-identical re-run, independent interval
+   recomputation all passed). Additionally re-ran `code/robustness.py` (9 variants, 73 s):
+   `results/robustness.json` byte-identical. All 8 non-main variants have corrected intervals
+   containing 0; mean differences -0.07 to +1.13 pp — as the paper states.
+2. `make_numbers.py` re-run in the assembled delivery: `numbers.tex` byte-identical. Every macro
+   traced: 95.4 [91.6, 99.2], 94.5 [89.7, 99.3], +0.9 [-2.1, +4.0] pp, p = 0.54 (corrected), naive
+   [+0.1, +1.8], k 1-17 median 7, edge 0, folds 13/5/32, seed 20261017, Ibex job 53909302 node
+   cn511-08, identical, 1500 predictions, versions, MD5, 8 variants.
+3. `tables/make_table.py` re-run: identical. `figures/make_figure.py` re-run: PDF differs only in
+   CreationDate; rendered pixels identical (150 dpi, 0 differing).
+4. Paper PDF (delivered): 2 pages, US letter, `\usepackage{neurips_2026}` without options
+   (anonymous submission, line numbers), exactly one `table` and one `figure` environment,
+   references on page 2. Read in full at 150 dpi: claims follow the primary corrected interval
+   ("no difference is resolved"), naive interval labelled as ignoring fold dependence, method,
+   evaluation, interval formula, Ibex node/job, identity criterion, limitations all present.
+   Figure legible, labelled, matches its caption; table caption names the interval method.
+5. Recompiled `report.tex` from the assembled delivery (latexmk, TeX Live 2026): 2 pages, no
+   overfull boxes or undefined references. Text of the recompiled PDF differs from the delivered
+   `report.pdf` in one place: the table's lower bound of the difference shows `[-2.14` (hyphen) in
+   the delivered PDF and `[−2.14` (minus) when compiled from the delivered
+   `tables/results_table.tex` (figtab-repo's fix after paper-repo#5 item 6). The delivered PDF is
+   therefore not the compile of the delivered source.
+6. figtab: `__pycache__/*.pyc` no longer delivered (F6 resolved).
+
+## Findings
+- G1 (paper-repo) `report/report.pdf` is stale relative to the delivered table source; recompile
+  from the assembled delivery and commit.
+
+Pass-01 findings F1-F6: resolved.
+Conclusion: approve once G1 is fixed and the recompiled PDF is checked.

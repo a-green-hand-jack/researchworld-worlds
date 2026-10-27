@@ -1,0 +1,121 @@
+"""Independent check of the E5/B1 dev post-loss law (experiment 5416b28: theory/ext_B_stagewise.md B-iii,
+results/e5/b1dev/posthoc/postloss_law.json, README 'The rates behind this').
+Raw runs: release asset e5__b1dev__b1_dev_runs.jsonl.gz (sha256 f0d7815c...). Imports only GRIDS/stats/THR/lam_of from
+the experiment tree; the post-loss segments, the Lambda clocks, the slopes and the forced-solution prediction are
+computed here.
+Per truth direction and loss: the segment of consecutive dead checkpoints j0..j1 after the last alive one (the interval
+into j0, the bottleneck, is excluded as in the experiment's script).
+ (a) per-interval slopes -dln p/dLam_W, -dln w/dLam_W (compare postloss_law.json);
+ (b) per-segment OLS slopes over j0..j1 (>= 3 checkpoints), so long segments do not dominate;
+ (c) copy-target variants: the linearised law of B-iii integrated from (p, w) at j0,
+     p(t) = e^{-a(LP(t)-LP0)} [p0 + a c Int_{t0}^t w^2 e^{a(LP-LP0)} dt],
+     with w = w0 e^{-(LW-LW0)} (the note's assumption) and, separately, w log-linear between the truth's checkpoints;
+     ln(p_truth / p_pred) at j0+1..j1.
+Usage: python3 checks/e5_postloss_law_check.py EXPERIMENT_TREE RUNS.jsonl.gz OUT.json [NPROC]"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+EXP = sys.argv[1]
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e5_b1 as B, e5_theory as th
+THR = th.THR
+C, S = B.stats(B.GRIDS["dev"])
+TINY = 1e-280
+
+
+def clock(knots, T):
+    tf = np.unique(np.concatenate([np.linspace(0.0, T, 8001), [k[0] for k in knots if k[0] <= T]]))
+    lf = th.lam_of(knots, tf)
+    return tf, lf, np.concatenate([[0.0], np.cumsum(0.5 * (lf[1:] + lf[:-1]) * np.diff(tf))])
+
+
+def one(line):
+    rec = json.loads(line); cfg, tr = rec["cfg"], rec["truth"]
+    t = np.array(tr["t"], float); A = np.abs(np.array(tr["a"], float)); P = np.abs(np.array(tr["p"], float))
+    am = A > THR; T = cfg["T"]; al = cfg["alpha"]; copy = cfg["kappa"] is None
+    tf, lW, LWf = clock(cfg["kW"], T); tfp, lP, LPf = clock(cfg["kP"], T)
+    LPf = np.interp(tf, tfp, LPf)
+    LW = np.interp(t, tf, LWf); LP = np.interp(t, tf, LPf)
+    out = dict(variant=cfg["variant"], kind=cfg["kind"], ar=cfg["alpha"] * cfg["rho"], iv_p=[], iv_w=[], seg=[])
+    for k in range(A.shape[1]):
+        j = 1
+        while j < t.size:
+            if am[j - 1, k] and not am[j, k]:
+                j0 = j; j1 = j0
+                while j1 + 1 < t.size and not am[j1 + 1, k]:
+                    j1 += 1
+                idx = np.arange(j0, j1 + 1)
+                idx = idx[(P[idx, k] > TINY) & (A[idx, k] > TINY)]
+                if idx.size >= 2 and idx[0] == j0:
+                    for a, b in zip(idx[:-1], idx[1:]):
+                        if b == a + 1 and LW[b] > LW[a]:
+                            out["iv_p"].append(float(-np.log(P[b, k] / P[a, k]) / (LW[b] - LW[a])))
+                            out["iv_w"].append(float(-np.log(A[b, k] / A[a, k]) / (LW[b] - LW[a])))
+                seg = dict(n=int(idx.size), ratio_j0=float(np.log(P[j0, k] / A[j0, k])) if P[j0, k] > TINY and A[j0, k] > TINY else None)
+                if idx.size >= 3 and np.ptp(LW[idx]) > 0:
+                    x = LW[idx] - LW[idx[0]]
+                    seg["sp"] = float(-np.polyfit(x, np.log(P[idx, k]), 1)[0])
+                    seg["sw"] = float(-np.polyfit(x, np.log(A[idx, k]), 1)[0])
+                    seg["sr"] = float(np.polyfit(x, np.log(P[idx, k] / A[idx, k]), 1)[0])
+                    seg["dLam"] = float(x[-1])
+                if copy and idx.size >= 2 and idx[0] == j0:
+                    t0 = t[j0]; m = (tf >= t0) & (tf <= t[idx[-1]])
+                    tt = tf[m]; dW = LWf[m] - LW[j0]; dP = LPf[m] - LP[j0]
+                    p0, w0 = P[j0, k], A[j0, k]
+                    lnw_tr = np.interp(LWf[m], LW[idx], np.log(A[idx, k]))
+                    res = {}
+                    for lab, w2 in (("w_exp", w0 ** 2 * np.exp(-2 * dW)), ("w_truth", np.exp(2 * lnw_tr))):
+                        f = w2 * np.exp(al * dP)
+                        I = np.concatenate([[0.0], np.cumsum(0.5 * (f[1:] + f[:-1]) * np.diff(tt))])
+                        pp = np.exp(-al * dP) * (p0 + al * C[k] * I)
+                        pred = np.interp(t[idx[1:]], tt, np.log(pp))
+                        own = np.log(p0) - al * (LP[idx[1:]] - LP[j0])
+                        res[lab] = [float(v) for v in np.log(P[idx[1:], k]) - pred]
+                        res["truth_minus_own"] = [float(v) for v in np.log(P[idx[1:], k]) - own]
+                    seg["forced"] = res
+                out["seg"].append(seg)
+                j = j1 + 1
+            j += 1
+    return out
+
+
+def q(x, qs=(0.1, 0.5, 0.9)):
+    x = np.asarray(x, float)
+    return [float(np.quantile(x, a)) for a in qs] if x.size else None
+
+
+if __name__ == "__main__":
+    exp, runs, outp = sys.argv[1], sys.argv[2], sys.argv[3]; nproc = int(sys.argv[4]) if len(sys.argv) > 4 else 8
+    t0 = time.time()
+    with Pool(nproc) as pool:
+        rows = list(pool.imap_unordered(one, gzip.open(runs, "rt"), chunksize=8))
+    res = dict(runs=runs, n_runs=len(rows), thr=THR, by_variant={})
+    for v in B.VARIANTS:
+        for scope in ("all", "const", "sched"):
+            R = [r for r in rows if r["variant"] == v and (scope == "all" or (scope == "const") == r["kind"].startswith("const"))]
+            ar = R[0]["ar"] if R else None
+            ivp = np.concatenate([r["iv_p"] for r in R]) if R else np.array([]); ivw = np.concatenate([r["iv_w"] for r in R]) if R else np.array([])
+            segs = [s for r in R for s in r["seg"]]; fit = [s for s in segs if "sp" in s]
+            d = dict(alpha_rho=ar, predicted_slope_p=min(ar, 2.0) if ar else None, runs=len(R), losses=len(segs),
+                     intervals=int(ivp.size), interval_slope_p_q=q(ivp), interval_slope_w_q=q(ivw),
+                     segments_fit=len(fit), seg_slope_p_q=q([s["sp"] for s in fit]), seg_slope_w_q=q([s["sw"] for s in fit]),
+                     seg_slope_ratio_q=q([s["sr"] for s in fit]),
+                     ln_p_over_w_at_first_dead_q=q([s["ratio_j0"] for s in segs if s["ratio_j0"] is not None]))
+            if fit and ar is not None:
+                sr = np.array([s["sr"] for s in fit])
+                d["share_sign_rule"] = float(np.mean(sr > 0.05) if ar < 1 else (np.mean(np.abs(sr) <= 0.05) if ar == 1 else np.mean(sr < -0.05)))
+            F = [s["forced"] for s in segs if "forced" in s]
+            if F:
+                for lab in ("w_exp", "w_truth", "truth_minus_own"):
+                    x = np.concatenate([f[lab] for f in F])
+                    d[f"forced_{lab}"] = dict(pairs=int(x.size), signed_q=q(x), abs_median=float(np.median(np.abs(x))),
+                                              abs_q90=float(np.quantile(np.abs(x), 0.9)))
+            res["by_variant"][f"{v}|{scope}"] = d
+    res.update(seconds=time.time() - t0, numpy=np.__version__,
+               md5={f: B.md5(os.path.join(exp, "code", f)) for f in ("e5_b1.py", "e5_theory.py")})
+    json.dump(res, open(outp, "w"), indent=1)
+    for k, d in res["by_variant"].items():
+        print(k, {a: d.get(a) for a in ("intervals", "interval_slope_p_q", "segments_fit", "seg_slope_p_q", "seg_slope_ratio_q", "share_sign_rule")})
+        for lab in ("w_exp", "w_truth", "truth_minus_own"):
+            if f"forced_{lab}" in d: print("   ", lab, d[f"forced_{lab}"])

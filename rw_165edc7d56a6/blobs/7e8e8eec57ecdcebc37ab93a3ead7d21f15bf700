@@ -1,0 +1,17 @@
+# Research brief
+
+The supplied material is the Research objective issue (#1); no data files or related papers were supplied.
+
+## Objective (quoted in full)
+
+> Optimizer provenance fact sheet (a small look-up task).
+>
+> Produce a one-page fact sheet on three optimizers used in deep learning: Adam, AdamW (decoupled weight decay) and Lion (EvoLved Sign Momentum). For each optimizer give the paper that introduced it: its title, its first author, the year it first appeared, and its arXiv identifier.
+>
+> Every fact must be looked up on the web during this task, not given from memory, and each fact must cite the URL of the page it was read from. Look the facts up with the web tools your environment provides; if a tool is not available, say which one and use another way the environment offers.
+>
+> Division of work: experiment-repo looks up Adam and records what it found, with its URLs, in its repository; paper-repo looks up AdamW, collects the three entries and writes the fact sheet (`fact-sheet.md`) as the delivery; internal-review-repo independently looks up Lion and checks each entry of the fact sheet against a source it opens itself, reporting any disagreement before it approves.
+
+## Interpretation and evidence standard
+
+The division is explicitly settled by the objective. The only requested final artifact is `fact-sheet.md`, owned by paper-repo. Adam and Lion source records feed that artifact from their respective repositories. Each entry needs four sourced fields. Interpret “year it first appeared” as the year of the first arXiv submission, distinguishing it from a later conference or revision year. Open source pages during this task and retain their URLs and supporting metadata. There are no quantitative analyses, figures, experiments, or additional comparisons requested. Adam was subsequently verified against its arXiv page: `findings/adam.md` records each requested field and URL; `sources/adam-arxiv.html` preserves the fetched page. Its initial submission was in 2014, before its 2015 conference appearance. AdamW and Lion remain assigned to their respective lookup owners.

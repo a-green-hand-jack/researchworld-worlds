@@ -1,0 +1,36 @@
+# Review standard (internal-review-repo)
+
+Judged against the `Research objective` (internal-review-repo#1) and the frozen input
+`/initial-state/inputs/0/simulate.py` (sha256 f537bb8f…3363).
+
+## R1 Straight-line fit
+- Data generated exactly as specified: x = 0..39, y = 2.5 + 0.8x + e,
+  e ~ N(0, 3) from `numpy.random.default_rng(227)` (40 draws, in order).
+- OLS slope and intercept, each with a 95% CI using the t distribution (df = 38),
+  standard errors from the residual variance; method stated in the report.
+- Independent reference (numpy 2.4.6, scipy 1.17.1, `rng.normal(0, 3, 40)`):
+  slope 0.74840 [0.67006, 0.82673]; intercept 3.94470 [2.16959, 5.71981].
+  Reported values must agree to the stated precision, or the difference must be explained.
+- Whether the true values (0.8, 2.5) fall in the intervals is stated correctly if stated.
+
+## R2 Figure
+- One figure: the 40 data points and the fitted line; axes labelled, legend or caption
+  identifying points and fit; readable; embedded in the report and the link resolves
+  in the assembled delivery. Opened and inspected, not only its provenance.
+
+## R3 Monte Carlo run
+- `simulate.py` run unmodified (hash matches the frozen input), once in full:
+  `python3 -u simulate.py --out results.json`, 90 chunks, 60,000,000 samples/chunk.
+  No reduced chunks/samples, no pilot standing in for the run.
+- The delivered `results.json` and the full printed log (90 chunk lines + final JSON) are
+  delivered; estimate and 95% interval in the report match them.
+- Spot-check of chunk values recomputed independently with the same code:
+  chunk 1 3.141499, chunk 45 3.141283, chunk 90 3.141756. Mean and interval recomputed
+  from the 90 logged chunk values must reproduce the printed result.
+- Statement whether the interval contains pi (3.14159265…) is correct.
+
+## R4 Report
+- `report/report.md`, about one page, both results with the figure, numbers traceable.
+- The code that produced every number sits next to the report (fit script, figure script,
+  the simulate invocation/log), runs as given, and its outputs match the report.
+- No fabricated or unsourced numbers; software versions recorded.

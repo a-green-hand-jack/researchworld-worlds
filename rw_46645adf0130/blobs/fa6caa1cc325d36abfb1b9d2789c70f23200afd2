@@ -1,0 +1,19 @@
+# Stage-3 supplement (L=256, 50000 burn-in + 50000 sweeps)
+
+Beyond the specified design; reported separately from `data/stage3/`, never replacing it.
+
+- `raw/`, `series_raw/`, `series.npz`: per-run output of the given program (`code/stage3_long_run.sh`).
+- `check.json`, `points.csv`: `code/stage3_analysis.py data/stage3_long`, the same script as for the specified
+  stage 3. The reported quantities taken from it are U_256 per point and per seed, bootstrap errors,
+  tau_int(|m|) with window convergence, half-run drift and the |m| blocks (`test5_equilibration`).
+- `compare.json`: `code/stage3_long_compare.py`. **The comparison with stage 2 that the report uses**: the
+  stage-2 scaling function inside its fitted range (A), the one-parameter T_c fit to L=256 (B) and the
+  L=128/256 crossing bracket from the sign of U_256 - U_128 on the grid (C).
+
+`check.json` fields `linear_fit_U256`, `test1_U256_at_stage2_Tc`, `U256_at_exact_Tc`,
+`test2_vs_stage2_scaling_function` and `test3_crossing_128_256` are **not used for the supplement**.
+These fields fit a straight line to U_256 over 2.246-2.306 or extrapolate the scaling function beyond its range.
+That is adequate for the unequilibrated, noisy stage-3 data. The equilibrated curve, however, is flat
+(0.664, 0.651) and then drops (0.366, 0.218, 0.271), so a line does not describe it. For example, `test3` gives
+a crossing of 2.250, which is outside the bracket [2.261, 2.276] that the grid values themselves show.
+The fields are kept so that both stage-3 data sets went through the identical script.

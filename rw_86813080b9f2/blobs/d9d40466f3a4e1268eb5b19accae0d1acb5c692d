@@ -1,0 +1,22 @@
+# Task brief
+
+## Objective (quoted)
+"Fit a straight line to 40 noisy points: x = 0, 1, ..., 39 and y = 2.5 + 0.8 x + e, where e is drawn from a normal distribution with standard deviation 3 using numpy.random.default_rng(217). Report the slope and the intercept with 95% confidence intervals, one figure of the data with the fitted line, and a one-page report `report/report.md` (Markdown is enough), with the code that produced every number next to it."
+
+Plus the comment-check steps (each named position writes `comment-check.md` in its own repo; step 2 is mine: after paper-repo comments in an issue of experiment-repo, try PATCH and DELETE on that comment, then edit one of my own comments in the same issue).
+
+## Requirements / deliverables
+1. Data generation exactly as stated: `rng = default_rng(217); y = 2.5 + 0.8*x + rng.normal(0, 3, 40)` (first draw from the generator; normal(0,3,size=40)).
+2. OLS slope and intercept with 95% CIs (t-based, 38 df).
+3. One figure: data + fitted line.
+4. One-page `report/report.md`; code producing every number next to it.
+5. Late addition from paper-repo (via comment): also report R².
+
+## Method / conventions
+Plain OLS, classical t intervals (scipy.stats.linregress; t_{0.975,38}=2.0244). Truth (2.5, 0.8) is known, so coverage by the CI is a sensible sanity check. No related material supplied; no data files (data is synthetic).
+
+## Results (code/fit.py -> results/fit.json, results/data.csv)
+slope 0.8140 (SE 0.0423), 95% CI [0.7283, 0.8997]; intercept 1.9142 (SE 0.9590), 95% CI [-0.0273, 3.8557]; R^2 0.9068; residual SD 3.090 (true 3). Both CIs cover the true values (0.8, 2.5); the intercept CI barely includes 0, so the intercept is not significantly different from zero at 5%.
+
+## Not established / caveats
+Whether "drawn using default_rng(217)" means normal(0,3,40) in one call (assumed; one-call vs per-point draws give the same stream for the normal method anyway). Single realisation: CI coverage is not tested by one dataset.

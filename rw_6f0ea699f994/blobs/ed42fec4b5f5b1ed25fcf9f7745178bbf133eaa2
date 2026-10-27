@@ -1,0 +1,94 @@
+"""Reproduce all quadrature results from the objective's analytic input.
+Run from repository root: python3 analysis/compute.py
+"""
+import csv
+import json
+import math
+import platform
+import time
+from pathlib import Path
+
+import mpmath as mp
+import numpy as np
+import scipy
+from scipy.stats import linregress, t
+
+OUT = Path('results')
+OUT.mkdir(exist_ok=True)
+NS = [2**k for k in range(2, 13)]
+
+def exact():
+    return (mp.exp(2)*(mp.sin(6)-3*mp.cos(6))+3)/10
+
+def quadrature(n):
+    h = mp.mpf(2)/n
+    y = [mp.exp(j*h)*mp.sin(3*j*h) for j in range(n+1)]
+    trap = h*(mp.fsum(y[1:-1])+(y[0]+y[-1])/2)
+    simp = h/3*(y[0]+y[-1]+4*mp.fsum(y[1:-1:2])+2*mp.fsum(y[2:-1:2]))
+    return trap, simp
+
+def fit(ns, errors):
+    x, y = np.log(np.asarray(ns, dtype=float)), np.log(np.asarray(errors, dtype=float))
+    reg = linregress(x,y)
+    dof = len(ns)-2
+    tc = t.ppf(.975,dof)
+    residual = y-reg.intercept-reg.slope*x
+    return dict(n=ns, count=len(ns), slope=float(reg.slope), intercept=float(reg.intercept),
+                slope_se=float(reg.stderr), dof=dof, t_975=float(tc),
+                ci95=[float(reg.slope-tc*reg.stderr),float(reg.slope+tc*reg.stderr)],
+                r_squared=float(reg.rvalue**2), log_residuals=residual.tolist())
+
+start=time.perf_counter()
+# Primary arithmetic at 60 decimal digits; 90 digits independently checks precision.
+mp.mp.dps=60
+I=exact()
+primary={n:quadrature(n) for n in NS}
+errors={n:tuple(abs(q-I) for q in primary[n]) for n in NS}
+pilot_seconds=time.perf_counter()-start
+mp.mp.dps=90
+I90=exact()
+check={n:quadrature(n) for n in NS}
+max_rel=max(abs(abs(check[n][j]-I90)-errors[n][j])/errors[n][j] for n in NS for j in (0,1))
+assert max_rel < mp.mpf('1e-40')
+# Independent analytic geometric-series quadrature identity for exp((1+3i)x).
+a=mp.mpc(1,3)
+geom_diff=[]
+for n in NS:
+    h=mp.mpf(2)/n
+    r=mp.exp(a*h)
+    tg=h*((r**n-1)/(r-1)+(r**n-1)/2)
+    # Simpson on n panels = (4*T_n - T_(n/2))/3.
+    r2=r*r
+    tg2=2*h*((r2**(n//2)-1)/(r2-1)+(r2**(n//2)-1)/2)
+    geom_diff.extend([abs(mp.im(tg)-check[n][0]),abs(mp.im((4*tg-tg2)/3)-check[n][1])])
+assert max(geom_diff) < mp.mpf('1e-75')
+
+with (OUT/'errors.csv').open('w') as f:
+    w=csv.writer(f)
+    w.writerow(['n','trapezoid_error','simpson_error','trapezoid_integral','simpson_integral'])
+    for n in NS:
+        w.writerow([n,*[mp.nstr(v,45) for v in errors[n]],*[mp.nstr(v,45) for v in primary[n]]])
+fits={}
+for j,rule in enumerate(['trapezoid','simpson']):
+    eligible=[n for n in NS if errors[n][j]>mp.mpf('1e-13')]
+    fits[rule]=fit(eligible,[float(errors[n][j]) for n in eligible])
+    fits[rule]['expected_slope']=[-2,-4][j]
+    fits[rule]['sensitivity_fits']={str(lo):fit([n for n in eligible if n>=lo], [float(errors[n][j]) for n in eligible if n>=lo]) for lo in [16,64,256]}
+    fits[rule]['local_orders']=[dict(n_lo=n,n_hi=2*n,order=float(mp.log(errors[n][j]/errors[2*n][j],2))) for n in NS[:-1]]
+(OUT/'fits.json').write_text(json.dumps(dict(log_base='e',threshold='strict absolute error > 1e-13',primary_precision_decimal_digits=60,rules=fits),indent=2)+'\n')
+# IEEE binary64 sensitivity with stable summation, all else unchanged.
+I64=(math.exp(2)*(math.sin(6)-3*math.cos(6))+3)/10
+float_rows=[]
+for n in NS:
+    h=2/n
+    y=[math.exp(j*h)*math.sin(3*j*h) for j in range(n+1)]
+    qs=[h*(math.fsum(y[1:-1])+(y[0]+y[-1])/2),h/3*(y[0]+y[-1]+4*math.fsum(y[1:-1:2])+2*math.fsum(y[2:-1:2]))]
+    float_rows.append(dict(n=n,errors=[abs(q-I64) for q in qs],relative_error_discrepancy=[float(abs(mp.mpf(abs(q-I64))-errors[n][j])/errors[n][j]) for j,q in enumerate(qs)]))
+float_fits={rule:fit([r['n'] for r in float_rows if r['errors'][j]>1e-13], [r['errors'][j] for r in float_rows if r['errors'][j]>1e-13]) for j,rule in enumerate(['trapezoid','simpson'])}
+validation=dict(exact_expression='(exp(2)*(sin(6)-3*cos(6))+3)/10',exact_value=mp.nstr(I90,80),
+                precision_max_relative_error_change=mp.nstr(max_rel,8),geometric_identity_max_absolute_difference=mp.nstr(max(geom_diff),8),
+                binary64_exact=I64,binary64_results=float_rows,binary64_fits=float_fits,
+                timings_seconds=dict(primary_60_digits=pilot_seconds,total=time.perf_counter()-start),
+                versions=dict(python=platform.python_version(),numpy=np.__version__,scipy=scipy.__version__,mpmath=mp.__version__))
+(OUT/'validation.json').write_text(json.dumps(validation,indent=2)+'\n')
+print(json.dumps(dict(exact=validation['exact_value'],fits={k:{q:v[q] for q in ['n','slope','ci95']} for k,v in fits.items()},validation={k:validation[k] for k in ['precision_max_relative_error_change','geometric_identity_max_absolute_difference','timings_seconds']}),indent=2))

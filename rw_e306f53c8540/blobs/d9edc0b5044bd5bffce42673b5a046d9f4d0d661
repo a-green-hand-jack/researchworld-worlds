@@ -1,0 +1,13 @@
+# Presentation design agreed with the report owner
+
+Source: paper-repo issue 2, report owner's reply dated 2026-10-17. Numerical analysis inputs and experiment-repo assignment remain pending.
+
+Deliver `figures/fig1.png` as a 7 by 3.5 inch, 200 dpi figure and `figures/fig1_caption.md`. Keep the plotting/table generator and provenance in `figures/`.
+
+Use two panels. The left panel shows all observations from A and B on shared axes, their selected-method fitted lines, and the generating line as a thin dashed reference. Encode A with blue circles and B with orange triangles, and distinguish fitted line styles. Axis labels are x and y, since no physical units are supplied. Label the reference as the generating mean, not a pooled fit or an estimated relationship.
+
+The right panel shows initial OLS residuals against x for both series with a horizontal zero reference. Use the same series colors and markers as the left panel. One shared residual axis makes the noise spread directly comparable. Do not add a smoothing curve or significance annotation unless supported by the committed analysis and useful at final size. Omit a third panel unless inspection shows it remains legible at the agreed dimensions; a numerical weighted-residual diagnostic can instead support the report text.
+
+Deliver `tables/coefficients.md` with columns series, chosen method, slope, slope 95% CI, intercept, intercept 95% CI. Read all values from analysis outputs and apply consistent display rounding. The interval definition in the caption/table note must match the actual analysis; the report owner's suggested t interval is not an instruction to change the computation.
+
+Before handoff, inspect the PNG at its actual delivery dimensions for distinguishable observations and fitted lines, readable labels, unclipped legends, and residual scale. Inspect the caption and table text, and compare their entries to their source fields. Record input hashes, analysis revision, software versions, and a reproduction command. No fit or confidence interval is recalculated by the presentation generator.

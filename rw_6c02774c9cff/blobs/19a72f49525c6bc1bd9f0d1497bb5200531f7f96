@@ -1,0 +1,35 @@
+# Venue requirements (venue-repo)
+
+Source: objective `venue-repo`#1 first; NeurIPS 2026 instructions second (`https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip`, sha256 `82473931e3ef710fcd3f4a8cd4119b9de32e56825f90f9e5a6d55f2d01b817d9`, downloaded 2026-10-17; files in `template/`, sha256 below).
+
+## From the objective (binding; these win over the template)
+| Requirement | Detail |
+|---|---|
+| Audience | Short paper on a small comparison (logistic regression vs kNN, Iris); a reader who wants every number traceable to code |
+| Main file | `report/report.pdf`, compiled from LaTeX |
+| Length | **At most 2 pages** (NeurIPS 2026 template). Read as the whole PDF including references and any acknowledgement; no appendix, no checklist pages (they would breach the cap). The template's 9-page main-track limit does not apply. |
+| Content | Exactly one figure and one table |
+| Template | NeurIPS 2026 submission template: `\usepackage{neurips_2026}` (default = main track, anonymous, line numbers). No `final`, no `preprint`. Do not alter margins, fonts or font sizes (template forbids it). |
+| Source | LaTeX source delivered next to the PDF (`report/report.tex`, plus `report/neurips_2026.sty`, bibliography file if any, and the figure file it includes), so `report/` compiles on its own |
+| Code | The code that produced every number (analysis, Ibex job script, figure and table generators) delivered, plus the data download from OpenML id 61 |
+| Study facts that must be in the paper | OpenML id 61 from OpenML itself; 10x stratified 5-fold CV; k by inner CV; mean accuracy and 95% interval per method; paired difference and 95% interval; Ibex node name; whether Ibex and local runs give identical numbers |
+
+## From the NeurIPS 2026 instructions (apply unless the objective overrides)
+- Single column text 5.5 in wide; 10 pt Times; `neurips_2026.sty` supplies this.
+- Anonymous submission: default options anonymize authors and add line numbers; do not cite line numbers; no author names or identifying URLs (code location given as anonymized wording).
+- Figures/tables: captions, legible when printed; table via booktabs style recommended by the template; figures in the text width.
+- References: `natbib` is loaded by the style; any bibliography counts toward the 2 pages here (the 9-page rule excludes references, the objective's cap is read more strictly).
+- Checklist (`template/checklist.tex`): required by NeurIPS for real submissions but incompatible with a 2-page cap; **not included**. This is a stated deviation, not a claim of compliance with the full NeurIPS submission rules.
+- Not establishable: acceptance, official page-limit interpretation for a 2-page variant, license. No license declared.
+
+## Template files (`template/`)
+- `neurips_2026.sty` sha256 `c3fc2894e83d2517ca18b66741d6c595986d97957dc08ec08bb2125a7ec4555a`
+- `neurips_2026.tex` (official sample) sha256 `cf4cee7991665306d1daaa3985be4feec7f8889d6d072ffa12f99a8e1537d797`
+- `checklist.tex` (not used) sha256 `780ba13c480f652dcc42e69ed61a752ce0ea270f15d332d4a45b059dabad84f6`
+Verified: the official sample compiles with TeX Live 2026 pdflatex (`/opt/texlive/2026/bin/x86_64-linux`).
+
+## Checks for the final delivery
+1. `report/report.pdf` has <= 2 pages (`pdfinfo`), compiled from `report/report.tex` with the unmodified `neurips_2026.sty`.
+2. Exactly one `figure` and one `table` environment.
+3. Every number in the PDF traces to a committed results file and code.
+4. Ibex node name and identical/non-identical statement present and match `results/reproducibility.json`.

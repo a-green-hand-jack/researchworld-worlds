@@ -1,0 +1,307 @@
+\section{Proofs}
+\label{app:proofs}
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.74\linewidth]{fig1_drive_vs_decay}
+  \caption{Drive against decay in the reduced dynamics \eqref{eq:growth} (illustrative statistics $\sigma_k=1$, $c_k=0.9^k$, not measured). (a)~At $\lambda=0$ and gain $p=0.5$, directions with drive $pc_k$ above decay $p^2\sigma_k$ grow. (b)~With weight decay $g_k(p)>0$ only in the window $(p_-^k,p_+^k)$ (bars), through which the gain decays, $p(t)=p_0e^{-\alpha\lambda_Pt}$; the race along $p(t)$ (\cref{def:race}), not the sign of $g_k(p_0)$, decides survival.}
+  \label{fig:drive-decay}
+\end{figure}
+
+\paragraph{Identity \eqref{eq:balance}.}
+Let $G=\Wt\Sigma_{tc}-\Pred\Wc\Sigma_c$ and $A=\Pred^\top G\Wc^\top$.
+From \eqref{eq:flowW}--\eqref{eq:flowP}, $\tfrac{d}{dt}\Pred^\top\Pred=\alpha(A+A^\top)-2\alpha\lambda_P\Pred^\top\Pred$ and $\tfrac{d}{dt}\Wc\Wc^\top=A+A^\top-2\lambda_W\Wc\Wc^\top$.
+For $\alpha=1$ and $\lambda_W=\lambda_P=\lambda$ the difference $D=\Pred^\top\Pred-\Wc\Wc^\top$ obeys $\dot D=-2\lambda D$; for $\lambda_W=\lambda_P=0$, $\tfrac{d}{dt}(\alpha^{-1}\Pred^\top\Pred-\Wc\Wc^\top)=0$.
+Numerically (\texttt{code/checks/balance\_identity.py}), the deviation from \eqref{eq:balance} along the flow is at most $\BalanceDevFlow$ for $\alpha=1$ with $\|\Wc\|$ up to $\BalanceMaxNormW$, and the identity fails, as it should, for $\alpha=0.5$ and $\alpha=2$ (relative deviations $\BalanceDevAlphaHalf$ and $\BalanceDevAlphaTwo$).
+$\square$
+
+\paragraph{\Cref{prop:reduction}.}
+Substitute the ansatz.
+Then $G=\sum_k(c_k\bar a_k-p_k\sigma_ka_k)\tilde u_ku_k^\top$, so $\Pred^\top G-\lambda_W\Wc=\sum_k\big[p_k(c_k\bar a_k-p_k\sigma_ka_k)-\lambda_Wa_k\big]\tilde u_ku_k^\top$, $G\Wc^\top-\lambda_P\Pred=\sum_k\big[(c_k\bar a_k-p_k\sigma_ka_k)a_k-\lambda_Pp_k\big]\tilde u_k\tilde u_k^\top-\lambda_Pp_\perp\big(I-\sum_k\tilde u_k\tilde u_k^\top\big)$, and $\kappa(\Wc-\Wt)=\kappa\sum_k(a_k-\bar a_k)\tilde u_ku_k^\top$.
+The vector field is tangent to the ansatz manifold and reduces on it to \eqref{eq:reduced}; the initial condition lies on the manifold, and uniqueness of solutions of the (locally Lipschitz) flow gives the claim.
+With $\bar a_k=a_k$ the first equation factorises as $\dot a_k=a_kg_k(p_k)$.
+In E1, the reduced flow integrated with the same step as full-matrix gradient descent classifies the survival of every direction in the orthogonal-initialisation runs as gradient descent does (\EoneReducedModeAccOrth). $\square$
+
+\paragraph{\Cref{prop:fixed}.}
+(a) At $(a,p)=(0,0)$ the Jacobian of \eqref{eq:growth} is $\mathrm{diag}(-\lambda_W,-\alpha\lambda_P)$, because the drive $pc_ka$ and the data term $(c_k-p\sigma_k)a^2$ are of second order there.
+(b) A fixed point with $a\neq0$ needs $g_k(p)=0$, so $p=p_\pm^k$, which requires $c_k^2\ge4\lambda_W\sigma_k$, and $\dot p=0$, so $a^2=\lambda_Pp/(c_k-p\sigma_k)$.
+For $c_k>0$, $0<p_-^k\le p_+^k<c_k/\sigma_k$ when $\lambda_W>0$, so $a^2>0$; the case $c_k<0$ is the mirror image under $p\mapsto-p$.
+At such a point $\partial_a\dot a=g_k(p)=0$, $\partial_p\dot a=ag_k'(p)$, $\partial_a\dot p=2\alpha(c_k-p\sigma_k)a$ and $\partial_p\dot p=-\alpha(\sigma_ka^2+\lambda_P)$.
+Hence $\mathrm{tr}\,J=-\alpha(\sigma_ka^2+\lambda_P)<0$ and $\det J=-2\alpha a^2(c_k-p\sigma_k)\,g_k'(p)$.
+For $c_k>0$, $g_k'(p_-^k)=\sqrt{c_k^2-4\lambda_W\sigma_k}>0$ gives $\det J<0$, a saddle, and $g_k'(p_+^k)<0$ gives $\det J>0$ with negative trace, a stable point.
+The rank bound follows because a direction without a non-collapsed fixed point has $a_k\to0$ (\cref{prop:reduction} decouples the directions).
+(c) With $\lambda_P=0$, $\dot p=0$ and $a\neq0$ give $p=c_k/\sigma_k$, and $g_k(c_k/\sigma_k)=-\lambda_W\neq0$, so $\dot a\neq0$. $\square$
+
+\paragraph{\Cref{cor:alpha1}.}
+Under the ansatz, the $\tilde u_k\tilde u_k^\top$ component of $\Pred^\top\Pred-\Wc\Wc^\top$ is $p_k^2-a_k^2$, and \eqref{eq:balance} gives $p_k^2-a_k^2=e^{-2\lambda t}(p_0^2-a_k(0)^2)$.
+Since $p_k(0)=p_0>0$ and $p_k$ can vanish only where $a_k$ does, $p_k$ is the positive root.
+In the balanced case $p_k=|a_k|$, and for $a>0$ the scalar equation $\dot a=a\,g_k(a)$ has the fixed points $0$, $p_-^k$ and $p_+^k$; $a$ decreases to $0$ from $(0,p_-^k)$ and converges to $p_+^k$ from $(p_-^k,\infty)$.
+For small $\lambda$, $p_-^k=\lambda/c_k+O(\lambda^2)$. $\square$
+
+\paragraph{Integrated rate \eqref{eq:F}.}
+With $p(t)=p_0e^{-\alpha\lambda_Pt}$, $dt=-dq/(\alpha\lambda_Pq)$, so $\int_0^tg_k(p(s))\,ds=(\alpha\lambda_P)^{-1}\int_{p(t)}^{p_0}\big(c_k-q\sigma_k-\lambda_W/q\big)\,dq=(\alpha\lambda_P)^{-1}\big[c_k(p_0-p)-\tfrac{\sigma_k}2(p_0^2-p^2)\big]-\lambda_Wt$, using $\log(p_0/p)=\alpha\lambda_Pt$.
+$F_k$ increases exactly while $g_k(p(t))>0$, so on $\{p\ge p_-^k\}$ it is maximal at $p=p_-^k$ when $p_-^k<p_0\le p_+^k$; when $p_0>p_+^k$ it first decreases, and its maximum is at $p_-^k$ or at $t=0$, whichever is larger.
+
+\paragraph{Leading order \eqref{eq:lamrace}.}
+Evaluate \eqref{eq:race} at $p=p_-^k$ with $\lambda_W=\lambda_P=\lambda$ and multiply by $\alpha\lambda$.
+For small $\lambda$, $p_-^k=\lambda/c_k+O(\lambda^2)$, so $c_k(p_0-p_-^k)-\tfrac{\sigma_k}{2}(p_0^2-(p_-^k)^2)=h_k(p_0)-\lambda+O(\lambda^2)$, $\lambda\log(p_0/p_-^k)=\lambda\log(c_kp_0/\lambda)+O(\lambda^2)$ and $\tfrac12\log\big(\lambda p_-^k/(c_k-p_-^k\sigma_k)\big)=\log(\lambda/c_k)+O(\lambda)$.
+Collecting terms and dropping $O(\lambda)$ against the logarithms gives
+\[
+h_k(p_0)\gtrsim\alpha\lambda\Big[\log\frac{1}{a_0}+\log\frac{\lambda}{c_k}+\frac1\alpha\log\frac{c_kp_0}{\lambda}\Big],
+\]
+and for $\alpha=1$ the logarithms combine to $\log(p_0/a_0)$, which is \eqref{eq:lamrace}.
+For $\alpha\ne1$ the remainder $(1-1/\alpha)\log(\lambda/c_k)+\alpha^{-1}\log p_0$ is of the same size as $\log(1/a_0)$ at the weight decays of interest, so the leading order is not a usable threshold there and we evaluate \eqref{eq:race} directly. $\square$
+
+\paragraph{EMA rate (\cref{sec:heuristics}).}
+With an EMA target of rate $\kappa=(1-\tau)/\eta$ and fixed gain $p$, the linear system $\dot a=pc\,\bar a-(p^2\sigma+\lambda_W)a$, $\dot{\bar a}=\kappa(a-\bar a)$ has characteristic polynomial $f(r)=(r+p^2\sigma+\lambda_W)(r+\kappa)-pc\kappa$.
+Its determinant is $f(0)=-\kappa\,g(p)$, so the system has a growing solution if and only if $g(p)>0$, for every $\kappa>0$.
+Moreover $f(g(p))=pc\,g(p)$.
+For $pc>0$ and $g>0$, $f(0)<0<f(g)$ puts the largest root in $(0,g)$; for $g<0$, $f(g)<0<f(0)$ puts it in $(g,0)$.
+In both cases the growth rate under EMA has the sign of $g$ and a smaller magnitude. $\square$
+
+\paragraph{Bernoulli masks (\cref{sec:heuristics}).}
+Each coordinate enters the context independently with probability $q$, and the target is the complement.
+Then $G_{ij}=q^2$ for $i\neq j$ and $G_{ii}=q$, and $F_{ij}=q(1-q)$ for $i\neq j$ and $F_{ii}=0$.
+With $\Sigma_{ii}=\bar\sigma$, $\Sigma_c=q^2\Sigma+q(1-q)\bar\sigma I$ and $\Sigma_{tc}=q(1-q)(\Sigma-\bar\sigma I)$, which share the eigenvectors of $\Sigma$ and have the eigenvalues stated in \cref{sec:heuristics}. $\square$
+
+\section{Further limits and predictions}
+\label{app:more}
+\begin{table}[t]
+  \centering
+  \caption{What each design choice moves in the race, and its predicted effect on rank (pred.: predictor). ``E1 dev.: $m/n$'': points of \cref{fig:e1-knobs} with seed-mean rank at $T$ within $0.5$ of the prediction. ``E1b'': held-out, pre-registered runs (\cref{sec:heldout}). ``ViT'': E3 (\cref{sec:e3}), T/P its SGD/AdamW arms.}
+  \label{tab:heuristics}
+  \input{tables/tab_heuristics}
+\end{table}
+
+\paragraph{Two known limits.}
+Without the stop-gradient, under \cref{ass:aligned}(i) with $\Sigma_t u_k=\sigma_k^tu_k$, the near-collapse rate of direction $k$ is $2pc_k-p^2\sigma_k-\sigma_k^t-\lambda_W\le c_k^2/\sigma_k-\sigma_k^t-\lambda_W\le-\lambda_W$, since $c_k^2\le\sigma_k\sigma_k^t$ by positive semidefiniteness of the joint covariance: no direction grows.
+Without a predictor ($\Pred\equiv I$), $g_k=c_k-\sigma_k-\lambda_W$.
+Since $c_k^2\le\sigma_k\sigma_k^t$, no direction grows whenever the target's marginal does not exceed the context's, $\sigma_k^t\le\sigma_k$, in particular for views with equal marginals; a trainable predictor can shrink $p$ into $(p_-^k,p_+^k)\subset(0,c_k/\sigma_k)$, which a fixed $\Pred=I$ cannot.
+Both statements are known in substance \citep{tian2021understanding,halvagal2023implicit}; in the race picture they say that the stop-gradient and the predictor are what make a positive net rate possible.
+With masks the second one can fail, because the target is the masked part and its marginal can exceed the context's.
+For the Bernoulli masks of \eqref{eq:bernoulli} with target fraction $r=1-q$, $c_k-\sigma_k=q\big[(r-q)\hat\Sigma_k-2r\bar\sigma\big]$, which is positive for $r>1/2$ and $\hat\Sigma_k>2r\bar\sigma/(2r-1)$; with $\Pred$ fixed such a direction has no fixed point and grows without bound in the linear model.
+``No predictor implies collapse'' therefore holds for equal-marginal views but not for heavy Bernoulli masking.
+
+\paragraph{Beyond the aligned case.}
+Without \cref{ass:aligned}, the near-collapse dynamics are still linear in $(\Wc,\Wt)$, with $\Pred(t)=e^{-\alpha\lambda_Pt}\Pred_0$.
+The general form of the criterion integrates this $dn$-dimensional linear system and counts the singular directions of $\Wc$ that reach their capture amplitude while they still grow.
+For aligned statistics and $\Pred_0=p_0I$ it reduces to \cref{def:race}.
+We state it because it is the form needed for non-commuting statistics and random predictors, and test it in the held-out experiments (\cref{sec:experiments}).
+
+\paragraph{Random and wide predictors.}
+For a non-normal $\Pred_0$, \cref{ass:aligned}(ii) fails and the growth of data direction $k$ is governed by the matrix $c_k\Pred(t)^\top-\sigma_k\Pred(t)^\top\Pred(t)-\lambda_W$.
+A predictor direction $v$ can drive growth only if $c_k\,v^\top\Pred_0v>\sigma_k\|\Pred_0v\|^2+\lambda_W$.
+For a Gaussian $\Pred_0$ with entries of variance $s^2/d$, $v^\top\Pred_0v\sim s/\sqrt d$ while $\|\Pred_0v\|^2\sim s^2$, so the prediction is that the scale $s$, not the width $d$, sets which directions can grow; the rank is the matching rank of \cref{sec:setup}, computed from the general form of the criterion.
+
+\paragraph{Details of the heuristic predictions.}
+Without weight decay the gain does not drift and direction $k$ is lost for every $p_0\ge c_k/\sigma_k$, so a predictor initialised at or above the largest least-squares gain, $p_0\ge\max_kc_k/\sigma_k$, collapses the representation completely although every direction with $c_k>0$ has a non-empty window.
+With $\lambda_P=0$, $\alpha$ has no effect near collapse; with $\lambda_P>0$, $\alpha$ shortens the clock $1/(\alpha\lambda_P)$, but the rank does not depend on $\alpha$ and $\lambda_P$ only through their product, because the window and the encoder's decay $\lambda_Wt$ in \eqref{eq:F} do not scale with $\alpha$; with depth the pre-registered criterion uses only the clock $L\alpha\lambda_P$, so that rank$(L,\alpha)=$ rank$(1,L\alpha)$ for it, and this over-predicts the rank (\cref{sec:heldout}).
+A very slow target, $\kappa$ small compared with the growth rate, should lower the rank in both EMA regimes, and since only $\kappa$ during the race enters, a schedule $\tau_0\to1$ should give the rank of a constant $\tau_0$. Neither is tested: E3 registers for the EMA rate only the null ``no change beyond seed spread'', and it has no constant-$\tau_0$ configuration; that null fails, with fewer directions for a faster target (\cref{app:details}).
+For Bernoulli masks \eqref{eq:bernoulli} gives $c_k^2/\sigma_k=q(1-q)^2(\hat\Sigma_k-\bar\sigma)^2/\big(q\hat\Sigma_k+(1-q)\bar\sigma\big)$.
+
+\paragraph{Depth and capture (post hoc).}
+This correction was derived after the E1b depth failure and then tested on new statistics in E1c (\cref{sec:heldout}, \cref{app:details}).
+For a per-mode gain $p=q^L$ of $L$ identity-initialised factors, each a separate parameter $q$ with learning-rate ratio $\alpha$ and weight decay $\lambda_P$, $\partial\ell/\partial q=q^{L-1}\partial\ell/\partial p$, so $\dot q=\alpha\big[q^{L-1}(c_k\bar a-p\sigma_ka)a-\lambda_Pq\big]$ and
+\begin{equation*}
+\dot p=\alpha L\big[p^{2-2/L}(c_k\bar a-p\sigma_ka)a-\lambda_Pp\big].
+\end{equation*}
+The factor $L$ sets the clock $L\alpha\lambda_P$ and drops out of the nullcline: with $\bar a=a$, capture needs $a^2\ge\lambda_P\,p^{2/L-1}/(c_k-p\sigma_k)$ instead of $\lambda_Pp/(c_k-p\sigma_k)$.
+The ratio of the two thresholds, $p^{2/L-2}$, exceeds one for $p<1$ and grows without bound as $p\to0$: near $p_-^k\approx\lambda_W/c_k$, where capture is decided, a deep predictor needs a much larger amplitude than the depth-1 nullcline assumes, the direction of the measured over-prediction; $F_k$ is unchanged.
+The corrected criterion replaces the capture term of \eqref{eq:race} by this nullcline.
+
+\paragraph{Frozen target.}
+A frozen target ($\kappa=0$, $\bar w=a_0$) removes the feedback, so there is no exponential growth: $\dot a=pc_ka_0-(p^2\sigma_k+\lambda_W)a$ and $\dot p=\alpha\big(c_ka_0a-p\sigma_ka^2\big)-\alpha\lambda_Pp$.
+Without weight decay the encoder regresses onto the random target, $a\to c_ka_0/(p\sigma_k)$, and nothing collapses.
+With weight decay the Jacobian at $(a,p)=(0,0)$ has determinant $\alpha(\lambda_W\lambda_P-c_k^2a_0^2)$ and trace $-\lambda_W-\alpha\lambda_P$, and at $a=pc_ka_0/(p^2\sigma_k+\lambda_W)$ the gain obeys $\dot p=\alpha p\big[\lambda_Wc_k^2a_0^2/(p^2\sigma_k+\lambda_W)^2-\lambda_P\big]$; the collapsed point is therefore stable, and it is the only stationary point unless $c_k|a_0|>\sqrt{\lambda_W\lambda_P}$, which fails at a small initial scale: a frozen target collapses under weight decay.
+
+\paragraph{Initial scale and optimiser.}
+The initial amplitude enters only through $\log(1/a_0)$, the distance the direction must cover, so larger initialisations keep more directions, with a logarithmic sensitivity.
+Decoupled weight decay in AdamW keeps the race clock, $p\propto(1-\eta\lambda_P)^{\text{step}}$, but Adam normalises the predictor's data gradient, which is of order $a^2$ near collapse.
+Once that gradient exceeds Adam's $\epsilon$, the gain moves by order $\eta$ per step towards $c_k/\sigma_k$ even at tiny amplitude, so we expect the rank under Adam to depend less on $p_0$ and more on weight decay, through \cref{prop:fixed}; this is a stated departure from the gradient-flow analysis.
+
+\input{sections/appendix_structure}
+
+\input{sections/related_ext}
+
+\section{Experimental details}
+\label{app:details}
+
+\paragraph{E1 (development set).}
+The race grid crosses $\lambda\in\{\EoneLamValues\}$, $p_0\in\{\EonePzeroValues\}$, $\alpha\in\{\EoneAlphaValues\}$ and $a_0\in\{10^{-4},10^{-2}\}$ with \EoneSeeds{} seeds; two further grids vary $\kappa$ and the depth $L$.
+The rank is read at $T=\min(1.3\,t_{\mathrm{race}}+300,\EoneHorizon)$, so E1 measures agreement with the rank \emph{at} $T$, which can still change where the race is unfinished or $\lambda=0$.
+Orthogonal initialisation uses $d=32$ and orthogonal encoder columns of norms $a_0e^{0.1\xi_k}$, $\xi_k\sim\mathcal N(0,1)$; Gaussian initialisation uses entries of variance $a_0^2/n$ with $d=32$ or $d=128$, and the criterion then uses each direction's initial norm $\|\Wc_0u_k\|$.
+A direction counts as surviving if $\|\Wc u_k\|>\EoneSvThr$ at $t=T$.
+In \EoneRaceUnfinishedOrth{} of the \EoneRaceRuns{} orthogonal runs of the race grid the horizon \EoneHorizon{} is reached before $1.3\,t_{\mathrm{race}}+300$, and the criterion is evaluated with the same $T$.
+The race grid has \EoneRaceRuns{} runs per initialisation; the EMA grid uses the EMA growth rate of \cref{sec:heuristics} and the depth grid an identity-initialised linear predictor of depth $L$.
+
+\paragraph{E1: knobs, EMA and depth.}
+With orthogonal initialisation the criterion classifies \EoneModeAccOrth{} of the \EoneModes{} directions and gives the exact rank in \EoneRankExactOrth{} of runs (initial window \EoneWindowExactOrth{}; the static bound over-predicts by \EoneBoundMaeOrth{} in every run; \cref{tab:accuracy}); without weight decay nothing survives at $p_0=1$, and the rank is non-monotone in $\lambda$ and $p_0$.
+Gaussian initialisation gives exact rank in \EoneRankExactGauss{} ($d=32$) and \EoneRankExactGaussWide{} ($d=128$) of runs; the exact reduced flow \eqref{eq:reduced} matches gradient descent on every direction, so the error is the near-collapse approximation.
+With the EMA rate of \cref{sec:heuristics} the criterion classifies \EoneModeAccEma{} of directions; deeper predictors keep fewer directions, as the clock $L\alpha\lambda_P$ implies, but with exact rank in only \EoneRankExactDepth{} of runs, errors that are almost all false survivals.
+At $\lambda=\EoneLamValues$ the measured rank is $\EoneLamRanks$ against the predicted $\EoneLamPred$ and the static $\EoneLamBound$, and at $\lambda=0.01$ the rank over the $p_0$ grid is $\EonePzeroRanks$ (\cref{fig:e1-knobs}).
+At $\lambda=0.01$ and $p_0=1$, just above the window of the leading direction, a slower target raises the rank slightly, as predicted for $p_0>p_+^k$ (\cref{fig:e1-knobs}d); the one miss, at $\kappa=0.03$, is where the adiabatic treatment of the EMA, which needs $\kappa\gg\alpha\lambda_P$, is weakest.
+At $\lambda=0$ and $p_0=0.5$, inside the window, only the slowest target lowers the rank.
+In the depth grid the criterion classifies \EoneModeAccDepth{} of directions, with \EoneModeFalsePosDepth{} false survivals against \EoneModeFalseNegDepth{} missed.
+
+\begin{table}[!htbp]
+  \centering
+  \caption{Accuracy of the predicted survival per E1 grid (development set; rank at $t=T$) and per held-out E1b arm (pre-registered; rank at convergence), with bootstrap 95\% intervals over runs: fraction of directions whose fate is predicted correctly, fraction of runs with the exact rank, and mean absolute rank error. The exact reduced flow \eqref{eq:reduced} is integrated numerically; for the depth grid it covers the depth-one runs only. The initial window and the static bound predict a rank, not individual fates beyond it. In E1b the balanced row uses Tian et al.'s basin criterion, the random-predictor and non-commuting rows the general criterion (\cref{app:more}) and the finite-batch row the population prediction; bold marks the lowest error in each row.}
+  \label{tab:accuracy}
+  \input{tables/tab_accuracy}
+\end{table}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\linewidth]{fig2_e1_pred_vs_meas}
+  \caption{Measured against predicted rank at the end of training, $t=T$, over all E1 runs (development set); colour gives the number of runs at each point. (a)~Race criterion \eqref{eq:race}. (b)~Initial window $\#\{k:g_k(p_0)>0\}$. (c)~Static fixed-point bound $\#\{k:c_k^2\ge4\lambda\sigma_k\}$ (\cref{prop:fixed}(b)).}
+  \label{fig:e1-rank}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\linewidth]{fig3_e1_knobs}
+  \caption{Rank at $t=T$ against each knob in E1 (development set): measured (mean $\pm$ s.d.\ over \EoneSeeds{} seeds), race criterion \eqref{eq:race} and initial window. Unless a panel varies them, $\alpha=1$ and $a_0=10^{-4}$ in (a)--(c) and (f), and $a_0=10^{-3}$ in (d) and (e).}
+  \label{fig:e1-knobs}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\linewidth]{fig4_e1_trajectories}
+  \caption{Single directions in two E1 runs (development set, one seed, $\lambda=0.01$; $p_0=1$ left, $p_0=0.25$ right). Top: measured $\log_{10}a_k(t)$ (solid) and the race prediction $\log a_k(0)+F_k(t)$ (dashed, drawn while the predicted amplitude is below $0.2$) for $k=0,4,7,10$. Bottom: measured path in the $(a_k,p_k)$ plane against the capture nullcline (dotted). At $p_0=1$ direction $k=4$ first decays to $\approx10^{-7}$ and recovers once the gain has decayed into its window; the race predicts rank \EoneTrajRankPredOne{} and \EoneTrajRankMeasOne{} is measured. At $p_0=0.25$ the prediction is \EoneTrajRankPredQuarter{} and \EoneTrajRankMeasQuarter{} is measured: direction $k=7$, with a borderline race score $R_7=\EoneTrajMissScore$, survives although it is predicted to collapse.}
+  \label{fig:e1-traj}
+\end{figure}
+
+\paragraph{E1b: further arms.}
+On the phase grid at $p_0=0.5$ and $\lambda=\EoneBGridLams$ the rank is $\EoneBGridRanksHalf$ against the predicted $\EoneBGridPredHalf$ (\cref{sec:heldout}).
+Finality of the rank (\texttt{results/checks/e1b\_long\_horizon.json}): on the \EoneBLongRuns{} runs with $\lambda>0$ where \cref{prop:reduction} is exact (grid, EMA rate $\times$ predictor learning rate, balanced, depth $1$), the reduced flow run from each run's initial norms reproduces the measured fate of every direction at the end of training in \EoneBLongReproduced{} runs; continued to $2t_{\mathrm{end}}$ and to $t=\EoneBLongT$, \EoneBLongChanged{} runs gain one direction and none loses one, and the exact-rank rate of the race is \EoneBLongExactLong{} against the long-horizon rank and \EoneBLongExactEnd{} against the rank at the end of training. Amplitudes below $10^{-150}$ are flushed to zero in the simulation, as in the measured runs; without this floor a direction can still recover, \EoneBLongChangedNoFloor{} runs gain one direction by $t=\EoneBLongT$, and the exact-rank rate rises to \EoneBLongExactNoFloor{}, because the extra recoveries are directions the race predicted to survive. At $\lambda=0$ the rank is a horizon rank (\EoneBLongZeroChanged{} of the \EoneBLongZeroRuns{} grid runs gain a direction by $t=\EoneBLongT$), and the prediction is the $\lambda_P=0$ branch of \cref{def:race}, which uses $T$.
+Tian et al.'s criterion and \cref{cor:alpha1} are exact in \EoneBBalancedExact{} of \EoneBBalancedRuns{} balanced runs.
+For random Gaussian predictors the general criterion has error \EoneBRandMae{} and for non-commuting statistics \EoneBNoncommMae{}; \EoneBDiverged{} further runs with two-factor random predictors at $p_0=2$ diverged numerically at step $0.1$; re-run at step \EoneBSmallEta{} (\EoneBSmallEtaStill{} diverge, \texttt{results/checks/e1b\_small\_eta.json}), they leave the general criterion passing on all \EoneBSmallEtaN{} runs, both against the predictions as pre-registered (error \EoneBPreregMae{}, exact rank in \EoneBPreregExact{}; this is the pre-registered test) and with the predictions recomputed at the smaller step (error \EoneBSmallEtaMae{}, exact \EoneBSmallEtaExact{}). On the \EoneBSmallEtaRuns{} re-run runs alone the general criterion fails: error \EoneBRerunPreregMae{} and exact rank in \EoneBRerunPreregExact{} with the predictions as pre-registered, and error \EoneBRerunRecompMae{} with them recomputed.
+With finite batches the rank rises with the batch size ($\EoneBBatchHalf$ for $B=8,32,128$ at $p_0=0.5$) towards the population prediction $\EoneBBatchHalfPred$.
+Early per-direction log-growth matches the predicted rate with $R^2\ge\EoneBTrajRsq$ for $p_0\le1$ and $\ge\EoneBTrajRsqEma$ with an EMA target; at $p_0=2$ ($R^2=\EoneBTrajRsqBig$) the continuous-time rate is wrong because $\eta|g_k|$ is no longer small, and the per-step rate $\log(1+\eta g_k)/\eta$, a post-hoc diagnostic, gives $R^2\ge\EoneBTrajRsqEuler$.
+
+\paragraph{E1c: held-out test of the depth correction.}
+E1c uses statistics not seen before ($n=d=16$, $\sigma_k$ evenly spaced from $2$ to $0.6$, $c_k=0.88^k\sigma_k$) and crosses $L\in\{1,2,3,4\}$, $\lambda\in\{0.003,0.006,0.012,0.024\}$ and $p_0\in\{0.4,0.8,1.2\}$ with 3 seeds (\EoneCRuns{} runs; identity factors, copy target, $\alpha=1$, $a_0=10^{-3}$, gradient descent with step $0.1$).
+The predictions of the depth-$L$ and the depth-1 nullcline and \EoneCCritAll{} criteria were committed before any run (\texttt{results/e1c/prediction.json}); both pass.
+For $L=2,3,4$ the rank error is $\EoneCMaeByL$ with the depth-$L$ nullcline against $\EoneCMaeOneByL$ with the depth-1 one, and the per-direction accuracy is \EoneCModeAcc{}; the depth-1 rule over-predicts in \EoneCOverOne{} runs, the corrected one never over-predicts and under-predicts in \EoneCUnder{}, \EoneCUnderFour{} of them at $L=4$: it is conservative, most of all at $L=4$, and depth is not fully resolved.
+For $L=1$ both rules coincide and are exact; no rank changes between $t_{\mathrm{end}}$ and $2t_{\mathrm{end}}$, and the static bound misses by \EoneCBoundMae{} at every depth.
+The test covers identity-initialised factors with aligned statistics only, not random or non-commuting deep predictors.
+
+\begin{table}[!htbp]
+  \centering
+  \caption{The pre-registered criteria of the held-out E1b runs (\cref{sec:heldout}), committed with the predictions before any run (\texttt{results/e1b/prediction.json}), and the observed values; brackets are bootstrap 95\% intervals. Ranks are read at convergence. $^\dagger$\,\EoneBDiverged{} further runs with two-factor random predictors at $p_0=2$ diverged numerically and are excluded here; re-run at a smaller step they keep the criterion passing (\cref{app:details}).}
+  \label{tab:e1b}
+  \input{tables/tab_e1b}
+\end{table}
+
+\paragraph{E2: masking.}
+The data are a Gaussian field on a cycle of $n=d=64$ sites (correlation $0.7^{\mathrm{distance}}$), with context and target complementary under a mask. Cyclic masks (Bernoulli, one block, four blocks) make $\Sigma_c$ and $\Sigma_{tc}$ circulant, so the race applies per frequency; a non-wrapping block needs the general form. The grid crosses $r\in\{0.1,\dots,0.9\}$, four $\lambda$ from $3\cdot10^{-4}$ to $10^{-2}$, $p_0\in\{0.25,0.5\}$ and 3 seeds.
+Masks act by zeroing, $x_c=m_c\circ x$ and $x_t=m_t\circ x$, so the population statistics $G_{ij}=\Pr(i,j\in c)$ and $F_{ij}=\Pr(i\in t,j\in c)$ are exact.
+Bernoulli masks make each site a target with probability $r$; a block mask takes one cyclic target block of length $\mathrm{round}(rn)$ at a uniform position, the multiblock mask the union of four cyclic blocks of length $\ell\in\{1,2,3,4,6,\dots,14\}$ (nominal $r=4\ell/n$), and the non-wrapping block one block inside $[0,n)$; the context is always the complement.
+All arms use $\Pred_0=p_0I$, a copy target with stop-gradient, $\alpha=1$, an orthogonal encoder of scale $a_0=10^{-3}$, weight decay $\lambda$ on every weight and Euler step $0.05$, run to $t_{\mathrm{end}}=\min(3t_{\mathrm{race}}+300,\,4000)$ with $t_{\mathrm{race}}$ the predicted end of the race; ranks count singular values of $\Wc$ above $0.05$.
+The SGD (linear encoder), tanh and two-layer arms draw fresh fields and masks in batches of $64$; the tanh encoder is $\tanh(\Wc x)$, predicted by the linear race; the exploratory two-layer encoder is $W_2\tanh(W_1x)$ with $W_1\in\mathbb R^{128\times64}$ at standard scale and $W_2$ near collapse, predicted by the general form on the hidden-feature statistics at initialisation, although $W_1$ trains; the no-predictor arm fixes $\Pred=I$ and measures the growth sign of each frequency, predicted positive iff $c_k-\sigma_k-\lambda>0$, possible because context and target marginals differ (for Bernoulli masks iff $(2r-1)\hat\Sigma_k>2r$ up to $\lambda$; \cref{app:more}).
+No run diverged (\EtwoExcluded{} excluded).
+Without a predictor, heavy Bernoulli masking makes directions grow wherever this condition predicts it (\EtwoNopredGrowth{} configurations).
+Three criteria fail their registered thresholds (\cref{tab:e2}): the peak criterion requires every predicted rise and fall to be measured (\EtwoNonmonoConf{} of \EtwoNonmonoPred{}), and since \EtwoPeakEdge{} of the \EtwoPeakProfiles{} predicted maxima reach the grid edge, it tests non-monotonicity on these Bernoulli profiles only; the tanh arm requires an error of at most $1.5$ and below the static bound (\EtwoTanhMae{} against \EtwoTanhBoundMae{}); and the exploratory two-layer arm at most $2$ and below the bound (\EtwoMlpMae{} against \EtwoMlpBoundMae{}).
+Finality and precision (\texttt{results/checks/e2\_long\_horizon.json}): for the \EtwoLongRuns{} cyclic population runs every Fourier column follows the scalar reduced flow of \cref{prop:reduction}, which reproduces the measured rank at $t_{\mathrm{end}}$ in \EtwoLongReproduced{} runs.
+The three exceptions (Bernoulli, $r=0.4$, $\lambda=3\cdot10^{-4}$, $p_0=0.5$) keep directions that the flow and the race lose by $t_{\mathrm{end}}$; the amplitude of a lost direction dips by many orders of magnitude during the race, so round-off, which the race does not model, re-seeds it: the exact flow's smallest relative amplitude there is $\EtwoRoundMin$, and with a relative amplitude floor of $10^{-18}$ to $10^{-15}$ after every step it matches the measured survival in \EtwoRoundMatch{} of \EtwoRoundRuns{} runs (\texttt{results/checks/e2\_roundoff.json}).
+The failed peak profile is not such an artifact: at $r=0.9$, $\lambda=3\cdot10^{-3}$ the exact flow keeps rank \EtwoMissFlowLong{} up to $t=\EtwoLongT$, so the race, not the measurement, misses it.
+Continued to $t=\EtwoLongT$, \EtwoLongChanged{} runs gain directions (\EtwoLongSmallChanged{} of the \EtwoLongSmallRuns{} at $\lambda=3\cdot10^{-4}$, where $t_{\mathrm{end}}$ is capped) and \EtwoLongLost{} lose one; the pre-registered prediction is exact in \EtwoLongExactLong{} of runs against the long-horizon rank, and at $\lambda=3\cdot10^{-4}$ in \EtwoLongSmallExactLong{} against it and \EtwoLongSmallExactEnd{} against the rank at $t_{\mathrm{end}}$.
+Scoring the same race without the cap on $t_{\mathrm{end}}$ (post hoc, nothing fitted) gives \EtwoLongUncappedExactLong{} against the long-horizon rank, so the cap, not the race, accounts for the difference.
+Per family the race has rank error \EtwoBernMae{} (Bernoulli), \EtwoBlockMae{} (block) and \EtwoMultiMae{} (multiblock), and the per-frequency multiplicities match (\cref{fig:e2-app}); for non-wrapping blocks the circulant approximation has \EtwoNcCircMae{} against \EtwoNcMae{} for the general form.
+SGD is less accurate with Bernoulli masks (\EtwoSgdBernMae{}) than with blocks (\EtwoSgdBlockMae{}).
+The tanh encoder with Bernoulli masks converges in only \EtwoTanhBernConv{} of runs, its rank is still rising over the last quarter of training in \EtwoTanhBernRising{}, and its error to the race grows from \EtwoTanhBernMaeQuarter{} at $t_{\mathrm{end}}/4$ to \EtwoTanhBernMae{} at $t_{\mathrm{end}}$ (\texttt{results/checks/e2\_rank\_over\_time.json}, a post-hoc diagnostic): the nonlinearity keeps recruiting directions after the race, so the near-collapse premise does not hold there.
+The two-layer encoder is predicted worse from its initial features (error \EtwoMlpMae{}) than by the linear race on the input statistics (\EtwoMlpLinMae{}), and with Bernoulli masks worse than the initial window (\EtwoMlpBernMae{} against \EtwoMlpBernWindowMae{}); with blocks it has \EtwoMlpBlockMae{}.
+Retrospectively, after E2's result, a race on the statistics of its decaying first layer accounts for this miss (\cref{app:ext}, rung 2).
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\linewidth]{fig6_e2_masking}
+  \caption{E2 (pre-registered; rank at $t_{\mathrm{end}}$, 3 seeds, bars min--max). (a,\,b)~Population gradient descent: rank against target fraction $r$ for Bernoulli and block masks at $p_0=0.25$; markers measured, lines the pre-registered race prediction, dash-dot the static bound at $\lambda=10^{-2}$. At $\lambda=3\cdot10^{-4}$ the rank at $t_{\mathrm{end}}$ is a horizon rank. The predicted block profiles rise to the grid edge, so in (b) the grid tests that the rank rises with $r$; the predicted fall is tested on the Bernoulli profiles only. (c)~No predictor ($\Pred=I$): number of growing directions against the corrected rule of \cref{app:more}; ``all collapse'' (dotted) is wrong wherever growth is predicted. (d)~tanh encoder at $\lambda=10^{-3}$, $p_0=0.25$: rank over training against the predicted rank (open triangles); with Bernoulli masks the rank rises long after the race. Data: \texttt{results/e2/summary.json}, \texttt{e2\_runs.jsonl}.}
+  \label{fig:e2}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\linewidth]{fig7_e2_appendix}
+  \caption{E2, further population arms (rank at $t_{\mathrm{end}}$). (a)~Surviving multiplicity per Fourier frequency under Bernoulli masks at $\lambda=10^{-2}$, $p_0=0.25$ (seed mean): markers measured, steps predicted. (b)~Multiblock and (c)~non-wrapping block masks: rank against the realised target fraction at $p_0=0.25$, coloured by $\lambda$; markers measured (3 seeds, bars min--max), lines predicted. Data: \texttt{results/e2/summary.json}, \texttt{e2\_runs.csv}, \texttt{e2\_runs.jsonl}, \texttt{prediction.json}.}
+  \label{fig:e2-app}
+\end{figure}
+
+\begin{table}[!htbp]
+  \centering
+  \caption{The \EtwoCritAll{} pre-registered criteria of E2 (\cref{sec:e2}), committed with the predictions before any run (\texttt{results/e2/prediction.json}), and the observed values at $t_{\mathrm{end}}$; the exact-rank rate against the rank at $t=4\cdot10^4$ is a later check (\texttt{results/checks/e2\_long\_horizon.json}). MAE is the mean absolute rank error, ``window'' the initial window and ``bound'' the static bound.}
+  \label{tab:e2}
+  \input{tables/tab_e2}
+\end{table}
+
+\begin{table}[!htbp]
+  \centering
+  \caption{E2 per arm and mask family: converged runs (rank unchanged over the last 4 of 20 equally spaced checks), exact rank and rank MAE of the pre-registered prediction (bootstrap 95\% intervals over runs), against the initial window and the static bound; bold marks the lowest MAE in each row.}
+  \label{tab:e2-arms}
+  \input{tables/tab_e2_arms}
+\end{table}
+
+\paragraph{E3: set-up.}
+The encoder is a ViT with patch size 4 (64 tokens), width 128, depth 4 and 4 heads; the predictor a 3-block transformer of width 64; batch 256, 195 steps per epoch, 3 seeds (0--2) per configuration, CIFAR-10 training images~\citep{krizhevsky2009cifar}.
+Arm P uses AdamW (learning rate $3\cdot10^{-4}$, warmup and cosine), weight decay rising from $0.04$ to $0.4$, an EMA target with $\tau$ from $0.996$ to $1$, target LayerNorm and four target blocks (scale $0.15$--$0.2$) with a context of scale $0.85$--$1$.
+Arm T uses SGD with momentum $0.9$ and constant learning rate $0.05$, a copy target with stop-gradient, no LayerNorm in the predictor or on the target, and constant weight decay on every parameter ($\lambda=0.01$ at baseline).
+All schedules are defined over 50 epochs and each sweep run is its first 20 (3900 steps), so counts are horizon counts.
+The count is the number of eigenvalues of the centred online-token covariance on the 10\,000 test images that are at least $10^{-3}$ of the largest; it is \EthreeInitCount{} at initialisation, and a run is dimensionally collapsed if its count falls below half of that. The probe is a ridge linear classifier on the pooled online features (ridge chosen on a validation split of the training images), scored on the test split.
+The horizon rule (\texttt{code/e3\_grid.py}) takes, per eigendirection of that covariance at step 0, the drive, self-prediction and decoupled-decay rates, scales them with the run's learning-rate and weight-decay schedules (the gradient part by $1/(1-\text{momentum})$ under SGD), integrates the log-eigenvalue over the horizon with growth saturating at the top initial eigenvalue, and applies the same $10^{-3}$ threshold; it fits nothing.
+It predicts no Arm P transition for $\lambda\le10^2$, so the registered fallback $\lambda=\EthreePwdlargeVal$ was run there.
+Predictor learning rate and every target variant have the baseline's step-0 forces, so the rule predicts no change for them; their directions come from the linear theory (\cref{sec:heuristics}).
+The grid (\cref{fig:e3-factors}), the predictions and criteria (\cref{tab:e3}) were committed before the \EthreeSweepRuns{} sweep runs, and a follow-up of \EthreeFollowConfigs{} configurations (\EthreeFollowRuns{} runs: predictor interventions on Arm T and the copy target, and three full-length runs with a linear probe) before its runs (\texttt{results/e3/prediction.json}, \texttt{prediction\_followup.json}).
+
+\paragraph{E3: results.}
+Arm T's rank correlation rests on its weight-decay sweep (post hoc, not registered: Spearman \EthreeRankTwd{} over the \EthreeRankTwdN{} weight-decay configurations, \EthreeRankTother{} over the other \EthreeRankTwdN{}, five of which share the baseline's rule count); the rule misses the predictor-init $\times3$ configuration (rule \EthreeTpinitPred{}, measured \EthreeTpinitMeas{}), and the frozen target, registered as not collapsing, collapses in Arm T (\EthreeTfrozen{}) as its decayed baseline does (\EthreeTbase{}), but not in Arm P (\EthreePfrozen{}); \cref{app:more} predicts collapse of a frozen target under weight decay only from a small initial scale, which E3 does not have.
+In Arm P the rule predicts \EthreePbasePred{} directions for nearly every configuration, because under AdamW the step-0 update is a sign update, while the measured counts vary: a slower predictor (learning rate $\times0.1$: \EthreePplrLow{}) or a smaller predictor initialisation ($\times0.1$: \EthreePpinitLow{}, seeds \EthreePpinitLowSeeds{}) lowers the count, depth does not change it monotonically (\EthreePdepth{} for depths 1, 3, 6), the four mask settings give \EthreePmasks{} (one target block, context $0.4$--$0.5$, target scale $0.3$--$0.4$ and $0.05$--$0.1$) against \EthreePbase{} at baseline, so all four registered nulls fail; weight decay leaves it unchanged between $\lambda=0$ and $0.04$ (\EthreePwdzero{}, \EthreePwdlow{}) and lowers it only at the fallback $\lambda=\EthreePwdlargeVal$, to \EthreePwdlarge{}, so Arm P's weight-decay sign (\cref{tab:e3}) is not a graded effect.
+Of the registered directions, \EthreeSignedHeld{} of \EthreeSigned{} signed pairs and \EthreeNullsHeld{} of \EthreeNulls{} nulls hold.
+A faster target lowers the count (\EthreePema{} for copy and $\tau=0.9,0.99,0.999$; this sign is post hoc), opposite to the slow-target regime of \cref{sec:heuristics}, which E3 does not reach.
+Without stop-gradient the total variance falls to \EthreePnosgTv{} (P) and \EthreeTnosgTv{} (T) of its initial value by epoch 20: scale collapse under way but not complete, as the criterion requires.
+Interventions (\cref{fig:e3-interventions}a): the theory's prescriptions for Arm T, a slower predictor to rescue $\lambda=0.03$ and $0.1$ and a faster one to break $\lambda=10^{-3}$, move the count in the predicted direction in \EthreeCfourTheoryDir{} of 3 (the faster predictor raises it, \EthreeBreakMeas{} against \EthreeBreakParent{}); the rule's prescriptions, predictor initialisation $\times3$ and $\times0.3$, do so in \EthreeCfourRuleDir{} of 3, but the predicted rescues to \EthreeRescuePred{} directions end at \EthreeRescueMeas{}; in Arm P a copy target without weight decay or with a slower predictor gains directions (\EthreeCfourPDir{} of 2).
+At 50 epochs (\cref{fig:e3-interventions}b) the counts are \EthreeFullCounts{} (rule \EthreeFullPred{}) for Arm P's baseline and Arm T at $\lambda=0.01$ and $0.03$, so the epoch-20 counts are not final, and the probe accuracies are \EthreeProbePbase{}, \EthreeProbeTlo{} and \EthreeProbeThi{}: the registered probe criterion compares two collapsing Arm T configurations, both below the random-initialisation probe (\EthreeProbeInit{}); it supports only ``more collapse, lower probe'' within Arm T, and the one healthy configuration uses the other optimiser.
+\Cref{fig:e3-dynamics} shows the counts and the variance over the 20 epochs. As a diagnostic, not registered, the number of directions with net growth at step 800 has Spearman \EthreeDiagT{} (T) and \EthreeDiagP{} (P) with the final count.
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\linewidth]{fig8_e3_main}
+  \caption{E3 (pre-registered; count at epoch 20 of a 50-epoch schedule; markers seed means, bars min--max over 3 seeds). (a)~Count against weight decay: Arm T (SGD) follows the step-0 rule (dashed) and its observed transition (solid vertical) lies $\EthreeLocFactor\times$ below the rule's (dashed vertical); Arm P (AdamW) is flat at \EthreePbase{} up to $\lambda=0.04$ and drops only at $\lambda=\EthreePwdlargeVal$. Dotted: dimensional collapse ($0.5\times$ the initial count \EthreeInitCount{}). (b)~Rule against measured count for all configurations: Arm T Spearman \EthreeRankT{} ($n=\EthreeRankTn$), Arm P \EthreeRankP{} ($n=\EthreeRankPn$). Data: \texttt{results/e3/runs.csv}, \texttt{summary.json}, \texttt{summary\_followup.json}.}
+  \label{fig:e3}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\linewidth]{fig9_e3_factors}
+  \caption{E3, every sweep configuration: measured count at epoch 20 (seed mean, bars min--max) and the step-0 rule's prediction, for (a)~Arm P and (b)~Arm T; dotted, the baseline's count. Data: \texttt{results/e3/runs.csv}, \texttt{summary.json}.}
+  \label{fig:e3-factors}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\linewidth]{fig10_e3_interventions}
+  \caption{E3 follow-up (pre-registered). (a)~The eight interventions: count at epoch 20 of the parent (square), the intervention (seed mean and seeds) and the rule's prediction (diamond); no Arm T rescue or break crosses the collapse line. (b)~Linear-probe accuracy over 50 epochs for Arm P's baseline and Arm T at $\lambda=0.01$ and $0.03$ (one line per seed), against the random-initialisation probe. Data: \texttt{results/e3/summary\_followup.json}, \texttt{trajectories\_followup.jsonl}, \texttt{runs.csv}, \texttt{summary.json}.}
+  \label{fig:e3-interventions}
+\end{figure}
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=\linewidth]{fig11_e3_dynamics}
+  \caption{E3 dynamics over the 20 epochs (seed mean, band min--max). (a)~Arm T count for each weight decay. (b)~Arm P count for the baseline, EMA $\tau=0.9$, copy target and no stop-gradient. (c)~Total variance of the online tokens relative to initialisation for both baselines and their no-stop-gradient variants. Data: \texttt{results/e3/trajectories.jsonl}, \texttt{runs.csv}, \texttt{summary.json}.}
+  \label{fig:e3-dynamics}
+\end{figure}
+
+\begin{table}[!htbp]
+  \centering
+  \caption{The pre-registered criteria of E3 (\texttt{results/e3/prediction.json}, follow-up \texttt{prediction\_followup.json}, each committed before its runs) and the observed values; counts at epoch 20 unless stated. ``Rule'': the step-0 horizon rule; ``theory'': signs from \cref{sec:heuristics} and \cref{tab:heuristics}.}
+  \label{tab:e3}
+  \input{tables/tab_e3}
+\end{table}
+
+\paragraph{Reproduction and compute.}
+All linear experiments use NumPy (\EoneNumpy) on CPU and population statistics, so they have no data split and no dataset; seeds draw the initialisation.
+E1 is \texttt{python3 code/e1\_linear.py results/e1} followed by \texttt{code/e1\_analyze.py}, and its \EoneRuns{} runs took \EoneSeconds{}\,s on 8 CPUs.
+E1b is \texttt{code/e1b.py run results/e1b}, which reads the committed predictions in \texttt{results/e1b/prediction.json}, followed by \texttt{code/e1b\_analyze.py}; its \EoneBRuns{} runs took \EoneBSeconds{}\,s on \EoneBNproc{} CPUs.
+Each result file records the command that made it; \texttt{code/README.md} lists the scripts, and the pinned dependencies are in \texttt{code/requirements.txt}.
+E1c is \texttt{code/e1c.py predict}, \texttt{run} and \texttt{analyze} on \texttt{results/e1c} (\EoneCRuns{} runs, \EoneCSeconds{}\,s).
+Every number in the text is generated from these files by \texttt{paper/tools/make\_numbers.py}.
+E2 is \texttt{code/e2.py predict}, \texttt{run} and \texttt{analyze} on \texttt{results/e2} (\EtwoRuns{} runs, \EtwoSeconds{}\,s on 8 CPUs; synthetic data drawn from the seeds), and the rank-over-time diagnostic is \texttt{code/checks/e2\_rank\_over\_time.py}.
+E3 is \texttt{code/e3\_grid.py predict}, then the training script \texttt{code/e3\_ijepa.py} (PyTorch 2.5.1) for every run, then \texttt{e3\_grid.py analyze} and \texttt{analyze-followup} on the run directories, which are released as an archive with the results; the \EthreeSweepRuns{}+\EthreeFollowRuns{} runs took \EthreeRunHours{} run-hours (\EthreeVruns{} runs, \EthreeVhours{}\,h, on V100 GPUs and \EthreeGtxRuns{}, \EthreeGtxHours{}\,h, on GTX 1080 Ti GPUs; the 3 seeds of a configuration shared one GPU, \texttt{results/e3/compute.json}), and the CIFAR-10 test split is used only for the counts and the probe score.

@@ -1,0 +1,459 @@
+"""E5 / B3 (plan v2.12 Sec. 3 B): the role of SGD noise in the race. Aligned linear JEPA (Prop. 3 of
+theory/derivations.md): n modes with context variance s_k, target variance s_k and cross-covariance c_k = rho_k s_k
+(jointly Gaussian views, independent across modes), encoder W (n x n), predictor P0 = p0 I, copy target
+(stop-gradient), weight decay lam on W and P, minibatch SGD with batch B (fresh samples every step) and step eta.
+Theory: theory/ext_B_stagewise.md, "B3".
+
+Near collapse the update is W <- W (I + eta Mhat), Mhat = p Shat21 - p^2 Shat11 - lam I, p(t) = p0 (1 - eta lam)^step;
+the singular values of W grow at the Lyapunov exponents of the random product. Accounts (per unit time t = eta step):
+  det    g_k = p c_k - p^2 s_k - lam                         (the delivered race; noise ignored)
+  shift  g_k - (eta / 2B) E xi_kk^2                          (prior work: multiplicative noise as extra decay,
+                                                              the window shifted to g_k - D_k / 2; no reseeding)
+  lyap   g_k + (eta / 2B) [sum_{j>k} E xi_kj^2 - sum_{i<k} E xi_ik^2 - E xi_kk^2 - 2 sum_{i<k} E xi_ik xi_ki]
+         (the k-th exponent of the product to second order in eta, modes ordered by g; derived in the theory note;
+         it FAILS a direct check against QR-computed exponents of the product, so it is kept only as a row)
+  mc     the exponents of the product computed numerically (QR, MC_STEPS steps per p, its own seed) on a grid of
+         MC_P values of p, P frozen at p I; the k-th largest exponent is given to the mode with the k-th largest g
+with the per-sample moments of m_ij = p x_t,i x_c,j - p^2 x_c,i x_c,j (Gaussian, aligned):
+  E xi_kk^2 = p^2 s_k^2 (1 + rho_k^2 - 4 p rho_k + 2 p^2);  E xi_ij^2 = p^2 s_i s_j (1 - 2 p rho_i + p^2) (i != j);
+  E xi_ik xi_ki = p^2 s_i s_k (rho_i - p) (rho_k - p).
+Each account is run as the delivered race (code/linjepa.py escape_score's quadrature) with its own rate: a mode is
+counted if its log-amplitude log w0 + int rate reaches the capture scale 1/2 log(lam p / (c - p s)) while it grows.
+The competing account (noise floor with re-escape) is tested on the trajectories: re-escape events (a singular value
+that fell below THR and later rises above it again) and the late log-slope of the dead singular values (a floor
+gives a slope near 0; the multiplicative account a slope near the exponent of a collapsed mode, -lam - ...).
+Baselines: static #{c^2 >= 4 lam s}, window #{p0 c - p0^2 s - lam > 0} (= the 2610.02344 dvd_signed count here),
+the mu variants (code/baselines/dvd_mu.py) on the population statistics and P0, the population GD rank of the same
+configuration (pop), and the count read at EARLY_F of T. Primary account: shift (prior work).
+Registered held-out items (grid "heldout", results/e5/prediction_b3.json; verdict in cmd_score):
+  S1 no reseeding: share of noisy runs with a re-escape event <= 0.05 (the floor account predicts re-escape)
+  S2 no noise floor: per eta, median log10 (largest dead singular value / top singular value) at T is lower at
+     B = 2 than at B = 32, and lower at B = 32 than in the population run (the floor account predicts a level that
+     rises with eta / B)
+  S3 rank: mean |rank(B) - rank(population)| over noisy runs <= 1.5; shift MAE <= 1.5 on noisy runs; every account
+     and baseline reported with a paired bootstrap CI against shift
+  S4 direction of the noise effect (seen in development, not explained by any account): mean rank(B) - rank(pop)
+     <= 0 at p0 = 0.7 and >= 0 at p0 = 1.5
+Usage: python3 code/e5_b3.py list GRID | pilot GRID ID | run GRID OUTDIR [NPROC] | score GRID OUTDIR"""
+import sys, os, json, time, itertools, gzip, hashlib, math
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+from linjepa import race_end_time
+from baselines.dvd_mu import variants as mu_variants
+
+THR = 0.05
+W0 = 1e-3
+T_CAP = 4000.0
+NCHK = 40
+EARLY_F = 0.10
+ROUND = 1e-13
+MU = ["dvd", "dvd_signed", "dvd_sorted", "dvd_pq", "dvd_pq_signed", "dvd_exact", "dvd_nowd"]
+ACC = ["det", "shift", "lyap", "mc"]
+MC_P, MC_STEPS, MC_SEED = 12, 3000, 97531   # mc account: p grid size, QR steps per p, its own seed (disjoint from runs)
+
+GRIDS = {
+    "dev": dict(n=16, s=(1.8, 0.6), ratio=0.92, lam=[0.008, 0.016], p0=[0.8, 1.3], eta=[0.04, 0.1],
+                B=[2, 4, 16, 0], seeds=[700, 701, 702]),
+    # held-out (registered before it runs): new statistics, lam, p0, eta, B and seeds
+    "heldout": dict(n=16, s=(2.0, 0.5), ratio=0.9, lam=[0.006, 0.012], p0=[0.7, 1.5], eta=[0.02, 0.05],
+                    B=[2, 8, 32, 0], seeds=[710, 711, 712, 713, 714]),
+}
+
+
+def stats(G):
+    s = np.linspace(G["s"][0], G["s"][1], G["n"])
+    return G["ratio"] ** np.arange(G["n"]) * s, s
+
+
+def horizon(c, s, lam, p0):
+    return float(math.ceil(min(3.0 * race_end_time(c, s, lam, lam, 1.0, p0) + 300.0, T_CAP) / 10) * 10)
+
+
+def configs(grid):
+    G = GRIDS[grid]; c, s = stats(G); out = []
+    for lam, p0, eta, B, seed in itertools.product(G["lam"], G["p0"], G["eta"], G["B"], G["seeds"]):
+        out.append(dict(id=len(out), grid=grid, lam=lam, p0=p0, eta=eta, B=B, seed=seed, T=horizon(c, s, lam, p0)))
+    return out
+
+
+# --------------------------------------------------------------------------------------------- truth
+def truth(cfg):
+    G = GRIDS[cfg["grid"]]; c, s = stats(G); n = G["n"]; rho = c / s
+    lam, eta, B = cfg["lam"], cfg["eta"], cfg["B"]
+    r = np.random.default_rng(cfg["seed"])
+    Q, _ = np.linalg.qr(r.standard_normal((n, n)))
+    W = W0 * Q; P = cfg["p0"] * np.eye(n)
+    S11, S21 = np.diag(s), np.diag(c)
+    sd_c = np.sqrt(s); sd_e = np.sqrt(s * (1 - rho ** 2))
+    N = int(round(cfg["T"] / eta))
+    chk = set(np.linspace(0, N, NCHK + 1).astype(int)[1:].tolist())
+    kE = int(round(EARLY_F * N))
+    counts, svt, early = [], [], None
+    for k in range(1, N + 1):
+        if B:
+            xc = r.standard_normal((B, n)) * sd_c
+            xt = xc * rho + r.standard_normal((B, n)) * sd_e
+            A11 = xc.T @ xc / B; A21 = xt.T @ xc / B          # A21_ij = mean x_t,i x_c,j
+        else:
+            A11, A21 = S11, S21
+        R = P @ W @ A11 - W @ A21
+        gW = P.T @ R; gP = R @ W.T
+        W = W - eta * (gW + lam * W); P = P - eta * (gP + lam * P)
+        if k % 50 == 0:
+            W[np.abs(W) < 1e-150] = 0.0; P[np.abs(P) < 1e-150] = 0.0
+            if not (np.isfinite(W).all() and np.abs(W).max() < 1e8):
+                return dict(counts=None, diverged=k)
+        if k == kE:
+            early = int((np.linalg.svd(W, compute_uv=False) > THR).sum())
+        if k in chk:
+            sv = np.linalg.svd(W, compute_uv=False)
+            counts.append(int((sv > THR).sum())); svt.append([float(x) for x in sv])
+    return dict(counts=counts, early=early, sv=svt, **reescape(svt, cfg["T"]))
+
+
+def reescape(svt, T):
+    """Re-escape events: a sorted singular value index whose value fell below THR at some check and is above THR at a
+    later check (index-wise on the sorted spectrum, so it counts rank re-increases). Late log-slope of the singular
+    values below THR at the end, over the last half of the checks (per unit time)."""
+    S = np.array(svt); nck = S.shape[0]; t = np.linspace(T / nck, T, nck)
+    alive = S > THR
+    ev = 0
+    for j in range(S.shape[1]):
+        dead_seen = False
+        for i in range(nck):
+            if not alive[i, j] and alive[:i, j].any():
+                dead_seen = True
+            if dead_seen and alive[i, j]:
+                ev += 1; break
+    dead = ~alive[-1]
+    slopes = []
+    for j in np.where(dead)[0]:
+        # decay of a dead singular value after its last check above THR, while it is above the float64 round-off
+        # level of W (ROUND x the top singular value); below that level the spectrum is round-off, not dynamics
+        last = np.where(alive[:, j])[0]
+        i0 = last[-1] + 1 if last.size else 0
+        ok = np.arange(nck) >= i0
+        ok &= S[:, j] > ROUND * S[:, 0]
+        if ok.sum() >= 3:
+            slopes.append(float(np.polyfit(t[ok], np.log(S[ok, j]), 1)[0]))
+    rel = S[-1][dead] / S[-1][0] if dead.any() and S[-1][0] > 0 else None
+    return dict(reescape=ev, dead_slope_median=float(np.median(slopes)) if slopes else None,
+                dead_rel_max=float(rel.max()) if rel is not None else None,
+                rank_increases_after_first_drop=_ups_after_drop(alive.sum(1)))
+
+
+def _ups_after_drop(rk):
+    first = next((i for i in range(1, len(rk)) if rk[i] < rk[i - 1]), None)
+    if first is None:
+        return 0
+    return int(sum(max(0, rk[i] - rk[i - 1]) for i in range(first + 1, len(rk))))
+
+
+# --------------------------------------------------------------------------------------------- accounts
+def rates(p, c, s, lam, eta, B, account):
+    g = p * c - p ** 2 * s - lam
+    if account == "det" or not B:
+        return g
+    rho = c / s
+    kk = p ** 2 * s ** 2 * (1 + rho ** 2 - 4 * p * rho + 2 * p ** 2)
+    if account == "shift":
+        return g - eta / (2 * B) * kk
+    o = np.argsort(-g); r = np.empty_like(g)
+    so, ro = s[o], rho[o]
+    a = p ** 2 * so * (1 - 2 * p * ro + p ** 2)              # E xi_ij^2 = a_i s_j
+    x = p * so * (ro - p)                                    # E xi_ik xi_ki = x_i x_k
+    tail = np.concatenate([np.cumsum(so[::-1])[::-1][1:], [0.0]])          # sum_{j>k} s_j
+    head_a = np.concatenate([[0.0], np.cumsum(a)[:-1]])                     # sum_{i<k} a_i
+    head_x = np.concatenate([[0.0], np.cumsum(x)[:-1]])
+    corr = a * tail - head_a * so - kk[o] - 2 * head_x * x
+    r[o] = g[o] + eta / (2 * B) * corr
+    return r
+
+
+def mc_exponents(p, c, s, lam, eta, B, steps=MC_STEPS, seed=MC_SEED):
+    """Lyapunov exponents (per unit time, sorted descending) of the random product W <- W (I + eta (p A21 - p^2 A11
+    - lam)) with minibatch A of size B (B = 0: population), by QR re-orthonormalisation; P frozen at p I."""
+    n = c.size; rho = c / s; r = np.random.default_rng(seed)
+    if not B:
+        return np.sort(np.log(np.abs(1 + eta * (p * c - p * p * s - lam))) / eta)[::-1]
+    sd_c = np.sqrt(s); sd_e = np.sqrt(s * (1 - rho ** 2))
+    Q = np.linalg.qr(r.standard_normal((n, n)))[0]; acc = np.zeros(n); I = np.eye(n)
+    for _ in range(steps):
+        xc = r.standard_normal((B, n)) * sd_c; xt = xc * rho + r.standard_normal((B, n)) * sd_e
+        M = p * (xt.T @ xc / B) - p * p * (xc.T @ xc / B) - lam * I
+        Q, R = np.linalg.qr((I + eta * M).T @ Q); acc += np.log(np.abs(np.diag(R)))
+    return np.sort(acc / (steps * eta))[::-1]
+
+
+def race(cfg, account):
+    """Race with the account's rate along the deterministic predictor decay, on the run's step grid (coarsened)."""
+    G = GRIDS[cfg["grid"]]; c, s = stats(G)
+    lam, eta, B, p0, T = cfg["lam"], cfg["eta"], cfg["B"], cfg["p0"], cfg["T"]
+    dt = max(eta, T / 20000)
+    t = np.arange(0, T + dt / 2, dt)
+    p = p0 * (1 - eta * lam) ** (t / eta)
+    logw = np.full(c.size, math.log(W0)); best = np.full(c.size, False)
+    if account == "mc":   # exponents tabulated on a p grid, k-th largest exponent assigned to the mode of k-th largest g
+        pg = np.linspace(p[-1], p0, MC_P)
+        tab = np.array([mc_exponents(q, c, s, lam, eta, B) for q in pg])
+    for i, ti in enumerate(t):
+        if account == "mc":
+            ex = np.array([np.interp(p[i], pg, tab[:, j]) for j in range(c.size)])
+            o = np.argsort(-(p[i] * c - p[i] ** 2 * s)); rt = np.empty(c.size); rt[o] = ex
+        else:
+            rt = rates(p[i], c, s, lam, eta, B, account)
+        gap = c - p[i] * s
+        cap = np.where(gap > 0, 0.5 * np.log(np.maximum(lam * p[i], 1e-300) / np.maximum(gap, 1e-300)), np.inf)
+        best |= (rt > 0) & (logw >= cap)
+        logw = logw + rt * dt
+    return int(best.sum())
+
+
+def predict(cfg):
+    G = GRIDS[cfg["grid"]]; c, s = stats(G); lam, p0 = cfg["lam"], cfg["p0"]
+    out = {a: race(cfg, a) for a in ACC}
+    out["static"] = int(((c > 0) & (c ** 2 >= 4 * lam * s)).sum())
+    out["window"] = int((p0 * c - p0 ** 2 * s - lam > 0).sum())
+    mu = mu_variants(np.diag(s), np.diag(c), p0 * np.eye(c.size), lam)
+    out.update({k: int(mu[k]) for k in MU})
+    return out
+
+
+def run_one(cfg):
+    t0 = time.time(); tr = truth(cfg); t1 = time.time()
+    return dict(cfg=cfg, truth=tr, pred=predict(cfg), seconds_truth=t1 - t0, seconds_pred=time.time() - t1)
+
+
+def md5(path):
+    return hashlib.md5(open(path, "rb").read()).hexdigest()
+
+
+def cmd_run(grid, outdir, nproc=8):
+    os.makedirs(outdir, exist_ok=True); cf = configs(grid); t0 = time.time()
+    with Pool(int(nproc)) as pool:
+        res = pool.map(run_one, sorted(cf, key=lambda r: -r["T"] / r["eta"]), chunksize=1)
+    res.sort(key=lambda r: r["cfg"]["id"])
+    with gzip.open(os.path.join(outdir, f"b3_{grid}_runs.jsonl.gz"), "wt") as f:
+        for r in res:
+            f.write(json.dumps(r) + "\n")
+    here = os.path.dirname(os.path.abspath(__file__))
+    meta = dict(grid=grid, runs=len(res), seconds=time.time() - t0, numpy=np.__version__,
+                md5={p: md5(os.path.join(here, p)) for p in ["e5_b3.py", "linjepa.py", "baselines/dvd_mu.py"]},
+                config=GRIDS[grid], THR=THR, W0=W0, EARLY_F=EARLY_F, NCHK=NCHK)
+    json.dump(meta, open(os.path.join(outdir, f"b3_{grid}_meta.json"), "w"), indent=1)
+    cmd_score(grid, outdir)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), f"B3 {grid}: {len(res)} runs in {time.time() - t0:.0f} s", flush=True)
+
+
+def boot_ci(x, B=2000, seed=0):
+    x = np.asarray(x, float); r = np.random.default_rng(seed)
+    m = x[r.integers(0, x.size, (B, x.size))].mean(1)
+    return [float(np.quantile(m, 0.025)), float(np.quantile(m, 0.975))]
+
+
+def dead_level(r):
+    v = r["truth"]["dead_rel_max"]
+    return None if v is None else float(np.log10(max(v, 1e-300)))
+
+
+def summarize(rows, primary="shift"):
+    tru = np.array([r["truth"]["counts"][-1] for r in rows])
+    keys = ACC + ["static", "window", "pop", "early"] + MU
+    val = lambda r, k: r["truth"]["early"] if k == "early" else (r["pop"] if k == "pop" else r["pred"][k])
+    keys = [k for k in keys if all(val(r, k) is not None for r in rows)]
+    err = {k: np.abs(np.array([val(r, k) for r in rows]) - tru) for k in keys}
+    out = dict(runs=len(rows), truth_mean=float(tru.mean()),
+               reescape_runs=int(sum(r["truth"]["reescape"] > 0 for r in rows)),
+               rank_ups_after_drop=int(sum(r["truth"]["rank_increases_after_first_drop"] for r in rows)),
+               dead_slope_median=float(np.median([r["truth"]["dead_slope_median"] for r in rows
+                                                   if r["truth"]["dead_slope_median"] is not None] or [np.nan])),
+               dead_level_median=float(np.median([dead_level(r) for r in rows if dead_level(r) is not None] or [np.nan])),
+               delta_vs_pop=float(np.mean([r["truth"]["counts"][-1] - r["pop"] for r in rows if r["pop"] is not None]
+                                          or [np.nan])))
+    for k in keys:
+        pk = np.array([val(r, k) for r in rows])
+        out[k] = dict(mae=float(err[k].mean()), within1=float((err[k] <= 1).mean()), bias=float((pk - tru).mean()))
+        if k != primary:
+            out[k]["minus_primary_ci"] = boot_ci(err[k] - err[primary])
+    return out
+
+
+def cmd_score(grid, outdir):
+    rows = [json.loads(l) for l in gzip.open(os.path.join(outdir, f"b3_{grid}_runs.jsonl.gz"), "rt")]
+    div = [r["cfg"]["id"] for r in rows if r["truth"]["counts"] is None]
+    div_rows = [r for r in rows if r["truth"]["counts"] is None]
+    rows = [r for r in rows if r["truth"]["counts"] is not None]
+    popr = {(r["cfg"]["lam"], r["cfg"]["p0"], r["cfg"]["eta"], r["cfg"]["seed"]): r["truth"]["counts"][-1]
+            for r in rows if r["cfg"]["B"] == 0}
+    for r in rows:
+        r["pop"] = popr.get((r["cfg"]["lam"], r["cfg"]["p0"], r["cfg"]["eta"], r["cfg"]["seed"]))
+    out = dict(grid=grid, diverged=div)
+    for B in GRIDS[grid]["B"]:
+        S = [r for r in rows if r["cfg"]["B"] == B]
+        if S:
+            out[f"B{B}"] = summarize(S)
+        for eta in GRIDS[grid]["eta"]:
+            S2 = [r for r in S if r["cfg"]["eta"] == eta]
+            if S2:
+                out[f"B{B}_eta{eta}"] = summarize(S2)
+    noisy = [r for r in rows if r["cfg"]["B"] > 0]
+    out["noisy"] = summarize(noisy)
+    # rank against noise: mean truth by (eta, B)
+    out["rank_by_eta_B"] = {f"eta{e}_B{b}": float(np.mean([r["truth"]["counts"][-1] for r in rows
+                                                           if r["cfg"]["eta"] == e and r["cfg"]["B"] == b]))
+                            for e in GRIDS[grid]["eta"] for b in GRIDS[grid]["B"]}
+    G = GRIDS[grid]; nb = sorted(b for b in G["B"] if b > 0)
+    dl = lambda e, b: float(np.median([dead_level(r) for r in rows if r["cfg"]["eta"] == e and r["cfg"]["B"] == b
+                                       and dead_level(r) is not None] or [np.nan]))
+    out["dead_level_by_eta_B"] = {f"eta{e}_B{b}": dl(e, b) for e in G["eta"] for b in G["B"]}
+    nz = [r for r in noisy if r["pop"] is not None]
+    d = {p0: float(np.mean([r["truth"]["counts"][-1] - r["pop"] for r in nz if r["cfg"]["p0"] == p0])) for p0 in G["p0"]}
+    out["delta_vs_pop_by_p0"] = d
+    out["amendment_1"] = amendment_1(rows, div_rows, G)
+    if grid == "heldout":
+        s1 = out["noisy"]["reescape_runs"] / len(noisy)
+        s2 = all(dl(e, nb[0]) < dl(e, nb[-1]) < dl(e, 0) for e in G["eta"])
+        s3a = float(np.mean([abs(r["truth"]["counts"][-1] - r["pop"]) for r in nz]))
+        # as first registered (c64092c); amendment 1 below is the registered reading
+        out["verdict_as_first_registered"] = dict(
+            S1=dict(reescape_share=s1, passed=s1 <= 0.05), S2=dict(passed=bool(s2)),
+            S3=dict(mean_abs_delta=s3a, shift_mae=out["noisy"]["shift"]["mae"],
+                    passed=bool(s3a <= 1.5 and out["noisy"]["shift"]["mae"] <= 1.5)),
+            S4=dict(passed=bool(d[min(G["p0"])] <= 0 <= d[max(G["p0"])])))
+        out["verdict"] = {k: v["verdict"] for k, v in out["amendment_1"].items() if isinstance(v, dict) and "verdict" in v}
+    json.dump(out, open(os.path.join(outdir, f"b3_{grid}_score.json"), "w"), indent=1)
+    return out
+
+
+# ------------------------------------------------------------------- amendment 1 (registered before the held-out run)
+def events(r):
+    """Each re-escape event of a run (the definition of reescape()): the sorted index, the last value above THR before
+    it fell, the lowest value below THR, that value relative to the top singular value at the same check, whether it
+    sits at float64 round-off (<= ROUND x top), and the first value above THR after it."""
+    S = np.array(r["truth"]["sv"]); alive = S > THR; ev = []
+    for j in range(S.shape[1]):
+        for i in range(S.shape[0]):
+            if not alive[i, j] and alive[:i, j].any():
+                after = np.where(alive[i:, j])[0]
+                if after.size:
+                    i1 = i + int(after[0]); i0 = int(np.where(alive[:i, j])[0][-1])
+                    lo = i0 + 1 + int(np.argmin(S[i0 + 1:i1, j]))
+                    rel = float(S[lo, j] / S[lo, 0])
+                    ev.append(dict(id=r["cfg"]["id"], index=j, check_before=i0, before=float(S[i0, j]),
+                                   check_low=lo, low=float(S[lo, j]), low_rel_top=rel, at_roundoff=bool(rel <= ROUND),
+                                   check_after=i1, after=float(S[i1, j])))
+                break
+    return ev
+
+
+def roundoff_regrowth(r):
+    """Exact-invariance check: sorted indices whose value reached ROUND x top at some check and is above THR later."""
+    S = np.array(r["truth"]["sv"]); ro = S <= ROUND * S[:, :1]; n = 0
+    for j in range(S.shape[1]):
+        i = np.where(ro[:, j])[0]
+        if i.size and (S[i[0] + 1:, j] > THR).any():
+            n += 1
+    return n
+
+
+def amendment_1(rows, div_rows, G):
+    """Registered reading (amendment 1, results/e5/prediction_b3.json). Primary scoring excludes diverged runs; the
+    sensitivity scoring counts each against the prediction; a verdict that differs between the two is undetermined."""
+    n = G["n"]; L0 = np.log10(ROUND)
+    nb = sorted(b for b in G["B"] if b > 0); order = [nb[0], nb[-1], 0]
+    cell = lambda r: (r["cfg"]["eta"], r["cfg"]["B"])
+    div_by_cell = {f"eta{e}_B{b}": sum(cell(r) == (e, b) for r in div_rows) for e in G["eta"] for b in G["B"]}
+    pop_div = {(r["cfg"]["lam"], r["cfg"]["p0"], r["cfg"]["eta"], r["cfg"]["seed"]) for r in div_rows if r["cfg"]["B"] == 0}
+    noisy = [r for r in rows if r["cfg"]["B"] > 0]; ndiv = [r for r in div_rows if r["cfg"]["B"] > 0]
+    word = lambda a, b: ("pass" if a else "fail") if bool(a) == bool(b) else "undetermined"
+    out = dict(diverged_by_cell=div_by_cell)
+    # S1: consistency check of exact range invariance (re-escape = THR-crossing of a nonzero singular value)
+    ev = [e for r in noisy for e in events(r)]
+    k = sum(r["truth"]["reescape"] > 0 for r in noisy)
+    s1p = k / len(noisy); s1s = (k + len(ndiv)) / (len(noisy) + len(ndiv))
+    out["S1"] = dict(reescape_runs=k, runs=len(noisy), share=s1p, share_sensitivity=s1s, events=ev,
+                     events_at_roundoff=sum(e["at_roundoff"] for e in ev),
+                     roundoff_regrowth_indices=int(sum(roundoff_regrowth(r) for r in noisy)),
+                     verdict=word(s1p <= 0.05, s1s <= 0.05))
+    # S2: dead level order B_min < B_max < population per eta, with the round-off rule
+    def lev(rs, extra):
+        v = [dead_level(r) for r in rs if dead_level(r) is not None] + extra
+        return (float(np.median(v)) if v else None), len(v)
+    def slope(rs):
+        v = [r["truth"]["dead_slope_median"] for r in rs if r["truth"]["dead_slope_median"] is not None]
+        return (float(np.median(v)) if v else None), len(v)
+    def s2_eta(e, place):
+        rec = {}
+        for b in order:
+            rs = [r for r in rows if cell(r) == (e, b)]
+            nd = sum(cell(r) == (e, b) for r in div_rows)
+            lv, nl = lev(rs, [place(b)] * nd if place else [])
+            sl, ns = slope(rs)
+            rec[f"B{b}"] = dict(level_median=lv, runs_in_level=nl, roundoff=bool(lv is not None and lv <= L0),
+                                slope_median=sl, runs_in_slope=ns, runs_without_dead=sum(dead_level(r) is None for r in rs))
+        pairs = []
+        for a, b in zip(order[:-1], order[1:]):
+            A, Bc = rec[f"B{a}"], rec[f"B{b}"]
+            if A["level_median"] is None or Bc["level_median"] is None:
+                pairs.append(None)
+            elif A["roundoff"] and Bc["roundoff"]:        # tied at round-off: read the order on the dead log-slope
+                pairs.append(None if A["slope_median"] is None or Bc["slope_median"] is None
+                             else bool(A["slope_median"] < Bc["slope_median"]))
+            elif Bc["roundoff"]:
+                pairs.append(False)
+            elif A["roundoff"]:
+                pairs.append(True)
+            else:
+                pairs.append(bool(A["level_median"] < Bc["level_median"]))
+        rec["pairs"] = pairs
+        rec["holds"] = None if None in pairs else all(pairs)
+        return rec
+    lo_place = lambda b: 0.0 if b == nb[0] else (L0 - 3 if b == 0 else None)
+    s2 = {}
+    for e in G["eta"]:
+        prim = s2_eta(e, None)
+        # sensitivity: a diverged run placed at the level least favourable to the order (the smallest B at the top,
+        # the population at round-off); the middle B is placed at both ends and must hold for both
+        sens = [s2_eta(e, lambda b, m=m: lo_place(b) if lo_place(b) is not None else m) for m in (0.0, L0 - 3)]
+        s2[f"eta{e}"] = dict(primary=prim, sensitivity=sens)
+    hp = [s2[f"eta{e}"]["primary"]["holds"] for e in G["eta"]]
+    hs = [all(x["holds"] for x in s2[f"eta{e}"]["sensitivity"]) if all(x["holds"] is not None for x in
+          s2[f"eta{e}"]["sensitivity"]) else None for e in G["eta"]]
+    s2v = "undetermined" if None in hp or None in hs else word(all(hp), all(hs))
+    out["S2"] = dict(by_eta=s2, verdict=s2v)
+    # S3 and S4, with diverged runs (or runs whose population run diverged) counted against in the sensitivity
+    nz = [r for r in noisy if r["pop"] is not None]
+    against = ndiv + [r for r in noisy if r["pop"] is None]
+    dlt = np.array([abs(r["truth"]["counts"][-1] - r["pop"]) for r in nz])
+    sh = np.array([abs(r["pred"]["shift"] - r["truth"]["counts"][-1]) for r in noisy])
+    s3p = dlt.mean() <= 1.5 and sh.mean() <= 1.5
+    dlt_s = np.concatenate([dlt, np.full(len(against), n)]); sh_s = np.concatenate([sh, np.full(len(ndiv), n)])
+    s3s = dlt_s.mean() <= 1.5 and sh_s.mean() <= 1.5
+    out["S3"] = dict(mean_abs_delta=float(dlt.mean()), shift_mae=float(sh.mean()), runs=len(nz),
+                     mean_abs_delta_sensitivity=float(dlt_s.mean()), shift_mae_sensitivity=float(sh_s.mean()),
+                     verdict=word(bool(s3p), bool(s3s)))
+    lo, hi = min(G["p0"]), max(G["p0"])
+    dd = lambda p0, pen: float(np.mean([r["truth"]["counts"][-1] - r["pop"] for r in nz if r["cfg"]["p0"] == p0]
+                                       + [pen] * sum(r["cfg"]["p0"] == p0 for r in against)))
+    s4p = float(np.mean([r["truth"]["counts"][-1] - r["pop"] for r in nz if r["cfg"]["p0"] == lo]))
+    s4h = float(np.mean([r["truth"]["counts"][-1] - r["pop"] for r in nz if r["cfg"]["p0"] == hi]))
+    s4p_s, s4h_s = dd(lo, n), dd(hi, -n)
+    out["S4"] = dict(delta_low_p0=s4p, delta_high_p0=s4h, delta_low_p0_sensitivity=s4p_s,
+                     delta_high_p0_sensitivity=s4h_s, verdict=word(s4p <= 0 <= s4h, s4p_s <= 0 <= s4h_s))
+    out["pop_runs_diverged"] = len(pop_div)
+    return out
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "list":
+        cf = configs(sys.argv[2]); print(len(cf), "configs; steps", sum(c["T"] / c["eta"] for c in cf))
+    elif cmd == "pilot":
+        cfg = configs(sys.argv[2])[int(sys.argv[3])]
+        r = run_one(cfg); r["truth"].pop("sv", None); print(json.dumps(r))
+    elif cmd == "run":
+        cmd_run(sys.argv[2], sys.argv[3], *(sys.argv[4:5] or [8]))
+    elif cmd == "score":
+        print(json.dumps(cmd_score(sys.argv[2], sys.argv[3]), indent=1)[:6000])

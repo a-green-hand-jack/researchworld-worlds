@@ -1,0 +1,33 @@
+"""Review check (internal-review-repo): rescore E6 rung 4 held-out from the delivered raw runs with the frozen scorer
+(code/e6_r4_heldout.py cmd_score, md5 dd977e41) and amendment 1's scorer (code/e6_r4_score_a1.py, md5 91c0f125), and
+compare every leaf with the delivered score files. Usage: python3 rescore.py EXPROOT (an experiment-repo tree at the
+delivered commit, with results/e6/r4_heldout/r4_heldout_runs.jsonl.gz)."""
+import sys, os, json, shutil, tempfile, hashlib
+root = os.path.abspath(sys.argv[1]); sys.path.insert(0, os.path.join(root, "code"))
+import numpy as np
+import e6_r4_heldout as h, e6_r4_score_a1 as a1
+
+def md5(p): return hashlib.md5(open(p, "rb").read()).hexdigest()
+def leaves(d, pth=()):
+    if isinstance(d, dict):
+        for k, v in d.items(): yield from leaves(v, pth + (k,))
+    elif isinstance(d, list):
+        for i, v in enumerate(d): yield from leaves(v, pth + (i,))
+    else: yield pth, d
+def cmp(a, b):
+    la, lb = dict(leaves(a)), dict(leaves(b))
+    diff = [str(k) for k in sorted(set(la) | set(lb), key=str) if repr(la.get(k, "MISSING")) != repr(lb.get(k, "MISSING"))]
+    return dict(leaves=len(la), differ=len(diff), first=diff[:10])
+
+src = os.path.join(root, "results/e6/r4_heldout"); tmp = tempfile.mkdtemp()
+shutil.copy(os.path.join(src, "r4_heldout_runs.jsonl.gz"), tmp)
+h.cmd_score(tmp); a1.score(tmp)
+out = dict(numpy=np.__version__,
+           md5={p: md5(os.path.join(root, "code", p)) for p in ["e6_r4_heldout.py", "e6_r4.py", "e6_r2.py", "e6_r4_score_a1.py",
+                                                               "e4_a4.py", "baselines/dvd_mu.py"]},
+           runs_md5=md5(os.path.join(src, "r4_heldout_runs.jsonl.gz")))
+for f in ["r4_heldout_score.json", "r4_heldout_score_a1.json"]:
+    p = os.path.join(src, f)
+    out[f] = cmp(json.load(open(p)), json.load(open(os.path.join(tmp, f)))) if os.path.exists(p) else "not delivered"
+json.dump(out, open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "rescore.json"), "w"), indent=1)
+print(json.dumps(out, indent=1))

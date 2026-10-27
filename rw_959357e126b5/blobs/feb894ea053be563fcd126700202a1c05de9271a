@@ -1,0 +1,202 @@
+{
+ "source": "experiment-repo db2a53b results/e2/prediction.json; checks/e2_prereg.json forecast_configs",
+ "note": "per distinct cyclic pop config (seed-independent); MAE over configs, not runs",
+ "by_lam": {
+  "0.0003": {
+   "configs": 54,
+   "capped_pred_vs_t_end_mae": 0.018518518518518517,
+   "capped_pred_vs_T_long_mae": 0.5925925925925926,
+   "uncapped_vs_T_long_mae": 0.037037037037037035,
+   "uncapped_vs_T_long_exact": 0.9814814814814815,
+   "t_end_not_final": 13
+  },
+  "0.001": {
+   "configs": 54,
+   "capped_pred_vs_t_end_mae": 0.037037037037037035,
+   "capped_pred_vs_T_long_mae": 0.0,
+   "uncapped_vs_T_long_mae": 0.0,
+   "uncapped_vs_T_long_exact": 1.0,
+   "t_end_not_final": 1
+  },
+  "0.003": {
+   "configs": 54,
+   "capped_pred_vs_t_end_mae": 0.037037037037037035,
+   "capped_pred_vs_T_long_mae": 0.037037037037037035,
+   "uncapped_vs_T_long_mae": 0.037037037037037035,
+   "uncapped_vs_T_long_exact": 0.9814814814814815,
+   "t_end_not_final": 0
+  },
+  "0.01": {
+   "configs": 54,
+   "capped_pred_vs_t_end_mae": 0.0,
+   "capped_pred_vs_T_long_mae": 0.0,
+   "uncapped_vs_T_long_mae": 0.0,
+   "uncapped_vs_T_long_exact": 1.0,
+   "t_end_not_final": 0
+  },
+  "all": {
+   "configs": 216,
+   "capped_pred_vs_t_end_mae": 0.023148148148148147,
+   "capped_pred_vs_T_long_mae": 0.1574074074074074,
+   "uncapped_vs_T_long_mae": 0.018518518518518517,
+   "uncapped_vs_T_long_exact": 0.9907407407407407,
+   "t_end_not_final": 14
+  }
+ },
+ "changed_configs": [
+  {
+   "fam": "bern",
+   "r": 0.2,
+   "lam": 0.0003,
+   "p0": 0.25,
+   "t_end": 4000.0,
+   "rank_pred": 5,
+   "rank_uncapped": 9,
+   "rank_t_end": 5,
+   "rank_T_long": 9
+  },
+  {
+   "fam": "bern",
+   "r": 0.2,
+   "lam": 0.001,
+   "p0": 0.25,
+   "t_end": 4000.0,
+   "rank_pred": 9,
+   "rank_uncapped": 9,
+   "rank_t_end": 7,
+   "rank_T_long": 9
+  },
+  {
+   "fam": "bern",
+   "r": 0.3,
+   "lam": 0.0003,
+   "p0": 0.5,
+   "t_end": 4000.0,
+   "rank_pred": 1,
+   "rank_uncapped": 7,
+   "rank_t_end": 1,
+   "rank_T_long": 7
+  },
+  {
+   "fam": "bern",
+   "r": 0.4,
+   "lam": 0.0003,
+   "p0": 0.25,
+   "t_end": 4000.0,
+   "rank_pred": 11,
+   "rank_uncapped": 13,
+   "rank_t_end": 11,
+   "rank_T_long": 13
+  },
+  {
+   "fam": "bern",
+   "r": 0.4,
+   "lam": 0.0003,
+   "p0": 0.5,
+   "t_end": 4000.0,
+   "rank_pred": 7,
+   "rank_uncapped": 9,
+   "rank_t_end": 7,
+   "rank_T_long": 9
+  },
+  {
+   "fam": "bern",
+   "r": 0.6,
+   "lam": 0.0003,
+   "p0": 0.5,
+   "t_end": 4000.0,
+   "rank_pred": 11,
+   "rank_uncapped": 13,
+   "rank_t_end": 11,
+   "rank_T_long": 13
+  },
+  {
+   "fam": "bern",
+   "r": 0.7,
+   "lam": 0.0003,
+   "p0": 0.25,
+   "t_end": 4000.0,
+   "rank_pred": 13,
+   "rank_uncapped": 15,
+   "rank_t_end": 13,
+   "rank_T_long": 15
+  },
+  {
+   "fam": "bern",
+   "r": 0.8,
+   "lam": 0.0003,
+   "p0": 0.25,
+   "t_end": 4000.0,
+   "rank_pred": 13,
+   "rank_uncapped": 15,
+   "rank_t_end": 13,
+   "rank_T_long": 15
+  },
+  {
+   "fam": "bern",
+   "r": 0.9,
+   "lam": 0.0003,
+   "p0": 0.25,
+   "t_end": 4000.0,
+   "rank_pred": 13,
+   "rank_uncapped": 15,
+   "rank_t_end": 13,
+   "rank_T_long": 15
+  },
+  {
+   "fam": "block",
+   "r": 0.7,
+   "lam": 0.0003,
+   "p0": 0.25,
+   "t_end": 4000.0,
+   "rank_pred": 1,
+   "rank_uncapped": 3,
+   "rank_t_end": 0,
+   "rank_T_long": 3
+  },
+  {
+   "fam": "block",
+   "r": 0.8,
+   "lam": 0.0003,
+   "p0": 0.5,
+   "t_end": 4000.0,
+   "rank_pred": 0,
+   "rank_uncapped": 1,
+   "rank_t_end": 0,
+   "rank_T_long": 1
+  },
+  {
+   "fam": "block",
+   "r": 0.9,
+   "lam": 0.0003,
+   "p0": 0.25,
+   "t_end": 4000.0,
+   "rank_pred": 5,
+   "rank_uncapped": 5,
+   "rank_t_end": 5,
+   "rank_T_long": 7
+  },
+  {
+   "fam": "multiblock",
+   "r": 4,
+   "lam": 0.0003,
+   "p0": 0.25,
+   "t_end": 4000.0,
+   "rank_pred": 0,
+   "rank_uncapped": 3,
+   "rank_t_end": 0,
+   "rank_T_long": 3
+  },
+  {
+   "fam": "multiblock",
+   "r": 6,
+   "lam": 0.0003,
+   "p0": 0.25,
+   "t_end": 4000.0,
+   "rank_pred": 1,
+   "rank_uncapped": 3,
+   "rank_t_end": 1,
+   "rank_T_long": 3
+  }
+ ]
+}

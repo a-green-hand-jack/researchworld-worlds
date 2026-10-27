@@ -1,0 +1,46 @@
+# Review record 1: verdict on the assembled delivery
+
+Judged against `review/standard.md` (items D, S, T, R, P) and objective #1.
+Assembled with `ht-role delivery` (assignment `story-repo` 8c4ffe2773f17e303ee95be3c05fe281788249ee;
+layout `report/` paper-repo, `report/code/` and `report/results/` experiment-repo, `report/figures/` figtab-repo; no assembly errors).
+
+Inspected revisions:
+- paper-repo 02fde4806e4042750e6ec2175e77f2109c7ff4c3
+- experiment-repo 95b8cc3cac0fe72d8b5f0b445baa7268786fe08f
+- figtab-repo 67c6d164060615417522f219290173ece66db54b
+- venue-repo 09ff0914896e97fc31b3aa2b404ade1c1418a1f2 (requirements, style kit)
+
+Key files (sha256): report.pdf 8c4f0f23d3c0...; report.tex a43344373185...;
+figures/fig_main.pdf 79faafdc97ee...; results/numbers.tex 38c57c4cfd4a...
+
+## What I checked and how
+
+| Item | Check performed by the reviewer | Result |
+|---|---|---|
+| D1 | Re-ran `code/fetch_data.py` (fresh download from www.openml.org, md5 checked against OpenML metadata) and `cmp` with delivered `results/data/iris.arff` | byte-identical; sha256 38110f3f...826c, OpenML id 61 v1 |
+| D2 | Loader asserts (150,4), classes 50/50/50; ARFF rows 10/35/38 and 102/143 confirm the paper's "three duplicate rows" and Bezdek et al. note | holds |
+| S1-S4 | Read `code/run_cv.py`: StandardScaler inside both pipelines; LR lbfgs, C=1, L2, softmax checked against decision function; kNN GridSearchCV k in {1,...,31} odd on outer training fold only, inner StratifiedKFold(5, seed 1000+f), smallest-k tie asserted; RepeatedStratifiedKFold(5,10, seed 20261017), same split for both methods | no leakage; paired design |
+| Reproduction | Fresh venv with `code/requirements.lock` (Python 3.11.2, sklearn 1.9.1, numpy 2.4.6, scipy 1.17.1, pandas 3.0.6); re-ran `run_cv.py` (19 s) | folds.csv, predictions.csv, inner_scores.csv byte-identical to `results/run_local/` |
+| T1-T3 | Own recomputation from folds.csv: corrected resampled t (1/J + 30/120), df 49 | LR 95.40 [91.56, 99.24]; kNN 94.33 [89.15, 99.51]; diff 1.07 [-2.62, 4.75], p 0.563; naive diff [0.06, 2.07]; win/tie/loss 15/26/9; k 1-21, median 7, mode 9 (11) - all match paper, Table 1 and numbers.tex |
+| T4 | Paper says interval covers 0, "do not distinguish", "not evidence that they are equivalent"; naive interval labelled as a warning only; limitations cite Bates et al. | claims within the evidence |
+| Regeneration | Re-ran `summarize.py`, `sensitivity.py`, `make_numbers.py`, `figures/make_figtab.py` | summary.json, folds_long.csv, sensitivity.json/_folds.csv, numbers.tex, table_main.tex/.csv byte-identical; fig_main.pdf raster-identical |
+| R1, R4 | `results/run_ibex/ibex-53905964.out` (hostname and SLURMD_NODENAME from inside the job); independently `sacct` on Ibex | job 53905964, partition batch, 1 CPU, COMPLETED on cn504-20 (start 12:01:45 local = run_info 09:01:47Z) |
+| R2, R3 | `cmp` of run_local vs run_ibex CSVs and summaries; identity.json same_code/same_data true | byte-identical; report states "identical" with Python/package/BLAS versions |
+| Extra replicate | sacct: job 53905853 COMPLETED on cn113-35-l; identity.json there: L1/L2 identical, LR probabilities differ <= 4.9e-14; its run_cv.py differed only in hashed file list (results/README.md) | disclosed accurately |
+| P1 | report.tex loads `neurips_2026` without options; sty sha256 c3fc2894... equals venue-repo's kit copy (from media.neurips.cc) | anonymous submission mode, unmodified style |
+| P2 | Page count of delivered PDF | 2 pages, US letter, references included |
+| P3 | One `table`, one `figure` environment (figure has panels a/b) | holds |
+| P4 | Rebuilt from delivered source with TeX Live 2026 `latexmk -pdf` after deleting PDF/bbl | 2 pages, no warnings, text identical to delivered PDF, bbl identical |
+| P5 | Every number in report.tex is a macro from numbers.tex; README number map checked against files | holds |
+| P6 | Opened fig_main.pdf at 200 dpi and in page 2: labeled axes with units, panel titles, legible at print size; dot counts per level match folds.csv (LR 1/1/5/12/21/10, kNN 1/2/4/5/10/18/10, diffs 9/26/7/7/1); interval bars match Table 1 | shows what caption and text say |
+| P7 | All 8 DOIs resolved on Crossref (titles, venues, volumes, pages match the bibliography); JMLR URL for scikit-learn | real |
+
+## Conclusion
+
+The delivery meets every item of the review standard and the objective: OpenML 61 from OpenML,
+nested choice of k without leakage, 10 x stratified 5-fold paired design, mean accuracies and the
+paired difference with dependence-corrected 95% intervals, claims matched to the intervals, the full
+CV run once on Ibex (node cn504-20, job 53905964) and once locally with byte-identical outputs,
+a two-page NeurIPS 2026 submission-template PDF compiled from the delivered LaTeX with one figure,
+one table and the code that produced every number next to it. Independently reproduced end to end.
+No open findings. Approved for release.

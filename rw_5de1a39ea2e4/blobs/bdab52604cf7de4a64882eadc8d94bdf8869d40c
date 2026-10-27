@@ -1,0 +1,13 @@
+| Function | Rule | Order | 95% interval | Points |
+|---|---|---:|---|---:|
+| exp(x) | trapezoid | 1.999711 | [1.999441, 1.999982] | 12 |
+| exp(x) | Simpson | 3.996888 | [3.994119, 3.999657] | 9 |
+| exp(x) | Gauss-Legendre (4 nodes) | 7.996067 | Undefined (2 points) | 2 |
+| 1/(1+25x²) | trapezoid | 2.288989 | [2.024382, 2.553595] | 12 |
+| 1/(1+25x²) | Simpson | 5.390564 | [4.572093, 6.209035] | 9 |
+| 1/(1+25x²) | Gauss-Legendre (4 nodes) | 8.762926 | [2.928113, 14.597739] | 4 |
+| √x | trapezoid | 1.483294 | [1.477188, 1.489401] | 12 |
+| √x | Simpson | 1.499951 | [1.499900, 1.500001] | 12 |
+| √x | Gauss-Legendre (4 nodes) | 1.499999982 | [1.499999959, 1.500000004] | 12 |
+
+Order is minus the OLS slope of ln(error) on ln(n), using absolute error > 10⁻¹⁵. Intervals use Student t with m−2 degrees of freedom; they describe regression uncertainty, not independent stochastic measurement error. Interval endpoints rounded to six or nine decimals can conceal small deviations from theory; full precision is retained in orders.csv. Simpson uses a midpoint per panel (2n subintervals).

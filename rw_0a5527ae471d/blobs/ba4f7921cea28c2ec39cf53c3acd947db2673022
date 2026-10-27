@@ -1,0 +1,13 @@
+# Reproduce the presentation
+
+From the assembled delivery root, install `numpy==2.4.6 matplotlib==3.11.2` and run:
+
+```sh
+python figures/generate.py --results results --source-commit a899298be19bc4c63649f0014e33e0ae366cdfd0
+```
+
+In a separate checkout, pass the analysis repository's `results/` directory explicitly. `provenance.json` identifies the source revision and SHA-256 hashes of the three inputs. The generator renders the committed results and produces both figure formats, caption, Markdown parameter table, CSV and provenance. It performs no statistical fitting. CI construction is recorded in the provenance; B uses weights `1/(0.5+0.15x)^2` and the reported model-based t intervals estimate a residual scale.
+
+`series_and_residuals.png` is 1750 x 800 pixels (7.0 x 3.2 inches at 250 dpi). `series_and_residuals.svg` retains vector graphics and editable text. Both series share a data axis in panel (a) and a residual axis in panel (b). Shapes and line styles supplement color. Uncertainty is reported numerically in the table; no confidence or prediction bands are shown.
+
+Verification: the generator asserts that both committed OLS residual vectors match observations minus their committed OLS fitted values and that x grids agree. Both PNG and independently rasterized SVG were opened and visually inspected: axes, labels, legend, markers and all observations are visible without clipping. Markdown and CSV table values and caption were opened and checked against results.json. Table display precision is three decimals for slopes and two for intercepts; CSV retains input precision. Visual inspection supports showing B's growing spread but does not replace the analysis owner's formal residual diagnostics.

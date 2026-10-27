@@ -1,0 +1,83 @@
+"""Run the complete specified experiment; first required seed doubles as timing pilot."""
+import csv
+import hashlib
+import json
+import math
+import platform
+import statistics
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+import numpy as np
+import scipy
+from scipy.stats import t
+
+ROOT_SEED = 20261020
+N = 1_000_000
+K = 20
+OUT = Path(__file__).resolve().parents[1] / 'results'
+
+
+def sample(seed):
+    start = time.perf_counter()
+    rng = np.random.Generator(np.random.PCG64(seed))
+    points = rng.random((N, 2))
+    assert points.shape == (N, 2)
+    assert np.all((points >= 0) & (points < 1))
+    inside = int(np.count_nonzero(points[:, 0] ** 2 + points[:, 1] ** 2 <= 1))
+    return {'stream': seed.spawn_key[0], 'root_seed': ROOT_SEED,
+            'spawn_key': str(seed.spawn_key[0]), 'points': N,
+            'inside': inside, 'estimate': 4 * inside / N,
+            'elapsed_seconds': time.perf_counter() - start}
+
+
+def main():
+    OUT.mkdir(exist_ok=True)
+    seeds = np.random.SeedSequence(ROOT_SEED).spawn(K)
+    rows = [sample(seeds[0])]
+    print(f'Timing pilot (included seed 0): {rows[0]["elapsed_seconds"]:.3f} s; '
+          f'remaining sequential estimate {19 * rows[0]["elapsed_seconds"]:.3f} s.', flush=True)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        for row in pool.map(sample, seeds[1:]):
+            rows.append(row)
+            print(f'Stream {row["stream"]}: inside={row["inside"]}, estimate={row["estimate"]}', flush=True)
+    with (OUT / 'per_seed.csv').open('w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    values = [row['estimate'] for row in rows]
+    mean = statistics.mean(values)
+    sd = statistics.stdev(values)
+    se = sd / math.sqrt(K)
+    critical = float(t.ppf(.975, K - 1))
+    half = critical * se
+    theoretical_sd = math.sqrt(math.pi * (4 - math.pi) / N)
+    summary = {
+        'n_seeds': K, 'points_per_seed': N, 'total_points': sum(r['points'] for r in rows),
+        'total_inside': sum(r['inside'] for r in rows), 'mean_estimate': mean,
+        'sample_sd_ddof1': sd, 'standard_error': se, 'confidence_level': .95,
+        'interval_method': 'Student t across 20 seed estimates', 'df': K - 1,
+        't_critical': critical, 'half_width': half, 'ci_lower': mean - half,
+        'ci_upper': mean + half, 'reference_math_pi': math.pi,
+        'signed_error': mean - math.pi, 'absolute_error': abs(mean - math.pi),
+        'theoretical_per_seed_sd': theoretical_sd, 'observed_to_theoretical_sd_ratio': sd / theoretical_sd,
+        'root_seed': ROOT_SEED, 'spawn_keys': [[i] for i in range(K)],
+        'rng': 'NumPy PCG64 initialized by SeedSequence(root_seed).spawn(20)',
+        'python_version': platform.python_version(), 'numpy_version': np.__version__,
+        'scipy_version': scipy.__version__,
+        'source_script_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        'source_counts_sha256': hashlib.sha256((OUT / 'per_seed.csv').read_bytes()).hexdigest(),
+        'input_data': 'Generated uniform points only; no external input data',
+        'pilot_included_in_required_20_seeds': True,
+    }
+    assert len(rows) == K and len({r['stream'] for r in rows}) == K
+    assert summary['total_points'] == 20_000_000
+    assert math.isclose(mean, 4 * summary['total_inside'] / summary['total_points'], abs_tol=1e-15)
+    assert math.isclose(sd, float(np.std(values, ddof=1)), abs_tol=1e-15)
+    (OUT / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
+    print(json.dumps(summary, indent=2), flush=True)
+
+
+if __name__ == '__main__':
+    main()

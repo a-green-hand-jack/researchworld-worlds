@@ -1,0 +1,8 @@
+#1 Research objective
+State:   open
+Author:  ht-admin
+
+A check of how this world answers while it is slow, and of a delivery of many files. This is not research: each step is a command, and its exact output is the result. Keep every output in `checks/`.
+
+1. First, before anything else in your first turn, run exactly this once and keep its output as it is: `for i in $(seq 1 24); do date -u +%T; ht-role status > /dev/null 2> checks/status-err-$i.txt && echo ok || { echo failed; cat checks/status-err-$i.txt; }; sleep 10; done | tee checks/status-loop.txt`. It may take several minutes; let it finish.
+2. Then, in one commit, add `data/many/` with 1,500 small text files (`f0001.txt` to `f1500.txt`, each holding its own number), and deliver it with `checks/`.

@@ -1,0 +1,102 @@
+# Study plan: logistic regression vs k-NN on Iris (OpenML 61)
+
+Owner: `story-repo` (plan). The objective (`story-repo`#1) is the standard; where this plan and the
+objective disagree, the objective wins. The split of delivered paths is in `assignment.json`.
+Recommendations below on *how* are the plan's default; the owner of each part decides its method
+and says so in its own repository if it departs from them.
+
+## 1. Requirements and who delivers each
+
+| # | Requirement (from the objective) | Delivered by | Delivered path |
+|---|---|---|---|
+| R1 | Iris, OpenML dataset id 61, downloaded from OpenML itself | experiment-repo | `report/code/` (download step), provenance in `report/results/` |
+| R2 | Multinomial logistic regression vs k-NN, k chosen by inner cross-validation | experiment-repo | `report/code/` |
+| R3 | 10 repetitions of stratified 5-fold CV (50 outer splits, same splits for both methods) | experiment-repo | `report/code/`, `report/results/` |
+| R4 | Each method's mean accuracy with a 95% interval | experiment-repo (numbers), figtab-repo (table), paper-repo (text) | `report/results/`, `report/tables/`, `report/` |
+| R5 | Paired difference with its 95% interval | experiment-repo, figtab-repo, paper-repo | as R4 |
+| R6 | Full CV once as a CPU job on Ibex; report the node name | experiment-repo | `report/code/` (job script), `report/results/` (job output incl. node name, job id) |
+| R7 | Full CV once locally; report whether the two runs give identical numbers | experiment-repo | `report/code/` (comparison script), `report/results/` |
+| R8 | `report/report.pdf`, at most two pages, NeurIPS 2026 submission template, compiled from LaTeX | paper-repo (venue-repo supplies template + format rules) | `report/` |
+| R9 | One figure | figtab-repo | `report/figures/` |
+| R10 | One table | figtab-repo | `report/tables/` |
+| R11 | The code that produced every number, next to the PDF | experiment-repo (analysis), figtab-repo (figure/table scripts), paper-repo (build) | `report/code/`, `report/figures/`, `report/tables/` |
+| R12 | LaTeX source next to the PDF | paper-repo | `report/` |
+| —  | Context (prior work, conventions) | idea-repo | feeds plan/analysis/paper, no path |
+| —  | Feasibility before costly work (Ibex access, time) | idea-review-repo | feeds plan, no path |
+| —  | Venue format requirements; official NeurIPS 2026 style file | venue-repo | `report/neurips_2026.sty` (rules in venue-repo `venue.md`, checker `tools/check_venue.py`) |
+| —  | Independent review and approval | internal-review-repo | no path |
+
+## 2. Questions the study answers
+
+- Q1. What is the 10x5-fold CV accuracy of multinomial LR on Iris, with a 95% interval?
+- Q2. Same for k-NN with k selected by inner CV inside each outer training fold.
+- Q3. What is the paired accuracy difference (LR - kNN) over the same 50 outer splits, with a 95% interval?
+- Q4. Does the same code give identical numbers on an Ibex CPU node and locally? On which node did the Ibex job run?
+
+No conclusion is presupposed: the difference may be indistinguishable from zero, and the two runs may or may not be identical; both outcomes are reported as measured.
+
+## 3. Analysis design (experiment-repo decides the final method)
+
+- **Data**: fetch dataset 61 from OpenML (API, ARFF or Parquet); record the dataset version,
+  download URL, file checksum, n=150, 4 features, 3 classes (50/50/50). Context (idea-repo
+  `brief.md`): version 1, ARFF md5 `ad484452702105cbf3d30f8deaba39a9`, use the copy as-is.
+  Feasibility (idea-review-repo `feasibility.md`): `local-compute` jobs have no network, so download
+  in the sandbox before starting the local job; Ibex login nodes reach openml.org, so download there
+  for the Ibex run. Each side checks the md5 against the recorded value.
+- **Outer resampling**: repeated stratified 5-fold, 10 repeats, one fixed seed, splits generated once
+  and shared by both methods (pairing). Test fold = 30, train = 120.
+- **LR**: multinomial (softmax) logistic regression with fixed, stated hyperparameters (only k is tuned
+  per the objective); convergence checked.
+- **k-NN**: k selected per outer training fold by inner stratified CV over a stated grid with a fixed
+  tie-break; record the selected k for each of the 50 splits.
+- **Preprocessing** (if any, e.g. standardisation): identical for both methods and fit on the
+  training fold only.
+- **Intervals**: the 50 fold accuracies are not independent (overlapping training sets, the same 150
+  points reused in every repetition), so a naive t-interval over 50 folds is anti-conservative.
+  Plan default: the corrected repeated-CV t-interval (Nadeau & Bengio 2003; Bouckaert & Frank 2004),
+  mean +- t(0.975, 49) * sqrt((1/50 + 30/120) * s^2), for each method's accuracy and for the paired
+  per-split differences; keep the naive interval in the results as a sensitivity comparison. Handle
+  the degenerate case (all differences equal, s = 0) explicitly.
+- **Reproducibility (Q4)**: same code, seed and pinned package versions on both machines (record
+  Python/numpy/scipy/scikit-learn versions, `pip freeze` and thread settings in each run's output;
+  single-thread BLAS; explicit LR solver and tolerance). Ibex job: one CPU SLURM job, submitted as
+  soon as the script is fixed (short time limit, 1-2 CPUs, `ht-resource track`; `debug` partition as
+  fallback since `batch` is ~96% allocated); record job id and node name (`SLURMD_NODENAME`/`hostname`)
+  from inside the job, saved as a results file. If Ibex cannot run the job, R6 stays open with the
+  recorded error; a second local run does not replace it.
+  "Identical" is decided by comparing every per-split accuracy, selected k and summary number
+  exactly (bitwise); if not identical, report the maximum absolute difference.
+- **Number provenance**: every number in the paper should come from files under `report/results/`
+  written by the code. Recommended: the analysis also writes a LaTeX macro file (e.g.
+  `report/results/numbers.tex`) that the paper `\input`s, so no number is typed by hand.
+
+## 4. Figure and table (figtab-repo decides the rendering)
+
+- **Table** supports Q1-Q4: per method, mean accuracy and 95% interval; the paired difference and
+  its interval; the Ibex node name and whether Ibex and local numbers are identical. Generated by a
+  script from `report/results/`.
+- **Figure** supports Q3 (and shows the spread behind Q1-Q2): the 50 paired per-split accuracies or
+  differences, with the mean difference and its 95% interval, so the reader can check the interval
+  against the data. The distribution of selected k may be shown if it fits.
+- Exactly one figure and one table in the paper; sized for a two-page NeurIPS layout.
+
+## 5. Report (paper-repo) and venue (venue-repo)
+
+- Venue-repo delivers the official NeurIPS 2026 style file at `report/neurips_2026.sty` and owns
+  the format rules (venue-repo `venue.md`): submission (anonymous) mode; the two-page cap counts the
+  whole PDF including references; the NeurIPS checklist cannot fit and is omitted.
+- Paper content: question, data and protocol (R1-R3), results with intervals (R4-R5), Ibex node and
+  identical-or-not (R6-R7), one figure, one table, pointer to the code next to the PDF.
+
+## 6. Order of work and handoffs
+
+Scope bounds (feasibility): no further datasets, models or LR tuning; no claims beyond the
+requested intervals; the compute is tiny, so cost is in coordination (~10-20 turns expected).
+
+
+1. Now, in parallel: venue-repo -> paper-repo (style + rules); idea-repo context; idea-review-repo
+   feasibility (main risk: Ibex access and environment); experiment-repo code + local run.
+2. experiment-repo pushes a first local `report/results/` early, with a stable file layout, so
+   figtab-repo and paper-repo can build against it; then the Ibex job and the comparison.
+3. figtab-repo renders figure and table from `report/results/`; paper-repo fills the template.
+4. internal-review-repo reviews the assembled delivery against the objective.

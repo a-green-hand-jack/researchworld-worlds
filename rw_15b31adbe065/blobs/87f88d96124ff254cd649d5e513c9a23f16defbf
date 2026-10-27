@@ -1,0 +1,41 @@
+"""Line-fit figure: run from the assembled delivery; reads ../../results/data.csv and fit.json (experiment-repo), writes ../../report/figures/fit.png."""
+import json
+from pathlib import Path
+import numpy as np
+from scipy import stats
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+root = Path(__file__).resolve().parents[2]
+d = np.loadtxt(root / "results/data.csv", delimiter=",", skiprows=1)
+x, y = d[:, 0], d[:, 1]
+fit = json.load(open(root / "results/fit.json"))
+b, a, t = fit["slope"], fit["intercept"], fit["t_crit_95"]
+s = fit["residual_sd"]
+n = x.size
+xg = np.linspace(x.min(), x.max(), 200)
+yhat = a + b * xg
+half = t * s * np.sqrt(1 / n + (xg - x.mean()) ** 2 / np.sum((x - x.mean()) ** 2))
+
+fig, ax = plt.subplots(figsize=(6.2, 4.0), dpi=200)
+ax.fill_between(xg, yhat - half, yhat + half, color="#4C78A8", alpha=0.25, lw=0,
+                label="95% confidence band of the fitted line")
+ax.plot(xg, yhat, color="#4C78A8", lw=2, label="OLS fit")
+ax.plot(xg, fit["true_intercept"] + fit["true_slope"] * xg, color="#444444", lw=1.2, ls="--",
+        label="generating line (2.5 + 0.8x)")
+ax.scatter(x, y, s=22, color="#E45756", edgecolor="white", linewidth=0.5, zorder=3, label="data (n = 40)")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+ax.spines[["top", "right"]].set_visible(False)
+txt = (f"slope = {b:.3f}  (95% CI {fit['slope_ci95'][0]:.3f}, {fit['slope_ci95'][1]:.3f})\n"
+       f"intercept = {a:.2f}  (95% CI {fit['intercept_ci95'][0]:.2f}, {fit['intercept_ci95'][1]:.2f})\n"
+       f"$R^2$ = {fit['r_squared']:.3f}")
+ax.text(0.98, 0.04, txt, transform=ax.transAxes, ha="right", va="bottom", fontsize=8,
+        bbox=dict(boxstyle="round", fc="white", ec="#BBBBBB"))
+ax.legend(loc="upper left", fontsize=8, frameon=False)
+fig.tight_layout()
+out = root / "report/figures/fit.png"
+out.parent.mkdir(parents=True, exist_ok=True)
+fig.savefig(out)
+print(out)

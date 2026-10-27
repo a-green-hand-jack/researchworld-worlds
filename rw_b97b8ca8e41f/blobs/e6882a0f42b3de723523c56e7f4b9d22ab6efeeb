@@ -1,0 +1,8 @@
+# Rebuild every figure and table from committed results: make -C figures
+PY ?= python3
+GEN := $(wildcard src/fig_*.py) $(wildcard src/tab_*.py)
+
+all:
+	@for g in $(GEN); do echo "== $$g"; $(PY) $$g || exit 1; done
+
+.PHONY: all

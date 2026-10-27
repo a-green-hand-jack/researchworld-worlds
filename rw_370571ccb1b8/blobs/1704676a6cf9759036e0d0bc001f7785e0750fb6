@@ -1,0 +1,25 @@
+"""Task 1: OLS line fit to 40 noisy points, 95% CIs from the t distribution (df = n-2)."""
+import json
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(227)
+x = np.arange(40, dtype=float)
+y = 2.5 + 0.8 * x + rng.normal(0.0, 3.0, size=x.size)
+
+res = stats.linregress(x, y)
+t = stats.t.ppf(0.975, df=x.size - 2)
+out = {
+    'n': int(x.size), 'df': int(x.size - 2), 't_crit_95': float(t),
+    'slope': res.slope, 'slope_se': res.stderr,
+    'slope_ci95': [res.slope - t * res.stderr, res.slope + t * res.stderr],
+    'intercept': res.intercept, 'intercept_se': res.intercept_stderr,
+    'intercept_ci95': [res.intercept - t * res.intercept_stderr, res.intercept + t * res.intercept_stderr],
+    'r_squared': res.rvalue ** 2,
+    'residual_sd': float(np.sqrt(np.sum((y - res.intercept - res.slope * x) ** 2) / (x.size - 2))),
+    'true_slope': 0.8, 'true_intercept': 2.5,
+}
+with open('../results/fit.json', 'w') as f:
+    json.dump(out, f, indent=2)
+np.savetxt('../results/data.csv', np.column_stack([x, y]), delimiter=',', header='x,y', comments='', fmt='%.10g')
+print(json.dumps(out, indent=2))

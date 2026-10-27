@@ -1,0 +1,30 @@
+# Toy check (paper-repo working note, not a study result): survival criterion for an
+# L-layer balanced linear predictor p=a^L, each factor with weight decay lp and lr alpha.
+# Mode ODE: w' = w(p s - p^2 c - lw);  a' = alpha(a^{L-1} w^2 (s - p c) - lp a).
+import numpy as np
+rng=np.random.default_rng(3)
+def ode(s,c,lw,lp,a0,w0,alpha,L,T,dt=0.01):
+    w=w0;a=a0
+    for _ in range(int(T/dt)):
+        p=a**L
+        dw=w*(p*s-p*p*c-lw); da=alpha*(a**(L-1)*w*w*(s-p*c)-lp*a)
+        w+=dt*dw;a+=dt*da
+        if w>10: break
+    return w
+def F(s,c,lw,lp,p0,w0,alpha,L,T):
+    k=L*alpha*lp
+    pmin=max(p0*np.exp(-k*T),1e-300); hi=min(p0,s/c)
+    if hi<=pmin: return -np.inf
+    p=np.geomspace(pmin,hi*(1-1e-9),4000)
+    G=(s*(p0-p)-c*(p0**2-p**2)/2-lw*np.log(p0/p))/k
+    return np.max(np.log(w0)+G-0.5*np.log(lp*p**(2.0/L-1)/(s-p*c)))
+for L in (1,2,3):
+    agree=0;bound=0;surv=0;n=150
+    for _ in range(n):
+        c=10**rng.uniform(-1.5,0.5); s=rng.uniform(0.1,1.0)*c
+        lw=10**rng.uniform(-3,-1.3); lp=lw; p0=10**rng.uniform(-1,0.5)
+        w0=10**rng.uniform(-4,-2); alpha=1.0; T=4000
+        a=ode(s,c,lw,lp,p0**(1.0/L),w0,alpha,L,T)>1e-3
+        f=F(s,c,lw,lp,p0,w0,alpha,L,T)>0 and s*s/c>4*lw
+        agree+=(a==f); bound+=(a==(s*s/c>4*lw)); surv+=a
+    print(f"L={L}: criterion agrees {agree}/{n}; fixed-point bound alone {bound}/{n}; surviving {surv}/{n}")

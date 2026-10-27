@@ -1,0 +1,41 @@
+"""Generate through the world's image resource; network call is explicit via --generate."""
+import argparse, base64, json, os, urllib.request
+from pathlib import Path
+from PIL import Image
+root=Path(__file__).resolve().parents[1]
+p=argparse.ArgumentParser(); p.add_argument('--generate',action='store_true'); a=p.parse_args()
+source=root/'presentation/cover_source.png'
+if a.generate:
+    payload={'model':'gpt-image-2','prompt':(root/'presentation/cover_prompt.txt').read_text(),'size':'1536x1024','quality':'medium'}
+    req=urllib.request.Request(os.environ['OPENAI_BASE_URL'].rstrip('/')+'/images/generations',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY'],'Content-Type':'application/json'})
+    with urllib.request.urlopen(req,timeout=300) as r:
+        raw=r.read()
+        metadata={'status':r.status,'content_type':r.headers.get('Content-Type'),'bytes':len(raw)}
+    (root/'presentation/cover_response_metadata.json').write_text(json.dumps(metadata,indent=2)+'\n')
+    try: response=json.loads(raw)
+    except json.JSONDecodeError:
+        events=[]
+        for line in raw.decode().splitlines():
+            if line.startswith('data:') and line[5:].strip() != '[DONE]':
+                events.append(json.loads(line[5:].strip()))
+        def find_image(obj):
+            if isinstance(obj,dict):
+                if 'b64_json' in obj: return obj['b64_json']
+                for value in obj.values():
+                    found=find_image(value)
+                    if found: return found
+            elif isinstance(obj,list):
+                for value in reversed(obj):
+                    found=find_image(value)
+                    if found: return found
+        encoded=find_image(events)
+        if not encoded:
+            raise RuntimeError('Streaming response contained no image; event types: '+str([e.get('type') for e in events]))
+        response={'data':[{'b64_json':encoded}]}
+    source.write_bytes(base64.b64decode(response['data'][0]['b64_json']))
+    (root/'presentation/cover_request.json').write_text(json.dumps(payload,indent=2)+'\n')
+(root/'report').mkdir(parents=True,exist_ok=True)
+im=Image.open(source).convert('RGB'); w,h=im.size
+crop_h=round(w/6.5); top=(h-crop_h)//2
+im.crop((0,top,w,top+crop_h)).resize((1950,300),Image.Resampling.LANCZOS).save(root/'report/cover.png')
+print('Cover saved, source:', im.size)

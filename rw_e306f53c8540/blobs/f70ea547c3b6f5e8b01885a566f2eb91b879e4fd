@@ -1,0 +1,29 @@
+# Task brief (experiment-repo)
+
+## Objective (quoted, issue #1)
+"Two noisy measurement series may follow the same straight line. Series A: x = 0..39, y = 2.5 + 0.8x + e, e normal sd 3. Series B: same x, y = 2.5 + 0.8x + e, e normal sd 0.5 + 0.15x. Generate both with numpy.random.default_rng(221) (A first, then B), fit each by OLS, and decide for each whether OLS or WLS is the better choice, with reasons backed by a residual check. Report slope and intercept with 95% CIs for both series under the method you chose, one figure of both series with the fitted lines, and a one-page report `report/report.md` with the code that produced every number next to it."
+Also: each position ends its turn with a >=400-word plain-language account.
+
+## Requirements -> deliverables
+1. Data generation (seed 221, A then B) + OLS fits: `code/analysis.py`, `results/data.csv`.
+2. Per-series OLS-vs-WLS decision with residual check: `results/results.json`, `results/resid_{A,B}.csv`.
+3. Slope/intercept with 95% CI under chosen method: `results/results.json` (t-based, n-2 = 38 df).
+4. One figure, both series + fitted lines: `figures/` (figtab-repo).
+5. One-page `report/report.md` with code next to every number (paper-repo).
+
+## Conventions / interpretation
+- Draw order: A noise = rng.normal(0,3,40), then B noise = rng.normal(0, 0.5+0.15x) (one rng, A first).
+- WLS weights = 1/variance; for B the variance function is given by the task (sd = 0.5+0.15x). A feasible-WLS (variance estimated from OLS residuals, no knowledge of design) is a robustness check.
+- Residual checks: Breusch-Pagan, Goldfeld-Quandt (classical: separate OLS per half, F(18,18)), Spearman |resid| vs x, half-sd ratio, Shapiro normality; standardised-residual check after WLS.
+- No related prior work or data files were supplied beyond the issue.
+
+## Findings (measured, see results/results.json)
+- A: BP p=0.19, Spearman p=0.58, GQ p=0.25 (separate fits per half) -> no evidence of heteroscedasticity; truth is homoscedastic, so OLS (WLS with correct weights == OLS). OLS: slope 0.755 [0.679, 0.831], intercept 3.100 [1.386, 4.815].
+- B: BP p=0.0045, Spearman rho=0.44 p=0.0041, GQ p=0.0024 (F=4.05), residual sd doubles first->second half (separate-fit half SD 2.09 -> 4.20; full-fit residuals 2.16 -> 4.24) -> heteroscedastic; WLS (weights 1/(0.5+0.15x)^2) removes the pattern (Spearman p=0.77). WLS: slope 0.847 [0.777, 0.918], intercept 2.609 [1.987, 3.232]. OLS for B would give slope 0.825 [0.734, 0.916], intercept 3.002 [0.945, 5.059] (wider; intercept CI ~3.3x wider than WLS).
+- Monte Carlo (4000 reps, seed 9001): for B, slope CI coverage OLS 93.4% vs WLS 95.1%; mean CI width 0.210 vs 0.144, empirical slope SD 0.057 vs 0.036. For A, OLS = WLS.
+- Both chosen CIs contain the true values (2.5, 0.8). Single-draw estimates differ from truth by chance; that is not evidence for or against a method.
+
+## Caveats / not established
+- A single seed; a residual test on 40 points has limited power (A's non-rejection does not prove homoscedasticity; the decision rests also on the design: constant sd is the simpler model).
+- WLS for B uses the stated variance function (known weights); in practice it would be estimated -- FWLS result is nearly identical (slope 0.849, intercept 2.589).
+- Misspecified B-weights applied to A are shown only as illustration (weighted-residual trend p=0.001).

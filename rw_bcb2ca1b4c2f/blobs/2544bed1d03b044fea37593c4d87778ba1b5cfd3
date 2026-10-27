@@ -1,0 +1,23 @@
+"""Leaf-by-leaf comparison of two E7 score.json files (floats to 1e-9 relative); provenance-free keys only."""
+import sys, json, math
+a, b, out = json.load(open(sys.argv[1])), json.load(open(sys.argv[2])), sys.argv[3]
+diffs = []; n = [0]
+def walk(x, y, p):
+    if isinstance(x, dict) and isinstance(y, dict):
+        for k in sorted(set(x) | set(y)):
+            if k not in x or k not in y:
+                diffs.append((p + "/" + k, "missing in " + ("rescore" if k not in y else "delivered"))); continue
+            walk(x[k], y[k], p + "/" + k)
+    elif isinstance(x, list) and isinstance(y, list) and len(x) == len(y):
+        for i, (u, v) in enumerate(zip(x, y)):
+            walk(u, v, f"{p}[{i}]")
+    else:
+        n[0] += 1
+        if isinstance(x, (int, float)) and isinstance(y, (int, float)) and not isinstance(x, bool):
+            if not (x == y or (math.isfinite(x) and math.isfinite(y) and abs(x - y) <= 1e-9 * max(abs(x), abs(y)))):
+                diffs.append((p, x, y))
+        elif x != y:
+            diffs.append((p, str(x)[:200], str(y)[:200]))
+walk(a, b, "")
+json.dump(dict(leaves=n[0], n_diffs=len(diffs), diffs=diffs[:300]), open(out, "w"), indent=1)
+print(n[0], "leaves;", len(diffs), "differences"); [print(d) for d in diffs[:30]]

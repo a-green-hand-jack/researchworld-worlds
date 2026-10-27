@@ -1,0 +1,52 @@
+"""E6 rung 1a, post hoc (added after the held-out score; plan v2.11 condition P2): the 2610.02344 drive-vs-decay
+criterion (code/baselines/dvd_mu.py) beside the registered race, from each run's inputs only.
+Their criterion linearises the encoder at W = 0 with the predictor held at its initial value (Lemma 3.4), weight
+decay an additive floor. On rung 1a (aligned statistics, P0 = p0 I) two readings exist:
+  mu_e2e     the criterion applied to the end-to-end map W = W_L ... W_1 as if it were one linear layer: every
+             dvd_mu.py variant gives #{p0 c_k - p0^2 s_k > lam}, which is the registered baseline 'window'
+             (checked equal per run below); the encoder's initial factors do not enter.
+  mu_factor  the literal linearisation of the depth-L flow at W_1 = ... = W_L = 0: for L >= 2 every term of the
+             gradient of the loss in W_i carries the other factors, so the Jacobian there is -lam I, no direction is
+             unstable and the predicted count is 0 for every run; for L = 1 it equals mu_e2e.
+Scored on the final count (truth counts[-1]) as the registered score does: MAE, its paired bootstrap CI minus the
+registered race_deep_A1, within-1 share and 'exceed' (share of runs whose true count is above the criterion's: their
+r_tight is an upper bound), per arm and depth.
+usage: e6_mu_baseline.py RUNS.jsonl.gz OUT.json"""
+import os, sys, json, gzip
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import e6_r1 as E
+
+
+def main(runs, outp):
+    rows = [json.loads(l) for l in gzip.open(runs, "rt")]
+    rows = [r for r in rows if not r["cfg"].get("pert") and r["truth"].get("counts")]
+    out = dict(definition=__doc__.split("usage:")[0].strip(), runs=len(rows))
+    eq = 0
+    for r in rows:
+        c, s = E.stats(E.GRIDS[r["cfg"]["grid"]]); p0, lam = r["cfg"]["p0"], r["cfg"]["lam"]
+        r["mu_e2e"] = int((p0 * c - p0 ** 2 * s > lam).sum())
+        r["mu_factor"] = r["mu_e2e"] if r["cfg"]["L"] == 1 else 0
+        eq += r["mu_e2e"] == r["pred"]["window"]
+    out["mu_e2e_equals_window"] = f"{eq}/{len(rows)}"
+    cells = {"control_L1": lambda r: r["cfg"]["L"] == 1}
+    for arm in ("aligned", "generic"):
+        for L in (2, 3):
+            cells[f"{arm}_L{L}"] = (lambda a, l: lambda r: r["cfg"]["arm"] == a and r["cfg"]["L"] == l)(arm, L)
+        cells[f"{arm}_L_ge2"] = (lambda a: lambda r: r["cfg"]["arm"] == a and r["cfg"]["L"] >= 2)(arm)
+    for name, f in cells.items():
+        S = [r for r in rows if f(r)]
+        if not S:
+            continue
+        tru = np.array([r["truth"]["counts"][-1] for r in S]); a1 = np.abs(np.array([r["pred"]["race_deep_A1"] for r in S]) - tru)
+        res = dict(runs=len(S), race_deep_A1_mae=float(a1.mean()))
+        for k in ("mu_e2e", "mu_factor"):
+            pk = np.array([r[k] for r in S]); e = np.abs(pk - tru)
+            res[k] = dict(mae=float(e.mean()), minus_A1_ci=E.boot_ci(e - a1), within1=float((e <= 1).mean()),
+                          exceed=float((tru > pk).mean()))
+        out[name] = res
+    json.dump(out, open(outp, "w"), indent=1)
+
+
+if __name__ == "__main__":
+    main(*sys.argv[1:3])

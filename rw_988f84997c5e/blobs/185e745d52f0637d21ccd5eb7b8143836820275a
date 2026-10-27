@@ -1,0 +1,11 @@
+# Review record
+
+Inspected the assembled delivery (experiment-repo eaa0ddd19e92): time_sorts.py, analyze.py, timings.csv, loglog.png, report.md.
+
+- timings.csv: 50 rows, 2 algorithms x 5 sizes x 5 reps; analyze.py rerun on it reproduces fits.json (insertion 1.867, SE 0.027; merge 0.925, SE 0.024).
+- time_sorts.py: pure-Python sorts, outputs asserted against sorted(), fixed seed.
+- loglog.png opened: raw points, both fit lines, labelled axes, legend with exponents and CIs; matches report.
+- report.md: ~320 words, table + figure, both exponents with SE/CI, method, honest explanation that merge < 1 is an artefact of the shallow 1000->2000 step (expected ~1.1), caveats. Previous finding (length) resolved.
+- Background-job requirement: stated in the report; not independently verifiable beyond that.
+
+Conclusion: delivery meets the objective. Approved.

@@ -1,0 +1,24 @@
+# Analysis (experiment-repo)
+
+Provenance: `code/run.py` -> `results/errors.csv` (float64, `numpy.polynomial.legendre.leggauss(4)` composite on n=2^k equal panels, k=1..12; Simpson = one Simpson rule per panel, i.e. 2n subintervals; trapezoid = n panels; exact values e-1, atan(5)/5, 2/3 in float64), `results/orders.csv|json` (fits and local slopes).
+`code/highprec.py` -> `results/errors_highprec.csv`, `results/orders_highprec.csv`: identical rules in 60-digit arithmetic (closed-form 4-point nodes, checked against leggauss), used only as a diagnostic of what the float64 floor hides.
+
+## Fit protocol
+OLS of ln(error) on ln(n); order = -slope; 95% interval = slope ± t(0.975, m-2)·SE, m = points used. Points used: float64 error > 1e-14 (about 45 eps; exact values and sums carry ~1e-16 round-off, so errors near eps are noise, and zero errors cannot be logged). Sensitivity to the cutoff (1e-13, 1e-15) is in `orders.csv`. The interval is the regression interval; errors are deterministic, so it measures departure from a power law, not sampling noise.
+
+## Primary result (float64, cutoff 1e-14; order [95% CI], m points)
+| function | trapezoid (theory 2) | Simpson (theory 4) | Gauss-4 (theory 8) |
+|---|---|---|---|
+| exp(x) | 1.9997 [1.9994, 2.0000], 12 | 3.9986 [3.9977, 3.9996], 8 | 7.996, **2 points, no interval** |
+| 1/(1+25x²) | 2.289 [2.024, 2.554], 12 | 5.665 [4.692, 6.637], 8 | 8.76 [2.93, 14.60], 4 |
+| sqrt(x) | 1.4833 [1.4772, 1.4894], 12 | 1.5000 [1.4999, 1.5000], 12 | 1.5000 [1.5000, 1.5000], 12 |
+
+## Where and why the order departs
+1. **exp(x), smooth.** Trapezoid and Simpson match 2 and 4 (local slopes 2.00/4.00). The tiny CI offsets from the exact integer (e.g. 3.9986 vs 4) come from the first octave (local slope 3.99 at k=1→2) and, in the high-precision run, are gone for k≥5; in float64 the local slope collapses beyond the fitted range (3.7 at k=9→10, 0.6 afterwards) once the error reaches ~1e-15, which is why the cutoff must exclude those points. Gauss-4 on 4096 panels is at machine precision from k=3 (error 0 or ~2e-16): only k=1,2 exceed 1e-14, so the float64 fit has no interval and says nothing beyond "slope ≈ 8 over one octave". The high-precision run restores the full range: order 7.9994 [7.9988, 8.0000] (k=1–12), 8.0000 for k≥5. So theory holds; the float64 experiment simply cannot see it (saturation, not a failure of the rule).
+2. **1/(1+25x²) (Runge-type).** Analytic on [0,1] but with poles at ±i/5, so the asymptotic regime starts only when the panel width h=1/n is well below ~0.2 (the error constant grows like the derivatives, ~5^p). For small n the local slopes are erratic and larger than theory (trapezoid 3.8, 5.8, then 1.5 at k=3→4; Simpson up to 11; Gauss up to 14.5 and 21) – these are error cancellations in the pre-asymptotic regime, not higher accuracy. The asymptotic slopes 2.00, 4.00, 8.00 are reached from k≈4–5 (high-precision fits for k≥5: 2.0000, 3.9999, 8.0003 [7.9997, 8.0009]). The all-points fits therefore **exceed** theory: 2.29 [2.02, 2.55] (interval excludes 2), Simpson 5.7/4.9 (float/high precision; excludes 4), Gauss 8.8 (float, 4 points, huge interval) /9.9 (high precision, excludes 8). Gauss-4 reaches the floor (~5e-17, equal to the reference's round-off) from k=5. Conclusion: for this integrand the fitted order over k=1..12 is not a valid estimate of the asymptotic order; the late-k slope is.
+3. **sqrt(x).** The integrand has an unbounded derivative at 0 (√x ∉ C¹[0,1]), so the Euler–Maclaurin/Gauss error expansions' smoothness assumptions fail. Only the panel touching 0 matters, with error ∝ h^{3/2} (scaling: ∫₀^h √x dx ~ h^{3/2}); all other panels contribute faster-decaying terms. All three rules therefore converge at order 1.5 regardless of nominal order 2/4/8: Simpson and Gauss-4 give 1.5000 [1.4999–1.5000]; trapezoid gives 1.4833 [1.4772, 1.4894] over all k and 1.4966 for k≥8 – its slope approaches 1.5 from below because of the h^{5/2} term (generalised Euler–Maclaurin, coefficient ζ(−1/2)), and its CI excludes 1.5 only through that pre-asymptotic drift. No rounding floor is hit (smallest error ~1e-7..1e-8), so all 12 points are used. High order buys only a constant: at n=4096 the Gauss-4 error is far smaller than trapezoid's 7.9e-7, but the rate is the same. Remedy (not run): graded meshes or the substitution x=t².
+
+## Caveats
+- The 95% intervals assume a straight line; they are narrow where the power law is exact and are not a measure of agreement with the theoretical integer. The Runge fits violate the linear model (r²≈0.97), so their intervals are indicative only.
+- The cutoff is a choice; with 1e-15 or 1e-13 the Simpson/exp and Simpson/Runge orders move by ≤0.6 (Runge Simpson 5.39–6.01, `orders.csv`), the others do not move.
+- No negative/contradictory finding against theory in the asymptotic regime; the departures are (a) round-off saturation, (b) pre-asymptotic regime for Runge, (c) the endpoint singularity for sqrt.

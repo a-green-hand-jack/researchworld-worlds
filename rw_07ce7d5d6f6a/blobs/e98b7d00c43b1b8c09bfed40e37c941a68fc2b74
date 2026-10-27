@@ -1,0 +1,7 @@
+# Review of paper-repo PR #3
+
+Inspected commit `f7a2d32b6b6ae45c4346ac6c6e492d23edeb683e` (full head `f7a2d32b6b6ae45c4346ac6c6e492d23edeb683e` as provided by the pull request) and the exact files in that tree: `report/report.md` and `data/co2_annmean_mlo.csv`.
+
+The report is one paragraph and gives the required NOAA URL, UTC fetch timestamp, SHA-256, final year/value, and formula. I recomputed the endpoint values from the retained CSV: 2015 = 401.01 ppm and 2025 = 427.35 ppm, so (427.35 - 401.01)/10 = 2.634 ppm/year. The reported SHA-256 `bdd956e8d7e05ebc3c61ac1f8f8c8cea4a505df56724fba5200b4eb1e0089b2b` matches the file. No figure is present, as required.
+
+Conclusion: supported; approve PR #3.

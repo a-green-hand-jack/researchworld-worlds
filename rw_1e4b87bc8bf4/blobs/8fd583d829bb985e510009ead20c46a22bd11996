@@ -1,0 +1,196 @@
+# Study plan: multinomial logistic regression vs k-nearest neighbours on Iris
+
+Owner: `story-repo` (plan). Objective: `story-repo`#1. Who delivers which path: `assignment.json`.
+Inputs used: feasibility assessment `idea-review-repo` `feasibility.md` (4d8e155, request `story-repo`#2);
+venue requirements V1-V7 `venue-repo` `venue-requirements.md` (70f36b7, `story-repo`#4);
+report layout proposal `story-repo`#3; context brief `idea-repo` `brief.md` (2001400, requirement IDs
+D1-P6 there map onto §6 here).
+
+The design below is fixed **before any result is seen**. A change goes through an issue in this
+repository and is recorded in the change log at the end, with its reason. Where this plan and the
+objective disagree, the objective wins.
+
+## 1. Questions
+
+| # | Question | Answered by |
+|---|---|---|
+| Q1 | Mean outer-fold accuracy of multinomial LR and of kNN (k chosen by inner CV), each with a 95% interval, under 10 x stratified 5-fold CV on Iris (OpenML 61) | A1-A3 |
+| Q2 | Paired difference LR - kNN on the same 50 outer folds, with a 95% interval; does the interval cover 0? | A3 |
+| Q3 | Does the full CV run as an Ibex CPU job give numbers identical to the full local run? On which node did it run? | A4 |
+| Q4 (supporting) | Which k does the inner CV select across the 50 outer folds? | A2 |
+
+No conclusion is presumed. The feasibility judgement expects both accuracies near 96-97% and a
+difference interval that covers 0; the paper reports what is measured, whichever way it falls, and
+claims nothing beyond Iris.
+
+## 2. Design (pre-specified)
+
+### D1 Data
+- OpenML dataset id 61 (`iris`), downloaded from OpenML itself (API `www.openml.org/api/v1/json/data/61`
+  for metadata; the data file from openml.org / data.openml.org). Target = OpenML default target
+  attribute (`class`); 4 numeric features in file order, float64.
+- Record: download URL, dataset name and version, OpenML-listed md5 vs computed md5, sha256 of the
+  saved file, shape (150 x 4), class counts (expected 50/50/50). Labels encoded by sorted class name.
+- Reference values from the brief: ARFF `https://openml.org/data/v1/download/61/iris.arff`, OpenML md5
+  `ad484452702105cbf3d30f8deaba39a9`, version 1 (Parquet `https://data.openml.org/datasets/0000/0061/dataset_61.pq`
+  is equally from OpenML). Not `sklearn.datasets.load_iris` (bundled copy).
+- The file is used as is: its 3 exact duplicate rows are kept (they can fall in train and test of a fold)
+  and its two entries that differ from Fisher's published data (UCI rows 35, 38; Bezdek et al. 1999) are not
+  corrected; the paper states both in one sentence or footnote.
+- Downloaded **once**; the same file is staged to Ibex. Every run checks the sha256 at start and
+  aborts on mismatch.
+
+### D2 Outer resampling (shared by both methods: paired design)
+- `RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=20261017)` -> J = 50 outer folds,
+  120 train / 30 test each (10 test cases per class).
+- Both methods are fit and scored on exactly the same split indices; the test indices of every fold
+  are saved.
+
+### D3 Methods (all fitting inside each outer training fold only)
+- **LR**: `Pipeline[StandardScaler, LogisticRegression(penalty="l2", C=1.0, solver="lbfgs", max_iter=10000)]`.
+  Multinomial (softmax) loss: state how the installed scikit-learn version guarantees it (lbfgs is
+  multinomial for >2 classes in recent versions; pass `multi_class="multinomial"` where the version
+  still takes it) and check `coef_.shape == (3, 4)`. Not tuned. A `ConvergenceWarning` is an error.
+- **kNN**: `Pipeline[StandardScaler, KNeighborsClassifier(weights="uniform", p=2, algorithm="brute")]`,
+  k selected by `GridSearchCV` over k in {1, 3, 5, ..., 31} (16 values; 31 < 96, the smallest inner
+  training size), inner `StratifiedKFold(n_splits=5, shuffle=True, random_state=1000 + f)` for outer
+  fold f = 0..49, scoring accuracy, refit on the whole outer training fold.
+  Tie-break: among k with equal mean inner accuracy, the **smallest** k (assert that the chosen k is
+  the smallest maximiser; do not rely on an undocumented default).
+- Scaling: standardisation fit on the training data only, the same for both methods (L2-penalised LR
+  and Euclidean kNN are both scale dependent; Iris shares units, so this is a convention, stated).
+- Determinism: `n_jobs=1`; `OMP_NUM_THREADS=OPENBLAS_NUM_THREADS=MKL_NUM_THREADS=1`.
+
+### D4 Measurements per outer fold
+Accuracy `a_LR,f`, `a_kNN,f` (multiples of 1/30), paired difference `d_f = a_LR,f - a_kNN,f`,
+selected k, and the predicted label of every test case for both methods (plus LR predicted
+probabilities, as a diagnostic for the identity check only).
+
+### D5 Intervals
+- **Primary** (all three quantities: mean a_LR, mean a_kNN, mean d): corrected resampled t
+  (Nadeau & Bengio 2003; corrected repeated k-fold CV, Bouckaert & Frank 2004):
+  mean x over J = 50 folds, s^2 the sample variance (ddof = 1),
+  var = (1/J + n_test/n_train) * s^2 with n_test/n_train = 30/120 = 0.25,
+  95% interval x +/- t(0.975, J-1) * sqrt(var).
+- **Labelled comparisons** (results file always; paper only if space allows, never as the main
+  interval): naive t over the 50 folds (s/sqrt(50), 49 df); t over the 10 repetition means (9 df).
+- Also: counts of folds with d > 0, d = 0, d < 0.
+- If s^2 = 0 the interval is degenerate and reported as such. An accuracy bound above 1 is kept
+  unclipped in the results file; if the paper shows it clipped, it says so.
+- Wording: the paper says whether the difference interval covers 0; it does not convert this into a
+  claim of equivalence or superiority.
+
+### D6 Ibex vs local (the identity question)
+- Same code revision, same data file (sha256 checked), same locked environment on both machines:
+  same Python minor version and exact numpy / scipy / scikit-learn / joblib / threadpoolctl versions
+  (lock file delivered in `report/code/`; Ibex env built with micromamba or venv on the login node,
+  the system Python 3.9 is not used unless the local side matches it), single-threaded as in D3.
+- **Ibex**: one `sbatch` CPU job (partition `batch`, 1-4 CPUs, <= 15 min walltime), job name
+  `$HT_RESOURCE_TAG-cv`, tracked with `ht-resource track`. The job output itself records `hostname`,
+  `$SLURMD_NODENAME`, `$SLURM_JOB_ID`, CPU model, Python/package versions, BLAS info
+  (threadpoolctl), data sha256, code revision. The reported node name is the one written by the job,
+  never the login node.
+- **Local**: the same script, full size, as an `ht-resource run` job (environment and data prepared
+  beforehand: job containers have no network), recording the same metadata.
+- Submit the Ibex job as early as possible; run the local job concurrently (the queue is the only
+  schedule risk).
+- **"Identical" is defined now**, on two levels, both reported:
+  - L1 raw: per-fold predicted labels (50 folds x 2 methods), selected k per fold and per-fold
+    accuracies exactly equal (array equality, plus sha256 of a canonical serialisation of each run's
+    raw results).
+  - L2 reported: every number printed in the paper equal at its printed precision.
+  - Diagnostics, always reported: max |difference| of raw per-fold accuracies, of the summary numbers
+    (full float precision) and of LR predicted probabilities.
+  - The paper says "identical" only if L1 and L2 hold; otherwise "not identical", with what differs
+    and by how much. No rerun or tuning to force agreement; a rerun after an infrastructure failure is
+    allowed and logged.
+- **Primary numbers** in the table and text are the **local** run's; the Ibex run is the replicate.
+  If they differ, the table shows both.
+
+## 3. Analyses and outputs (owner: `experiment-repo`, paths `report/code/`, `report/results/`)
+
+| # | Analysis | Output (names are the owner's choice) |
+|---|---|---|
+| A0 | Data fetch + provenance (D1), environment lock | data file + provenance record, lock file |
+| A1 | Full CV, local (D2-D4) | raw per-fold results incl. predictions, run metadata |
+| A2 | Full CV, Ibex (D6); selected-k distribution (Q4) | raw per-fold results, job log with node name and job id |
+| A3 | Summaries and intervals (D5) from the raw files | summary JSON |
+| A4 | Identity check local vs Ibex (D6, L1/L2 + diagnostics) | identity record |
+| A5 | Every number used in the paper as LaTeX macros (means, bounds, difference, counts, k summary, node name, job id, identity verdict, n, versions, sha256 prefix) | `report/results/numbers.tex` |
+
+Code in `report/code/` must regenerate A0-A5 from the downloaded file with one documented command
+sequence; please publish the results field names early so `figtab-repo` can code against them.
+
+File names fixed by `experiment-repo` (`experiment-repo`#5, commit d0d8d69), final:
+- `report/code/make_all.sh` entry point (run from `report/`); `run_cv.py` (A1/A2); `fetch_data.py` (A0);
+  `run_local.sh` and `ibex_job.sbatch` (launchers); `summarize.py` (A3); `compare_runs.py` (A4);
+  `make_numbers.py` (A5); `sensitivity.py` (robustness checks outside this plan, labelled as such);
+  `requirements.lock`; `README.md`.
+- `report/results/numbers.tex`, `README.md`, `summary.json`, `data_provenance.json`, and
+  `identity.json` (with the Ibex replicate).
+
+## 4. Figure and table (owner: `figtab-repo`, path `report/figures/`)
+
+Exactly one figure and one table (venue V5), rendered by a script in `report/figures/` from the
+files in `report/results/`, never from typed numbers.
+
+- **Table** must show: rows LR, kNN, LR - kNN; mean accuracy and primary 95% interval for each; the
+  interval method named in the caption (corrected resampled t, J = 50); which run the numbers come
+  from and the identity verdict (or a pointer to the text). A labelled naive-interval column only if
+  it fits.
+- **Figure** must let the reader check Q1-Q2: the fold-level spread of each method's accuracy with
+  its mean and 95% interval, and the paired differences d_f with their mean and 95% interval against
+  a zero line. Accuracies are discrete (1/30 steps): overlap must stay visible (counts, jitter or
+  per-repetition means). Single-column, compact (2-page cap). Selected k may appear here, in the
+  table or in the text, as space allows.
+
+## 5. Report (owner: `paper-repo`, path `report/`; format: `venue-repo`)
+
+`report/report.pdf` from `report/report.tex` (pdflatex, TeX Live 2026), NeurIPS 2026 template with
+the default anonymous option and the unmodified `neurips_2026.sty`, **at most two pages for the whole
+PDF**, no checklist (venue V1-V7). Content: one-paragraph motivation; data provenance (OpenML 61,
+sha256); design D2-D5 in a few sentences; results with the table and figure; reproducibility
+(Ibex node name, job id, identity verdict at L1/L2, environment); limitations (one small dataset,
+approximate intervals for dependent CV folds with possible undercoverage (Bates, Hastie & Tibshirani
+2023), untuned LR, duplicates / UCI-vs-Fisher entries kept); references as verified in the `idea-repo`
+brief §4 (Fisher 1936; Cover & Hart 1967; OpenML, Vanschoren et al. 2014; scikit-learn, Pedregosa et
+al. 2011; Nadeau & Bengio 2003; Bouckaert & Frank 2004; Varma & Simon 2006 for nested selection;
+Dietterich 1998; Bates et al. 2023; Bezdek et al. 1999), as space allows. All numbers via `\input{results/numbers.tex}` and the
+figtab files; `report/README.md` maps each number to the script and result file that produced it.
+
+## 6. Requirement -> owner
+
+| Requirement (objective) | Owner |
+|---|---|
+| Iris from OpenML id 61, downloaded from OpenML; provenance | experiment-repo |
+| Environment lock, identical on both machines | experiment-repo |
+| Multinomial LR vs kNN with k by inner CV; 10 x stratified 5-fold CV | experiment-repo |
+| Mean accuracy with 95% interval per method; paired difference with 95% interval (computed) | experiment-repo |
+| Full CV as Ibex CPU job; node name | experiment-repo |
+| Full CV locally | experiment-repo |
+| Whether the two runs give identical numbers | experiment-repo (check), paper-repo (statement) |
+| One figure, one table | figtab-repo |
+| `report/report.pdf`, <= 2 pages, NeurIPS 2026 template, compiled from LaTeX, LaTeX source next to the PDF | paper-repo (format requirements and checks: venue-repo) |
+| Code that produced every number, next to the PDF | experiment-repo (`report/code/`), figtab-repo (scripts in `report/figures/`), paper-repo (number map in `report/README.md`) |
+| Context and prior-work conventions, citations | idea-repo |
+| Feasibility | idea-review-repo |
+| Independent review of the delivery | internal-review-repo |
+| Plan and work assignment | story-repo |
+
+## 7. Work order
+
+1. experiment-repo: lock environment, fetch data -> stage to Ibex -> **submit Ibex job** and start
+   the local job at once.
+2. experiment-repo: A3-A5 from the local run as soon as it ends; A4 and the final macros when the
+   Ibex job ends.
+3. figtab-repo: build figure and table against the published field names / first local results;
+   final render from the final results.
+4. paper-repo: draft now against the layout in `assignment.json`; final text once A5 and the figtab
+   files are in.
+5. internal-review-repo: review of the assembled delivery.
+
+## Change log
+- 2026-10-17: first version.
+- 2026-10-17: folded in the `idea-repo` brief (data reference URL/md5, duplicates and UCI-vs-Fisher
+  entries kept and stated, verified references; OpenML citation year 2014). No design change.
+- 2026-10-17: recorded the delivered file names of `report/code/` and `report/results/` (§3). No design change.

@@ -1,0 +1,57 @@
+{
+  "figure": "error_scaling.png",
+  "generated_by": "report/figures/make_figure.py",
+  "inputs": {
+    "/hutian/experiment-repo/results/summary.csv": {
+      "sha256": "e560e35e35e346a1c7a810ff809e7729ca03adfaecc101a1264dbae98edfa3db"
+    },
+    "/hutian/experiment-repo/results/fit.json": {
+      "sha256": "ce525738f434e814be3364d64648932f9ab2cbaed4b8afd8a1ae602bbf846dce"
+    }
+  },
+  "source_commit": "07018b8348f91f03e12c2970ae98519ca1217fd8",
+  "rendered_numbers": {
+    "N": [
+      1000,
+      10000,
+      100000,
+      1000000,
+      10000000
+    ],
+    "mean_absolute_error": [
+      0.0418870449666731,
+      0.0144062938564082,
+      0.0043100530717958,
+      0.0013987999999999,
+      0.0004194556076938
+    ],
+    "slope": -0.5011584081803624,
+    "intercept": 0.3281259480421346,
+    "slope_ci95": [
+      -0.516159397954737,
+      -0.4861054235114702
+    ],
+    "regression_t_ci95": [
+      -0.5191719876462288,
+      -0.48314482871449593
+    ],
+    "asymptotic_mae_coefficient": 1.3102727551240672,
+    "bootstrap_replicates": 50000
+  },
+  "sem_used": true,
+  "versions": {
+    "python": "3.11.2",
+    "numpy": "2.4.6",
+    "matplotlib": "3.11.2",
+    "pandas": "3.0.6"
+  },
+  "outputs": {
+    "error_scaling.png": {
+      "sha256": "1850e5f332bdf71e8cd9f65ab39783aed84b388246645fd2c41e9255b4ec8607",
+      "pixels": "1600x960"
+    },
+    "error_scaling.svg": {
+      "sha256": "9035110fb24490b325e0c462f26eb0ab05819035ad9a714ce4c4d28b203f53be"
+    }
+  }
+}

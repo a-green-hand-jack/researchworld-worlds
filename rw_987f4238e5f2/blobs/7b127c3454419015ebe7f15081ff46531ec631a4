@@ -1,0 +1,17 @@
+"""fit_table.md from experiment-repo results/fit.json. Rounding: each row to the decimal place of
+the 2nd significant figure of the 95% interval half-width (values, bounds rounded alike).
+Usage: make_fit_table.py fit.json out.md"""
+import sys, json, math
+f = json.load(open(sys.argv[1]))["params"]
+rows = [("background_rate", "Background rate", "photons s⁻¹"), ("burst_counts", "Burst total photons", "photons"),
+        ("centre", "Burst centre", "s"), ("width", "Burst width (Gaussian σ)", "s")]
+out = ["| Parameter | MLE | 95% interval | Unit | Simulated value |", "|---|---:|---:|---|---:|"]
+for k, name, unit in rows:
+    p = f[k]; lo, hi = p["ci95"]; hw = (hi - lo) / 2
+    d = 1 - int(math.floor(math.log10(hw)))          # decimals keeping 2 sig figs of half-width
+    fmt = (lambda x: f"{round(x, d):,.0f}") if d <= 0 else (lambda x: f"{x:,.{d}f}")
+    out.append(f"| {name} | {fmt(p['value'])} | {fmt(lo)} – {fmt(hi)} | {unit} | {p['generating_value']:,.0f} |")
+out.append("")
+out.append("Poisson maximum likelihood on 1200 one-second bins; 95% intervals are one-parameter profile-likelihood "
+           "intervals (other parameters re-optimised). Values from experiment-repo `results/fit.json`.")
+open(sys.argv[2], "w").write("\n".join(out) + "\n"); print("\n".join(out))

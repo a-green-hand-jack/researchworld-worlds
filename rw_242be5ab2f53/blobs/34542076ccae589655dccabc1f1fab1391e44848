@@ -1,0 +1,13 @@
+| Function | Rule | Order | 95% interval | Points (k) |
+|---|---|---:|---|---|
+| exp(x) | Trap. | 1.9997 | [1.9994, 2.0000] | 12 (1-12) |
+| exp(x) | Simp. | 3.9969 | [3.9941, 3.9997] | 9 (1-9) |
+| exp(x) | GL4 | 7.9961 | Unavailable | 2 (1-2) |
+| 1/(1+25x²) | Trap. | 2.2890 | [2.0244, 2.5536] | 12 (1-12) |
+| 1/(1+25x²) | Simp. | 5.3906 | [4.5721, 6.2090] | 9 (1-9) |
+| 1/(1+25x²) | GL4 | 8.7629 | [2.9281, 14.5977] | 4 (1-4) |
+| √x | Trap. | 1.4833 | [1.4772, 1.4894] | 12 (1-12) |
+| √x | Simp. | 1.5000 | [1.4999, 1.5000] | 12 (1-12) |
+| √x | GL4 | 1.5000 | [1.5000, 1.5000] | 12 (1-12) |
+
+Orders are minus the fitted log–log slopes, using errors > 10ε (ε = 2⁻⁵²). Intervals are nominal OLS 95% t-intervals; they describe fit residuals, not stochastic integration uncertainty. Two points cannot provide an interval. Bounds are rounded to four decimals; equal displayed endpoints do not imply zero uncertainty. The rational-function fits mix convergence regimes, so their intervals are descriptive rather than reliable precision statements.

@@ -1,0 +1,23 @@
+% Stand-in for the (unsupplied) official icml2025.sty: two-column, 10pt Times, ICML page geometry.
+\NeedsTeXFormat{LaTeX2e}
+\makeatletter
+\ProvidesPackage{icml2025}
+\DeclareOption{accepted}{}
+\ProcessOptions\relax
+\RequirePackage{times}
+\RequirePackage{xcolor}
+\RequirePackage[round]{natbib}
+\RequirePackage[letterpaper,top=1in,bottom=1in,left=0.75in,right=0.75in,columnsep=0.25in,includehead=false]{geometry}
+\setlength{\parindent}{0pt}\setlength{\parskip}{0pt}
+\renewcommand{\section}{\@startsection{section}{1}{0pt}{-0.17in}{0.08in}{\normalsize\bfseries}}
+\renewcommand{\subsection}{\@startsection{subsection}{2}{0pt}{-0.12in}{0.06in}{\normalsize\bfseries}}
+\newcommand{\icmltitlerunning}[1]{\gdef\@icmlrun{#1}}
+\newcommand{\icmltitle}[1]{\begin{center}{\Large\bfseries #1}\end{center}\vskip 0.1in}
+\newenvironment{icmlauthorlist}{\begin{center}}{\end{center}}
+\newcommand{\icmlauthor}[2]{\textbf{#1}}
+\newcommand{\icmlaffiliation}[2]{}
+\newcommand{\icmlcorrespondingauthor}[2]{}
+\def\abstractname{}\renewenvironment{abstract}{\begin{center}{\bfseries Abstract}\end{center}\begin{quote}\small}{\end{quote}}
+\pagestyle{plain}
+
+\makeatother

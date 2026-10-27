@@ -1,0 +1,28 @@
+# Brief
+
+## Objective (quoted)
+> How fast do three quadrature rules converge, and does the observed order match theory?
+>
+> Integrate three functions on [0, 1]: exp(x), 1/(1 + 25 x^2) and sqrt(x), whose exact integrals are e - 1, atan(5)/5 and 2/3. For each function use the composite trapezoid rule, the composite Simpson rule and Gauss-Legendre quadrature (`numpy.polynomial.legendre.leggauss`, composite over equal panels with 4 nodes each), with n = 2^k panels for k = 1, ..., 12, and record the absolute error.
+>
+> For each function and rule, fit log(error) against log(n) by least squares over the points above machine precision and give the convergence order with a 95% interval; say where and why the observed order departs from the theoretical 2, 4 and 8.
+>
+> Report: `report/report.md`, at most two pages: a table of the fitted orders with their intervals, one log-log figure per function with the three rules, a short discussion of sqrt(x), and at its top a small cover illustration `report/cover.png` made with the world's image generation.
+
+## Requirements / deliverables
+1. Errors for 3 functions x 3 rules x k=1..12 (n=2^k panels); Gauss-Legendre = composite, 4 nodes/panel (theory order 2*4 = 8).
+2. Least-squares fit of log(err) vs log(n), only points above machine precision; slope = order, with 95% CI (t-interval, df = m-2).
+3. Table of fitted orders with intervals (9 rows/cells).
+4. Three log-log figures (one per function, 3 rules each).
+5. Explain departures from theoretical 2/4/8: sqrt(x) endpoint singularity (f' unbounded at 0; expected orders ~1.5 for all rules: error ~ h^{3/2}); 1/(1+25x^2) (Runge-type, poles at +-i/5: pre-asymptotic regime for coarse n, so fitted order across the range differs/ is steeper then saturates; GL hits machine precision early so few points left); exp(x) GL reaches machine precision after a few k, leaving 1-3 points -> wide CI.
+6. Short discussion of sqrt(x).
+7. `report/report.md` <= 2 pages, with `report/cover.png` at top made with image generation.
+
+## Facts to settle / caveats
+- "above machine precision" threshold: I use err > 10 * eps (eps=2.2e-16, i.e. ~2.2e-15) unless stated; sensitivity check at other thresholds in results/. Rounding noise otherwise corrupts slope.
+- Simpson composite over n panels: each panel is one Simpson (3-point) application (h=1/n); state convention. Trapezoid: n panels, n+1 points.
+- Fit with <3 points has no CI; report as n/a and say so (not fabricate).
+- image-generation is served only on openai-responses workers; my worker (anthropic) cannot use it. Whoever's worker can must make cover.png; if none can, disclose an alternative honestly.
+
+## Not established
+- Which worker can call image generation.

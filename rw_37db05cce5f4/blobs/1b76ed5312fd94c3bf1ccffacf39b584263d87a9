@@ -1,0 +1,26 @@
+{
+  "source": "DBLP",
+  "url": "https://dblp.org/",
+  "start_utc": "2026-10-19T21:30:15.760262+00:00",
+  "end_utc": "2026-10-19T21:30:16.246138+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/dblp.headers",
+    "-o",
+    "/tmp/tmpl4f40k7h/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://dblp.org/"
+  ],
+  "exit": 0,
+  "curl_output": "202\ntext/html; charset=utf-8\n",
+  "stderr": "",
+  "first200": "<!doctype html><html lang=\"en\"><head><title>Making sure you&#39;re not a bot!</title><link rel=\"stylesheet\" href=\"/.within.website/x/xess/xess.min.css?cachebuster=v1.27.0\"><meta name=\"viewport\" conten",
+  "body_bytes": 7442
+}

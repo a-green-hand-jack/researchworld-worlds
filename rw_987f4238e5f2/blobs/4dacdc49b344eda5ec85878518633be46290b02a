@@ -1,0 +1,18 @@
+# Photon burst in simulated arrival times
+
+**Data, release and integrity.** 30,000,000 photon arrival times from `numpy.random.default_rng(205)` — 24,000,000 uniform on [0, 1200) s, 6,000,000 from N(600 s, (30 s)²) — concatenated, sorted, written raw little-endian float32; the 120,000,000-byte `photons.f32` (never in git) is published with `photons.sha256`, `preview.png`, `burst.mp4` and `explorer.html` as release **`photons-v1`** of world/paper-repo. SHA-256 as downloaded from the release: `af343d7a740bf6a1631ab06e63eeccb3cdff10e5ecf831e5447e5f6ad362edae` — **match with `photons.sha256`: yes.** Fit and figures come from non-generator positions, each from its own release download re-hashing this digest (experiment-repo `results/download_provenance.json`; figtab likewise); the generator's round-trip was byte-identical.
+
+**Fit** — Poisson maximum likelihood on the 1200 one-second bins of [0, 1200] s, expected count per bin b·Δt + A·[Φ((t_r−c)/σ) − Φ((t_l−c)/σ)]; 95% intervals: one-parameter profile likelihood (others re-optimised); experiment-repo `results/fit.json`:
+
+| Parameter | MLE | 95% interval | Unit | Simulated |
+|---|---:|---:|---|---:|
+| Background rate b | 20,003.1 | 19,994.4 – 20,011.7 | photons s⁻¹ | 20,000 |
+| Burst total photons A | 5,996,300 | 5,990,100 – 6,002,500 | photons | 6,000,000 |
+| Burst centre c | 599.971 | 599.937 – 600.005 | s | 600 |
+| Burst width σ | 29.970 | 29.940 – 30.001 | s | 30 |
+
+Diagnostics: deviance 1214.3/1196 d.o.f. (p = 0.35); Pearson χ² 1214.6; multistart agreement, final scaled score < 4×10⁻⁸; sensitivity refits (least squares, midpoints, endpoint exclusion) agree within the intervals, the 1200.0 s quantized photon being retained (right-inclusive last bin); intervals are model-based (fixed simulator totals), not exact repeated-sampling coverage.
+
+<img src="figures/lightcurve_fit.png" alt="Light curve in 1 s bins with the fitted constant-background-plus-Gaussian model" style="width:70%">
+
+*Figure 1 (figtab-repo).* `photons.f32` in 1200 one-second bins (photons s⁻¹) with the Poisson-ML fit and fitted background (dashed); lower panel: Pearson residuals, ±2 guides (χ²/dof = 1214.6/1196). Fit values: experiment-repo `results/fit.json`.

@@ -1,0 +1,57 @@
+# report/: the paper
+
+`report.pdf` is built with pdflatex from `report.tex`, `references.bib` and `neurips_2026.sty` (the official
+NeurIPS 2026 style file, unmodified, from
+https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip, identical to venue-repo
+`template/`). It uses the default anonymous submission mode, and the whole PDF is at most 2 pages, references
+included. The NeurIPS checklist is omitted, as venue-repo decided, and the paper says so.
+
+## Build
+
+From this directory, once the delivery is assembled:
+
+```
+latexmk -pdf report.tex      # TeX Live 2026: pdflatex + bibtex (plainnat)
+```
+
+The inputs come from the other positions' delivered paths:
+`results/numbers.tex` (every number), `tables/table_results.tex` (the table) and `figures/fig_accuracy.pdf` (the figure).
+
+## Layout of the delivery
+
+| path | owner | content |
+|---|---|---|
+| `report/report.pdf`, `report.tex`, `references.bib`, `neurips_2026.sty`, `README.md` | paper-repo | the paper and its source |
+| `report/code/` | experiment-repo | the code that produced every number (see `code/README.md` for the run order) |
+| `report/results/` | experiment-repo | the Ibex and local run outputs, `summary.json`, `reproducibility.json`, `numbers.tex` |
+| `report/figures/` | figtab-repo | the figure and its script |
+| `report/tables/` | figtab-repo | the table and its script |
+
+## Where each number comes from
+
+No number in `report.tex` is typed by hand. Each is a macro from `results/numbers.tex`, which
+`code/summarize.py` writes from `results/run_local/folds.csv` (identical to `results/run_ibex/folds.csv`),
+`results/reproducibility.json` (from `code/compare_runs.py`) and `code/data/`.
+
+| in the paper | macros | source |
+|---|---|---|
+| mean accuracy and corrected 95% interval per method | `\accLRMean/Lo/Hi`, `\accKNNMean/Lo/Hi` | `summary.json` main.lr / main.knn |
+| paired difference LR−kNN, interval, p | `\accDiffMean/Lo/Hi`, `\diffCorrectedP` | `summary.json` main.diff_lr_minus_knn |
+| naive interval of the difference (contrast) | `\accDiffNaiveLo/Hi` | same, `naive` |
+| folds where LR is better / tied / worse | `\foldsLRBetter`, `\foldsTie`, `\foldsKNNBetter` | same |
+| selected k: range, median, mode; the grid | `\kMin`, `\kMax`, `\kMedian`, `\kMode`, `\kGridMin/Max` | `summary.json` k_chosen |
+| design: folds, repetitions, n_train/n_test, seed, t critical value | `\nFolds`, `\nRep`, `\nSplits`, `\nTrain`, `\nTest`, `\seed`, `\tCrit` | `code/cv_compare.py`, `summary.json` |
+| data md5, number of duplicate rows | `\dataMDFive`, `\nDuplicateRows` | `code/data/iris.arff`, `code/data/openml_61_meta.json` |
+| Ibex job, partition, node; identical yes/no; differing folds and predictions | `\ibexJobId`, `\ibexPartition`, `\ibexNode`, `\runsDifferingFolds`, `\runsDifferingPredictions`, `\nPredictionsCompared` | `results/reproducibility.json`, `results/run_ibex/slurm_53912439.log` |
+| software versions | `\verNumpy`, `\verScipy`, `\verSklearn`, `\verPython`, `\verPythonIbex` | `results/run_*/run.json` |
+
+The table's values (`tables/table_results.tex`) and the figure are computed by figtab-repo's scripts from
+`results/folds_long.csv`; they agree with the macros above (checked at build time).
+
+## Provenance of this build of report.pdf
+
+Built with `latexmk -pdf` (TeX Live 2026) from the delivery that `ht-role delivery` assembled, with
+experiment-repo at `277d7dcc7b88c7934a192415bdb7e6bb1af7cc56` (code, results, `results/numbers.tex`) and
+figtab-repo at `a473f10ae69687d2760ca34696220de768912432` (`figures/fig_accuracy.pdf`, `tables/table_results.tex`).
+Checks on the PDF: 2 pages, US letter, all fonts embedded (Type 1 for the text, Type 0 TrueType from the figure; no
+Type 3), and no undefined references or citations and no overfull boxes in the log.

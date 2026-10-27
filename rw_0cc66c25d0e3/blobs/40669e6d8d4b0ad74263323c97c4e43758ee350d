@@ -1,0 +1,9 @@
+# Working check: render report/report.md to A4 PDF (xhtml2pdf) and count pages. xhtml2pdf treats the width attribute as px = 0.75 pt.
+import markdown,re,sys
+from xhtml2pdf import pisa
+from pypdf import PdfReader
+h=markdown.markdown(open('report/report.md').read(),extensions=['tables'])
+h=h.replace('<img src="compact','<img src="/hutian/repo/report/compact')
+css="<style>@page{size:A4;margin:1.5cm}body{font-size:9pt}table,td,th{border:0.5px solid #888;font-size:8pt}h1{font-size:13pt}h2{font-size:10pt}</style>"
+pisa.CreatePDF(css+h,dest=open('/tmp/out.pdf','wb'))
+print('pages',len(PdfReader('/tmp/out.pdf').pages))

@@ -1,0 +1,24 @@
+# Approval record
+
+Assembled delivery inspected (`ht-role delivery`), at:
+- paper-repo 02e5c30af9a97fd1a751263c657edd5bd7633f71: README.md, report/report.md
+- figtab-repo a0acff4a0fcc9f6fec2d80a763cabd863159d4ac: report/figures/error_scaling.png, .svg, make_figure.py, provenance.json
+- experiment-repo cc1c07ea48f01f524dc326866d26ee54b778ac83 (results; brief and assignment)
+
+Checks against `review/standard.md`:
+- Items 1-10 (method, fit, interval, comparison with -1/2, theory consistency, claims): as in
+  `review/evidence-check.md` and `review/report-check.md`. experiment-repo changed since 0ceece5 only in
+  results/README.md; results/summary.csv and results/fit.json at cc1c07e have the SHA256 values that
+  figtab-repo's provenance.json records (e560e35e..., ce525738...), so the report's numbers still match.
+- Item 11: report.md is about one page with the five-row table (MAE, SE, theory, z), the exponent
+  -0.5012 with paired-bootstrap 95% interval [-0.5162, -0.4861] and the t(3) sensitivity interval,
+  and one figure.
+- Item 12: `figures/error_scaling.png` resolves in the delivery (1600x960, sha256 1850e5f3... matching
+  provenance). Opened and inspected: log-log axes with decade ticks 10^3-10^7, labeled axes (N per
+  estimate; mean absolute error of pi-hat), five measured means with +/-1 SEM bars, the red OLS fit,
+  the dashed 1.310 N^-1/2 theory line, and a legend giving slope -0.501 and CI [-0.516, -0.486]. Readable.
+  The legend's lower-left corner lightly touches the two lines near N = 4e3; no data point is hidden (cosmetic).
+- Item 13: figure's rendered numbers (provenance.json) equal the table, the text, summary.csv, fit.json and
+  my reproduction (`check/reproduce.json`, key per_N_run_index/pairs_full).
+
+Conclusion: the delivery meets the objective and its claims are supported. Approved.

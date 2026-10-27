@@ -1,0 +1,20 @@
+# Study plan: Monte Carlo pi error scaling (single consolidated protocol)
+
+Question: does the mean absolute error (MAE) of the hit-or-miss estimator scale as N^(-1/2), i.e. is -1/2 inside the 95% interval of the fitted log-log exponent?
+
+## Protocol (experiment-repo implements)
+- N in {1e3,1e4,1e5,1e6,1e7}; 200 runs each, run index i = 0..199, seed 2026+i, the same seeds for every N.
+- Run i: rng = numpy.random.default_rng(2026+i); one point stream per run (draw order rng.random((n,2)) chunked so the stream is identical to one (1e7,2) draw); the estimate for each N uses the first N points of that stream (nested prefixes, equivalent to re-seeding per N). Runs are independent; the five N within a run are dependent.
+- Inside = x^2+y^2 <= 1; pi_hat = 4*inside/N; error = |pi_hat - math.pi|; MAE(N) = mean over runs. Memory: chunked generation, never all runs at once.
+- Fit: unweighted OLS of ln(MAE) on ln(N), 5 points. Point estimate = OLS slope.
+
+## Interval (single priority, for analysis and report owners)
+- Headline: OLS slope +/- t(0.975, df=3)*SE. The objective asks for the least-squares exponent with a 95% interval; this is the conventional reading.
+- Dependence-aware check, reported side by side in fit.json and the report: paired bootstrap over the 200 run vectors (resample runs jointly across the five N, recompute MAE and refit, percentile 95%).
+- The report states both intervals, whether -1/2 lies inside each, and (slope+0.5)/SE. If they disagree on the verdict, say so; no claim stronger than "consistent with".
+
+## Deliverables and owners
+- experiment-repo: analysis/ (code, per-run errors or counts, analysis/mae_table.csv, analysis/fit.json with versions and inputs).
+- figtab-repo: report/figures/mae_loglog.png (exactly one figure, generator beside it) and report/tables/table_mae.md.
+- idea-review-repo: feasibility.md (delivered).
+- paper-repo: report/report.md, one page; numbers copied from analysis/, figure embedded as figures/mae_loglog.png.

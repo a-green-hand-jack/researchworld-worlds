@@ -1,0 +1,82 @@
+"""Independent check of experiment-repo A2 (e4_a2.py registration e60d1e8, score 069feb2) from the delivered runs.
+Usage: python3 checks/e4_a2_check.py <experiment-repo checkout at 069feb2> > checks/e4_a2_check.json
+Reads results/e4/a2/a2_runs.jsonl.gz and the statistics from code/e4_a2.py; no re-simulation."""
+import sys, os, json, gzip
+from collections import Counter
+import numpy as np
+root = sys.argv[1]
+sys.path.insert(0, os.path.join(root, "code"))
+import e4_a2 as M
+A = M.A; THR = A.THR
+runs = [json.loads(l) for l in gzip.open(os.path.join(root, "results/e4/a2/a2_runs.jsonl.gz"), "rt")]
+out = {}
+rows = []
+for r in runs:
+    c, s = A.stats(r["stats"]); cs = c / s; al = np.array(r["alive"], bool); cnt = al.sum(1)
+    conv = bool(r["finite"] and (cnt == cnt[-1]).all())
+    rows.append(dict(id=r["id"], stats=r["stats"], lam=r["lam"], eta=r["eta"], b2=r["b2"], a0=r["a0"], conv=conv,
+                     true=int(cnt[-1]), model=r["pred_rank"]["model"], closed=int((cs > THR).sum()),
+                     closed_scope=int(((cs > THR) & (r["lam"] * cs < 1)).sum()), static=r["pred_rank"]["static_bound"],
+                     race=r["pred_rank"]["delivered_race"], gd=r["gd_rank"], floor="floor_alive" in r))
+conv = [x for x in rows if x["conv"]]
+mae = lambda k, S: float(np.mean([abs(x[k] - x["true"]) for x in S]))
+w1 = lambda k, S: float(np.mean([abs(x[k] - x["true"]) <= 1 for x in S]))
+out["rescore"] = dict(runs=len(rows), converged=len(conv), model_mae_conv=mae("model", conv), model_within1_conv=w1("model", conv),
+                      model_within1_strict=sum(abs(x["model"] - x["true"]) <= 1 for x in conv) / len(rows))
+fl = [x for x in rows if x["floor"]]
+out["floor_subset"] = dict(runs=len(fl), **{k: sorted({x[k] for x in fl}) for k in ("stats", "lam", "a0", "eta", "b2")},
+                           grid={k: sorted({x[k] for x in rows}) for k in ("a0", "eta", "b2")},
+                           nonconverged_in_floor_cells=sum((not x["conv"]) for x in rows if x["eta"] == 0.013 and x["b2"] == 0.996 and x["a0"] == 6e-4),
+                           nonconverged_outside=sum((not x["conv"]) for x in rows if not (x["eta"] == 0.013 and x["b2"] == 0.996 and x["a0"] == 6e-4)))
+d = [(x["id"], x["closed"], x["model"], x["true"]) for x in conv if x["closed"] != x["model"]]
+out["closed_form_count"] = dict(what="#{c/s > thr} (A-iv' settled law alone, lambda-independent)", mae_conv=mae("closed", conv),
+                                within1_conv=w1("closed", conv), equals_model_conv=float(np.mean([x["closed"] == x["model"] for x in conv])),
+                                scope_lam_cs_lt_1_binding=any(x["closed_scope"] != x["closed"] for x in rows),
+                                differs_from_model_conv=d)
+lam_split = {}
+for st in ("a2a", "a2b"):
+    for lam in sorted({x["lam"] for x in rows}):
+        S = [x for x in rows if x["stats"] == st and x["lam"] == lam]; C = [x for x in S if x["conv"]]
+        lam_split[f"{st} lam={lam}"] = dict(runs=len(S), converged=len(C), closed=S[0]["closed"], static_bound=S[0]["static"],
+                                           truth_at_Th_mean=float(np.mean([x["true"] for x in S])), truth_conv_mean=float(np.mean([x["true"] for x in C])) if C else None,
+                                           gd_mean=float(np.mean([x["gd"] for x in S])), race_mean=float(np.mean([x["race"] for x in S])))
+out["lam_split"] = lam_split
+out["gd_vs_race"] = dict(race_equals_gd=float(np.mean([x["race"] == x["gd"] for x in rows])), race_mae_on_gd=float(np.mean([abs(x["race"] - x["gd"]) for x in rows])),
+                         static_mae_on_gd=float(np.mean([abs(x["static"] - x["gd"]) for x in rows])),
+                         static_mae_on_gd_conv=float(np.mean([abs(x["static"] - x["gd"]) for x in conv])))
+# what the flicker in the non-converged runs is (direction with c/s > 2 thr, alive at some and dead at other of the 8 checkpoints)
+pat = Counter(); runpat = Counter(); first_after = 0; dips = []
+for r in runs:
+    c, s = A.stats(r["stats"]); al = np.array(r["alive"], bool); cnt = al.sum(1); ck = r["checkpoints"]
+    if len(set(cnt)) == 1:
+        continue
+    f = al.any(0) & ~al.all(0) & (c / s > 2 * THR)
+    if not f.any():
+        continue
+    kinds = set()
+    for i in np.where(f)[0]:
+        x = al[:, i].astype(int); dd = np.diff(x)
+        k = "late_birth" if (dd >= 0).all() else "late_death" if (dd <= 0).all() else ("dies_returns" if x[0] else "born_dies")
+        pat[k] += 1; kinds.add(k)
+        if k == "late_birth" and r["alive_from"][i] is not None and r["alive_from"][i] > ck[0]:
+            first_after += 1; dips.append(r["min_log10_absa"][i])
+    runpat["+".join(sorted(kinds))] += 1
+out["flicker"] = dict(direction_patterns=dict(pat), run_patterns=dict(runpat), late_birth_first_alive_after_Th_half=first_after,
+                      their_min_log10_absa_quantiles=np.quantile(dips, [0, .25, .5, .75, 1]).round(1).tolist())
+# A-iv' as stated: settled once eta lam (t - t_c) >> 1, t_c = first step after K with |a| > thr (alive_from)
+st = {}
+for X in (1, 2, 3):
+    tot = dead = 0; cells = Counter()
+    for r in runs:
+        c, s = A.stats(r["stats"]); cs = c / s; al = np.array(r["alive"], bool); ck = np.array(r["checkpoints"])
+        for i in range(c.size):
+            af = r["alive_from"][i]
+            if af is None or cs[i] <= THR:
+                continue
+            m = r["eta"] * r["lam"] * (ck - af) >= X; v = m & ~al[:, i]
+            tot += int(m.sum()); dead += int(v.sum())
+            if v.any():
+                cells[f"{r['stats']} lam={r['lam']} eta={r['eta']} b2={r['b2']}"] += 1
+    st[f"eta_lam_(t-t_c)>={X}"] = dict(pairs=tot, dead=dead, directions_by_cell=dict(cells))
+out["settled_after_capture"] = st
+print(json.dumps(out, indent=1))

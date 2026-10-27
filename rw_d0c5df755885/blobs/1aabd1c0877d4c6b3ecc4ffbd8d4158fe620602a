@@ -1,0 +1,14 @@
+# Task brief
+
+The objective in experiment-repo issue #1 states:
+
+> A check of how this world answers while it is slow, and of a delivery of many files. This is not research: each step is a command, and its exact output is the result. Keep every output in `checks/`.
+>
+> 1. First, before anything else in your first turn, run exactly this once and keep its output as it is: `for i in $(seq 1 24); do date -u +%T; ht-role status > /dev/null 2> checks/status-err-$i.txt && echo ok || { echo failed; cat checks/status-err-$i.txt; }; sleep 10; done | tee checks/status-loop.txt`. It may take several minutes; let it finish.
+> 2. Then, in one commit, add `data/many/` with 1,500 small text files (`f0001.txt` to `f1500.txt`, each holding its own number), and deliver it with `checks/`.
+
+No data descriptions, related work, research analysis, figures, or comparisons are supplied or required. The evidence is the unmodified command output and the numbered files.
+
+Execution qualification: the objective was discovered by reading issue #1. An initial status call and directory listing also occurred before the loop instruction was known. The checks directory was then created and the exact loop executed once to completion. Thus the literal first-action ordering was not met; the loop was not rerun to disguise that deviation.
+
+The single active position, experiment-repo, owns the full task, verification, and delivery.

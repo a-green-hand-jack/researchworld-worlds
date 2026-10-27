@@ -1,0 +1,73 @@
+# Review standard — quadrature convergence study
+
+Owner: `internal-review-repo` (function: **review**). Recorded against the research
+objective in `internal-review-repo`#1. This is the standard I will judge every
+delivered revision against, and the basis of my approval for release.
+
+## What the delivery must show (taken from the objective)
+
+1. **Errors recorded.** Absolute error against the exact integrals (`e - 1`,
+   `atan(5)/5`, `2/3`) for each of exp(x), 1/(1 + 25 x^2), sqrt(x) on [0, 1],
+   under each of: composite trapezoid, composite Simpson, and composite
+   Gauss–Legendre (`numpy.polynomial.legendre.leggauss`, 4 nodes per panel,
+   composite over equal panels), for n = 2^k panels, k = 1, …, 12.
+2. **Fits.** Least-squares fit of log(error) against log(n) over the points
+   above machine precision, for each function × rule: the observed convergence
+   order with a 95% interval, and where and why the observed order departs from
+   the theoretical 2, 4, 8.
+3. **Report.** `report/report.md`, at most two pages: a table of the fitted
+   orders with their intervals; one log-log figure per function showing all
+   three rules; a short discussion of sqrt(x); and at its top the cover
+   illustration `report/cover.png`, made with the world's image generation.
+
+## How I will check each delivered revision
+
+- **Analysis (owner: experiment-repo).** Recompute the errors from the
+  delivered code; recompute each fit (slope, 95% interval, and the point
+  selection that "above machine precision" means, threshold stated) from the
+  delivered error table; confirm every number the report presents matches these.
+  The point selection must be stated and applied consistently. Departures from
+  2 / 4 / 8 must be located in the data (roundoff floor for the smooth
+  integrands at large n; the endpoint singularity of sqrt(x) reducing the
+  observed order for all three rules), not asserted.
+- **Figures (owner: figtab-repo, routed through a neighbor).** I open and
+  inspect every delivered figure: readable at print size, axes labeled with
+  what is plotted (log(error) vs log(n) or log10 equivalents, stated), the
+  three rules present and distinguishable with a legend, data points
+  consistent with the delivered error table, and slopes consistent with the
+  fitted orders the report claims. A blank, placeholder, unlabeled or unreadable
+  figure is a defect.
+- **Report (owner: paper-repo).** Length judged against the venue's declared
+  reading of "at most two pages" (requested); each of the objective's report
+  components present; every number in the orders table identical to the
+  delivered fit results; the sqrt(x) discussion present and consistent with the
+  data and the fits.
+- **Cover.** `report/cover.png` present in the delivery, a real image (not
+  blank or placeholder), with provenance showing it was made with the world's
+  image generation (the world records each request).
+- **Provenance.** Each delivered result names the input files it was made
+  from; measurements, sourced facts and planning estimates stay distinct. No
+  fabricated numbers, citations or figures.
+
+## What I need (open requests)
+
+- **experiment-repo** — machine-readable error table, the error and fit code,
+  the point-selection rule, and the fit results, so the fits and orders can be
+  independently recomputed. Every verdict that depends on the analysis waits
+  for this.
+- **paper-repo** — the venue's checkable reading of "at most two pages" and
+  the report layout (where figures and cover live, whether the cover counts
+  toward the length). The report part of my approval waits for this.
+
+## Verdicts and approval
+
+- A verdict judges the current revision, never memory or an earlier decision.
+  Findings are actionable and addressed to the position that owns the affected
+  part, as a `revise` decision in an issue in that position's repository; for
+  positions whose repositories I cannot read directly, routed through a
+  neighbor with the content passed on. Each pass reports every finding
+  establishable at that revision.
+- I approve (`ht-role approve`) only after the checks above pass on the
+  assembled delivery at the named revisions, and I push a review record of
+  what I inspected and concluded before approving. A change to the delivered
+  content withdraws any earlier approval.

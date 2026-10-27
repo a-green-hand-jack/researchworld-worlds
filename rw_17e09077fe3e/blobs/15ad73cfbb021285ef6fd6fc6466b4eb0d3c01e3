@@ -1,0 +1,19 @@
+# Research brief
+
+## Objective (verbatim, experiment-repo issue #1)
+
+> Estimate π by Monte Carlo sampling.
+>
+> Draw 1,000,000 points uniformly in the unit square, count those inside the quarter circle of radius 1, and take 4 × (inside / total) as the estimate. Repeat with 20 independent seeds and report the mean estimate with a 95% confidence interval across the seeds, and its error against math.pi.
+>
+> Report: `report/report.md`, half a page: the estimate, the interval, the error and how many points were drawn in all.
+
+## Supplied material and interpretation
+
+The objective issue is the complete supplied material. There are no supplied data files or related papers. The required data are newly generated independent uniform pairs (x,y) in [0,1)². A point is inside when x²+y² ≤ 1. Each seed contributes one estimate, 4 times its inside count divided by 1,000,000. The study requires 20 such estimates and 20,000,000 total points.
+
+Use a two-sided Student t interval for the mean of the 20 seed estimates: mean ± t(0.975,19) × sample standard deviation / sqrt(20). This estimates Monte Carlo uncertainty in the average across independent random streams. Report signed and absolute error relative to Python math.pi, clearly labelled. Record the RNG, seed construction, per-seed counts, versions and reproducible code as supporting working material. No plots or external comparisons are required; a concise numerical report fits the requested half page.
+
+## Ownership proposal
+
+experiment-repo owns random sampling, analysis, checks and numerical evidence. paper-repo owns the final half-page report and its formatting. internal-review-repo independently checks the analysis and final report and handles approval. No feasibility gap is apparent at this scale.

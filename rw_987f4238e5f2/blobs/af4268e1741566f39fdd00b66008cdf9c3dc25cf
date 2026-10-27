@@ -1,0 +1,8 @@
+// emulate browser range clamping using the page's own min/max attributes
+const fs=require('fs');const s=fs.readFileSync('explorer.html','utf8');const js=s.split('<script>')[1].split('</script>')[0];
+const mn=+s.match(/id="w" type="range" min="(\d+)"/)[1];
+const g=new Proxy({},{get:(o,k)=>k in o?o[k]:function(){},set:(o,k,v)=>{o[k]=v;return true}});
+const info={};const els={c:{width:1000,height:460,getContext:()=>g},w:{value:0,max:0},wl:{},rate:{checked:true}};
+global.document={getElementById:id=>els[id],querySelector:()=>info};
+eval(js+";global.widths=widths;global.C=C");
+for(const v of [mn,1,9,widths.length-1]){els.w.value=Math.max(mn,v);els.w.oninput();console.log(v,els.wl.textContent,info.textContent)}

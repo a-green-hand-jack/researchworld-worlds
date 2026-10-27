@@ -1,0 +1,26 @@
+{
+  "source": "Google Scholar",
+  "url": "https://scholar.google.com/",
+  "start_utc": "2026-10-19T21:30:16.237890+00:00",
+  "end_utc": "2026-10-19T21:30:17.888891+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/google-scholar.headers",
+    "-o",
+    "/tmp/tmp8xdhzm65/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://scholar.google.com/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html; charset=ISO-8859-1\n",
+  "stderr": "",
+  "first200": "<!doctype html><html><head><title>&#1575;&#1604;&#1576;&#1575;&#1581;&#1579; &#1575;&#1604;&#1593;&#1604;&#1605;&#1610; &#1605;&#1606; Google</title><meta http-equiv=\"Content-Type\" content=\"text/html;",
+  "body_bytes": 137206
+}

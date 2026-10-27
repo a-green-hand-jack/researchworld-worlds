@@ -1,0 +1,103 @@
+"""Rate analysis of the four cluster estimates of pi (n = 1e5 .. 1e8).
+
+Input : results/raw/pi_{0..3}.txt (cluster outputs of pi_sweep.sbatch)
+        results/ensemble.csv (optional, off-cluster replicate check)
+Output: results/estimates.csv, results/rate_analysis.json
+
+Model: pi_hat = 4k/n, k ~ Binomial(n, pi/4), so sigma(n) = sqrt(pi(4-pi)/n) and
+|err| = sigma(n)|Z|, Z ~ N(0,1) approximately. The "1/sqrt(n) rate" means slope
+-1/2 of log|err| against log n. With one estimate per n the slope fitted to four
+points is noisy; its null distribution under the exact model is simulated here.
+"""
+import csv, json, math, os, re, sys
+import numpy as np
+from scipy import stats
+
+RAW = "results/raw"
+PAT = re.compile(r"samples=(\d+) estimate=([0-9.]+) abs_error=([0-9.e+-]+)")
+C_SIGMA = math.sqrt(math.pi * (4 - math.pi))          # sigma(n) = C_SIGMA / sqrt(n)
+C_MAE = math.sqrt(2 / math.pi) * C_SIGMA              # E|err| = C_MAE / sqrt(n)
+SWEEP_JOB = "53951131"                                # SLURM array job of pi_sweep.sbatch
+
+rows = []
+for i in range(4):
+    with open(os.path.join(RAW, f"pi_{i}.txt")) as f:
+        m = PAT.search(f.read())
+    n, est = int(m.group(1)), float(m.group(2))
+    err = abs(est - math.pi)                       # recomputed from the 8-decimal estimate
+    sigma = C_SIGMA / math.sqrt(n)
+    z = err / sigma
+    rows.append({"task": i, "job_id": f"{SWEEP_JOB}_{i}", "samples": n, "estimate": m.group(2),
+                 "abs_error": err, "abs_error_reported": m.group(3),
+                 "sigma_theory": sigma, "z_abs": z,
+                 # P(|Z| >= z): how unusual an error this large is under the model
+                 "p_two_sided": 2 * stats.norm.sf(z),
+                 "source": f"results/raw/pi_{i}.txt"})
+
+with open("results/estimates.csv", "w", newline="") as f:
+    w = csv.DictWriter(f, fieldnames=list(rows[0]))
+    w.writeheader()
+    for r in rows:
+        w.writerow({k: (f"{v:.6e}" if isinstance(v, float) else v) for k, v in r.items()})
+
+x = np.log10([r["samples"] for r in rows])
+y = np.log10([r["abs_error"] for r in rows])
+fit = stats.linregress(x, y)
+tcrit = stats.t.ppf(0.975, len(x) - 2)
+
+# Null distribution of the 4-point OLS slope if |err| = sigma(n)|Z| exactly.
+rng = np.random.default_rng(12345)
+Z = np.abs(rng.standard_normal((200000, 4)))
+ysim = np.log10(C_SIGMA / np.sqrt(10.0 ** x)) + np.log10(Z)
+xc = x - x.mean()
+slopes = (ysim - ysim.mean(1, keepdims=True)) @ xc / (xc @ xc)
+lo, hi = np.percentile(slopes, [2.5, 97.5])
+p_slope = 2 * min(np.mean(slopes <= fit.slope), np.mean(slopes >= fit.slope))
+
+# Constant with the slope fixed at -1/2: geometric mean of |err| sqrt(n), and the
+# RMS of z, which estimates 1 if the errors have the theoretical spread.
+c_fixed = 10 ** float(np.mean(y + 0.5 * x))
+z = np.array([r["z_abs"] for r in rows])
+chi2 = float(np.sum(z ** 2))                       # ~ chi^2 with 4 dof under the model
+out = {
+    "inputs": [r["source"] for r in rows],
+    "model": "|err| = sqrt(pi(4-pi)/n)|Z|; E|err| = sqrt(2/pi)*sqrt(pi(4-pi))/sqrt(n)",
+    "c_sigma": C_SIGMA, "c_mean_abs": C_MAE,
+    "ols_slope": fit.slope, "ols_slope_se": fit.stderr,
+    "ols_slope_ci95_t": [fit.slope - tcrit * fit.stderr, fit.slope + tcrit * fit.stderr],
+    "ols_intercept_log10": fit.intercept, "ols_r2": fit.rvalue ** 2,
+    "null_slope_interval95": [float(lo), float(hi)],
+    "null_slope_p_two_sided": float(p_slope),
+    "const_with_slope_minus_half": c_fixed,
+    "z_abs": z.tolist(), "sum_z2": chi2, "sum_z2_dof": 4,
+    "sum_z2_p_upper": float(stats.chi2.sf(chi2, 4)),
+    "sum_z2_p_lower": float(stats.chi2.cdf(chi2, 4)),
+}
+
+if os.path.exists("results/ensemble.csv"):
+    with open("results/ensemble.csv") as f:
+        ens = list(csv.DictReader(f))
+    n_e = np.array([float(r["samples"]) for r in ens])
+    rms = np.array([float(r["rms_error"]) for r in ens])
+    se = np.array([float(r["rms_error_se"]) for r in ens])
+    # weighted fit of log10 RMS on log10 n, weights from the delta-method SE
+    sl = se / (rms * math.log(10))
+    W = 1 / sl ** 2
+    X = np.vstack([np.ones_like(n_e), np.log10(n_e)]).T
+    cov = np.linalg.inv(X.T @ (W[:, None] * X))
+    beta = cov @ X.T @ (W * np.log10(rms))
+    resid = (np.log10(rms) - X @ beta) / sl
+    out["ensemble"] = {
+        "input": "results/ensemble.csv",
+        "samples": n_e.tolist(), "replicates": [int(r["replicates"]) for r in ens],
+        "rms_over_sigma": (rms * np.sqrt(n_e) / C_SIGMA).tolist(),
+        "wls_slope": float(beta[1]), "wls_slope_se": float(math.sqrt(cov[1, 1])),
+        "wls_const": float(10 ** beta[0]),
+        "wls_chi2": float(resid @ resid), "wls_dof": len(n_e) - 2,
+    }
+
+with open("results/rate_analysis.json", "w") as f:
+    json.dump(out, f, indent=1)
+print(json.dumps(out, indent=1))
+print("python", sys.version.split()[0], "numpy", np.__version__,
+      "scipy", __import__("scipy").__version__)

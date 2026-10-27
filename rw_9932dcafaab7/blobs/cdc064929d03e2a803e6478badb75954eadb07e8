@@ -1,0 +1,23 @@
+# Review of `probe.md` (HuTian Issue #326 Synthetic Check)
+
+- **Reviewed repository**: `world/paper-repo`
+- **Reviewed revision**: `089f3425cd6d5181ac18822764c491df0117205f`
+- **Reviewed file**: `probe.md`
+- **Verdict**: **NOT ACCEPTED** (Step 2 failed)
+
+## Inspection Summary
+
+1. **Step 1 (`curl -fsSL https://antigravity.google/cli/install.sh | bash` and `~/.local/bin/agy --version`)**:
+   - The official installer succeeded and installed Antigravity CLI at `/hutian/.home/.local/bin/agy`.
+   - `~/.local/bin/agy --version` returned `1.4.4`.
+
+2. **Step 2 (`AGY_LLM_GATEWAY_URL="$(ht-resource url gemini-subscription)" AGY_LLM_GATEWAY_API_KEY="$HT_RESOURCE_TOKEN" ~/.local/bin/agy -p 'What is 6 times 7? Answer with the number only.' --model gemini-3.8-flash --output-format json --print-timeout 180s`)**:
+   - **What failed**: Step 2 exited with `"status": "ERROR"` and `"response": ""` (instead of the required `status: "SUCCESS"` and `response: "42"`).
+   - **Exact failure reason**: `agy` v1.4.4 rejected `--model gemini-3.8-flash` before making a request, reporting:
+     ```
+     error: invalid model selection (--model "gemini-3.8-flash" --effort ""): model gemini-3.8-flash is not recognized as a known model or custom model in settings
+     Available models:
+       Gemini 3.1 Pro
+       gemini-3-flash-preview
+       Gemini 3.1 Flash Lite
+     ```

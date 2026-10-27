@@ -1,0 +1,209 @@
+# Prior work: JEPA practice, heuristic ablations, metrics, code (verified 2026-10-17)
+
+Every work below has a checked first-publication date before 2026-09-01. arXiv v1
+dates come from arXiv; the rest come from OpenAlex or Semantic Scholar.
+Numbers come from reading the paper PDFs. Items marked [agent] were checked by a
+sub-agent reading the arXiv HTML. Items marked [UNVERIFIED] could not be confirmed.
+Post-cutoff works the search turned up were not read and must not be used
+(see brief.md, Section 6).
+
+## 1. JEPA practice papers and their heuristic settings
+
+### LeCun, "A Path Towards Autonomous Machine Intelligence"
+v0.9.2, OpenReview BZ5a1r-kVsf, 2022-06-27.
+
+- Non-contrastive JEPA criteria: s_x informative, s_y informative, s_y predictable from s_x, and minimal latent information.
+- Criteria 1, 2 and 4 "collectively prevent a collapse".
+- Section and figure numbers: [UNVERIFIED].
+
+### I-JEPA: Assran et al., CVPR 2023
+arXiv 2301.08243, v1 2023-01-19.
+
+Defaults (App. A.1):
+
+- Predictor: ViT of width 384; depth 6 (ViT-B), 12 (ViT-L/H) or 16 (ViT-G).
+- Optimiser: AdamW, batch 2048, lr 1e-4 → 1e-3 (15-epoch warmup) then cosine to 1e-6.
+- Weight decay: 0.04 → 0.4 linear.
+- EMA: 0.996 → 1.0 linear.
+- Masks: 4 target blocks, scale (0.15, 0.2), aspect (0.75, 1.5); 1 context block, scale (0.85, 1.0), with overlap removed. Targets are masked at the target-encoder output.
+
+Ablations (IN-1% linear probe, ViT-B/16, 300 ep unless noted):
+
+| Table | Ablation | Result |
+|---|---|---|
+| T6 | Masking strategy | multi-block 54.2; rasterized 15.5; block 20.2; random 17.6 |
+| T8 | Target scale | (0.075,0.2) 19.2; (0.1,0.2) 39.2; (0.125,0.2) 42.4; **(0.15,0.2) 54.2**; (0.2,0.25) 38.9; (0.2,0.3) 33.6 |
+| T9 | Context scale | (0.40,1) 31.2; (0.65,1) 47.1; (0.75,1) 49.3; (0.85,1) 54.2 |
+| T10 | Number of target blocks | 1: 9.0; 2: 22.0; 3: 48.5; 4: 54.2 |
+| T11 | Target masking location (ViT-H) | output 67.3 vs input 56.1 |
+| T12 | Predictor depth (ViT-L, 500 ep) | 6: 64.0; 12: 66.9 |
+| T13 | Weight decay (ViT-L, 600 ep) | ramp 0.04→0.4: IN-1% 69.4, linear 77.8; fixed 0.05: 70.7 / 76.4 |
+| T14 | Predictor width (ViT-L, 600 ep, IN-1% fine-tune) | 384: 70.7; 1024: 68.4 |
+| T7 | Target space | pixel 40.7 vs latent 66.9 |
+
+There is no EMA or stop-gradient ablation and no rank measurement.
+
+### V-JEPA: Bardes et al., TMLR 2024
+arXiv 2404.08471, v1 2024-02-15.
+
+- Loss: L1, with stop-gradient and an EMA target.
+- Collapse argument (§3.1), BYOL-style: with an optimal predictor, the encoder gradient equals the gradient of MAD(Y | E(x)). EMA keeps the predictor "close to optimal, thereby preventing collapse".
+- Masks: 8 blocks at 15% plus 2 blocks at 70%, about 90% masked in total.
+- Predictor: 12 × 384.
+- Optimisation (T8): EMA 0.998 → 1.0, weight decay 0.04 → 0.4.
+- Masking strategy (T4, attentive probe K400 / SSv2 / IN1K): random-tube[0.9] 51.5 / 46.4 / 55.6 vs multi-block 72.9 / 67.4 / 72.8.
+- Masking ratio (App. E.4, Fig. 8): "low coverage → trivial prediction task"; accuracy rises with ratio up to 90%.
+
+### V-JEPA 2: Assran et al.
+arXiv 2506.09985, v1 2025-06-11.
+
+- Constant EMA 0.99925 and constant weight decay 0.04: the ramps "showed minimal impact" (§2.4, T9).
+- Abbreviated recipe: EMA 0.999 → 1, weight decay 0.04 → 0.4.
+
+### data2vec: Baevski et al., ICML 2022
+arXiv 2202.03555, v1 2022-02-07.
+
+- Vision: 60% block masking, constant τ = 0.9998, K = 6 averaged layers.
+- §5 lists three causes of collapse:
+  - lr too large or warmup too short;
+  - τ too low, so student collapse "propagates to the teacher";
+  - strongly correlated targets, which needs target normalisation.
+
+### data2vec 2.0: Baevski et al., ICML 2023
+arXiv 2212.07525, v1 2022-12-14.
+
+- Settings: R = 0.8, M = 16 masks, τ 0.9998 → 0.99999.
+- M = 1 diverged at small batch.
+
+### Other JEPA variants
+
+- **MC-JEPA** (2307.12698, 2023-07-24): training is "very unstable" without VICReg terms.
+- **A-JEPA** (2311.15830, 2023-11-27):
+  - Mask ratio 0.75.
+  - Predictor depth 8 → 16: 48.3 → 48.6 mAP.
+  - Predictor width 256 / 512 / 768: 48.0 / 48.6 / 48.5.
+- **Point-JEPA** (2404.16432, WACV 2025):
+  - EMA 0.995 → 1.
+  - Predictor depth 2 → 6: 92.5 → 93.7, monotone (T10).
+- **Graph-JEPA** (2309.16014, TMLR):
+  - EMA plus stop-gradient is required; with a shared target, the least-squares optimum is 0.
+  - The predictor should be less expressive, or representations become uninformative (§3).
+
+### BYOL: Grill et al., NeurIPS 2020
+arXiv 2006.07733, v1 2020-06-13.
+
+Defaults: τ_base = 0.996 with cosine schedule to 1; weight decay 1.5e-6; predictor MLP 4096 → 256.
+
+| Table | Ablation | Result |
+|---|---|---|
+| T5a | Target EMA τ | τ=1 (fixed random target) 18.8; 0.999 69.8; 0.99 72.5; 0.9 68.4; 0 0.3 (collapse) |
+| T5b | Remove predictor or target | collapse, 0.1–0.3% |
+| App. I, T21 | Predictor lr multiplier λ, no EMA | 0 → 0.01; 1 → 5.5; 2 → 62.8; 10 → 66.6; 20 → 66.3 |
+| T22 | Predictor lr vs projector lr | collapse if predictor lr ≤ projector lr |
+| — | Closed-form optimal linear predictor, no EMA | 52.5% |
+| T14a | Predictor depth | 2: 72.5 (best); 1: 71.5 |
+| T15b | Weight decay | 1e-5: 69.6; 0: "may lead to unstable results" |
+
+### SimSiam: Chen & He, CVPR 2021
+arXiv 2011.10566, v1 2020-11-20.
+
+- No stop-gradient: immediate collapse (0.1).
+- Predictor (T1): none → collapse (0.1); fixed random → 1.5 (non-convergence); constant predictor lr → 68.1 vs 67.7.
+- Predictor hidden width: d/4 bottleneck is more robust; hidden = d is less stable.
+- CIFAR recipe: ResNet-18, SGD lr 0.03, weight decay 5e-4, batch 512, 800 ep → 91.8.
+
+### Other non-contrastive references
+
+- **BYOL without batch statistics** (2010.10241, 2020-10-20):
+  - No BN → collapse 0.1.
+  - Modified init → 65.7.
+  - GroupNorm plus weight standardisation → 73.9 vs 74.3.
+- **DINO** (2104.14294, 2021-04-29):
+  - No momentum → 0.1 k-NN.
+  - Teacher from previous epoch → 66.6; EMA teacher → 72.8.
+  - Centering alone collapses to the uniform output; sharpening alone collapses to one dimension.
+- **DirectPred**: Tian, Chen & Ganguli, ICML 2021 (2102.06810, 2021-02-12). See lit_theory.md.
+  - Collapse is the only stable fixed point if η > τ²/4(1+σ²) [agent wording; check against lit_theory.md].
+  - STL-10: symmetric predictor without EMA or weight decay 43.0; with predictor weight decay 71.1 (T5).
+- **C-JEPA**: Mo & Tong, NeurIPS 2024 (2410.19560, 2024-10-25).
+  - Claims EMA is "inadequate in preventing entire collapse", argued from citations rather than a direct experiment.
+  - Adding VICReg: 63.7 → 69.5 linear at 100 ep.
+  - I-JEPA at 100 ep on IN-1K (T9): ViT-T linear 22.13, ViT-S 29.61.
+- **LeJEPA**: Balestriero & LeCun (2511.08544, 2025-11-11).
+  - SIGReg isotropic-Gaussian regulariser, single λ = 0.05, no EMA, no stop-gradient.
+  - ResNet-18 CIFAR-10 92.51.
+  - Removing predictor and teacher in standard JEPAs → collapse (a claim, not an ablation).
+
+### 2024–2026 works [agent]
+
+- **T-JEPA** (2410.05016): loss collapses early and then recovers.
+- **SALT** (2509.24317, 2025-09-29): frozen teacher; teacher RankMe does not predict student quality.
+- **EB-JEPA** (2602.03604, 2026-02-03): CIFAR-10 JEPA with no predictor; bad hyperparameters → collapse.
+- **PLDM** (2502.14819): removing the variance term collapses it.
+- **LeWorldModel** (2603.19312).
+- **Busbridge et al., "How to scale your EMA"** (2307.13813): ρ → ρ^κ under κ× batch.
+
+**Gap.** No paper ablates no-EMA / shared-target I-JEPA on images, or sweeps EMA, predictor lr or predictor depth against rank.
+
+## 2. Collapse and rank metrics
+
+- **Effective rank** (Roy & Vetterli, EUSIPCO 2007): erank = exp H(p), with p_k = σ_k / ||σ||_1.
+- **RankMe** (Garrido et al., ICML 2023; 2210.02885):
+  - Same formula with ε added, computed on singular values of the N×K embedding matrix.
+  - Uses 25,600 samples, ε ≈ 1e-7.
+  - Only for comparisons within one method.
+- **LiDAR** (Thilak et al., ICLR 2024; 2312.04000):
+  - Smooth rank of Σ_w^{-1/2} Σ_b Σ_w^{-1/2}, with n = 1k samples and q = 50 augmentations.
+  - In I-JEPA, RankMe rises early and then falls fast.
+  - Kendall τ with probe accuracy: LiDAR 0.86 vs RankMe 0.83.
+- **α-ReQ** (Agrawal et al., NeurIPS 2022): power-law exponent of the eigenspectrum.
+- **Jing et al. 2022** (2110.09348): log singular values of the centred validation-set covariance, sorted. Some fall to zero under dimensional collapse.
+- **SimSiam std**: std of z/||z|| per channel. About 1/√d when healthy, 0 when collapsed.
+
+## 3. Code (created before 2026-09-01)
+
+| Repo | License | Notes |
+|---|---|---|
+| facebookresearch/ijepa | CC BY-NC 4.0 | Official configs |
+| facebookresearch/jepa | CC BY-NC 4.0 | V-JEPA |
+| facebookresearch/vjepa2 | MIT | — |
+| facebookresearch/eb_jepa | Apache-2.0 | CIFAR-10, no predictor |
+| vturrisi/solo-learn | MIT | BYOL / SimSiam on CIFAR / IN-100; no I-JEPA |
+| lightly-ai/lightly | MIT | I-JEPA modules; pin 922cd94d35 |
+| galilai-group/stable-pretraining | MIT | RankMe / LiDAR callbacks, I-JEPA benchmarks; pin 9aa93f8b61 |
+| filipbasara0/simple-ijepa | MIT | STL-10 77.07% |
+
+solo-learn reference numbers (ResNet-18, 1000 ep):
+
+- CIFAR-10: BYOL 92.58, SimSiam 90.51, VICReg 92.07.
+- CIFAR-100: BYOL 70.46.
+
+## Heuristic → reported effect
+
+| Heuristic | Reported effect |
+|---|---|
+| Stop-gradient | Required: SimSiam without it 0.1; BYOL τ = 0 → 0.3 |
+| EMA | τ = 1 → 18.8; τ ∈ 0.9–0.999 good (BYOL). DINO without momentum → 0.1. data2vec: τ too low → collapse. DirectPred on CIFAR without EMA: 92 → 12 (Halvagal) |
+| Predictor presence | Required for BYOL / SimSiam; a fixed random predictor fails; not needed with SIGReg |
+| Predictor lr | Without EMA, needs ≥2× the base lr (BYOL); collapse if predictor lr ≤ projector lr |
+| Predictor depth | Deeper is better in I-JEPA (+2.9), A-JEPA and Point-JEPA; Graph-JEPA argues the opposite |
+| Predictor width | A bottleneck helps (I-JEPA 384 > 1024; SimSiam d/4) |
+| Masking | I-JEPA target scale peaks at (0.15, 0.2); needs ≥3–4 blocks. V-JEPA best near 90%. Multi-block ≫ random. I-JEPA rank is sensitive to mask scale (LiDAR) |
+| Weight decay | I-JEPA ramp 0.04 → 0.4 vs fixed is mixed. BYOL 0 is unstable. DirectPred: large η → collapse |
+| Rank over training (I-JEPA) | Rises, then falls; best accuracy is not at max rank |
+
+## Recommended evaluation conventions
+
+1. Log RankMe (ε = 1e-7, ~25k held-out samples, pooled encoder output) and LiDAR over training, for context and target encoders and the predictor output.
+2. Plot spectra in the Jing et al. style at several checkpoints and for each setting.
+3. Report the SimSiam std against 1/√d, and the training loss.
+4. Use a frozen linear probe as the main metric and k-NN as a monitor. Report mean ± std over ≥3 seeds.
+5. Benchmarks: CIFAR-10/100 or STL-10 with ResNet-18 or ViT-T/S, or ImageNet-100 / ImageNette. Absolute I-JEPA numbers are weak at small scale.
+6. Mirror the practice sweeps:
+   - EMA τ ∈ {0, 0.9, 0.99, 0.996, 0.999, 1}
+   - predictor depth, width and lr multiplier
+   - target scale / number of blocks / mask ratio
+   - weight decay
+   - shared weights
+
+   Report collapse as phase diagrams.

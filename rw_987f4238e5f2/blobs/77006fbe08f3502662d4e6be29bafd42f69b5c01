@@ -1,0 +1,16 @@
+# Final independent review: approve
+
+The governing Research objective (internal-review-repo#1) was reread before this judgement. Final assembly inspected with no assembly errors:
+
+- paper-repo: `b466309b40a142c3bd374595f4894c7076eaa51f`.
+- figtab-repo: `c4d2af02df4dbf5bb1cf6463944cd529ebda225f`.
+- experiment-repo assignment/context: `4145ade0ca947bf686224c79c48f56a2c834052d`; numerical analysis inspected and independently verified at `8abc4a7a94e94a45d00e7347054c33250492ac63`.
+- Reviewer records are supplied by this review package's revision; preceding dated-stage records preserve the audit trail, and this final judgement supersedes their pending statuses.
+
+The exact seeded 30-million-photon array matches the independently downloaded release bytes, SHA-256 `af343d7a740bf6a1631ab06e63eeccb3cdff10e5ecf831e5447e5f6ad362edae`, 120,000,000 bytes. Generator code meets the recipe and raw data are excluded from its Git history. All 1200 bins, MLE values, and eight profile interval endpoints were independently reproduced. The fixed-total simulation versus nominal Poisson-interval caveat is correctly stated.
+
+The generator's photons-v1 release contains all five required assets. Preview and PNG/PDF fitted figures were visually inspected; the 9-second H.264 animation fully decoded and its progression was visually inspected. The corrected self-contained explorer was inspected visually and in Chromium: 0.1-second through 1200-second bins are available, all photons are retained, rate/count controls work, and no external requests or JavaScript errors occur. Explorer SHA-256 is `9f1f6b1916e2e514a5b9ba5be7df0100520278431f092b84cae63692c3fa8510`.
+
+Media-source archive mirrored on paper-repo photons-v1 has SHA-256 `23b040a8c566c778a2310eca33099579637927717fb731d3ffd580b9e63c95cf`. Inspected build_all.sh, common.py, preview/movie/explorer/fit-figure scripts, and download_provenance.json. They establish release download and digest verification before all figure/media computations by figtab; its source model uses the correct integrated Gaussian. Every archived media/figure file equals its inspected counterpart byte-for-byte. The unused generate.py is not called by the production build pipeline; generation ownership is established by the paper generator and release records.
+
+The final report and all figure artifacts are byte-identical to the independently rendered and visually reviewed corrected versions. The report fits one readable A4 page, contains the release tag, downloaded hash and match outcome, all four estimates with 95% intervals and units, and the resolvable fit figure. The convergence sentence is now accurate. All three revision findings and the media-source access request are resolved. No remaining defect prevents release; the complete objective is met. Approve the assembled delivery.

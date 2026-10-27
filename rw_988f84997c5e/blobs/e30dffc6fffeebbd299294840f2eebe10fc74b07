@@ -1,0 +1,54 @@
+"""Fit log-log exponents from timings.csv; write fits.json and loglog.png.
+Optional argv[1]: another timings CSV (replicate) -> fits_replicate.json only."""
+import csv, json, sys
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+T95 = 2.068  # t quantile, 23 d.o.f. (25 points - 2 parameters)
+
+src = sys.argv[1] if len(sys.argv) > 1 else "timings.csv"
+primary = src == "timings.csv"
+rows = list(csv.DictReader(open(src)))
+fits = {}
+fig, ax = plt.subplots(figsize=(6, 4.5))
+style = {"insertion": ("#c0392b", "o"), "merge": ("#2471a3", "s")}
+for name in ("insertion", "merge"):
+    n = np.array([int(r["n"]) for r in rows if r["algorithm"] == name], float)
+    t = np.array([float(r["seconds"]) for r in rows if r["algorithm"] == name])
+    x, y = np.log10(n), np.log10(t)
+    k = len(x)
+    A = np.vstack([x, np.ones(k)]).T
+    (b, a), res, *_ = np.linalg.lstsq(A, y, rcond=None)
+    resid = y - (a + b * x)
+    s2 = resid @ resid / (k - 2)
+    se = np.sqrt(s2 / ((x - x.mean()) ** 2).sum())
+    # exponent from per-size means (cross-check) and local slope between end sizes
+    sizes = sorted(set(n))
+    means = np.array([t[n == s].mean() for s in sizes])
+    b_means = np.polyfit(np.log10(sizes), np.log10(means), 1)[0]
+    local = np.diff(np.log10(means)) / np.diff(np.log10(sizes))
+    fits[name] = dict(points=k, exponent=b, se=se, ci95=[b - T95 * se, b + T95 * se],
+                      prefactor_log10=a, r2=1 - resid @ resid / ((y - y.mean()) ** 2).sum(),
+                      exponent_from_means=b_means, local_slopes=local.tolist(),
+                      mean_seconds={int(s): m for s, m in zip(sizes, means)},
+                      rel_range={int(s): [float(t[n == s].min()), float(t[n == s].max())] for s in sizes})
+    c, m = style[name]
+    ax.loglog(n, t, m, color=c, alpha=0.6, label=f"{name} sort (raw, 5 reps/size)")
+    xs = np.array([sizes[0], sizes[-1]], float)
+    ax.loglog(xs, 10 ** a * xs ** b, "-", color=c,
+              label=f"fit: t ∝ n^{b:.3f} ± {T95*se:.3f} (95% CI)")
+ax.set_xlabel("input size n (list length)")
+ax.set_ylabel("wall-clock time (s)")
+ax.set_xticks([250, 500, 1000, 2000, 4000])
+ax.set_xticklabels(["250", "500", "1000", "2000", "4000"])
+ax.minorticks_off()
+ax.grid(True, which="major", alpha=0.3)
+ax.legend(fontsize=8)
+ax.set_title("Pure-Python sort timing, random int lists")
+fig.tight_layout()
+if primary:
+    fig.savefig("loglog.png", dpi=150)
+json.dump(fits, open("fits.json" if primary else "fits_replicate.json", "w"), indent=1)
+print(json.dumps(fits, indent=1))

@@ -1,0 +1,44 @@
+"""Development only: phase model v4 (code/e4_theory.py phase_model_v4, default arguments) scored with the A1 metrics
+on a development grid (dev2 or dev3), with the post-crossing segment length varied (300/600/1500/3000) to check
+that it is not a tuned constant. Not scoring; the held-out grids are not used.
+Usage: python3 code/checks/e4_dev_v4_on_grid.py dev2|dev3 > results/e4/<grid>/v4_dev_score.txt"""
+import sys, os, json, gzip, time; os.environ["OMP_NUM_THREADS"] = "1"
+sys.path.insert(0, 'code'); import numpy as np, e4_a1 as A, e4_dev as dev, e4_theory as th
+from multiprocessing import Pool
+G = sys.argv[1]
+if G == 'dev2':
+    A.STATS = dict(dev.STATS)
+else:
+    import e4_dev3  # sets A.STATS
+KW = {}
+def f(r):
+    c, s = A.stats(r["stats"]); stK = {k: np.array(v) for k, v in r["state_K"].items()}
+    o = th.phase_model_v4(c, s, stK, A.K, r["lam"], r["eta"], A.T, b1=r["b1"], b2=r["b2"], checks=A.CHECKS, **KW)
+    fl = lambda x: [None if not np.isfinite(v) else float(v) for v in x]
+    r.update(pred_burst=fl(o["burst"]), pred_alive_from=fl(o["alive_from"]), pred_alive=[o["alive"][t].tolist() for t in A.CHECKS]); return r
+base = [json.loads(l) for l in gzip.open(f'results/e4/{G}/{G}_runs.jsonl.gz', 'rt')]
+for sp in [None, 300, 1500, 3000]:
+    KW = {} if sp is None else {"seg_post": sp}
+    t = time.time()
+    with Pool(8) as p:
+        runs = p.map(f, [dict(r) for r in base])
+    res = A.score(runs)
+    print('seg_post', 'default 600' if sp is None else sp, 'seconds', round(time.time() - t, 1))
+    if sp is None:
+        print(json.dumps({k: {a: b for a, b in res[k].items() if a in ('median', 'p90', 'miss_share', 'pass')} for k in ('A1b', 'A1c')}))
+        default = runs
+    print(' A1d error rate', json.dumps({k: round(v, 4) for k, v in res['A1d']['error_rate'].items()}))
+    print(' A1d rank-within-1 failure', json.dumps({k: round(v, 4) for k, v in res['A1d']['rank_within_1_failure'].items()}))
+CK = np.array(A.CHECKS); cat = {}
+for r in default:
+    c, s = A.stats(r['stats']); pc = c / s; Al = np.array(r['alive'], bool); P = np.array(r['pred_alive'], bool)
+    tf = np.array([np.inf if x is None else x for x in r['alive_from']]); tf[np.abs(np.array(r['state_K']['a'])) > A.THR] = A.K
+    af = np.array([np.inf if x is None else x for x in r['pred_alive_from']])
+    cr = tf[None, :] <= CK[:, None]; pcr = af[None, :] <= CK[:, None]; W = P != Al
+    for k, v in {'truth alive, model not yet crossed (model late)': W & Al & ~pcr,
+                 'truth alive, model crossed, c/s <= thr (transient above)': W & Al & pcr & (pc[None, :] <= A.THR),
+                 'truth alive, model crossed, c/s > thr (model re-dead)': W & Al & pcr & (pc[None, :] > A.THR),
+                 'truth dead, truth not yet crossed (model early)': W & ~Al & ~cr,
+                 'truth dead after its first crossing (dip or second collapse)': W & ~Al & cr}.items():
+        cat[k] = cat.get(k, 0) + int(v.sum())
+print('wrong pairs by kind (default):', json.dumps(cat))

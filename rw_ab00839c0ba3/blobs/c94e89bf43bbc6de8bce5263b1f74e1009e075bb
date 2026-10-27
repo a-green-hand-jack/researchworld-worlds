@@ -1,0 +1,88 @@
+"""Post-process the 12-minute extended.py run: verify its interval, add a Wilson
+interval as a robustness check, and write results/summary.json and results/summary.md.
+
+usage: python3 code/analyze.py [OUT_JSON] [LOG]
+"""
+import hashlib
+import json
+import math
+import re
+import shutil
+import sys
+from pathlib import Path
+
+SCRIPT = Path('/initial-state/inputs/0/extended.py')
+out_json = Path(sys.argv[1] if len(sys.argv) > 1 else 'results/extended_12.json')
+log = Path(sys.argv[2] if len(sys.argv) > 2 else 'logs/extended_12.log')
+Z = 1.959963984540054  # two-sided 95% normal quantile (the sampler uses 1.96)
+
+run = json.loads(out_json.read_text())
+n = run['samples']
+est = run['estimate']
+inside = round(est * n / 4)
+assert 4 * inside / n == est, 'estimate is not 4*inside/n for an integer inside'
+p = inside / n
+
+# Wald interval exactly as the sampler computes it
+half_wald = 1.96 * 4 * math.sqrt(p * (1 - p) / n)
+wald = [est - half_wald, est + half_wald]
+assert all(abs(a - b) < 1e-12 for a, b in zip(wald, run['ci95'])), 'ci95 in OUT does not match recomputation'
+
+# Wilson score interval for p, scaled by 4
+den = 1 + Z * Z / n
+centre = (p + Z * Z / (2 * n)) / den
+hw = Z * math.sqrt(p * (1 - p) / n + Z * Z / (4 * n * n)) / den
+wilson = [4 * (centre - hw), 4 * (centre + hw)]
+
+se = 4 * math.sqrt(p * (1 - p) / n)
+err = est - math.pi
+running = [{'minute': int(m), 'estimate': float(e), 'samples': int(s)}
+           for m, e, s in re.findall(r'extended 12 min: (\d+) min, estimate ([\d.]+) after (\d+) samples',
+                                     log.read_text())] if log.exists() else []
+
+summary = {
+    'inputs': {'sampler': str(SCRIPT), 'sampler_sha256': hashlib.sha256(SCRIPT.read_bytes()).hexdigest(),
+               'command': 'python3 extended.py 12 results/extended_12.json', 'seed': int(run['minutes'] * 1000),
+               'out_json': str(out_json), 'log': str(log)},
+    'minutes': run['minutes'],
+    'samples': n,
+    'inside': inside,
+    'estimate': est,
+    'ci95_wald': run['ci95'],
+    'ci95_wald_halfwidth': half_wald,
+    'ci95_wilson': wilson,
+    'standard_error': se,
+    'error_vs_pi': err,
+    'error_in_se': err / se,
+    'pi_in_ci95': run['ci95'][0] <= math.pi <= run['ci95'][1],
+    'running_estimates': running,
+}
+Path('results/summary.json').write_text(json.dumps(summary, indent=1) + '\n')
+if log.exists():
+    shutil.copy(log, 'results/extended_12.log')
+
+rows = '\n'.join(f"| {r['minute']} | {r['samples']:,} | {r['estimate']:.6f} |" for r in running)
+md = f"""# Monte Carlo estimate of pi — 12-minute run
+
+Sampler: `extended.py` (sha256 `{summary['inputs']['sampler_sha256']}`), run unmodified as
+`extended.py 12 OUT` on `local-compute`, seed {summary['inputs']['seed']}.
+
+| quantity | value |
+|---|---|
+| samples (n) | {n:,} |
+| points inside quarter circle | {inside:,} |
+| estimate of pi | {est:.6f} |
+| 95% CI (Wald, as written by the sampler) | [{wald[0]:.6f}, {wald[1]:.6f}] (± {half_wald:.6f}) |
+| 95% CI (Wilson score, check) | [{wilson[0]:.6f}, {wilson[1]:.6f}] |
+| standard error | {se:.6f} |
+| estimate − pi | {err:+.6f} ({err / se:+.2f} SE) |
+| pi inside the 95% CI | {'yes' if summary['pi_in_ci95'] else 'no'} |
+
+Running estimates printed by the sampler:
+
+| minute | samples | estimate |
+|---|---|---|
+{rows}
+"""
+Path('results/summary.md').write_text(md)
+print(md)

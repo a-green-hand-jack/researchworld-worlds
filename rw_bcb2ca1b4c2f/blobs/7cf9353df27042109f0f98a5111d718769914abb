@@ -1,0 +1,32 @@
+"""Re-run a sample of E6 rung 1a held-out runs with the frozen code (experiment 83e5918 tree, code/e6_r1.py md5
+201e8d7e, = 8835010) and compare truth counts, the fixed early counts (t = 25, 50) and every prediction with the
+delivered records (results/e6/r1heldout/r1_heldout_runs.jsonl.gz). Sample: every 9th base run plus every 40th floor run.
+Usage: python3 checks/e6_r1_heldout_rerun.py EXP_TREE OUT.json"""
+import sys, os, json, gzip
+from multiprocessing import Pool
+EXP, OUT = sys.argv[1], sys.argv[2]
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e6_r1 as E
+
+
+def rerun(cfg):
+    return cfg["id"], E.run_one(cfg)
+
+
+if __name__ == "__main__":
+    rows = [json.loads(l) for l in gzip.open(os.path.join(EXP, "results/e6/r1heldout/r1_heldout_runs.jsonl.gz"), "rt")]
+    byid = {r["cfg"]["id"]: r for r in rows}
+    base = [r["cfg"] for r in rows if not r["cfg"].get("pert")]; fl = [r["cfg"] for r in rows if r["cfg"].get("pert")]
+    sample = base[::9] + fl[::40]
+    with Pool(8) as P:
+        out = dict(P.map(rerun, sample, chunksize=2))
+    diff = []
+    for i, new in out.items():
+        old = byid[i]
+        for key in ("counts", "early"):
+            if new["truth"].get(key) != old["truth"].get(key):
+                diff.append((i, key, old["truth"].get(key), new["truth"].get(key)))
+        if (new.get("pred") or {}) != (old.get("pred") or {}):
+            diff.append((i, "pred", old.get("pred"), new.get("pred")))
+    res = dict(sampled=len(sample), base=len(base[::9]), floor=len(fl[::40]), differing=len(diff), diffs=diff[:20])
+    json.dump(res, open(OUT, "w"), indent=1); print(json.dumps({k: v for k, v in res.items() if k != "diffs"}))

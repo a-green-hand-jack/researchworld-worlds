@@ -1,0 +1,46 @@
+# Files and checksums of `Systran/faster-whisper-tiny`
+
+**Source of all numbers:** `results/files.csv`, `results/summary.json`, `results/provenance.md` and `results/run.log` (filtered client log) in `world/experiment-repo` at commit `1cf9d24c53d46a31e58500400ce9abef9aa04734` (produced by `scripts/run.py`). Nothing below was measured by this report's author.
+
+## Setup
+
+`pip install huggingface_hub` with default dependencies in a fresh venv, `HF_HUB_DISABLE_XET` unset, unauthenticated `snapshot_download` of `Systran/faster-whisper-tiny`, resolved revision `d90ca5fe260221311c53c58e660288d3deb8d356`. The repository holds 6 files (the API listing and the downloaded snapshot agree; no extras). SHA-256 was computed locally with `hashlib` on the downloaded files; sizes are the downloaded byte counts, equal to the API-reported size for all 6.
+
+## Files, sizes and SHA-256
+
+| File | Size (bytes) | SHA-256 (local) | Hub API check |
+|---|---:|---|---|
+| `.gitattributes` | 1,477 | `db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6` | blob SHA-1 only (match) |
+| `README.md` | 1,991 | `29fb8444a02c1f133ab7e538525aa478ff68845964f21cf42500842b0e4a7b20` | blob SHA-1 only (match) |
+| `config.json` | 2,249 | `a73a28cdfe1c43ccc7202fa333d1f89c202477271407ae9a7f19afa52039cac8` | blob SHA-1 only (match) |
+| `model.bin` | 75,538,270 | `dcb76c6586fc06cbdac6dd21f14cfd129cc4cdd9dce19bf4ffa62e59cbe6e6d1` | **API SHA-256 (`lfs.sha256`): match** |
+| `tokenizer.json` | 2,203,239 | `fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab` | blob SHA-1 only (match) |
+| `vocabulary.txt` | 459,861 | `34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913` | blob SHA-1 only (match) |
+
+Total: 78,207,087 bytes (sum of the table; about 74.6 MiB), of which `model.bin` is 96.6 %.
+
+## Did every checksum match?
+
+Yes for every comparison that could be made, but the comparison is not a SHA-256 comparison for five of the six files:
+
+- **`model.bin`** is the only LFS/Xet-tracked file, and the only one for which the Hub API reports a SHA-256 (`lfs.sha256`). The local SHA-256 equals it: **1 of 1 API-reported SHA-256 values matched.**
+- **The other five files** are plain git blobs. For them the API gives only the git blob SHA-1 (`blob_id`), so **no API SHA-256 exists to compare against.** As a secondary check, the git blob SHA-1 recomputed locally (`blob <size>\0` + content) equals the API `blob_id` for all five. This confirms the files are unaltered relative to the Hub's record, but it is a SHA-1 check, not a SHA-256 check. For `model.bin` the API `blob_id` is the SHA-1 of the LFS pointer file, so it is not comparable and was not used.
+
+Stated precisely: 1 of 1 available API SHA-256 values matched; the 5 remaining files matched on git blob SHA-1 only; no mismatch of either kind was found.
+
+## Package versions
+
+| Package | Version |
+|---|---|
+| `huggingface_hub` | 2.2.0 |
+| `hf_xet` | 1.7.0 |
+
+(Read with `importlib.metadata` in the venv used for the download.)
+
+## Was Xet used?
+
+Xet transfer was enabled (`HF_HUB_DISABLE_XET` unset; asserted in the script) and **was used for `model.bin` only**. Evidence: the hub client logged "Xet Storage is enabled for this repo. Downloading file from Xet Storage.." once and requested a token from `.../xet-read-token/d90ca5fe…`; the HEAD metadata for `model.bin` carries an Xet file hash (`95d706516af777831fff6b2c35837dfb450afca078db361910d44a435b24dc2c`). The other five files have no Xet hash and were fetched by ordinary HTTP resolve, because they are not Xet-backed in the repository. The evidence is the client log (`results/run.log`, where `model.bin` is the only file preceded by the Xet message and the `xet-read-token` request) and metadata; no byte-level transfer trace was taken.
+
+## Caveats
+
+Single download at one revision on one date (2026-10-19); the repository can change later, and the reported revision identifies the snapshot measured.

@@ -1,0 +1,25 @@
+# Results (produced by `code/quad.py`, numpy+scipy; run from repo root)
+
+- `errors.csv` — absolute error, 3 functions x 3 rules x k=1..12 (n=2^k panels). Exact values: e-1, atan(5)/5, 2/3 (double precision).
+- `orders.csv` — MAIN table: fitted order = -slope of OLS log(err) vs log(n) over points with err > 10*eps (eps=2.22e-16), 95% t-interval (df = m-2). Empty CI = fewer than 3 points, no interval exists.
+- `fits.json` — same fits plus sensitivity to threshold (`eps`, `1e-13`) and `local_orders` (log2(e_k/e_{k+1}), None where either error <= 10 eps). Includes the boolean mask of points used.
+- Conventions: trapezoid = n panels/(n+1) points; Simpson = one 3-point Simpson per panel (n panels, 2n+1 points); Gauss–Legendre = leggauss(4) on each of n panels.
+
+## Main findings (to be cited, not restated numerically elsewhere)
+| function | trapezoid (2) | Simpson (4) | GL 4-node (8) |
+|---|---|---|---|
+| exp(x) | 1.9997 [1.9994, 2.0000], 12 pts | 3.9969 [3.9941, 3.9997], 9 pts | 7.996 from 2 pts (k=1,2) — no CI possible; hits rounding floor at k=3 |
+| 1/(1+25x^2) | 2.289 [2.024, 2.554], 12 pts | 5.39 [4.57, 6.21], 9 pts | 8.76 [2.93, 14.60], 4 pts |
+| sqrt(x) | 1.4833 [1.4772, 1.4894] | 1.5000 [1.4999, 1.5000] | 1.5000 [1.5000, 1.5000] |
+
+Interpretation (diagnosed with local orders in `fits.json`):
+- exp(x): asymptotic from k=1; the trapezoid/Simpson CIs are narrow and contain/touch theory (Simpson's upper end 3.9997 just below 4 because k=8-9 errors are near the rounding floor: local order 3.97). GL has only 2 points above 10 eps, so its "8" is a two-point slope with no uncertainty estimate: the check is weak, not a confirmation with an interval.
+- Runge function: poles at x=±i/5 make coarse grids pre-asymptotic. Local orders: trapezoid 3.8, 5.8, 1.5, then exactly 2.0 from k=4; Simpson 3.3, 7.2, 11.0, 4.1, then 4.0 from k=5; GL 7.7, 5.3, 14.5 then floor. The global fit mixes pre-asymptotic and asymptotic points, hence orders above theory and wide CIs; the asymptotic order equals the theoretical one once h is small relative to the pole distance (~1/5). The fitted intervals are not valid as precision statements because the log-log relation is not linear over the fitted range (residuals structured).
+- sqrt(x): f' unbounded at 0 (f ~ x^{1/2} endpoint singularity). Error is dominated by the first panel, ~ h^{3/2} for all three rules, order 3/2 regardless of rule (Gauss 4 nodes -> 1.5, not 8). Trapezoid local order approaches 1.5 from below (1.43 at k=1) since its smooth-part error h^2 term is still non-negligible; Simpson and GL are exactly 1.5 from k=1 (singular part dominates). Higher-order rules give a smaller constant but no better rate.
+- Threshold sensitivity (`fits.json`): with eps, Simpson/exp 3.98 (10 pts) , Simpson/Runge 5.17; with 1e-13, Simpson/exp 3.999 (8 pts), Simpson/Runge 6.01 (7 pts); GL/exp <2 pts. Selection of the "above machine precision" cutoff matters for Simpson/Runge and GL — only the main 10*eps choice is tabulated.
+
+## Conventions for presentation (answers to figtab-repo#3)
+- Exact references: e-1 (`np.e - 1`), `np.arctan(5)/5`, `2/3` evaluated in float64; the reference itself carries ~1 ulp (1.1e-16 for 0.5-1 range, 2.2e-16 for e-1 ≈ 1.72) of rounding, so errors below ~ a few 1e-16 are noise.
+- Zero/roundoff handling: an absolute error that is exactly 0.0 occurs (e.g. exp GL k>=3, several Runge GL); it cannot be put on a log axis. Inclusion rule: `err > 10*eps = 2.22e-15`, so zeros and sub-threshold values are excluded from every fit. `fits.json` -> `main_10eps.fits["<function>|<rule>"].mask` is the 12-element inclusion mask (k=1..12), now present for all fits.
+- Rule keys: `trapezoid`, `simpson`, `gauss4`; function keys `exp(x)`, `1/(1+25x^2)`, `sqrt(x)`.
+- Theory lines: 2, 4, 8 for the rules; 1.5 for sqrt(x) (all rules).

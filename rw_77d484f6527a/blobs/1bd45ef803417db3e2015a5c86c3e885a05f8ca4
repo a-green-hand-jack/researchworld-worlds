@@ -1,0 +1,23 @@
+# World-command verification report
+
+Worlds involved: `nw_fcf669cf4a70` (NoteWorld, step 2), `rw_399c28e983a7` (given to read), `rw_c543c17363cc` (made by step 3). Step 5 made no world.
+
+## Step 1: install definition
+`researchworld definition install /initial-state/inputs/0/note` -> exit 0. Output: `"name": "note", "command": "noteworld", "prefix": "nw"`. `noteworld` became available.
+
+## Step 2: NoteWorld
+- `noteworld run --topic "A three-sentence note on why the sky is blue." --config note-config.json` -> exit 0, world `nw_fcf669cf4a70`, roles writer/editor.
+- `ht-resource run worlds -- noteworld execute nw_fcf669cf4a70 --loop` -> tracked job `cmd-604f7815c8`, ended exit 0.
+- `noteworld monitor --summary`: `release_status=verified delivery_complete=True`, `accepted=True`, `budget=5 / 8`, `model_seconds=76 / 600`, `release_commit=b0b46f54e1b051a616ae7f1ae673937186c08968`. Also `container=running`, `world_terminal=False`, so the world had not ended afterwards.
+- `noteworld artifacts` wrote `<release>/note.md`; the note it contains is in `/hutian/w/out` (not delivered here).
+
+## Step 3: continue the given world
+- `researchworld continue rw_399c28e983a7 --checkpoint g1 --config continue-config.json` -> exit 0, new world **`rw_c543c17363cc`** (active roles paper-repo, internal-review-repo; continues checkpoint g1).
+- `researchworld stop rw_399c28e983a7` -> exit 1: `command refused (HTTP 422): rw_399c28e983a7 is given you to read: it takes status, checkpoints, monitor, graph, topic, artifacts, export, continue, instruction, config ..., not stop`.
+- `researchworld capture rw_399c28e983a7` -> exit 1: `command refused (HTTP 422): capture writes the record of a world into its own directory: a world given you to read stays as it is`.
+
+## Step 4: drive through capped
+`ht-resource run capped -- researchworld execute rw_c543c17363cc --loop` -> job `cmd-72ab6d43e2`, ended **failed**: `ended by the world: capped has used the 30 model seconds of the worlds it drives its limit allows`. `ht-resource status capped`: limits `max_spend 30`, used spend 42.791, remaining spend 0, tracked 0; it lists `nw_fcf669cf4a70` and `rw_c543c17363cc` among its worlds, neither concluded.
+
+## Step 5: one more world
+`noteworld run --topic "Another note." --config note-config.json` -> exit 1 (tried after step 4 and again after step 2's drive ended): `command refused (HTTP 422): worlds holds its limit of 2 worlds that have not ended (nw_fcf669cf4a70, rw_c543c17363cc): finish or end one first (stop --release)`. No world was made. I did not stop my own worlds, to avoid altering the outcome.

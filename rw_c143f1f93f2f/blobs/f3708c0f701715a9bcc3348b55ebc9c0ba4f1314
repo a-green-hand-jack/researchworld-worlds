@@ -1,0 +1,7 @@
+#!/bin/bash
+# Build the pinned environment on Ibex (login node, which has network) in report/env.
+# The local side uses the same Python 3.11.2 and the same pins (requirements.txt).
+set -euo pipefail
+source ~/miniforge3/etc/profile.d/conda.sh
+mamba create -q -y -p "$PWD/env" -c conda-forge python=3.11.2 pip
+./env/bin/pip install -r code/requirements.txt

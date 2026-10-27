@@ -1,0 +1,10 @@
+"""explorer.html: self-contained light-curve explorer with adjustable bin width.
+Embeds counts in 0.1 s base bins (12000 integers); the page rebins client-side.
+Usage: make_explorer.py photons.f32 explorer.html"""
+import sys, json
+from common import load, counts
+t = load(sys.argv[1]); _, c = counts(t, 0.1)
+assert c.size == 12000
+html = open(__file__.replace("make_explorer.py", "explorer_template.html")).read()
+html = html.replace("__COUNTS__", json.dumps(c.tolist(), separators=(",", ":"))).replace("__N__", f"{t.size:,}")
+open(sys.argv[2], "w").write(html)

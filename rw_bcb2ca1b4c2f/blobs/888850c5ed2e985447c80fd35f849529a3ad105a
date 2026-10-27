@@ -1,0 +1,38 @@
+"""Check of experiment-repo d10d8d6 (A1d diagnosis refined), run at experiment 44357b3.
+(1) code/checks/e4_a1_recur.py was rerun as committed on results/e4/a1/a1_runs.jsonl.gz (copy of the tree at 44357b3);
+    its recur.txt is reproduced byte-identically (recorded below, not recomputed here).
+(2) The truth's min log10 |a| over all directions, to read recur.txt's 0% quantile '0'.
+(3) The hover example of theory/ext_A_adamw.md, held-out id 23, k = 20: the 80-bit map step by step.
+Usage: python3 checks/e4_a1_recur_check.py EXPERIMENT_TREE OUT.json"""
+import sys, os, json, gzip
+import numpy as np
+root, outp = sys.argv[1], sys.argv[2]
+sys.path.insert(0, os.path.join(root, "code"))
+import e4_a1 as A
+
+runs = [json.loads(l) for l in gzip.open(os.path.join(root, "results/e4/a1/a1_runs.jsonl.gz"), "rt")]
+ml = [v for r in runs for v in r["min_log10_absa"]]
+truth = dict(none_values=sum(v is None for v in ml), min_log10_absa=min(v for v in ml if v is not None),
+             subnormal_runs=sum(r["subnormal"] for r in runs))
+
+cfg = {c["id"]: c for c in A.configs()}[23]; k = 20
+c, s = A.stats(cfg["stats"]); L = np.longdouble
+c, s = c.astype(L), s.astype(L); eta, lam, b1, b2 = (L(cfg[x]) for x in ("eta", "lam", "b1", "b2")); eps = L(1e-8)
+a = A.init_a(cfg).astype(L); p = np.full(c.shape, L(cfg["p0"]))
+ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c); dec = 1 - eta * lam
+tr = []
+for t in range(1, A.T + 1):
+    r = c - p * s; ga = -a * p * r; gp = -a * a * r
+    ma = b1 * ma + (1 - b1) * ga; va = b2 * va + (1 - b2) * ga * ga; mp = b1 * mp + (1 - b1) * gp; vp = b2 * vp + (1 - b2) * gp * gp
+    bc1, bc2 = 1 - b1 ** t, 1 - b2 ** t
+    a = a * dec - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps); p = p * dec - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+    tr.append((t, float(abs(a[k]))))
+tr = np.array(tr); first = int(np.where(tr[:, 1] > A.THR)[0][0]); after = tr[first:]
+drop = int(np.where(after[:, 1] < A.THR)[0][0]); back = int(np.where(after[drop:, 1] > A.THR)[0][0]) + drop
+ex = dict(cfg=cfg, k=k, first_crossing=int(tr[first, 0]), peak_after=float(after[:drop, 1].max()),
+          below_again=int(after[drop, 0]), min_after=float(after[:, 1].min()), min_at=int(after[after[:, 1].argmin(), 0]),
+          above_again=int(after[back, 0]), median_2000_after_crossing=float(np.median(after[:2000, 1])),
+          at_checkpoints={str(t): float(tr[t - 1, 1]) for t in A.CHECKS if tr[first, 0] <= t <= after[back, 0] + 2000})
+out = dict(recur_txt="reproduced byte-identically by experiment-repo code/checks/e4_a1_recur.py at 44357b3 (1 m 19 s, 8 procs)",
+           truth=truth, hover_example=ex)
+json.dump(out, open(outp, "w"), indent=1); print(json.dumps(out, indent=1))

@@ -1,0 +1,22 @@
+# Monte Carlo estimate of pi — 12-minute run
+
+Sampler: `extended.py` (sha256 `95f77f136e5c23f85d53e524f994584b00a3c73c4fa4a9853ee414c6ec3af19d`), run unmodified as
+`extended.py 12 OUT` on `local-compute`, seed 12000.
+
+| quantity | value |
+|---|---|
+| samples (n) | 2,169,700,000 |
+| points inside quarter circle | 1,704,083,019 |
+| estimate of pi | 3.141601 |
+| 95% CI (Wald, as written by the sampler) | [3.141532, 3.141670] (± 0.000069) |
+| 95% CI (Wilson score, check) | [3.141532, 3.141670] |
+| standard error | 0.000035 |
+| estimate − pi | +0.000009 (+0.24 SE) |
+| pi inside the 95% CI | yes |
+
+Running estimates printed by the sampler:
+
+| minute | samples | estimate |
+|---|---|---|
+| 5 | 882,000,000 | 3.141694 |
+| 10 | 1,788,700,000 | 3.141625 |

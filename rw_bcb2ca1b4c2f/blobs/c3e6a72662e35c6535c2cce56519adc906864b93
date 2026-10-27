@@ -1,0 +1,98 @@
+\section{Driving force versus decay: the escape race}
+\label{sec:theory}
+
+We solve the near-collapse dynamics under \cref{ass:aligned} with $\Pred_0=p_0I$. Propositions and corollaries are exact; the criterion of \cref{sec:race} is an approximation whose accuracy we measure (\cref{sec:experiments}); proofs are in \cref{app:proofs}.
+
+\subsection{Exact structure}
+
+\begin{proposition}[Exact mode reduction; per-mode system of \citealp{tian2021understanding}]
+\label{prop:reduction}
+Let \cref{ass:aligned}(i) hold, $d\ge n$, $\Pred_0=p_0I$, $\Wc_0=\sum_k a_k(0)\,\tilde u_ku_k^\top$ with orthonormal $\tilde u_k\in\R^d$, and $\Wt_0=\Wc_0$.
+Then for all $t$, $\Wc=\sum_ka_k\tilde u_ku_k^\top$, $\Wt=\sum_k\bar a_k\tilde u_ku_k^\top$ and $\Pred=\sum_kp_k\tilde u_k\tilde u_k^\top+p_\perp\big(I-\sum_k\tilde u_k\tilde u_k^\top\big)$, where
+\begin{equation}
+\dot a_k=p_kc_k\bar a_k-\big(p_k^2\sigma_k+\lambda_W\big)a_k,\qquad
+\dot p_k=\alpha\big[(c_k\bar a_k-p_k\sigma_ka_k)\,a_k-\lambda_Pp_k\big],\qquad
+\dot{\bar a}_k=\kappa(a_k-\bar a_k),
+\label{eq:reduced}
+\end{equation}
+and $\dot p_\perp=-\alpha\lambda_Pp_\perp$.
+With the copy target ($\bar a_k=a_k$),
+\begin{equation}
+\dot a_k=a_k\,g_k(p_k),\qquad
+g_k(p)=\underbrace{p\,c_k}_{\text{drive}}-\underbrace{\big(p^2\sigma_k+\lambda_W\big)}_{\text{decay}},\qquad
+\dot p_k=\alpha\big[(c_k-p_k\sigma_k)\,a_k^2-\lambda_Pp_k\big].
+\label{eq:growth}
+\end{equation}
+\end{proposition}
+This is Tian et al.'s per-mode system (their eqs.~11--12, with $w^2\leftrightarrow a_k^2$, $\tau\leftrightarrow c_k$, $1+\sigma^2\leftrightarrow\sigma_k$), here with anisotropic $(c_k,\sigma_k)$ and an EMA target.
+The rank is the number of amplitudes $a_k$ that survive; a direction can grow only while its gain lies in the \emph{window}
+\begin{equation}
+g_k(p)>0\iff p\in\big(p_-^k,p_+^k\big),\qquad p_\pm^k=\frac{c_k\pm\sqrt{c_k^2-4\lambda_W\sigma_k}}{2\sigma_k},
+\label{eq:window}
+\end{equation}
+which is non-empty if and only if $c_k^2>4\lambda_W\sigma_k$.
+
+\begin{proposition}[Fixed points and their stability]
+\label{prop:fixed}
+Take the copy target and $\lambda_W,\lambda_P>0$.
+\begin{enumerate}[label=(\alph*),nosep]
+\item The collapsed point $(a_k,p_k)=(0,0)$ is locally stable for every $k$.
+\item Direction $k$ has a non-collapsed fixed point if and only if $c_k^2\ge4\lambda_W\sigma_k$. For $c_k^2>4\lambda_W\sigma_k$ there are two, at $p=p_\pm^k$ (of the sign of $c_k$) with $a^{2}=\lambda_Pp/(c_k-p\sigma_k)$; the one at $p_-^k$ is a saddle and the one at $p_+^k$ is stable. At equality they merge into a saddle-node, which is not robustly attracting. Hence the final rank is at most $\#\{k:c_k^2\ge4\lambda_W\sigma_k\}$.
+\item If $\lambda_W>0$ but $\lambda_P=0$, no direction has a non-collapsed fixed point: $\dot p_k=0$ with $a_k\neq0$ forces the least-squares gain $p_k=c_k/\sigma_k$, where $g_k=-\lambda_W<0$.
+\end{enumerate}
+\end{proposition}
+Part (b) is the static threshold of \citet{tian2021understanding}, \citet{wang2021directset} and \citet{arbel2026peira}, which we do not claim; by (c) a survivor needs a predictor shrunk below the least-squares gain.
+
+\begin{corollary}[Exact scalar race for $\alpha=1$]
+\label{cor:alpha1}
+Under \cref{prop:reduction} with the copy target, $\alpha=1$ and $\lambda_W=\lambda_P=\lambda$, the identity \eqref{eq:balance} restricted to direction $k$ gives $p_k^2-a_k^2=e^{-2\lambda t}\big(p_0^2-a_k(0)^2\big)$, so
+\begin{equation}
+\dot a_k=g_k(p_k)\,a_k,\qquad p_k=\sqrt{a_k^2+e^{-2\lambda t}\big(p_0^2-a_k(0)^2\big)} ,
+\label{eq:alpha1}
+\end{equation}
+a closed scalar equation, exact at every amplitude and for any initial imbalance (it is the per-mode integral of \citealp{tian2021understanding}, their eq.~14).
+In the balanced case $p_0=a_k(0)$ it is autonomous, $\dot a=(|a|c_k-a^2\sigma_k-\lambda)\,a$, and direction $k$ survives if and only if $|a_k(0)|>p_-^k\approx\lambda/c_k$.
+\end{corollary}
+The balanced case is the basin of \citet{tian2021understanding}. At a standard initialisation, however, $a_k(0)\ll p_0=O(1)$, and the identity only says that the gain decays at the rate of weight decay until the amplitude has grown to its size; which comes first is the race we now quantify.
+
+\subsection{The race in the unbalanced regime}
+\label{sec:race}
+
+\Cref{prop:fixed} says which end states exist; which one training reaches depends on the side of the separatrix through the saddle at $p_-^k$ on which it starts, and for $a_k(0)\ll\min(1,p_0)$ the race locates it.
+As long as $a_k^2(c_k-p\sigma_k)\ll\lambda_Pp$, the data term in $\dot p_k$ is negligible and the gain decays freely, $p(t)=p_0e^{-\alpha\lambda_Pt}$.
+For $\alpha=1$ this is the small-amplitude limit of \cref{cor:alpha1}; for $\alpha\neq1$, an approximation.
+The amplitude then integrates the net rate along the decaying gain (\cref{fig:drive-decay}b)
+\begin{equation}
+\log\frac{a_k(t)}{a_k(0)}\approx F_k(t)=\int_0^tg_k\big(p(s)\big)\,ds=\frac{c_k\big(p_0-p\big)-\tfrac{\sigma_k}{2}\big(p_0^2-p^2\big)}{\alpha\lambda_P}-\lambda_Wt .
+\label{eq:F}
+\end{equation}
+$F_k$ grows while the gain is inside the window, so it peaks when the gain leaves it at $p_-^k$ (or at $t=0$); if $p_0>p_+^k$ it also counts the initial shrinking phase above the window.
+
+\paragraph{Capture.}
+Direction $k$ takes over its gain once its data drive on $p_k$ balances weight decay, that is once it crosses the nullcline $\dot p_k=0$ of \eqref{eq:growth}, $a^2=\lambda_Pp/(c_k-p\sigma_k)$.
+Above the nullcline the gain is pulled up towards $p_+^k$, and the direction converges to the stable fixed point of \cref{prop:fixed}(b).
+Capture helps only while the direction still grows ($p\ge p_-^k$); no constant is fitted.
+
+\begin{definition}[Race criterion; an approximation]
+\label{def:race}
+Direction $k$ is predicted to survive if and only if
+\begin{equation}
+R_k=\max_{t\le T:\;p(t)\ge p_-^k}\Big[\log a_k(0)+F_k(t)-\tfrac12\log\frac{\lambda_P\,p(t)}{c_k-p(t)\,\sigma_k}\Big]\;\ge\;0 .
+\label{eq:race}
+\end{equation}
+where $T$ is the training horizon.
+The predicted rank is $\hat r=\#\{k:R_k\ge0\}$, which for $\Pred_0=p_0I$ is the matching rank of \cref{sec:setup}.
+For $\lambda_P=0$ the gain does not drift, and direction $k$ is predicted to survive if $g_k(p_0)>0$ and $\log a_k(0)+g_k(p_0)\,T\ge\log\theta$, where $\theta$ is the amplitude at which a direction is counted in the rank; with $\lambda_W>0$ this branch is a statement about $t\le T$ only, since \cref{prop:fixed}(c) excludes a non-collapsed fixed point.
+\end{definition}
+It depends only on $(c_k,\sigma_k)$ and $(p_0,a_k(0),\alpha,\lambda_W,\lambda_P,T)$. Without weight decay survival reduces to the initial window $g_k(p_0)>0$; with it the window is not necessary or sufficient: a gain above the window can decay into it, and a direction inside it still loses if its gain falls below $p_-^k$ before capture.
+
+\paragraph{Critical weight decay.}
+Evaluating the capture term at $p_-^k\approx\lambda_W/c_k$ and expanding for small weight decay, with $\lambda_W=\lambda_P=\lambda$ and $\alpha=1$, direction $k$ survives when
+\begin{equation}
+h_k(p_0)\equiv c_kp_0-\tfrac12\sigma_kp_0^2\;\gtrsim\;\lambda\log\frac{p_0}{a_0},\qquad\text{so}\qquad \lambda_k^{\mathrm{race}}\approx\frac{h_k(p_0)}{\log(p_0/a_0)} .
+\label{eq:lamrace}
+\end{equation}
+This is far below the static threshold $c_k^2/(4\sigma_k)$ and depends on the initial scale and gain: for $c_k=\sigma_k=p_0=1$ and $a_0=10^{-4}$, $\lambda_k^{\mathrm{race}}\approx0.05$ against the static $0.25$.
+For $\alpha\ne1$ the logarithmic corrections of the expansion are comparable to $\log(1/a_0)$ (\cref{app:proofs}), so we use \eqref{eq:race}.
+
+Without the stop-gradient, or without a predictor when the views have equal marginals, every direction decays, as known in substance \citep{tian2021understanding,halvagal2023implicit}; heavy Bernoulli masking is an exception to the second; without \cref{ass:aligned} it takes a general linear-response form (\cref{app:more}).

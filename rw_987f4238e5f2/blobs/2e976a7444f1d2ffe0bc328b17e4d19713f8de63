@@ -1,0 +1,45 @@
+"""Report figure: 1 s light curve of the downloaded photons.f32 with the constant + Gaussian
+Poisson-ML fit overlaid, and a residual panel.
+
+Usage: make_lightcurve_fit.py photons.f32 fit.json out_stem
+fit.json must give, per parameter, an MLE value:
+  {"params": {"background_rate": {"value": ...},   # photons / s
+              "burst_counts": {"value": ...},      # total burst photons
+              "centre": {"value": ...},            # s
+              "width": {"value": ...}}}            # Gaussian sigma, s
+The model per 1 s bin is  B*1 + N*[Phi((t_hi-mu)/sigma) - Phi((t_lo-mu)/sigma)]  (bin-integrated).
+Writes out_stem.png and out_stem.pdf."""
+import sys, json, numpy as np, matplotlib; matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from scipy.special import ndtr
+
+t = np.fromfile(sys.argv[1], dtype="<f4")
+p = {k: v["value"] if isinstance(v, dict) else v for k, v in json.load(open(sys.argv[2]))["params"].items()}
+B, N, mu, sig = p["background_rate"], p["burst_counts"], p["centre"], p["width"]
+# bins [0,1), ..., [1199,1200]; NumPy's last bin is right-inclusive (reviewed endpoint convention)
+c, _ = np.histogram(t, bins=1200, range=(0.0, 1200.0))
+edges = np.arange(1201.0)  # float64 for the model (histogram returns float32 edges for float32 data)
+assert np.sum((t < 0) | (t > 1200)) == 0 and c.sum() == t.size
+m = B * np.diff(edges) + N * np.diff(ndtr((edges - mu) / sig))
+r = (c - m) / np.sqrt(m)                               # Pearson residuals
+chi2 = float(np.sum(r**2)); dof = c.size - 4
+
+fig, (a1, a2) = plt.subplots(2, 1, figsize=(7.2, 5.0), dpi=200, sharex=True,
+                             gridspec_kw=dict(height_ratios=[3, 1.2], hspace=0.06))
+a1.stairs(c, edges, color="0.15", lw=0.6, zorder=3, label="Data, 1 s bins")
+a1.plot(edges[:-1] + 0.5, m, color="#e8806f", lw=2.4, zorder=2, label="Fit: constant + Gaussian")
+a1.axhline(B, color="#2a5d9f", lw=0.9, ls="--", label=f"Background, {B:,.0f} s$^{{-1}}$")
+a1.set_ylabel("Photons per 1 s bin (photons s$^{-1}$)"); a1.set_ylim(0, c.max() * 1.08)
+a1.legend(frameon=False, fontsize=8, loc="upper right")
+a2.plot(edges[:-1] + 0.5, r, ".", ms=1.5, color="0.3")
+a2.axhline(0, color="#c0392b", lw=0.8)
+for s in (-2, 2): a2.axhline(s, color="0.6", lw=0.6, ls=":")
+a2.set_ylabel("Pearson resid.\n$(n-m)/\\sqrt{m}$"); a2.set_xlabel("Arrival time (s)")
+lim = max(4.0, np.ceil(np.abs(r).max())); a2.set_ylim(-lim, lim)
+a2.text(0.01, 0.95, f"$\\chi^2$ = {chi2:.0f} for {dof} dof", transform=a2.transAxes, fontsize=8, va="top", bbox=dict(fc="white", ec="none", pad=1))
+a2.set_xlim(0, 1200)
+for a in (a1, a2): a.spines[["top", "right"]].set_visible(False)
+fig.align_ylabels(); fig.savefig(sys.argv[3] + ".png", bbox_inches="tight"); fig.savefig(sys.argv[3] + ".pdf", bbox_inches="tight")
+json.dump({"pearson_chi2": chi2, "dof": dof, "n_photons": int(t.size), "n_in_bins": int(c.sum())},
+          open(sys.argv[3] + "_gof.json", "w"), indent=1)
+print(chi2, dof, t.size)

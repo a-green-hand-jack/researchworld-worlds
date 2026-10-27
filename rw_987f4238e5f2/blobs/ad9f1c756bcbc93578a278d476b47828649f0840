@@ -1,0 +1,8 @@
+# figtab-repo — presentation
+
+- `release_assets/`: `generate.py` (objective's data spec), `make_preview.py`, `make_mp4.py`, `make_explorer.py` (+`explorer_template.html`, `common.py`) for the release's `preview.png`, `burst.mp4` (H.264, 960x544, 30 fps, 9 s), `explorer.html` (self-contained, 0.1 s base bins rebinned client-side). Usage: `python make_X.py photons.f32 <out>`.
+- `figures/make_lightcurve_fit.py`: report figure (1 s light curve + Poisson-ML constant+Gaussian fit, Pearson residual panel) from the downloaded `photons.f32` and a `fit.json` (schema in the docstring).
+
+Tested on a locally regenerated copy (SHA-256 af343d7a740bf6a1631ab06e63eeccb3cdff10e5ecf831e5447e5f6ad362edae; not committed). Versions: numpy 2.4.6, matplotlib 3.11.2, scipy, imageio-ffmpeg (ffmpeg 7.0.2).
+
+- `release_assets/check_explorer.js`: Node check of explorer.html (run in the output dir): emulates range clamping from the page's own `min`, rebins at 0.1, 0.2, 1.5 and 1200 s and prints the total. Explorer fixed 2026-10-16: slider `min=0` so 0.1 s is reachable (was `min=1`, minimum 0.2 s). Embedded 0.1 s counts verified equal to `np.histogram(t, 12000, (0,1200))` of the downloaded photons.f32.

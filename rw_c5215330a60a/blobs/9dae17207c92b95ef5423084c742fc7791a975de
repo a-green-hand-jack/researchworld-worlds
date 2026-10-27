@@ -1,0 +1,15 @@
+# Results (experiment-repo)
+Produced by `code/quad.py` (float64, as specified) and `code/quad_mp.py` (same rules in 60-digit mpmath: truncation error only). numpy 2.4.6, scipy, mpmath.
+
+- `errors.csv` – absolute errors, float64, 3 functions x 3 rules x k=1..12 (n=2^k panels). **Primary data.**
+- `fits.json` – least-squares log-log fits (order = -slope, 95% CI = t(0.975, npts-2)*stderr) for error thresholds 1e-15 (primary), 1e-14, 1e-13; plus pairwise local orders log2(e_k/e_{k+1}).
+- `orders_table.md` – the table for the report.
+- `errors_mp60.csv`, `fits_mp60.json` – supplementary high-precision errors/fits (all 12 points; and k=7..12).
+
+Conventions: n = number of panels; trapezoid on n panels; Simpson with one midpoint per panel (2n subintervals); GL = 4 nodes per panel. "Above machine precision" = error > 1e-15 (a few eps; errors of 2.2e-16 or 0 are rounding noise). Primary-threshold choice is arbitrary but the points near it are clearly noise; 1e-14/1e-13 are in fits.json.
+
+Findings:
+- exp(x): trapezoid 2.00, Simpson 3.997 [3.994, 4.000]; GL reaches the float64 floor at n=8 (error 3.7e-12, 1.5e-14, then <=2e-16): only 2 points exceed 1e-15, so the float64 fit (7.996) has no interval. The 60-digit run gives 7.999 ± 0.001 (all 12 points), 8.000 for k>=7.
+- 1/(1+25x^2) (poles at ±i/5): pre-asymptotic. float64 fits: trapezoid 2.29 [2.02, 2.55], Simpson 5.39 [4.57, 6.21] (9 points), GL 8.76 [2.9, 14.6] (4 points). Orders above theory because early points sit in a regime where the panel is larger than the pole distance (error drops faster: Simpson 1.3e-2 -> 4.5e-9 over k=1..4); asymptotic orders recovered at large n (60-digit k=7..12: 2.000, 4.000, 8.000).
+- sqrt(x): endpoint singularity (f ~ x^{1/2}) caps every rule at order 1.5: 1.483 [1.477, 1.489], 1.500, 1.500. The error is dominated by the first panel [0, 1/n], whose contribution scales like h^{3/2}, so higher-order rules gain only a constant factor.
+- Float64 roundoff floor (~1e-16 from summation) truncates the usable range for the high-order rules; this is why the number of fit points shrinks from trapezoid to Simpson to GL.

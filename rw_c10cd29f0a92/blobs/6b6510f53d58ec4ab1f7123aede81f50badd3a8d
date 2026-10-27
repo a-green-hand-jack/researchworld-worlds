@@ -1,0 +1,10 @@
+#!/bin/sh
+# Stage 3 (check): L = 256 at the 5 temperatures T* - 0.03 ... T* + 0.03 (step 0.015) taken from
+# results/stage2_crossing.json, seeds 1 2, 10,000 measured sweeps after the default 2,000 burn-in.
+# The series are kept as well (not required by the objective) to measure tau_int at L = 256.
+set -e
+cd "$(dirname "$0")/.."
+TEMPS=$(python3 -c "import json; print(' '.join(str(t) for t in json.load(open('results/stage2_crossing.json'))['stage3_temps']))")
+python3 -u code/run_points.py --L 256 --temps $TEMPS --seeds 1 2 --sweeps 10000 --burn 2000 --out data/stage3 --series --jobs 2
+python3 code/stage3_analysis.py > /dev/null
+python3 -c "import json; d=json.load(open('results/stage3_check.json')); print('stage 3 done, agree =', d['agree'], 'z =', round(d['U256_minus_Ustar_in_sigma'],2))"

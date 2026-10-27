@@ -1,0 +1,64 @@
+"""Render committed results; no fitting or inference. See README.md for invocation."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import platform
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import numpy as np
+
+p = argparse.ArgumentParser()
+p.add_argument('--source', type=Path, default=Path('.'), help='root containing results/')
+p.add_argument('--analysis-revision', required=True)
+a = p.parse_args()
+root = Path(__file__).resolve().parent.parent
+out = root / 'figures'
+(root / 'tables').mkdir(exist_ok=True)
+rdir = a.source / 'results'
+r = json.loads((rdir / 'results.json').read_text())
+data = np.genfromtxt(rdir / 'data.csv', delimiter=',', names=True)
+x = data['x']
+selected = {'A': 'OLS', 'B': 'WLS_known_weights'}
+colors = {'A': '#0072B2', 'B': '#D55E00'}
+markers = {'A': 'o', 'B': '^'}
+styles = {'A': '-', 'B': '-.'}
+plt.rcParams.update({'font.size': 9, 'axes.spines.top': False, 'axes.spines.right': False})
+fig, (ax, rx) = plt.subplots(1, 2, figsize=(7, 3.5), layout='constrained')
+for k, method in selected.items():
+    fit = r[k][method]
+    ax.scatter(x, data['y'+k], s=18, marker=markers[k], color=colors[k], alpha=.75, linewidths=0)
+    ax.plot(x, fit['intercept'][0] + fit['slope'][0]*x, color=colors[k], ls=styles[k], lw=1.8)
+    residual = np.genfromtxt(rdir / f'resid_{k}.csv', delimiter=',', names=True)
+    assert np.array_equal(residual['x'], x)
+    assert np.allclose(residual['y'], data['y'+k])
+    # Verify supplied residual columns match supplied OLS coefficients.
+    assert np.allclose(residual['ols_resid'], data['y'+k] - (r[k]['OLS']['intercept'][0] + r[k]['OLS']['slope'][0]*x))
+    rx.scatter(x, residual['ols_resid'], s=18, marker=markers[k], color=colors[k], alpha=.8, linewidths=0)
+ax.plot(x, r['truth']['intercept'] + r['truth']['slope']*x, color='#555555', ls='--', lw=1)
+handles = [Line2D([], [], color=colors[k], marker=markers[k], ls=styles[k], markersize=4, label=f'{k}: '+('OLS' if k=='A' else 'WLS')) for k in selected]
+handles += [Line2D([], [], color='#555555', ls='--', lw=1, label='Generating mean')]
+ax.legend(handles=handles, loc='upper left', frameon=False, fontsize=8)
+ax.set(title='a  Measurements and selected fits', xlabel='x', ylabel='y')
+rx.axhline(0, color='#777777', lw=.8, zorder=0)
+rx.set(title='b  Initial OLS residuals', xlabel='x', ylabel='Observed − OLS fitted y')
+rx.legend(handles=[Line2D([], [], color=colors[k], marker=markers[k], ls='', markersize=4, label=k) for k in selected], loc='lower left', frameon=False, ncol=2)
+for axis in (ax, rx):
+    axis.set_xlim(-1, 40)
+    axis.set_xticks([0, 10, 20, 30, 39])
+    axis.grid(axis='y', alpha=.15)
+fig.savefig(out / 'fig1.png', dpi=200)
+plt.close(fig)
+caption = ('**Figure 1. Selected fits and the residual check.** Left: observations and fitted means for A (blue circles, solid OLS line) and B (orange triangles, dash-dot WLS line); the gray dashed line is the generating mean. Right: residuals from the initial OLS fit of each series, on one shared scale. B shows increasing spread with x; the supplied constant-variance design and residual check support OLS for A, while B uses WLS with inverse-variance weights $1/(0.5+0.15x)^2$. Lines are fitted means, not confidence bands. Coefficient intervals in the accompanying table are two-sided 95% Student-t intervals with 38 residual degrees of freedom and fitted residual scale; B uses the supplied variance shape as weights.\n')
+(out / 'fig1_caption.md').write_text(caption)
+rows = ['| Series | Chosen method | Slope | 95% CI (slope) | Intercept | 95% CI (intercept) |', '|:--|:--|--:|:--|--:|:--|']
+for k, method in selected.items():
+    s, b = r[k][method]['slope'], r[k][method]['intercept']
+    rows.append(f'| {k} | {"OLS" if k=="A" else "WLS"} | {s[0]:.3f} | [{s[1]:.3f}, {s[2]:.3f}] | {b[0]:.3f} | [{b[1]:.3f}, {b[2]:.3f}] |')
+rows.append('\nTwo-sided 95% Student-t intervals (38 residual degrees of freedom), using fitted residual scale. B weights: inverse variance, $1/(0.5+0.15x)^2$. Entries rounded from `results/results.json`; arrays are [estimate, lower bound, upper bound, standard error].')
+(root / 'tables' / 'coefficients.md').write_text('\n'.join(rows)+'\n')
+files = ['results.json', 'data.csv', 'resid_A.csv', 'resid_B.csv']
+provenance = {'analysis_repository': 'world/experiment-repo', 'analysis_revision': a.analysis_revision, 'inputs': {f'results/{f}': hashlib.sha256((rdir/f).read_bytes()).hexdigest() for f in files}, 'selected_fields': selected, 'versions': {'python': platform.python_version(), 'numpy': np.__version__, 'matplotlib': matplotlib.__version__}, 'figure': {'width_inches': 7, 'height_inches': 3.5, 'dpi': 200}, 'inference': 'No fitting or inference performed here; selected methods follow experiment-repo brief.md.'}
+(out / 'provenance.json').write_text(json.dumps(provenance, indent=2)+'\n')

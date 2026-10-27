@@ -1,0 +1,87 @@
+"""Independent check of the A2' result (experiment-repo 4faa7a0/34a943e results/e4/a2p/a2p_score.json, a2p_runs.jsonl.gz;
+registered prediction.json A2p at 2a2d7a8, driver code/e4_a2p.py md5 ac712f92 unchanged since).
+From the delivered run records: rescore rank at T_h on every run (model and baselines, paired bootstrap of the MAE
+difference with my own resampling), re-run the frozen v4 (e4_theory.py md5 72f6b424) on every stored state at K, compare
+the stored truth and floor with my own run of the registered truth and floor (checks/e4_a2p_floor.json), and recompute
+the reported-without-tolerance shares and the closed-form / race-GD / lambda reports.
+Usage: python3 checks/e4_a2p_check.py EXPERIMENT_CHECKOUT > checks/e4_a2p_check.json"""
+import sys, os, json, gzip
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+EXP = sys.argv[1]
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e4_a1 as A
+import e4_a2p as P
+import e4_theory as th
+A.STATS = dict(P.A2P_STATS)
+runs = [json.loads(l) for l in gzip.open(os.path.join(EXP, "results/e4/a2p/a2p_runs.jsonl.gz"), "rt")]
+mine = {r["id"]: r for r in json.load(open(os.path.join(os.path.dirname(__file__), "e4_a2p_floor.json")))["rows"]}
+out = dict(runs=len(runs), nonfinite=sum(not r["finite"] for r in runs))
+
+
+def v4(r):
+    A.STATS = dict(P.A2P_STATS)
+    c, s = A.stats(r["stats"]); stK = {k: np.array(v) for k, v in r["state_K"].items()}
+    o = th.phase_model_v4(c, s, stK, A.K, r["lam"], r["eta"], r["T_h"], b1=r["b1"], b2=r["b2"], checks=r["checks_half"])
+    return int(np.sum(o["alive"][r["T_h"]])), [int(np.sum(o["alive"][t])) for t in r["checks_half"]]
+
+
+with Pool(8) as pool:
+    rer = pool.map(v4, runs)
+out["v4_rerun_match_T_h"] = int(sum(rr[0] == r["pred_rank"]["model"] for rr, r in zip(rer, runs)))
+out["v4_rerun_match_half"] = int(sum(rr[1] == [int(np.sum(x)) for x in r["pred_alive_model_half"]] for rr, r in zip(rer, runs)))
+tc = []
+for r in runs:
+    ck = r["checkpoints"]; cnt = {t: int(np.sum(x)) for t, x in zip(ck, r["alive"])}
+    tc.append(cnt)
+truthT = [c[r["T_h"]] for c, r in zip(tc, runs)]
+out["truth_T_h_equals_my_run"] = int(sum(truthT[i] == mine[r["id"]]["n_truth"] for i, r in enumerate(runs)))
+fl = [r for r in runs if "floor_alive_half" in r]
+out["floor_runs_stored"] = len(fl)
+out["floor_equals_my_run"] = int(sum(int(np.sum(r["floor_alive_half"][-1])) == mine[r["id"]]["n_floor"] for r in fl))
+out["floor_failure_stored_subset"] = float(np.mean([abs(int(np.sum(r["floor_alive_half"][-1])) - truthT[runs.index(r)]) > 1 for r in fl]))
+names = ["model", "static_bound", "delivered_race", "window_mu_wd", "mu_count", "persistence_K", "all_alive"]
+err = {k: np.array([abs(r["pred_rank"][k] - t) for r, t in zip(runs, truthT)], float) for k in names}
+out["rank_at_T_h"] = {k: dict(mae=float(e.mean()), within1=float((e <= 1).mean())) for k, e in err.items()}
+rng = np.random.default_rng(12345); B = 4000; n = len(runs)
+idx = rng.integers(0, n, (B, n))
+out["mae_diff_ci_my_bootstrap"] = {k: [float((err[k] - err["model"]).mean())] +
+                                   [float(x) for x in np.percentile((err[k] - err["model"])[idx].mean(1), [2.5, 97.5])]
+                                   for k in names[1:]}
+sp = {}
+for key in ("stats", "eta", "b2", "lam", "p0"):
+    for v in sorted({r[key] for r in runs}):
+        S = [i for i, r in enumerate(runs) if r[key] == v]
+        sp[f"{key}={v}"] = float((err["model"][S] <= 1).mean())
+out["model_within1_splits"] = sp
+conv = np.array([len({c[t] for t in r["checks_half"]}) == 1 for c, r in zip(tc, runs)])
+late = np.array([len({c[t] for t in r["checks_late"] if t >= 2 * r["T_h"]}) == 1 for c, r in zip(tc, runs)])
+pm = [[int(np.sum(x)) for x in r["pred_alive_model_half"]] for r in runs]
+marks = np.array([len(set(p)) > 1 or any(r["T_h"] / 2 <= x <= r["T_h"] for x in r["model_last_toggle"]) for p, r in zip(pm, runs)])
+out["reported"] = dict(converged_share=float(conv.mean()),
+                       converged_share_by_stats={s: float(conv[[r["stats"] == s for r in runs]].mean()) for s in P.A2P_STATS},
+                       late_constant=float(late.mean()), late_constant_among_nonconv=float(late[~conv].mean()),
+                       per_checkpoint_within1=[float(np.mean([abs(pm[i][j] - tc[i][r["checks_half"][j]]) <= 1 for i, r in enumerate(runs)])) for j in range(8)],
+                       marks_recall_nonconv=float(marks[~conv].mean()), marks_false_conv=float(marks[conv].mean()),
+                       marks_false_conv_a2pa=float(marks[conv & np.array([r["stats"] == "a2pa" for r in runs])].mean()))
+# closed form, race vs GD, lambda split
+cf = []; gdr = []
+for r, t, cv in zip(runs, truthT, conv):
+    c, s = A.stats(r["stats"]); k = int((c / s > A.THR).sum())
+    cf.append(dict(cf=k, model=r["pred_rank"]["model"], t=t, conv=bool(cv), race=r["pred_rank"]["delivered_race"],
+                   gd=r["gd_rank"], static=r["pred_rank"]["static_bound"], stats=r["stats"], lam=r["lam"]))
+C = [x for x in cf if x["conv"]]
+out["closed_form"] = dict(converged=len(C), cf_equals_model_conv=sum(x["cf"] == x["model"] for x in C),
+                          cf_within1_all=float(np.mean([abs(x["cf"] - x["t"]) <= 1 for x in cf])),
+                          cf_mae_all=float(np.mean([abs(x["cf"] - x["t"]) for x in cf])))
+out["race_vs_gd"] = dict(equal=float(np.mean([x["race"] == x["gd"] for x in cf])),
+                         static_mae_on_gd=float(np.mean([abs(x["static"] - x["gd"]) for x in cf])),
+                         adamw_minus_gd_conv=float(np.mean([x["t"] - x["gd"] for x in C])))
+out["lambda_split"] = {f"{s}|lam={l}": dict(conv_truth=float(np.mean([x["t"] for x in C if x["stats"] == s and x["lam"] == l])) if any(x["stats"] == s and x["lam"] == l for x in C) else None,
+                                            n_conv=sum(x["stats"] == s and x["lam"] == l for x in C),
+                                            static=sorted({x["static"] for x in cf if x["stats"] == s and x["lam"] == l}),
+                                            gd=float(np.mean([x["gd"] for x in cf if x["stats"] == s and x["lam"] == l])),
+                                            cf=sorted({x["cf"] for x in cf if x["stats"] == s and x["lam"] == l}))
+                       for s in P.A2P_STATS for l in P.LAM}
+print(json.dumps(out, indent=1))

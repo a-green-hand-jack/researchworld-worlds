@@ -1,0 +1,25 @@
+#!/bin/sh
+# Download photons.f32 + photons.sha256 from paper-repo's release, verify, and build every figtab output.
+# Usage: build_all.sh <tag> <workdir> [fit.json]
+set -eu
+TAG=$1; W=$2; FIT=${3:-}; R=$(cd "$(dirname "$0")" && pwd)
+mkdir -p "$W"; cd "$W"
+forge api -R world/paper-repo repos/world/paper-repo/releases/tags/$TAG > release.json
+for f in photons.f32 photons.sha256; do
+  url=$(python3 -c "import json,sys;print([a['browser_download_url'] for a in json.load(open('release.json'))['assets'] if a['name']=='$f'][0])")
+  curl -fsSLo $f -u "$HT_FORGEJO_USER:$FORGEJO_TOKEN" "$url"
+done
+python3 - "$TAG" <<'PY'
+import hashlib, json, sys, os
+h = hashlib.sha256(open("photons.f32", "rb").read()).hexdigest()
+ref = open("photons.sha256").read().split()[0]
+rel = json.load(open("release.json"))
+json.dump({"release": "world/paper-repo", "tag": sys.argv[1], "release_id": rel["id"],
+           "size_bytes": os.path.getsize("photons.f32"), "sha256_downloaded": h,
+           "sha256_published": ref, "match": h == ref}, open("download_provenance.json", "w"), indent=1)
+print("sha256", h, "match", h == ref); assert h == ref
+PY
+python3 $R/release_assets/make_preview.py photons.f32 preview.png
+python3 $R/release_assets/make_mp4.py photons.f32 burst.mp4
+python3 $R/release_assets/make_explorer.py photons.f32 explorer.html
+[ -n "$FIT" ] && python3 $R/figures/make_lightcurve_fit.py photons.f32 "$FIT" lightcurve_fit || true

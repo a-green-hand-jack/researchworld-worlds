@@ -1,0 +1,40 @@
+"""E5/B1 development grid (release asset e5__b1dev__b1_dev_runs.jsonl.gz of the experiment): (1) re-score every run with
+the delivered e5_b1.score_run/summarize and compare with results/e5/b1dev/b1_dev_score.json; (2) the registered B1b
+statistics (non-constant schedules) split into events before the first schedule knot (constant-lambda race) and at or
+after it (schedule-induced), per schedule kind; (3) B1a agreement on (direction, checkpoint) pairs after the first knot
+whose measured state differs from the measured state at the knot.
+Usage: python3 checks/e5_b1_dev_split.py EXPERIMENT_CHECKOUT RUNS.jsonl.gz > checks/e5_b1_dev_split.json"""
+import sys, os, json, gzip
+import numpy as np
+sys.path.insert(0, os.path.join(sys.argv[1], "code"))
+import e5_b1 as B
+
+rows, split, chg = [], {}, {}
+for line in gzip.open(sys.argv[2], "rt"):
+    rec = json.loads(line); cfg = rec["cfg"]; r = B.score_run(rec); rows.append(r)
+    if cfg["kind"].startswith("const"):
+        continue
+    ts = cfg["ts"]
+    meas = B.debounce(rec["truth"]["trans"]); pred = B.debounce([tuple(e) for e in rec["pred"]["events"]])
+    for grp, keep in (("pre", lambda e: e[2] < ts), ("post", lambda e: e[2] >= ts)):
+        m = {k: [e for e in v if keep(e)] for k, v in meas.items()}; p = {k: [e for e in v if keep(e)] for k, v in pred.items()}
+        errs, adt, unm, nev = B.match_events(m, p, cfg["kW"], cfg["kP"])
+        for key in (grp, f"{grp}|{cfg['kind']}"):
+            s = split.setdefault(key, dict(errs=[], unm=0, nev=0)); s["errs"] += list(errs); s["unm"] += unm; s["nev"] += nev
+    A = np.array(rec["truth"]["a"], float) > B.THR; W = np.array(rec["pred"]["W"], float) > B.THR; t = np.array(rec["truth"]["t"])
+    i0 = int(np.searchsorted(t, ts)); i0 = min(i0, len(t) - 1)
+    ch = (A[i0:] != A[i0][None, :]); ok = (A[i0:] == W[i0:])
+    for key in ("all", cfg["kind"]):
+        c = chg.setdefault(key, [0, 0, 0]); c[0] += int(ch.sum()); c[1] += int((ok & ch).sum()); c[2] += int(A.size)
+rows.sort(key=lambda r: r["id"])
+sched = [r for r in rows if not r["kind"].startswith("const")]
+mine = dict(all=B.summarize(rows), schedules=B.summarize(sched))
+deliv = json.load(open(os.path.join(sys.argv[1], "results/e5/b1dev/b1_dev_score.json")))
+cmp = {g: {k: [mine[g][k], deliv[g][k]] for k in ("state_agree", "events", "unmatched_share", "timing_logerr_median", "timing_logerr_p90")} for g in mine}
+cmp["final_mae_stage"] = [mine["schedules"]["final_rank"]["stage"]["mae"], deliv["schedules"]["final_rank"]["stage"]["mae"]]
+out = dict(rescore_vs_delivered=cmp,
+           b1b_split={k: dict(events=v["nev"], unmatched_share=v["unm"] / max(v["nev"], 1),
+                              median=float(np.median(v["errs"])) if v["errs"] else None,
+                              p90=float(np.quantile(v["errs"], 0.9)) if v["errs"] else None) for k, v in sorted(split.items())},
+           b1a_changed_after_knot={k: dict(changed_pairs=v[0], share_of_pairs=v[0] / v[2], stage_agree_on_changed=v[1] / max(v[0], 1)) for k, v in chg.items()})
+print(json.dumps(out, indent=1))

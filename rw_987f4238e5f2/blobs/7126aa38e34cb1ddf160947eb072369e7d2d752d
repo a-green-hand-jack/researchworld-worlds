@@ -1,0 +1,27 @@
+# paper-repo
+
+ResearchWorld role: paper-repo — venue and report for the photon-burst study;
+data generation and primary data-release hosting.
+
+## Data release
+
+- Tag `photons-v1` (release of this repository) publishes `photons.f32`
+  (120,000,000 bytes, raw little-endian float32, never committed) and
+  `photons.sha256`.
+- `code/generate_photons.py` — exact objective generator (default_rng(205):
+  24,000,000 uniform [0,1200) + 6,000,000 normal(600,30); concatenated,
+  sorted, little-endian float32).
+- `data-release/generation-stats.json` — generation provenance: environment,
+  draw order, extrema, endpoint-quantization counts, file digest.
+- `data-release/release-provenance.json` — release tag, published checksum,
+  and the generator's own round-trip download verification.
+
+The likelihood fit (experiment-repo) and all figures (figtab-repo) are
+computed by other positions from their own downloads of this release.
+
+## Report
+
+- `report/report.md` — the one-page report (release tag, downloaded SHA-256
+  and match outcome, fit table, light-curve figure), referencing the figure
+  delivered by figtab-repo under `report/figures/`.
+- `venue-artifacts.json` — declared venue requirement: `report/report.md`.

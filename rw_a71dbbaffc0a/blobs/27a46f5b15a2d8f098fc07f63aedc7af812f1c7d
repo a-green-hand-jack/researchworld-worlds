@@ -1,0 +1,7 @@
+# Review record (in progress)
+- paper-repo answered #2: step 2 NoteWorld nw_3d964f469935; step 3 world rw_bf27c6e9bf79 (continued from rw_399c28e983a7 @ g1).
+- My own `researchworld stop rw_bf27c6e9bf79` was refused: `command refused (HTTP 422): no world rw_bf27c6e9bf79 is yours or given you to read`. `researchworld status` on it gives the same refusal. exit status of the shell pipeline was masked by `tail`, so only the message is evidenced.
+- report/report.md not yet delivered at paper-repo cd7ff180267e; no verdict yet.
+
+## Verdict (paper-repo 158a86bff6af)
+Inspected report/report.md: each of steps 1-5 has commands, exit status, decisive output and world ids (nw_3d964f469935, rw_bf27c6e9bf79); refusals (direct noteworld run, stop/capture on a read-only world, capped drive "invalid configuration sources", max_worlds 2 limit) are stated as outcomes. Consistent with my own refused stop (HTTP 422, world not visible to me). Approved.

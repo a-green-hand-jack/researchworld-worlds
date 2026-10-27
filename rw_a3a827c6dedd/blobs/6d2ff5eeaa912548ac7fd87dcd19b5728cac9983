@@ -1,0 +1,42 @@
+# Review record
+
+## Pass 1 — analysis evidence (experiment-repo c03bc77cbaef711d8c780ae93cf81a11aeaf244d)
+
+Inspected: brief.md, assignment.json, code/monte_carlo.py, code/check_results.py,
+results/per_seed.csv, results/summary.json, results/README.md.
+
+Independent check (`review/verify.py`, NumPy 2.4.6, SciPy in sandbox): re-ran all 20
+PCG64 streams from SeedSequence(20261020).spawn(20), 1,000,000 points each on [0,1)²;
+inside counts reproduce every row of per_seed.csv exactly (two inside tests: x²+y²≤1 and
+hypot≤1 agree). Recomputed from the counts: mean 3.1418818, sample SD 0.00178005,
+t(0.975,19)=2.09302, half-width 0.00083309, 95% CI [3.1410487, 3.1427149],
+signed error +0.00028915 (abs 0.00028915), total 20,000,000 points — all match summary.json
+to 1e-12. Their check_results.py passes. Across-seed SD / binomial SD = 1.084; a chi-square
+test of the sample variance against the binomial value gives two-sided p = 0.54, so the
+spread is consistent with the theory. The interval contains math.pi.
+
+Method meets the objective and brief: uniform points in the unit square, quarter-circle
+count, 4·inside/total, 20 independent spawned streams with recorded seeds, Student-t
+interval across seeds, signed and absolute error distinguished.
+
+Conclusion: analysis evidence is correct and supports the numbers. No findings.
+
+Outstanding: report/report.md from paper-repo not yet delivered (paper-repo at
+a06382be4482336bbce84836e9029cd2a3dd8004 has only README.md). Approval waits on it.
+
+## Pass 2 — assembled delivery (paper-repo 452ab66ee9831ac082f73dd07ec9b1fd014ad0d5, assignment at experiment-repo c03bc77cbaef711d8c780ae93cf81a11aeaf244d)
+
+Assembled with `ht-role delivery`: README.md and report/report.md (paper-repo), no errors,
+nothing undelivered. No figures are delivered (none required by the objective or brief).
+
+report/report.md (300 words, ≈ half a page) checked line by line against summary.json and my
+re-run: method (unit square, x²+y²≤1, 4·inside/N, 20 spawned PCG64 streams, seeds recorded),
+mean 3.1418818, 95% Student-t CI [3.1410487, 3.1427149] with half-width 0.000833 and
+t = 2.0930, SD 0.001780 / SE 0.000398, signed error +0.000289 and absolute error 0.000289
+(relative 9.2e-5 checked: 0.000289/π = 9.20e-5), total 20,000,000 points with 15,709,409
+inside, binomial SD 0.001642 and ratio 1.08 — all correct. Interpretation does not exceed
+the evidence (states single-run interval, approximate nominal coverage). Provenance cites
+the experiment-repo commit and files, which resolve.
+
+Conclusion: the delivery meets every requirement of the objective (estimate, interval,
+error, total points, half-page report). Approved.

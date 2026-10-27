@@ -1,0 +1,83 @@
+{
+ "hostname": "cn113-35-l",
+ "slurm_job_id": "53905853",
+ "slurmd_nodename": "cn113-35-l",
+ "slurm_job_nodelist": "cn113-35-l",
+ "cpu_model": "AMD EPYC 7702 64-Core Processor",
+ "os_cpu_count": 128,
+ "affinity_cpus": 1,
+ "platform": "Linux-5.14.0-427.20.1.el9_4.0.1.x86_64-x86_64-with-glibc2.34",
+ "python": "3.11.17",
+ "numpy": "2.4.6",
+ "scipy": "1.17.1",
+ "sklearn": "1.9.1",
+ "pandas": "3.0.6",
+ "joblib": "1.6.0",
+ "threadpoolctl": "3.7.0",
+ "blas": [
+  {
+   "internal_api": "openblas",
+   "version": "0.3.30",
+   "num_threads": 1,
+   "architecture": "Haswell",
+   "filepath": "/ibex/user/wuj0c/rw/rw-1e4b87bc8bf4/venv/lib/python3.11/site-packages/scipy.libs/libscipy_openblas-6cdc3b4a.so"
+  },
+  {
+   "internal_api": "openblas",
+   "version": "0.3.31.188.0",
+   "num_threads": 1,
+   "architecture": "Haswell",
+   "filepath": "/ibex/user/wuj0c/rw/rw-1e4b87bc8bf4/venv/lib/python3.11/site-packages/numpy.libs/libscipy_openblas64_-32a4b2a6.so"
+  },
+  {
+   "internal_api": "openmp",
+   "version": null,
+   "num_threads": 1,
+   "architecture": null,
+   "filepath": "/ibex/user/wuj0c/rw/rw-1e4b87bc8bf4/venv/lib/python3.11/site-packages/scikit_learn.libs/libgomp-e985bcbb.so.1.0.0"
+  }
+ ],
+ "thread_env": {
+  "OMP_NUM_THREADS": "1",
+  "OPENBLAS_NUM_THREADS": "1",
+  "MKL_NUM_THREADS": "1"
+ },
+ "data_file": "/ibex/user/wuj0c/rw/rw-1e4b87bc8bf4/v1/results/data/iris.arff",
+ "data_sha256": "38110f3fd3cef003ca4909038a4d6b235f36a85d036dc7eedeff67c5925e826c",
+ "classes": [
+  "Iris-setosa",
+  "Iris-versicolor",
+  "Iris-virginica"
+ ],
+ "code_sha256": {
+  "fetch_data.py": "6aad13510a2d3af204257bb5118be6cc1950ce883cf39ca988cb3d9dc196eb3c",
+  "ibex_job.sbatch": "693a17ef0bc780ae7f525c24e5b3aa6fae4fe0cda5506cae8153f50dc8922bb0",
+  "requirements.lock": "fcffe79e09fb3d71f894290d84834dbae3021d90a2a98c4bea7e91ced3f764ec",
+  "run_cv.py": "448398c6dcb0f1d134fd825dd8792b0ec221e9b35d50ff5a20e09dec1962934e",
+  "run_local.sh": "f19b147be9a5f6c7881cc795c2aa36d267458030e80c32a31f958176467258f8"
+ },
+ "outer_seed": 20261017,
+ "inner_seed_base": 1000,
+ "n_splits": 5,
+ "n_repeats": 10,
+ "k_grid": [
+  1,
+  3,
+  5,
+  7,
+  9,
+  11,
+  13,
+  15,
+  17,
+  19,
+  21,
+  23,
+  25,
+  27,
+  29,
+  31
+ ],
+ "wall_seconds": 15.95,
+ "started_utc": "2026-10-17T08:51:43Z"
+}

@@ -1,0 +1,21 @@
+# Brief (from the Research objective, experiment-repo#1)
+
+Objective, quoted: "Two small computations, written up as a one-page report."
+
+1. "Fit a straight line to 40 noisy points: x = 0, 1, ..., 39 and y = 2.5 + 0.8 x + e, where e is drawn from a normal distribution with standard deviation 3 using numpy.random.default_rng(227). Report the slope and the intercept with 95% confidence intervals, and one figure of the data with the fitted line."
+2. "Run `simulate.py` from the initial state once in full (`python3 -u simulate.py --out results.json`, 90 chunks). It estimates pi by Monte Carlo and takes 15 to 20 minutes on one CPU. Report its estimate with the 95% interval it prints, and whether the interval contains pi."
+
+Deliver `report/report.md` (Markdown is enough) with both results and the figure, and the code that produced every number next to it.
+
+## What the material shows
+- Only input: `inputs/0/simulate.py` (sha256 f537bb8f...1363). 90 chunks x 60,000,000 points, chunk i uses `random.Random(227+i)`; estimate = mean of chunk estimates; interval = mean +/- 1.96 * stdev/sqrt(90) (normal quantile, not t). Writes `estimate`, `ci95`, `chunks`, `samples_per_chunk`, `seconds` to the --out file. ~9 s/chunk measured, ~13-14 min total.
+- Draw order for task 1: `rng.normal(0, 3, size=40)` after `default_rng(227)`; noise drawn in one call in x order. The objective does not fix the order; this is the natural reading.
+- CI for the line: standard OLS t-intervals, df = 38 (t = 2.0244). This is a convention choice; the objective says only "95% confidence intervals".
+
+## Conventions / checks
+- Report the true values (0.8, 2.5) next to the CIs as a sanity check, not as a claim.
+- The pi interval is the script's own printed one; report it as printed, and state contain-pi yes/no from the numbers. Do not rerun with other settings or substitute results; a single full run is requested.
+- "Code that produced every number next to it": `code/` holds `fit_line.py`, unmodified `simulate.py`; results in `results/`.
+
+## Not established
+- Whether the reviewer wants a t- or normal-based CI for the fit (t chosen; the normal-based one would be slightly narrower).

@@ -1,0 +1,83 @@
+"""Independent checks of theory/ext_A_lntarget.md (experiment a972088), written without importing e4_a4 except
+where its truth/flow are the object compared. Own LN, own Jacobian, joint (x1, x2) sampling (no Gaussian
+regression identity), seeds 88xxx (outside every A4 grid).
+  i    N2-i   E[LN(W x2) x1^T] (joint draws) vs E[J_LN(W x2)] W S21 (own Jacobian), scales 1, 1e-2, 1e-4.
+  ii   N2-ii.3 single-direction drive D = c sqrt(2d/(pi tau)), and the eps regime: the reduced (a, p) system with
+       eps > 0 near the origin.
+Usage: python3 independent.py OUT_JSON"""
+import sys, json, math
+import numpy as np
+sys.path.insert(0, "/tmp/a4code/code")
+import e4_a4 as A          # spectra() only (the data families as registered)
+
+EPS = 1e-5; N = 8
+
+
+def ln(Y, d):
+    Yc = Y - Y.mean(1, keepdims=True)
+    return Yc / np.sqrt((Yc ** 2).sum(1, keepdims=True) / d + EPS)
+
+
+def gain(W, tau, d, M, rng):
+    G = np.zeros((d, d)); Pi = np.eye(d) - 1.0 / d
+    for _ in range(M // 20000):
+        Y = (rng.standard_normal((20000, N)) * np.sqrt(tau)) @ W.T @ Pi
+        r2 = (Y ** 2).sum(1) / d + EPS; r = np.sqrt(r2)
+        G += (Pi[None] / r[:, None, None] - np.einsum('mi,mj->mij', Y, Y) / (d * r2 * r)[:, None, None]).sum(0)
+    return G / (M // 20000 * 20000)
+
+
+def joint(M, tau, c, s, rng):
+    rho = c / tau; sig = np.sqrt(s - rho ** 2 * tau)
+    x2 = rng.standard_normal((M, N)) * np.sqrt(tau); x1 = rho * x2 + sig * rng.standard_normal((M, N))
+    return x1, x2
+
+
+out = {}
+tau, c, s = A.spectra("flat"); d = 12; rng = np.random.default_rng(88001)
+res = []
+Wb = rng.standard_normal((d, N)) / np.sqrt(N)
+for scale in (1.0, 1e-2, 1e-4):
+    W = scale * Wb
+    x1, x2 = joint(1_000_000, tau, c, s, rng)
+    lhs = ln(x2 @ W.T, d).T @ x1 / len(x1)
+    x1b, x2b = joint(1_000_000, tau, c, s, rng)
+    lhs2 = ln(x2b @ W.T, d).T @ x1b / len(x1b)
+    rhs = gain(W, tau, d, 1_000_000, rng) @ W @ np.diag(c)
+    res.append(dict(scale=scale, rel_diff=float(np.linalg.norm(lhs - rhs) / np.linalg.norm(rhs)),
+                    replicate_rel_diff=float(np.linalg.norm(lhs - lhs2) / np.linalg.norm(rhs))))
+out["N2_i"] = res
+
+# N2-ii.3 single direction, every family at d = 12 and 32: D theory vs MC (a = 1)
+res = []
+for fam in ("flat", "decay", "flat_h", "decay_h"):
+    tau, c, s = A.spectra(fam)
+    for dd in (12, 32):
+        u = np.ones(dd); u[: dd // 2] = -1; u /= np.linalg.norm(u)
+        i = int(np.argmax(c * np.sqrt(2 * dd / (np.pi * tau))))
+        x1, x2 = joint(400000, tau, c, s, rng)
+        Y = np.outer(x2[:, i], u); D_mc = float((ln(Y, dd) @ u * x1[:, i]).mean())
+        Dth = c * np.sqrt(2 * dd / (np.pi * tau))
+        res.append(dict(fam=fam, d=dd, i=i, D_mc=D_mc, D_theory=float(Dth[i]), maxD=float(Dth.max()), minD=float(Dth.min())))
+out["N2_ii3_D"] = res
+
+# eps regime: reduced single-direction (a, p) system with the exact eps > 0 drive E[LN(a xi u) x1] = g(a) u,
+# g(a) by quadrature over xi ~ N(0, tau): LN(a xi u) = a xi u / sqrt(a^2 xi^2 / d + eps).
+def g_of_a(a, ci, ti, dd, z):
+    xi = z * np.sqrt(ti); return float((a * xi / np.sqrt(a * a * xi * xi / dd + EPS) * (ci / ti) * xi).mean())
+
+z = np.random.default_rng(88002).standard_normal(200000)
+tau, c, s = A.spectra("decay"); i = N - 1; dd = 12; ci, ti, si = c[i], tau[i], s[i]
+res = []
+for lam in (0.06, 0.25):
+    for a0, p0 in ((1e-4, 1e-4), (1e-4, 0.6), (1e-3, 0.6), (1e-3, 2.0), (3e-2, 2.0)):
+        a, p, eta = a0, p0, 0.05
+        for t in range(int(8 / (eta * lam)) + 4000):
+            g = g_of_a(a, ci, ti, dd, z[:20000]) if a > 0 else 0.0
+            da = p * g - p * p * si * a - lam * a; dp = g * a - p * si * a * a - lam * p
+            a, p = a + eta * da, p + eta * dp
+        res.append(dict(fam="decay", i=i, d=dd, lam=lam, a0=a0, p0=p0, a_T=a, p_T=p,
+                        gain_at_0=float(ci / math.sqrt(EPS)), D=float(ci * math.sqrt(2 * dd / (math.pi * ti)))))
+out["eps_regime_single"] = res
+json.dump(out, open(sys.argv[1], "w"), indent=1)
+print(json.dumps(out, indent=1))

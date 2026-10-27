@@ -1,0 +1,51 @@
+# Do two noisy series need weighted least squares? OLS vs WLS for series A and B
+
+Model: y = 2.5 + 0.8 x + e, x = 0..39 (n = 40). A: e ~ N(0, 3²). B: e ~ N(0, (0.5+0.15x)²). Both drawn from one `numpy.random.default_rng(221)` stream, A first, then B (numpy 2.4.6, statsmodels 0.15.0). All numbers below are read from `results/results.json` and `results/selected.json` (written by `code/analysis.py`, run from the repository root; `results/README.md` maps code lines to quantities); the lines that produce them are quoted beside each result. CIs are 95%, t-based, 38 df.
+
+![Series A and B with the fitted lines of the chosen method, and OLS residuals against x](../figures/fig1.png)
+
+*Figure 1 (`figures/fig1.png`, caption in `figures/fig1_caption.md`, generator and provenance in `figures/`). Left: observations, the chosen-method fitted lines (A: OLS solid, B: WLS dash-dot) and the generating mean (grey dashed). Right: residuals of the initial OLS fit of each series on one scale; B's spread grows with x, A's does not. Lines are fitted means, not confidence bands.*
+
+## Decision: A -> OLS, B -> WLS
+
+Residual check of the OLS fit (`diag()` in `code/analysis.py`; values under `ols_residual_diagnostics`):
+
+| OLS residual check | A | B |
+|---|---|---|
+| Breusch-Pagan LM (p) | 1.69 (0.194) | 8.09 (**0.0045**) |
+| Spearman rho of abs(resid) vs x (p) | 0.09 (0.58) | 0.44 (**0.0041**) |
+| Goldfeld-Quandt F, separate fit per half (p) | 1.38 (0.251) | 4.05 (**0.0024**) |
+| Residual SD, separate fit per half (x<20 / x>=20) | 2.45 / 2.88 | 2.09 / 4.20 |
+
+```python
+bp = het_breuschpagan(r, X); rho, p_rho = stats.spearmanr(x, np.abs(r))
+s2 = [sm.OLS(y[sl], X[sl]).fit().scale for sl in (slice(0, 20), slice(20, 40))]  # classical GQ: fit each half
+f = s2[1] / s2[0]; p_gq = stats.f.sf(f, 18, 18)   # checked against statsmodels het_goldfeldquandt; SDs = sqrt(s2)
+```
+
+- **A: OLS.** None of the three tests finds the spread changing with x, and the model has constant variance, so the correct weights are equal and WLS reduces to OLS. A non-rejection on 40 points is weak evidence on its own; the choice also rests on the constant-sd design.
+- **B: WLS** with weights 1/(0.5+0.15x)², the inverse of the stated variance. All three tests reject constant variance and the residual SD of the second half is twice that of the first. After weighting, the standardised residuals show no trend (SD 1.11 / 0.80; Spearman rho -0.05, p = 0.77; `wls_weighted_resid_diagnostics`). A feasible WLS that estimates the variance from the OLS residuals, without using the design, gives nearly the same fit (slope 0.849, intercept 2.589; `FWLS_estimated_weights`).
+- **Why it matters for B:** in 4000 simulated replicates (seed 9001) the slope CI covers the truth 93.4% of the time under OLS and 95.1% under WLS. The mean CI width is 0.210 under OLS and 0.144 under WLS, and the slope SD is 0.057 against 0.036 (`monte_carlo_4000_reps`).
+
+## Estimates under the chosen method
+
+The same values, rounded to three decimals, are in `tables/coefficients.md`.
+
+```python
+ols = sm.OLS(yA, X).fit()                                  # series A: OLS
+wls = sm.WLS(yB, X, weights=1.0 / sdB**2).fit()            # series B: WLS, sdB = 0.5 + 0.15 x
+c = res.conf_int(0.05)                                     # 95% CI, t-based, n-2 = 38 df
+```
+
+| Series (method) | Intercept (true 2.5) | 95% CI | Slope (true 0.8) | 95% CI |
+|---|---|---|---|---|
+| A (OLS) | 3.100 | [1.386, 4.815] | 0.7552 | [0.6795, 0.8308] |
+| B (WLS) | 2.609 | [1.987, 3.232] | 0.8473 | [0.7769, 0.9176] |
+
+For comparison, OLS on B gives intercept 3.002 [0.945, 5.059] and slope 0.8249 [0.7342, 0.9157] (`B.OLS`), so its intercept CI is 3.3 times wider than the WLS one. All four chosen-method CIs contain the true values; the departures of the point estimates from the truth are sampling noise from one seed and favour neither method.
+
+## Limits
+
+One seed, 40 points per series, and residual tests with limited power. B's WLS uses the variance function given by the task; in practice it would be estimated, and the feasible WLS above shows that costs little here.
+
+**Reproduce:** `python code/analysis.py` (from the delivery root) rewrites `results/*.json|csv`; this report's numbers are rounded from `results/results.json` and `results/data.csv`.

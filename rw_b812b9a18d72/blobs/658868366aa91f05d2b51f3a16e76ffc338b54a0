@@ -1,0 +1,9 @@
+# Brief
+Synthetic verification task (not research). paper-repo runs 5 steps with world commands and writes report/report.md: per step, commands run, exit status, decisive output lines, world ids.
+1. `researchworld definition install` of /initial-state/inputs/0/note.
+2. `noteworld run --topic "A three-sentence note on why the sky is blue." --config note-config.json`; drive with `ht-resource run worlds -- noteworld execute <id> --loop`; read status, artifacts (the note), monitor --summary.
+3. `researchworld continue rw_399c28e983a7 --checkpoint g1 --config continue-config.json`; report new id + status; then try `stop` and `capture` on rw_399c28e983a7.
+4. Drive the step-3 world via `ht-resource run capped -- researchworld execute <id> --loop`; report how it ended and why; `ht-resource status capped`.
+5. Try one more `noteworld run --topic "Another note."`.
+Outcomes, refusals and limits are the findings. Reviewer will ask for world ids and try `researchworld stop`.
+Not established: results of any step yet.

@@ -1,0 +1,235 @@
+{
+  "numpy": "2.4.6",
+  "statsmodels": "0.15.0",
+  "n": 40,
+  "seed": 221,
+  "truth": {
+    "intercept": 2.5,
+    "slope": 0.8
+  },
+  "series": {
+    "A": {
+      "ols": {
+        "intercept": 3.1004168138073176,
+        "slope": 0.7551635997726552,
+        "se_intercept": 0.8470950005417466,
+        "se_slope": 0.037381945038798894,
+        "ci95": {
+          "intercept": [
+            1.3855626384315993,
+            4.815270989183036
+          ],
+          "slope": [
+            0.6794878084004328,
+            0.8308393911448777
+          ]
+        },
+        "df_resid": 38
+      },
+      "wls_known_variance": {
+        "intercept": 3.1004168138073034,
+        "slope": 0.7551635997726556,
+        "se_intercept": 0.8470950005417465,
+        "se_slope": 0.037381945038798915,
+        "ci95": {
+          "intercept": [
+            1.3855626384315853,
+            4.815270989183022
+          ],
+          "slope": [
+            0.679487808400433,
+            0.8308393911448781
+          ]
+        },
+        "df_resid": 38
+      },
+      "wls_feasible": {
+        "intercept": 2.965428611278398,
+        "slope": 0.762316792380564,
+        "se_intercept": 0.744920899848472,
+        "se_slope": 0.03660157154389088,
+        "ci95": {
+          "intercept": [
+            1.4574150890490984,
+            4.473442133507698
+          ],
+          "slope": [
+            0.6882207845571049,
+            0.8364128002040232
+          ]
+        },
+        "df_resid": 38
+      },
+      "ols_hc3": {
+        "intercept": 3.1004168138073176,
+        "slope": 0.7551635997726552,
+        "se_intercept": 0.794211354025028,
+        "se_slope": 0.040673643490146114,
+        "ci95": {
+          "intercept": [
+            1.5437911638054722,
+            4.657042463809163
+          ],
+          "slope": [
+            0.6754447234119468,
+            0.8348824761333636
+          ]
+        }
+      },
+      "diag_ols_resid": {
+        "breusch_pagan_LM_p": 0.19368734352514846,
+        "white_p": 0.40887442291871845,
+        "spearman_abs_resid_vs_x": [
+          0.0900562851782364,
+          0.5805167958190032
+        ],
+        "sd_resid_first20": 2.4544897744890557,
+        "sd_resid_last20": 3.078707668039654,
+        "gq_F_last_over_first": 1.5733105412129884,
+        "gq_p_one_sided": 0.17254954872368333,
+        "shapiro_p_standardised_resid": 0.49418565132214287
+      },
+      "diag_wls_weighted_resid": {
+        "breusch_pagan_LM_p": 0.19368734352514666,
+        "spearman_abs_wresid_vs_x": [
+          0.0900562851782364,
+          0.5805167958190032
+        ]
+      }
+    },
+    "B": {
+      "ols": {
+        "intercept": 3.0022927998439193,
+        "slope": 0.8249337329882547,
+        "se_intercept": 1.0160393983514042,
+        "se_slope": 0.04483739004732172,
+        "ci95": {
+          "intercept": [
+            0.9454285715167079,
+            5.05915702817113
+          ],
+          "slope": [
+            0.7341651822514119,
+            0.9157022837250974
+          ]
+        },
+        "df_resid": 38
+      },
+      "wls_known_variance": {
+        "intercept": 2.6091758249234287,
+        "slope": 0.8472550870569986,
+        "se_intercept": 0.307549723326687,
+        "se_slope": 0.03474335183804745,
+        "ci95": {
+          "intercept": [
+            1.9865739599081427,
+            3.2317776899387147
+          ],
+          "slope": [
+            0.7769208483613151,
+            0.917589325752682
+          ]
+        },
+        "df_resid": 38
+      },
+      "wls_feasible": {
+        "intercept": 2.5885892630899843,
+        "slope": 0.8490045584753365,
+        "se_intercept": 0.35344188728674136,
+        "se_slope": 0.03509970295160354,
+        "ci95": {
+          "intercept": [
+            1.873083569184673,
+            3.3040949569952955
+          ],
+          "slope": [
+            0.7779489246650666,
+            0.9200601922856064
+          ]
+        },
+        "df_resid": 38
+      },
+      "ols_hc3": {
+        "intercept": 3.0022927998439193,
+        "slope": 0.8249337329882547,
+        "se_intercept": 0.8211387116507315,
+        "se_slope": 0.05516226819393093,
+        "ci95": {
+          "intercept": [
+            1.392890498696865,
+            4.611695100990973
+          ],
+          "slope": [
+            0.7168176740226108,
+            0.9330497919538986
+          ]
+        }
+      },
+      "diag_ols_resid": {
+        "breusch_pagan_LM_p": 0.004460846414609413,
+        "white_p": 0.005482053728776775,
+        "spearman_abs_resid_vs_x": [
+          0.4440900562851783,
+          0.004096925109140953
+        ],
+        "sd_resid_first20": 2.1603052258153634,
+        "sd_resid_last20": 4.237258566999379,
+        "gq_F_last_over_first": 3.8471551441602445,
+        "gq_p_one_sided": 0.0032329130403671025,
+        "shapiro_p_standardised_resid": 0.06277177876919914
+      },
+      "diag_wls_weighted_resid": {
+        "breusch_pagan_LM_p": 0.3751949601800456,
+        "spearman_abs_wresid_vs_x": [
+          -0.04821763602251408,
+          0.7676449043553554
+        ]
+      }
+    }
+  },
+  "monte_carlo": {
+    "replicates": 20000,
+    "seed": 2210,
+    "note": "classical (model-based) 95% t intervals",
+    "series": {
+      "A": {
+        "ols": {
+          "slope_mean": 0.7999250664693711,
+          "slope_sd": 0.04135086866109777,
+          "ci_coverage": 0.94855
+        },
+        "wls": {
+          "slope_mean": 0.7999250664693709,
+          "slope_sd": 0.041350868661097766,
+          "ci_coverage": 0.94855
+        }
+      },
+      "B": {
+        "ols": {
+          "slope_mean": 0.7997566394398213,
+          "slope_sd": 0.05674867266854513,
+          "ci_coverage": 0.93125
+        },
+        "wls": {
+          "slope_mean": 0.7997552517447652,
+          "slope_sd": 0.03611993717195671,
+          "ci_coverage": 0.9498
+        }
+      }
+    }
+  },
+  "chosen": {
+    "A": {
+      "method": "OLS",
+      "key": "ols",
+      "reason": "no heteroscedasticity detected (BP, White, Spearman, GQ all p>0.15); known-variance WLS is identical for constant sd"
+    },
+    "B": {
+      "method": "WLS",
+      "key": "wls_known_variance",
+      "weights": "1/(0.5+0.15x)^2",
+      "reason": "BP, White, Spearman, GQ all p<0.01; weighted residuals pass (BP p=0.38)"
+    }
+  },
+  "interval_construction": "estimate +/- t(0.975, 38) * model-based SE (scale estimated from residuals); statsmodels conf_int"
+}

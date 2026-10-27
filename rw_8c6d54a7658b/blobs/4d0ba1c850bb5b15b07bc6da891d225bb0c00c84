@@ -1,0 +1,21 @@
+# Review notes (working material, not a verdict)
+
+## 2026-10-17: experiment-repo evidence (answer to experiment-repo#4)
+Inspected experiment-repo at 80dd627 / 7281a3c (`report/code/`, `report/results/`).
+- R1: `report/code/data/iris.arff` md5 ad484452702105cbf3d30f8deaba39a9; my own download of
+  https://openml.org/data/v1/download/61/iris.arff gives the same md5. 150x4, 50/50/50 asserted in code.
+- R2: LR = StandardScaler + LogisticRegression(lbfgs, C=1); checked predict_proba equals softmax of
+  coef/intercept (multinomial). kNN: GridSearchCV over k=1..30, inner StratifiedKFold(5, shuffle),
+  fitted on outer training fold only; scaler inside the pipeline.
+- R3: RepeatedStratifiedKFold(5,10, seed 20261017); 50 distinct test-index hashes, 120/30.
+- R4: recomputed from local/folds.csv: LR 0.954 [0.9156, 0.9924], kNN 0.9447 [0.8946, 0.9947],
+  LR-kNN 0.00933 [-0.02515, 0.04381] (Nadeau-Bengio, df 49, factor 1/50+0.25) = intervals.csv.
+- R5: Ibex job 53917056 on cn511-19 (job log first line, run.json SLURMD_NODENAME, sacct COMPLETED,
+  1 CPU). comparison.json: folds/inner_cv/predictions byte-identical, summaries equal.
+  My local re-run of cv_study.py (30 s): byte-identical to results/local -> identical claim reproduced.
+- Open for the final pass: the paper text/table/figure must state these numbers and the primary
+  interval correctly (see notes in internal-review-repo#3).
+
+## Delivery state at this check
+figtab-repo had no files under report/figures/ or report/tables/; paper-repo PDF (52434e0) is a draft
+with placeholders. No verdict owed yet.

@@ -1,0 +1,7 @@
+# Figure captions
+
+All three plots show absolute errors on [0,1], n=2^k, k=1,…,12. Solid colored lines connect sampled values; they are not fitted curves. Gray dotted segments show labeled reference slopes with arbitrary normalization (not fits). Filled markers enter the fit; open markers are positive errors excluded by the >10ε cutoff. Dashed horizontal line: 10ε = 2.22×10⁻¹⁵. The √x plot uses a narrower vertical range; its errors all exceed the cutoff, which is below its axis. All quantities are dimensionless. Trapezoid uses n panels, Simpson uses a three-point rule per panel, and GL4 uses four Gauss–Legendre nodes per panel. See orders.md for slopes, intervals and fit ranges.
+
+- **fig_exp.png:** exp(x). Zero computed errors omitted from the logarithmic axis: Simpson: n = 2048, 4096; GL4: n = 8, 16, 32, 256, 2048, 4096. Zero means equality to the double-precision reference, not demonstrated exact integration.
+- **fig_runge.png:** 1/(1+25x^2). Zero computed errors omitted from the logarithmic axis: Simpson: n = 4096; GL4: n = 32, 64. Zero means equality to the double-precision reference, not demonstrated exact integration.
+- **fig_sqrt.png:** sqrt(x). Zero computed errors omitted from the logarithmic axis: none. Zero means equality to the double-precision reference, not demonstrated exact integration.

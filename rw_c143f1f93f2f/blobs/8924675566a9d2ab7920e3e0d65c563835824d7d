@@ -1,0 +1,224 @@
+"""Multinomial logistic regression vs k-nearest neighbours on Iris (OpenML 61).
+
+Protocol (pre-specified in story-repo plan.md section 2): 10 repetitions of
+stratified 5-fold cross-validation (outer). Both methods see identical outer
+splits. kNN's k is chosen inside each outer training set by shuffled
+stratified 5-fold inner CV over K_GRID (ties -> smallest k), then refit on the
+whole outer training set. Both methods standardise features inside a pipeline
+fitted on the training part only. LR is not tuned (C=1).
+
+Writes into OUTDIR (default results/local; paths relative to report/):
+  folds.csv        one row per outer fold: seeds, correct counts, accuracies, chosen k
+  predictions.csv  one row per (outer fold, test sample): true and predicted class
+  summary.json     means with 95% intervals and the paired difference
+  env.json         host, SLURM job, Python/library versions, BLAS threading, file hashes
+Run from report/: python code/cv_compare.py [OUTDIR]
+"""
+import os
+for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(v, "1")  # single-threaded BLAS for determinism
+
+import csv, hashlib, json, pathlib, platform, socket, sys, time, warnings
+import numpy as np, scipy, sklearn
+from scipy import stats
+from scipy.special import softmax
+from sklearn.exceptions import ConvergenceWarning
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]          # report/
+DATA = ROOT / "results" / "data" / "iris.arff"
+DATA_MD5 = "ad484452702105cbf3d30f8deaba39a9"               # OpenML's md5 for file 61
+N_SPLITS, N_REPEATS = 5, 10
+OUTER_SEED = 20261017
+K_GRID = list(range(1, 32, 2))                              # 1, 3, ..., 31
+LR_C, LR_MAX_ITER = 1.0, 10000
+
+
+def load_iris_arff(path=DATA):
+    """Minimal ARFF reader for the OpenML Iris file (4 numeric + nominal class)."""
+    X, y, in_data = [], [], False
+    for line in pathlib.Path(path).read_text().splitlines():
+        s = line.strip()
+        if not s or s.startswith("%"):
+            continue
+        if s.lower().startswith("@data"):
+            in_data = True
+            continue
+        if in_data:
+            *feat, label = [t.strip() for t in s.split(",")]
+            X.append([float(t) for t in feat])
+            y.append(label.strip("'\""))
+    classes = sorted(set(y))
+    return np.array(X), np.array([classes.index(c) for c in y]), classes
+
+
+def make_lr(C=LR_C, scale=True):
+    # lbfgs on >2 classes fits the multinomial (softmax) loss; checked by lr_is_multinomial().
+    lr = LogisticRegression(C=C, solver="lbfgs", max_iter=LR_MAX_ITER)
+    return make_pipeline(StandardScaler(), lr) if scale else make_pipeline(lr)
+
+
+def make_knn(inner_seed, k_grid=K_GRID, scale=True):
+    knn = KNeighborsClassifier(weights="uniform", metric="minkowski", p=2)
+    pipe = make_pipeline(StandardScaler(), knn) if scale else make_pipeline(knn)
+    inner = StratifiedKFold(n_splits=5, shuffle=True, random_state=inner_seed)
+    # GridSearchCV breaks ties in mean inner accuracy towards the first (smallest) k.
+    return GridSearchCV(pipe, {"kneighborsclassifier__n_neighbors": k_grid},
+                        cv=inner, scoring="accuracy", n_jobs=1)
+
+
+def lr_is_multinomial(X, y):
+    """True if predict_proba is the softmax of the joint linear scores (multinomial),
+    not per-class sigmoids renormalised (one-vs-rest)."""
+    m = make_lr().fit(X, y)
+    return bool(np.allclose(m.predict_proba(X), softmax(m.decision_function(X), axis=1), atol=1e-12))
+
+
+def intervals(x, n_train, n_test, n_repeats, n_splits, level=0.95):
+    """Mean of per-fold values x with three 95% t intervals.
+
+    corrected: Nadeau & Bengio (2003) corrected resampled t (Bouckaert & Frank 2004 for
+               r x k CV): variance (1/J + n_test/n_train) s^2, df = J-1 (primary).
+    naive:     s / sqrt(J), df = J-1 (treats folds as independent; too narrow).
+    repeat:    t over the n_repeats per-repetition means, df = n_repeats-1.
+    Bounds are reported as computed (not clipped to [0, 1]).
+    """
+    x = np.asarray(x, float)
+    J = x.size
+    m, s = x.mean(), x.std(ddof=1)
+    out = {"mean": m, "sd_folds": s, "n_folds": J}
+    t = stats.t.ppf(0.5 + level / 2, J - 1)
+    for name, se in (("corrected", s * np.sqrt(1 / J + n_test / n_train)),
+                     ("naive", s / np.sqrt(J))):
+        out[name] = {"lo": m - t * se, "hi": m + t * se, "se": se, "df": J - 1, "t_crit": t,
+                     "t": (m / se if se > 0 else None),
+                     "p_two_sided_vs_0": (2 * stats.t.sf(abs(m / se), J - 1) if se > 0 else None)}
+    rm = x.reshape(n_repeats, n_splits).mean(axis=1)
+    se_r = rm.std(ddof=1) / np.sqrt(n_repeats)
+    tr = stats.t.ppf(0.5 + level / 2, n_repeats - 1)
+    out["repeat"] = {"lo": m - tr * se_r, "hi": m + tr * se_r, "se": se_r, "df": n_repeats - 1, "t_crit": tr}
+    return out
+
+
+def run(X, y, outer_seed=OUTER_SEED, k_grid=K_GRID, scale=True, lr_factory=None):
+    outer = RepeatedStratifiedKFold(n_splits=N_SPLITS, n_repeats=N_REPEATS, random_state=outer_seed)
+    rows, preds, n_warn = [], [], 0
+    for i, (tr, te) in enumerate(outer.split(X, y)):
+        r, f = divmod(i, N_SPLITS)
+        inner_seed = outer_seed + 1 + i
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always", ConvergenceWarning)
+            lr = (lr_factory(i) if lr_factory else make_lr(scale=scale)).fit(X[tr], y[tr])
+            knn = make_knn(inner_seed=inner_seed, k_grid=k_grid, scale=scale).fit(X[tr], y[tr])
+        n_warn += sum(issubclass(x.category, ConvergenceWarning) for x in w)
+        p_lr, p_knn = lr.predict(X[te]), knn.predict(X[te])
+        c_lr, c_knn = int((p_lr == y[te]).sum()), int((p_knn == y[te]).sum())
+        rows.append({"repeat": r, "fold": f, "outer_seed": outer_seed, "inner_seed": inner_seed,
+                     "n_train": len(tr), "n_test": len(te),
+                     "correct_lr": c_lr, "correct_knn": c_knn,
+                     "acc_lr": c_lr / len(te), "acc_knn": c_knn / len(te),
+                     "diff_lr_minus_knn": (c_lr - c_knn) / len(te),
+                     "k_selected": int(knn.best_params_["kneighborsclassifier__n_neighbors"]),
+                     "test_index_sha1": hashlib.sha1(np.sort(te).tobytes()).hexdigest()[:12]})
+        preds += [{"repeat": r, "fold": f, "index": int(j), "y_true": int(y[j]),
+                   "pred_lr": int(a), "pred_knn": int(b)} for j, a, b in zip(te, p_lr, p_knn)]
+    return rows, preds, n_warn
+
+
+def summarise(rows, k_grid=K_GRID):
+    ntr, nte = rows[0]["n_train"], rows[0]["n_test"]
+    assert all(r["n_train"] == ntr and r["n_test"] == nte for r in rows)
+    col = lambda k: [r[k] for r in rows]
+    ks = col("k_selected")
+    d = np.array(col("diff_lr_minus_knn"))
+    return {
+        "logistic_regression": intervals(col("acc_lr"), ntr, nte, N_REPEATS, N_SPLITS),
+        "knn": intervals(col("acc_knn"), ntr, nte, N_REPEATS, N_SPLITS),
+        "difference_lr_minus_knn": intervals(d, ntr, nte, N_REPEATS, N_SPLITS),
+        "folds_lr_better": int((d > 0).sum()), "folds_knn_better": int((d < 0).sum()),
+        "folds_tied": int((d == 0).sum()),
+        "pooled_correct": {"lr": int(sum(col("correct_lr"))), "knn": int(sum(col("correct_knn"))),
+                           "of": int(sum(col("n_test")))},
+        "k_selected_counts": {str(k): ks.count(k) for k in sorted(set(ks))},
+        "k_selected_median": float(np.median(ks)),
+        "k_selected_at_grid_edge": int(sum(k == max(k_grid) for k in ks)),
+    }
+
+
+def protocol(ntr, nte):
+    return {"data": "OpenML dataset 61 (iris, version 1), ARFF from openml.org, md5 " + DATA_MD5,
+            "outer": f"{N_REPEATS}x stratified {N_SPLITS}-fold CV, sklearn RepeatedStratifiedKFold",
+            "outer_seed": OUTER_SEED,
+            "inner": "stratified 5-fold CV (shuffled, random_state = outer_seed + 1 + outer_fold_index), "
+                     "on the outer training set only; max mean inner accuracy, ties -> smallest k; refit on outer train",
+            "k_grid": K_GRID, "knn": "Euclidean distance, uniform weights",
+            "lr": f"multinomial (softmax) logistic regression, lbfgs, L2, C={LR_C}, max_iter={LR_MAX_ITER}, not tuned",
+            "preprocessing": "StandardScaler fitted on the training part, inside the pipeline, for both methods",
+            "n_train": ntr, "n_test": nte,
+            "interval_primary": "corrected resampled t (Nadeau & Bengio 2003; Bouckaert & Frank 2004): "
+                                "mean +- t(0.975, 49) * s * sqrt(1/50 + 30/120)",
+            "interval_secondary": ["naive t over 50 folds (df 49)", "t over 10 repetition means (df 9)"],
+            "amendments_to_plan": []}
+
+
+def environment():
+    from threadpoolctl import threadpool_info
+    cpu = ""
+    try:
+        cpu = next(l.split(":", 1)[1].strip() for l in open("/proc/cpuinfo") if l.startswith("model name"))
+    except Exception:
+        pass
+    return {"hostname": socket.gethostname(),
+            "slurm": {k: os.environ[k] for k in ("SLURM_JOB_ID", "SLURMD_NODENAME", "SLURM_JOB_NODELIST",
+                                                   "SLURM_JOB_PARTITION", "SLURM_CPUS_ON_NODE") if k in os.environ},
+            "cpu_model": cpu, "platform": platform.platform(), "python": sys.version.split()[0],
+            "numpy": np.__version__, "scipy": scipy.__version__, "scikit_learn": sklearn.__version__,
+            "blas_threads_env": {v: os.environ.get(v) for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")},
+            "threadpools": [{k: t.get(k) for k in ("internal_api", "version", "num_threads", "architecture")}
+                            for t in threadpool_info()]}
+
+
+def write_csv(rows, path):
+    with open(path, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]), lineterminator="\n")
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: (repr(v) if isinstance(v, float) else v) for k, v in r.items()})
+
+
+def main():
+    out = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "results" / "local")
+    out.mkdir(parents=True, exist_ok=True)
+    data_md5 = hashlib.md5(DATA.read_bytes()).hexdigest()
+    assert data_md5 == DATA_MD5, f"data checksum {data_md5} != OpenML {DATA_MD5}"
+    X, y, classes = load_iris_arff()
+    assert X.shape == (150, 4) and np.bincount(y).tolist() == [50, 50, 50] and np.isfinite(X).all()
+    t0 = time.time()
+    rows, preds, n_warn = run(X, y)
+    secs = time.time() - t0
+    write_csv(rows, out / "folds.csv")
+    write_csv(preds, out / "predictions.csv")
+    summ = {"protocol": protocol(rows[0]["n_train"], rows[0]["n_test"]), **summarise(rows),
+            "classes": classes, "lr_multinomial_verified": lr_is_multinomial(X, y),
+            "convergence_warnings": n_warn}
+    (out / "summary.json").write_text(json.dumps(summ, indent=2) + "\n")
+    env = environment()
+    sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+    env.update({"wall_seconds": round(secs, 2), "data_md5": data_md5, "data_sha256": sha(DATA),
+                "code_sha256": sha(pathlib.Path(__file__)),
+                **{f"{n.replace('.', '_')}_sha256": sha(out / n) for n in ("folds.csv", "predictions.csv", "summary.json")}})
+    (out / "env.json").write_text(json.dumps(env, indent=2) + "\n")
+    s = summ
+    for k in ("logistic_regression", "knn", "difference_lr_minus_knn"):
+        c = s[k]["corrected"]
+        print(f"{k}: mean={s[k]['mean']:.4f} 95% corrected [{c['lo']:.4f}, {c['hi']:.4f}]", flush=True)
+    print("k counts", s["k_selected_counts"], "multinomial", s["lr_multinomial_verified"],
+          "conv.warnings", n_warn, "host", env["hostname"], f"{secs:.1f}s", flush=True)
+
+
+if __name__ == "__main__":
+    main()

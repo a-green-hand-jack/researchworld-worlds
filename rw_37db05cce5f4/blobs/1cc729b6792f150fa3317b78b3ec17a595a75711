@@ -1,0 +1,26 @@
+{
+  "source": "PyTorch CPU",
+  "url": "https://download.pytorch.org/whl/cpu/",
+  "start_utc": "2026-10-19T21:30:14.297699+00:00",
+  "end_utc": "2026-10-19T21:30:15.150810+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/pytorch-cpu.headers",
+    "-o",
+    "/tmp/tmpgingxoyn/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://download.pytorch.org/whl/cpu/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html\n",
+  "stderr": "",
+  "first200": "<!DOCTYPE html>\n<html>\n  <body>\n    <a href=\"certifi/\">certifi</a><br/>\n    <a href=\"charset-normalizer/\">charset-normalizer</a><br/>\n    <a href=\"cmake/\">cmake</a><br/>\n    <a href=\"colorama/\">colora",
+  "body_bytes": 5865
+}

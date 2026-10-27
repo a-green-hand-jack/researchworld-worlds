@@ -1,0 +1,37 @@
+"""Shared loading for the figure and table generators.
+
+Fold accuracies come from report/results/local/folds.csv; the reported intervals are
+the `corrected` ones in report/results/local/summary.json (corrected resampled t,
+Nadeau & Bengio 2003). They are recomputed here from the fold values and must agree.
+"""
+import csv
+import os
+import json
+import math
+from pathlib import Path
+
+import numpy as np
+from scipy import stats
+
+RESULTS = Path(os.environ.get("RESULTS_DIR", Path(__file__).resolve().parents[1] / "results")) / "local"
+KEYS = {"logreg": "logistic_regression", "knn": "knn", "diff": "difference_lr_minus_knn"}
+
+
+def recompute(x, n_test_over_train=0.25):
+    n = len(x)
+    h = stats.t.ppf(0.975, n - 1) * math.sqrt((1 / n + n_test_over_train) * np.var(x, ddof=1))
+    return float(np.mean(x)), float(np.mean(x) - h), float(np.mean(x) + h)
+
+
+def summary():
+    rows = list(csv.DictReader(open(RESULTS / "folds.csv")))
+    assert len(rows) == 50
+    lr, knn, diff = (np.array([float(r[c]) for r in rows]) for c in ("acc_lr", "acc_knn", "diff_lr_minus_knn"))
+    js = json.load(open(RESULTS / "summary.json"))
+    out = {}
+    for name, x in (("logreg", lr), ("knn", knn), ("diff", diff)):
+        m, lo, hi = recompute(x)
+        c = js[KEYS[name]]
+        assert abs(m - c["mean"]) < 1e-9 and abs(lo - c["corrected"]["lo"]) < 1e-9 and abs(hi - c["corrected"]["hi"]) < 1e-9, name
+        out[name] = (c["mean"], c["corrected"]["lo"], c["corrected"]["hi"])
+    return out, (lr, knn, diff)

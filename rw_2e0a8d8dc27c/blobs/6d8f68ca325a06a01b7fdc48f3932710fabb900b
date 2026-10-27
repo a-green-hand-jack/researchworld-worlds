@@ -1,0 +1,12 @@
+import csv, numpy as np
+from scipy import stats
+rows=list(csv.DictReader(open("results/timings.csv")))
+out=[]
+for a in ["insertion","merge"]:
+    for lo in [1000,2000]:
+        r=[x for x in rows if x["algorithm"]==a and int(x["n"])>=lo]
+        res=stats.linregress(np.log([int(x["n"]) for x in r]),np.log([float(x["seconds"]) for x in r]))
+        h=stats.t.ppf(.975,len(r)-2)*res.stderr
+        out.append((a,lo,res.slope,res.slope-h,res.slope+h))
+w=csv.writer(open("results/slopes.csv","w")); w.writerow(["algorithm","min_n","slope","ci95_lo","ci95_hi"]); w.writerows(out)
+for o in out: print(o)

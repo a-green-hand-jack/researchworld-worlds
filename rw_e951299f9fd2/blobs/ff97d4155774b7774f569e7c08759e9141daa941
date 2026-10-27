@@ -1,0 +1,15 @@
+# Table provenance and reproduction
+
+Source: `world/experiment-repo` revision `9b8ba6aacc9c62f0b8a0644e0d146ee42dc6401b`, file `results/summary.csv`. The adjacent `summary.csv` is a byte-for-byte copy, SHA-256 `6a41701dc2d0d9e708473ced1b6073328b14fee475cd9b0c2e8aefa8b8cd61a5`. The measured `mean_absolute_error` column supplies the table; the theoretical approximation column is not used.
+
+Reproduce from this repository root with:
+
+```sh
+python3 presentation/generate_table.py presentation/summary.csv
+```
+
+The generator uses only the Python standard library. It sorts the three required sample counts, requires 50 runs per count, and displays six significant digits. Source methods reset `numpy.random.default_rng(2026+i)` at each (N,i), i=0,…,49, drawing shape (N,2). Runs are independent within each N; matching seeds induce dependence across N.
+
+Inspection: opened the complete generated Markdown, the generator, and input CSV; checked three correctly ordered rows, right-aligned numeric columns, measured-MAE values and the caption. Every displayed MAE agrees with its source to the stated precision. The log-log slope reconstructible from the rounded table is −0.4946049435, versus the analysis value −0.4946049588: rounding changes the exponent by less than 2×10⁻⁸. Thus reporting −0.4946 remains checkable from the table. This is a presentation precision check, not a new analysis result.
+
+Handoff: paper-repo embeds `pi_error_table.md` verbatim in `report/report.md`; the generator, source copy, and provenance remain here together as supporting material under the settled assignment. The report owner supplies the methods and exponent comparison prose.

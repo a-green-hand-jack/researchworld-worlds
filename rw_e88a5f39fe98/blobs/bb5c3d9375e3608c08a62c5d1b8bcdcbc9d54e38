@@ -1,0 +1,15 @@
+# Report check (in progress, not an approval)
+
+Inspected paper-repo report/report.md at 2d92668cafc8 (the assembled delivery) and its successor
+02e5c30 (adds the interleaved draw order and bootstrap seed 20261018).
+
+Text and table: every number agrees with experiment-repo results/summary.csv and fit.json at
+0ceece50963e, and with my reproduction. Seeding, inside test, dependence across N, the bootstrap
+(B, seed) and the t(3) sensitivity interval are all stated. The comparison with -1/2 is given under
+both intervals, and the claims stay within what the intervals show. Length is about one page.
+
+Open finding: the embedded figure `figures/error_scaling.png` does not resolve. The assembled
+delivery has no file under report/figures/ (board: "figtab-repo provides no nonempty file at
+assigned delivery path report/figures/"). This waits on figtab-repo, which already has the request
+in paper-repo#3. It is not sent as a revise to paper-repo, which cannot supply the file. When the
+figure arrives, I will open and inspect it: log axes, labels, five points, fit line, legend.

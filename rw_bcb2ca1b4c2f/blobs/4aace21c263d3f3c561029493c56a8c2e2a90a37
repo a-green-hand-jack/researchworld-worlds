@@ -1,0 +1,180 @@
+"""Score E2 against its pre-registration (results/e2/prediction.json, committed before the runs).
+Usage: python3 code/e2.py analyze results/e2   (or python3 code/e2_analyze.py results/e2)
+Writes e2_runs.csv (one row per run: config, measured, predictions side by side), summary.json (metrics with
+bootstrap 95% CIs over runs per arm and family, mask-ratio profiles measured vs predicted, each pre-registered
+criterion with pass/fail). Diverged or failed runs are listed and excluded from the metrics."""
+import sys, os, json, csv
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+from e2 import FREQ, n, r_list, r_nominal, LAMS, P0S
+
+rng = np.random.default_rng(0)
+
+
+def boot(x, B=2000):
+    x = np.asarray(x, float)
+    if x.size == 0:
+        return [float("nan")] * 3
+    m = rng.integers(0, x.size, (B, x.size))
+    bs = x[m].mean(1)
+    return [float(x.mean()), float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))]
+
+
+def spearman(a, b):
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    ra = np.argsort(np.argsort(a)).astype(float); rb = np.argsort(np.argsort(b)).astype(float)
+    for x, r in ((a, ra), (b, rb)):            # average ranks over ties
+        for v in np.unique(x):
+            r[x == v] = r[x == v].mean()
+    if ra.std() == 0 or rb.std() == 0:
+        return float("nan")
+    return float(np.corrcoef(ra, rb)[0, 1])
+
+
+def mae_block(rr, keys):
+    e = dict(runs=len(rr), converged=boot([bool(r["converged"]) for r in rr]))
+    for key in keys:
+        err = np.array([r["rank_meas"] - r[key] for r in rr if r.get(key) is not None], float)
+        if err.size:
+            e[key] = dict(n=int(err.size), exact=boot(err == 0), mae=boot(np.abs(err)), bias=float(err.mean()))
+    return e
+
+
+def freq_counts(pred):
+    p = np.asarray(pred)
+    return np.array([int(p[FREQ == f].sum()) for f in range(n // 2 + 1)])
+
+
+def main(d):
+    P = json.load(open(os.path.join(d, "prediction.json")))
+    M = {r["id"]: r for r in map(json.loads, open(os.path.join(d, "e2_runs.jsonl")))}
+    rows = []
+    for p in P["runs"]:
+        m = M[p["id"]]
+        r = dict(p); r.update({k: m.get(k) for k in ["rank_meas", "rankme", "rankme_embed", "converged", "p_final", "surv_freq",
+                                                     "steps", "diverged", "error", "rank_t"]})
+        if r.get("pred") is not None and r.get("surv_freq") is not None:
+            pf, sf = freq_counts(r["pred"]), np.asarray(r["surv_freq"])
+            r["freq_acc"] = float(np.mean(pf == sf))
+            r["freq_match"] = (pf == sf).tolist()
+        rows.append(r)
+    bad = [r for r in rows if r["rank_meas"] is None]
+    all_rows, rows = rows, [r for r in rows if r["rank_meas"] is not None]
+    cfg_cols = ["id", "exp", "fam", "r", "lam", "p0", "w0", "seed", "eta", "t_end", "steps", "target_frac"]
+    out_cols = ["diverged", "error", "rank_meas", "rankme", "rankme_embed", "converged", "p_final", "rank_pred", "rank_N1",
+                "rank_N1general", "rank_pred_linear", "rank_window", "rank_bound", "freq_acc"]
+    with open(os.path.join(d, "e2_runs.csv"), "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cfg_cols + out_cols, extrasaction="ignore")
+        w.writeheader()
+        for r in all_rows:
+            w.writerow({k: r.get(k) for k in cfg_cols + out_cols})
+
+    keys = ["rank_pred", "rank_N1", "rank_N1general", "rank_pred_linear", "rank_window", "rank_bound"]
+    S = {"_note": "means with bootstrap 95% CIs over runs [mean, lo, hi]; rank = #singular values of W (mlp: W2) > 0.05 at t_end; "
+                  "runs that diverged or raised are excluded from every metric and listed under 'excluded'",
+         "excluded": dict(count=len(bad), runs=[{k: r.get(k) for k in ["id", "exp", "fam", "r", "lam", "p0", "seed", "diverged",
+                                                                       "error", "rank_pred"]} for r in bad])}
+    arms = {}
+    for exp in ["pop", "sgd", "tanh", "mlp"]:
+        for fam in ["bern", "block", "multiblock", "block_nc"]:
+            rr = [r for r in rows if r["exp"] == exp and r["fam"] == fam]
+            if rr:
+                arms[f"{exp}/{fam}"] = mae_block(rr, keys)
+    cyc = [r for r in rows if r["exp"] == "pop" and r["fam"] != "block_nc"]
+    arms["pop/cyclic"] = mae_block(cyc, keys)
+    fm = np.concatenate([r["freq_match"] for r in cyc if "freq_match" in r]) if cyc else np.array([])
+    arms["pop/cyclic"]["freq_acc"] = dict(n=int(fm.size), acc=boot(fm))
+    for exp in ["sgd", "tanh", "mlp"]:
+        arms[exp] = mae_block([r for r in rows if r["exp"] == exp], keys)
+    mlp = [r for r in rows if r["exp"] == "mlp"]
+    arms["mlp"]["spearman"] = {k: spearman([r["rank_meas"] for r in mlp], [r[k] for r in mlp])
+                               for k in ["rank_pred", "rank_pred_linear", "rank_bound", "rank_window"]}
+    arms["mlp"]["rankme_embed"] = boot([r["rankme_embed"] for r in mlp if r.get("rankme_embed") is not None])
+    npr = [r for r in rows if r["exp"] == "nopred"]
+    if npr:
+        fm = np.concatenate([np.asarray(r["pred_grow_freq"]) == np.asarray(r["surv_freq"]) for r in npr])
+        arms["nopred"] = dict(runs=len(npr), freq_acc=dict(n=int(fm.size), acc=boot(fm)),
+                              rank_mae=boot([abs(r["rank_meas"] - r["rank_pred"]) for r in npr]),
+                              configs_pred_growth=int(sum(r["rank_pred"] > 0 for r in npr)),
+                              configs_meas_growth=int(sum(r["rank_meas"] > 0 for r in npr)))
+    S["arms"] = arms
+
+    # mask-ratio profiles on the run grid: seed-mean measured rank vs seed-mean predicted rank
+    prof = {}
+    for exp in ["pop", "sgd", "tanh", "mlp"]:
+        for fam in ["bern", "block", "multiblock", "block_nc"]:
+            for lam in LAMS:
+                for p0 in P0S:
+                    pts = []
+                    for r in r_list(fam):
+                        rr = [x for x in rows if x["exp"] == exp and x["fam"] == fam and x["r"] == r and x["lam"] == lam and x["p0"] == p0]
+                        if rr:
+                            pts.append(dict(r=float(r_nominal(fam, r)), r_param=r, n=len(rr), target_frac=rr[0]["target_frac"],
+                                            meas=boot([x["rank_meas"] for x in rr]), meas_sd=float(np.std([x["rank_meas"] for x in rr])),
+                                            pred=float(np.mean([x["rank_pred"] for x in rr])),
+                                            bound=float(np.mean([x["rank_bound"] for x in rr])),
+                                            window=float(np.mean([x["rank_window"] for x in rr]))))
+                    if pts:
+                        prof[f"{exp}/{fam}/lam={lam}/p0={p0}"] = pts
+    S["profiles"] = prof
+
+    def maxset(v):
+        v = np.asarray(v); return set(np.flatnonzero(v == v.max()).tolist())
+
+    peak = []
+    for key, pts in prof.items():
+        exp, fam = key.split("/")[:2]
+        if exp != "pop" or fam == "block_nc":
+            continue
+        pr = [p["pred"] for p in pts]; me = [p["meas"][0] for p in pts]
+        if max(pr) < 2:
+            continue
+        ps, ms = maxset(pr), maxset(me)
+        ok = bool(ps & ms) or any(abs(i - j) <= 1 for i in ps for j in ms)
+        nm_pred = max(pr) - pr[0] >= 2 and max(pr) - pr[-1] >= 2
+        nm_meas = max(me) - me[0] >= 2 and max(me) - me[-1] >= 2
+        peak.append(dict(profile=key, pred_peak_r=[pts[i]["r"] for i in sorted(ps)], meas_peak_r=[pts[i]["r"] for i in sorted(ms)],
+                         peak_ok=ok, non_monotone_pred=bool(nm_pred), non_monotone_meas=bool(nm_meas)))
+    S["peaks"] = peak
+
+    def m(a, k):
+        return arms[a].get(k, {}).get("mae", [np.nan])[0]
+    crit = {}
+    fa = arms["pop/cyclic"]["freq_acc"]["acc"][0]
+    crit["pop cyclic (N1)"] = dict(freq_acc=fa, mae_N1=m("pop/cyclic", "rank_pred"), mae_bound=m("pop/cyclic", "rank_bound"),
+                                   mae_window=m("pop/cyclic", "rank_window"),
+                                   passed=bool(fa >= 0.95 and m("pop/cyclic", "rank_pred") <= 1.0
+                                               and m("pop/cyclic", "rank_pred") < m("pop/cyclic", "rank_bound")
+                                               and m("pop/cyclic", "rank_pred") < m("pop/cyclic", "rank_window")))
+    frac = float(np.mean([p["peak_ok"] for p in peak])) if peak else float("nan")
+    nm = [p for p in peak if p["non_monotone_pred"]]
+    crit["pop peak"] = dict(profiles=len(peak), frac_peak_ok=frac, non_monotone_pred=len(nm),
+                            non_monotone_confirmed=sum(p["non_monotone_meas"] for p in nm),
+                            passed=bool(frac >= 0.8 and all(p["non_monotone_meas"] for p in nm)))
+    crit["pop block_nc (N1-general)"] = dict(mae=m("pop/block_nc", "rank_pred"), mae_bound=m("pop/block_nc", "rank_bound"),
+                                             mae_N1_circulant_approx=m("pop/block_nc", "rank_N1"),
+                                             passed=bool(m("pop/block_nc", "rank_pred") <= 1.5
+                                                         and m("pop/block_nc", "rank_pred") < m("pop/block_nc", "rank_bound")))
+    crit["sgd (mask/sample noise)"] = dict(mae=m("sgd", "rank_pred"), passed=bool(m("sgd", "rank_pred") <= 1.5))
+    crit["tanh (decided near collapse)"] = dict(mae=m("tanh", "rank_pred"), mae_bound=m("tanh", "rank_bound"),
+                                                passed=bool(m("tanh", "rank_pred") <= 1.5 and m("tanh", "rank_pred") < m("tanh", "rank_bound")))
+    crit["mlp (exploratory)"] = dict(mae=m("mlp", "rank_pred"), mae_bound=m("mlp", "rank_bound"), mae_linear=m("mlp", "rank_pred_linear"),
+                                     spearman=arms["mlp"]["spearman"]["rank_pred"],
+                                     passed=bool(m("mlp", "rank_pred") <= 2 and m("mlp", "rank_pred") < m("mlp", "rank_bound")))
+    if "nopred" in arms:
+        a = arms["nopred"]; acc = a["freq_acc"]["acc"][0]
+        wrong_old = sum(r["rank_meas"] > 0 for r in npr if r["rank_pred"] > 0)
+        crit["nopred (Prop. 6 under masks)"] = dict(freq_acc=acc, configs_pred_growth=a["configs_pred_growth"],
+                                                   uncorrected_wrong=int(wrong_old),
+                                                   passed=bool(acc >= 0.99 and wrong_old == a["configs_pred_growth"]))
+    for k, v in crit.items():
+        v["criterion"] = P["success_criteria"][k]
+    S["criteria"] = crit
+    json.dump(S, open(os.path.join(d, "summary.json"), "w"), indent=1)
+    for k, v in crit.items():
+        print(k, "PASS" if v["passed"] else "FAIL", {a: b for a, b in v.items() if a not in ("criterion", "passed")})
+    print("excluded:", len(bad))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1])

@@ -1,0 +1,22 @@
+# Task brief (experiment-repo)
+
+## Objective, quoted
+"Fit a straight line to 40 noisy points: x = 0, 1, ..., 39 and y = 2.5 + 0.8 x + e, where e is drawn from a normal distribution with standard deviation 3 using numpy.random.default_rng(216). Report the slope and the intercept with 95% confidence intervals, one figure of the data with the fitted line, and a one-page report `report/report.md` (Markdown is enough), with the code that produced every number next to it."
+
+Plus the comment-behaviour check steps 1-4 (each named position writes `comment-check.md` in its own repo). Mine (step 1): in my first reply to a request, post fitted numbers in one comment, `Draft note: to be removed.` in a separate comment, edit the first to add the residual SD, delete the draft note; record command, world answer and next action in `comment-check.md`.
+
+## Deliverables
+1. Slope and intercept with 95% CIs (here: `results/fit.json`, produced by `code/fit.py`).
+2. One figure: data + fitted line (presentation owner `figtab-repo`).
+3. One-page `report/report.md` (report owner `paper-repo`), code next to every number.
+4. `comment-check.md` in each named position's repo.
+
+## Method and conventions
+Ordinary least squares, classical t-based intervals (df = n-2 = 38, t_0.975 = 2.0244), residual SD from sqrt(RSS/38). Cross-checked against scipy.stats.linregress (asserted in code). No external data; the data are fully specified by seed 216 (numpy 2.4.6, `default_rng`, noise drawn as `rng.normal(0, 3, size=40)` in one call, after x is built).
+
+## Result (measured, `results/fit.json`)
+slope 0.7206 (SE 0.0422), 95% CI [0.6352, 0.8061]; intercept 4.3727 (SE 0.9565), 95% CI [2.4364, 6.3090]; residual SD 3.0816; R^2 0.8847. Truth (0.8, 2.5) lies inside both CIs, the slope's only just (upper 0.806), the intercept's near its lower edge (2.436); the estimated intercept is 1.9 above truth, a ~2 SE deviation, which is within what a 95% interval allows. Single draw, so this says nothing about coverage in general.
+
+## Caveats / not established
+- The noise-draw order is the natural one (one `normal` call of size 40); a different draw convention would change numbers.
+- Normal-error t-intervals assumed; residual diagnostics not part of the ask beyond SD.

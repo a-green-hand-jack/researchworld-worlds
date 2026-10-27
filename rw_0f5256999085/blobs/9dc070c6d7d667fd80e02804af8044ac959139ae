@@ -1,0 +1,95 @@
+"""Analysis of the pilot Monte Carlo run of pi (objective `experiment-repo`#1).
+
+Reads the JSON written by the unmodified `/initial-state/inputs/0/pilot.py` and
+  * recomputes the 95% Wald interval the script reports, independently;
+  * cross-checks it with the Wilson score interval for the hit proportion;
+  * tests the estimate against the true value of pi (z-score, two-sided p-value);
+  * exports the running-estimate trace with the +/-1.96 sigma(n) envelope around pi
+    for the figure.
+
+usage: python3 code/analyze_pilot.py RAW_PILOT_JSON OUTDIR
+writes OUTDIR/pilot_estimate.json and OUTDIR/pilot_trace.csv
+"""
+import csv
+import hashlib
+import json
+import math
+import sys
+
+Z = 1.959963984540054  # two-sided 95% normal quantile
+Z_SCRIPT = 1.96         # the quantile pilot.py itself uses
+
+
+def wald(inside, n, z):
+    p = inside / n
+    half = z * 4 * math.sqrt(p * (1 - p) / n)
+    return 4 * p - half, 4 * p + half, half
+
+
+def wilson(inside, n, z):
+    p = inside / n
+    denom = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return 4 * (centre - half), 4 * (centre + half)
+
+
+def main(raw_path, outdir):
+    raw_bytes = open(raw_path, 'rb').read()
+    raw = json.loads(raw_bytes)
+    n = raw['samples']
+    est = raw['estimate']
+    inside = round(est * n / 4)  # exact: est = 4*inside/n with inside an integer
+    assert abs(4 * inside / n - est) < 1e-12, 'estimate is not 4*inside/n'
+
+    lo, hi, half = wald(inside, n, Z_SCRIPT)
+    assert abs(lo - raw['ci95'][0]) < 1e-12 and abs(hi - raw['ci95'][1]) < 1e-12, \
+        'recomputed Wald interval differs from the one pilot.py reported'
+    lo_z, hi_z, half_z = wald(inside, n, Z)
+    wl, wh = wilson(inside, n, Z)
+    se = 4 * math.sqrt((inside / n) * (1 - inside / n) / n)
+    se_true = 4 * math.sqrt((math.pi / 4) * (1 - math.pi / 4) / n)  # sigma under the true pi
+    z_err = (est - math.pi) / se_true
+    p_two = math.erfc(abs(z_err) / math.sqrt(2))
+
+    result = {
+        'source': {'file': raw_path, 'sha256': hashlib.sha256(raw_bytes).hexdigest(),
+                   'script': '/initial-state/inputs/0/pilot.py',
+                   'script_sha256': '2ed342ee633210f3af18e00b237fb7ffd5ad6d2e6a7320008e51c67c7262a444',
+                   'seed': 20261019},
+        'samples': n,
+        'inside': inside,
+        'wall_seconds': raw['seconds'],
+        'samples_per_second': n / raw['seconds'],
+        'estimate': est,
+        'standard_error': se,
+        'ci95_wald': [lo, hi],
+        'ci95_wald_half_width': half,
+        'ci95_wald_note': 'normal approximation, z = 1.96, as reported by pilot.py; recomputed and matches',
+        'ci95_wald_exact_z': [lo_z, hi_z],
+        'ci95_wilson': [wl, wh],
+        'true_pi': math.pi,
+        'error': est - math.pi,
+        'error_in_standard_errors': z_err,
+        'p_value_two_sided_vs_true_pi': p_two,
+        'true_pi_inside_ci95': lo <= math.pi <= hi,
+        'relative_half_width': half / est,
+    }
+    with open(f'{outdir}/pilot_estimate.json', 'w') as f:
+        json.dump(result, f, indent=1)
+
+    with open(f'{outdir}/pilot_trace.csv', 'w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['elapsed_s', 'samples', 'running_estimate', 'error',
+                    'pi_band95_lo', 'pi_band95_hi', 'error_in_sigma'])
+        for elapsed, m, e in raw['trace']:
+            s = 4 * math.sqrt((math.pi / 4) * (1 - math.pi / 4) / m)
+            w.writerow([elapsed, m, repr(e), repr(e - math.pi),
+                        repr(math.pi - Z * s), repr(math.pi + Z * s), round((e - math.pi) / s, 4)])
+    # the final point is not always in the trace (trace is sampled every ~10 s)
+    print(json.dumps({k: result[k] for k in ('samples', 'estimate', 'ci95_wald', 'ci95_wilson',
+                                             'error_in_standard_errors', 'true_pi_inside_ci95')}, indent=1))
+
+
+if __name__ == '__main__':
+    main(sys.argv[1], sys.argv[2])

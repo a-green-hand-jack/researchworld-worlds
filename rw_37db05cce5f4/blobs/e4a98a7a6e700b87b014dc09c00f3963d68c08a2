@@ -1,0 +1,26 @@
+{
+  "source": "IEEE Xplore",
+  "url": "https://ieeexplore.ieee.org/",
+  "start_utc": "2026-10-19T21:30:15.922356+00:00",
+  "end_utc": "2026-10-19T21:30:16.473060+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/ieee-xplore.headers",
+    "-o",
+    "/tmp/tmp9k4291dp/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://ieeexplore.ieee.org/"
+  ],
+  "exit": 0,
+  "curl_output": "418\ntext/html\n",
+  "stderr": "",
+  "first200": "<script>\tvar MEMBER_PROFILE_CHANGE_USERNAMEPASS_LINK = 'https://www.ieee.org/profile/changeusrpwd/showChangeUsrPwdPage.html?refSite=https://ieeexplore.ieee.org&refSiteName=IEEE Xplore'; var MEMBER_PRO",
+  "body_bytes": 15410
+}

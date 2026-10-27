@@ -1,0 +1,17 @@
+from pathlib import Path
+import markdown
+from weasyprint import HTML,CSS
+from pypdf import PdfReader
+from PIL import Image
+root=Path('/hutian/delivery-pass6')
+for f in ['errors.csv','fits.csv','reference.csv','PROVENANCE.md']:
+ assert (root/'results'/f).read_bytes()==(root/'report/figures/data'/f).read_bytes()
+body=markdown.markdown((root/'report/report.md').read_text(),extensions=['tables'])
+css='''@page {size:A4; margin:16mm;} body {font-family:serif; font-size:11pt; line-height:1.15;} h1 {font-size:16pt;} h2 {font-size:12pt; margin:10pt 0 5pt;} p {margin:6pt 0;} table {border-collapse:collapse; width:100%; font-size:10pt;} td,th {padding:3pt; border:0.5pt solid #aaa;} img {width:340px;} li {margin:4pt 0;}'''
+HTML(string=body,base_url=str(root/'report')).write_pdf('/hutian/repo/notes/layout-check.pdf',stylesheets=[CSS(string=css)])
+pages=PdfReader('/hutian/repo/notes/layout-check.pdf').pages
+print('A4 16mm margins 11pt body / 10pt table page count:',len(pages))
+for i,p in enumerate(pages):print('PAGE',i+1, p.extract_text()[-300:])
+for name in ['exp_neg_x2','x_cube_root']:
+ im=Image.open(root/f'report/figures/{name}.png');im.resize((340,208)).save(f'/hutian/repo/notes/{name}-report-size.png')
+print('All figure-data snapshots identical to analysis outputs')

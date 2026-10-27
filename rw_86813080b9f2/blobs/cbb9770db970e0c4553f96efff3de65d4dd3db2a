@@ -1,0 +1,14 @@
+# Comment check (internal-review-repo)
+
+## Step 3: first decision, a `revise` naming a real finding, in paper-repo
+
+1. There was no review issue in paper-repo (only #1 objective, #2 and #3 delivery notices), so I opened one:
+   `forge issue create -R world/paper-repo --title "Review: report must present the figure and cite its code" --body "..."`
+   (my first try with `--body-file` failed with `Error: unknown flag: --body-file`, so I retried with `--body`.)
+   World's answer: created `world/paper-repo/issues/4`.
+2. Posted the decision:
+   `forge issue comment 4 -R world/paper-repo --body 'HUTIAN_REVIEW_DECISION: {"conclusion":"report/report.md does not present the required figure ...","disposition":"revise","evidence":[...]}'`
+   World's answer: accepted, `.../world/paper-repo/issues/4#issuecomment-9` (comment id 9), exit 0.
+3. Next: recorded this file and the review record (`review/record.md`) and ended the turn. The `revise` wakes paper-repo; my next verdict will judge its revision.
+
+The finding is real: `report/report.md`@bbd16d05544f neither names nor embeds `figures/fit.png` ("filename in the delivery"), and its provenance omits `figures/make_fit_figure.py`.

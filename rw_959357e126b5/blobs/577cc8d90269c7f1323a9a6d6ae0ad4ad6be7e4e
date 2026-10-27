@@ -1,0 +1,339 @@
+{
+ "experiment": "E8 (plan v2.5 Sec. 3 C item 6 / Sec. 4; direction C rung 6, B2 warm-up rows in the ViT)",
+ "status": "registered before any production run (7029509); amended before the production grid (this commit) after internal review points 7-8 and the GO with conditions (the study's feasibility assessment (version 7)). The grid, levels, seeds, statistic and predicted values are unchanged.",
+ "question": "Is collapse decided early in the ViT? Measured as the decision time D per arm and switch direction.",
+ "code": {
+  "frozen_commit": "fabd62c106709b2c357829647f091a938aa55573 (code/vit_jepa.py, md5 e503bee96237aef3216cac61a95ceea6, the file the pilot ran)",
+  "driver": "code/e8_grid.py sbatch-grid (one SLURM array, 34 tasks x 3 runs per GPU, <= 2 h each; a task re-run skips runs with final.json and restarts unfinished ones from step 0)",
+  "analysis": "code/e8_analyze.py (the statistic below, committed with this registration)",
+  "environment": "the delivered E3 cluster venv: torch 2.5.1+cu124 and the 23 packages of results/e3/cluster_env.json, identical versions in the pilot's provenance.json"
+ },
+ "grid": {
+  "arms": {
+   "T": "theory-aligned: SGD momentum 0.9, lr 0.05 constant, copy target, no target LN, no predictor norms, decay on every parameter (E3 Arm T)",
+   "P": "I-JEPA recipe: AdamW, warmup + cosine lr, EMA 0.996 -> 1, target LN (E3 Arm P); the recipe's weight-decay ramp is replaced by the constant level before and after the switch, lr and EMA schedules unchanged"
+  },
+  "levels": {
+   "T": {
+    "lo": 0.001,
+    "hi": 0.03,
+    "source": "E3 epoch-20 counts 39.3 (sd 1.5) and 5.0 (sd 0, dimensional collapse 3/3)"
+   },
+   "P": {
+    "lo": 0.04,
+    "hi": 5.5,
+    "source": "E3 P_base (ramp from 0.04) count 115 (sd 1.7) and P_wdlarge 28 (sd 4.6)"
+   }
+  },
+  "rows": "per arm: constant lo, constant hi, lo->hi and hi->lo at switch epoch e in {2, 5, 10, 20}; e = 0 is the constant run at the end level and 'never' the constant run at the start level (plan's e in {0, 2, 5, 10, 20, never})",
+  "seeds": [
+   0,
+   1,
+   2,
+   3,
+   4
+  ],
+  "runs": 100,
+  "epochs": 50,
+  "steps_per_epoch": 195,
+  "logging": "full epoch-end spectra (10000 test images) every epoch, linear probe every 10 epochs, per-direction race instrumentation (--instrument 1) at the logged steps"
+ },
+ "statistic": {
+  "rank": "online-token count, eigenvalues >= 1e-3 x the largest (online_tok.count_1e3), at epoch 50; centred RankMe, target-token count and probe reported alongside",
+  "reference": "N = never-switched (constant start level); Z = e = 0 row (constant end level)",
+  "informative": "Delta = mean R(Z) - mean R(N); Welch 95% CI excludes 0 and |Delta| >= 5 counts; otherwise the direction is reported 'uninformative'",
+  "margin": "delta = 0.2 |Delta| (sensitivity 0.1 and 0.3 |Delta|)",
+  "equivalence": "row e equivalent to N iff the Welch 90% CI of mean R(e) - mean R(N) lies in (-delta, delta) (two one-sided tests at 5%); 'no significant difference' is never used",
+  "decision_time": "D = smallest e in {2, 5, 10, 20} such that every row e' >= e is equivalent to N; D = '>20' if row 20 is not equivalent",
+  "decision_curve": "gap fraction f(e) = (mean R(e) - mean R(N)) / Delta with bootstrap 95% CI over seeds",
+  "secondary": "D at epoch-30 and epoch-40 horizons, D on centred RankMe, D without runs flagged not converged",
+  "non_converged": "a run is flagged if |R(50) - R(45)| > delta / 2; the statistic stays the epoch-50 rank",
+  "non_finite": "counted and excluded; a row with < 4 finite seeds is 'undetermined', and D too if it depends on that row"
+ },
+ "readings": {
+  "early": "D <= 5 in an arm/direction: the near-collapse premise of the delivered paper (collapse decided in the first epochs) holds in the ViT for that knob",
+  "late": "D = '>20': late weight-decay settings still move the final rank; per the plan's exit rule the paper states the near-collapse premise as linear-only for that arm and B (post-capture moving boundary) carries the ViT story",
+  "intermediate": "D in {10, 20}: reported at the grid's resolution"
+ },
+ "predictions": {
+  "basis": "direction B (plan v2.5): after capture the rank is governed by the static threshold at the current hyperparameters, a moving boundary when lambda changes; lost directions keep a nonzero amplitude under decay and re-escape when the threshold re-admits them (SGD noise floor B3; under Adam the vanishing gradient is renormalised, theory/ext_A_adamw.md A-ii). The near-collapse premise of the delivered paper predicts the opposite (D small). The B derivation is not yet written; these are qualitative predictions from its premise, registered so that the grid tests it, not from a fitted model.",
+  "T_lo2hi": {
+   "D": ">20",
+   "f20_at_least": 0.5,
+   "why": "switching to wd 3e-2 at any e <= 20 leaves >= 30 epochs in which the static threshold at the high level removes directions"
+  },
+  "T_hi2lo": {
+   "D": ">20",
+   "f20_at_least": 0.5,
+   "why": "directions lost at wd 3e-2 are not exactly zero and re-escape under the low level's threshold"
+  },
+  "P_lo2hi": {
+   "D": ">20",
+   "f20_at_least": 0.5,
+   "why": "as T_lo2hi"
+  },
+  "P_hi2lo": {
+   "D": ">20",
+   "f20_at_least": 0.5,
+   "why": "as T_hi2lo (B's premise); see amendment_1.P_hi2lo_reason: the full-batch Adam re-escape of A-ii' is not assumed to carry to minibatch training"
+  },
+  "B2_warmup": "lo->hi rows: the final rank moves toward the constant-hi rank (f(e) >= 0.5) for every e, i.e. the final rank follows the final weight decay, not the early one",
+  "scoring": "see amendment_1.prediction_scoring (supersedes: 'registered D and f(20) lower bound (point estimate) both hold')"
+ },
+ "baselines": {
+  "early_reading": "for each constant row the count at epochs 2, 5, 10, 20 vs epoch 50 (the 'rank at x% of training' predictor); for switched rows the count at the switch epoch vs epoch 50",
+  "race_and_mu": "the instrumented per-direction race quantities and the 2610.02344 mu count (code/baselines/dvd_mu.py variants where defined) of the constant rows are scored in E7/C5, not in this registration"
+ },
+ "compute": {
+  "pilot": "SLURM 53929960 (Arm T) and 53929961 (Arm P), GTX 1080 Ti, 3 runs packed per GPU, 5 epochs of the 50-epoch schedule, 1 seed",
+  "sec_per_step_packed": "0.28-0.34 (1080 Ti); E3 measured 0.16 on V100",
+  "estimate": "9750 steps x 0.28-0.34 s + 5 probes ~ 50-60 min per array task on a 1080 Ti, ~30 min on a V100; 34 tasks ~ 17-34 GPU-h, inside the ~90 GPU-h ViT cap (plan's estimate 15-18 GPU-h)"
+ },
+ "pilot": {
+  "P_hi": {
+   "count_by_epoch": {
+    "0": 27,
+    "1": 28,
+    "2": 32,
+    "3": 41,
+    "4": 41,
+    "5": 39
+   },
+   "rankme_c_by_epoch": {
+    "0": 31.49,
+    "1": 31.3,
+    "2": 33.77,
+    "3": 39.24,
+    "4": 38.84,
+    "5": 37.09
+   },
+   "probe": {
+    "0": 0.4365,
+    "5": 0.46180000000000004
+   },
+   "sec_per_step": 0.3239,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "slurm_job": "53929961"
+  },
+  "P_lo": {
+   "count_by_epoch": {
+    "0": 27,
+    "1": 27,
+    "2": 36,
+    "3": 45,
+    "4": 51,
+    "5": 62
+   },
+   "rankme_c_by_epoch": {
+    "0": 31.49,
+    "1": 31.64,
+    "2": 37.31,
+    "3": 44.43,
+    "4": 48.72,
+    "5": 51.44
+   },
+   "probe": {
+    "0": 0.4365,
+    "5": 0.46780000000000005
+   },
+   "sec_per_step": 0.327,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "slurm_job": "53929961"
+  },
+  "P_lo2hi_e2": {
+   "count_by_epoch": {
+    "0": 27,
+    "1": 27,
+    "2": 36,
+    "3": 43,
+    "4": 44,
+    "5": 42
+   },
+   "rankme_c_by_epoch": {
+    "0": 31.49,
+    "1": 31.64,
+    "2": 37.31,
+    "3": 42.15,
+    "4": 41.94,
+    "5": 40.43
+   },
+   "probe": {
+    "0": 0.4365,
+    "5": 0.4636
+   },
+   "sec_per_step": 0.3395,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "slurm_job": "53929961"
+  },
+  "T_hi": {
+   "count_by_epoch": {
+    "0": 27,
+    "1": 22,
+    "2": 21,
+    "3": 20,
+    "4": 19,
+    "5": 14
+   },
+   "rankme_c_by_epoch": {
+    "0": 31.49,
+    "1": 22.76,
+    "2": 19.68,
+    "3": 17.67,
+    "4": 15.37,
+    "5": 13.06
+   },
+   "probe": {
+    "0": 0.4365,
+    "5": 0.34990000000000004
+   },
+   "sec_per_step": 0.2941,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "slurm_job": "53929960"
+  },
+  "T_lo": {
+   "count_by_epoch": {
+    "0": 27,
+    "1": 26,
+    "2": 25,
+    "3": 26,
+    "4": 33,
+    "5": 35
+   },
+   "rankme_c_by_epoch": {
+    "0": 31.49,
+    "1": 30.95,
+    "2": 28.98,
+    "3": 30.06,
+    "4": 34.72,
+    "5": 36.59
+   },
+   "probe": {
+    "0": 0.4365,
+    "5": 0.4428
+   },
+   "sec_per_step": 0.2939,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "slurm_job": "53929960"
+  },
+  "T_lo2hi_e2": {
+   "count_by_epoch": {
+    "0": 27,
+    "1": 26,
+    "2": 25,
+    "3": 24,
+    "4": 23,
+    "5": 19
+   },
+   "rankme_c_by_epoch": {
+    "0": 31.49,
+    "1": 30.95,
+    "2": 28.98,
+    "3": 23.0,
+    "4": 19.94,
+    "5": 17.05
+   },
+   "probe": {
+    "0": 0.4365,
+    "5": 0.4122
+   },
+   "sec_per_step": 0.2795,
+   "gpu": "NVIDIA GeForce GTX 1080 Ti",
+   "slurm_job": "53929960"
+  }
+ },
+ "pilot_reading": "development only, not scored: the switch takes effect at its step (lo->hi e2 equals lo through epoch 2, then falls: Arm T count 25 -> 19 by epoch 5 vs 35 constant lo and 14 constant hi); every logged quantity is finite; instrumentation runs at the logged steps",
+ "amendment_1": {
+  "difference_test": "every row also gets the Welch 95% CI of mean R(e) - mean R(N); 'different' iff it excludes 0. Both tests (equivalence TOST and difference) are reported for every row.",
+  "readings": {
+   "early": "D in {2, 5}",
+   "intermediate": "D in {10, 20}",
+   "late": "the difference at e = 20 is demonstrated (Welch 95% CI of R(20) - R(N) excludes 0); only then does the plan's exit ('late settings move the rank; premise linear-only for that arm and direction') apply",
+   "inconclusive at n=5": "D = '>20' without a demonstrated difference at e = 20; the plan's exit is not triggered",
+   "f": "f(e) is reported with its bootstrap 95% CI and is not clipped to [0, 1]"
+  },
+  "delivered_account_expectation": "D alone does not separate B from the delivered account. The delivered linear model (the internal review's checks/e8_linear_switch.json: GD eta 0.05, E1b spectrum, lam 0.005 <-> 0.05) gives D = 10 (lo->hi) and D = 2 (hi->lo) at t = 5000, and D > 20 with f(20) = 0.2 when the horizon is short compared with the post-switch relaxation, about 1/(eta lam). The separating quantity is f(20): the linear account gives f(20) <= 0.2 in that check, while B's premise predicts f(20) >= 0.5.",
+  "prediction_scoring": "each cell's prediction holds iff the reading is 'late' and the point estimate of f(20) >= 0.5; the CI of f(20) is reported, and 'strong' is added when its lower bound is >= 0.5",
+  "nonfinite": "non-finite runs are counted per row; D is recomputed with them scored as collapsed (rank 0 at every epoch); the reported D is 'undetermined' if the two scorings disagree",
+  "regrowth": "for hi->lo rows (required for Arm T, reported for both arms): the online-token spectrum at the switch epoch, as counts at 1e-3, 1e-5, 1e-7 x the largest eigenvalue and the median log10 ratio of the directions ranked between the constant-hi and constant-lo final counts, so that slow regrowth is not read as a decided rank",
+  "provenance": "per run: GPU, torch version, sha256 of the pip freeze, code commit (fabd62c), md5 of vit_jepa.py, seed (code/e8_analyze.py summary.json 'provenance')",
+  "submission": "one tracked SLURM array, <= 2 h per task; tasks ordered by priority: constant rows, then the e = 20 and e = 5 rows, then e = 10 and e = 2 (code/e8_grid.py). Fallback trigger: no task started 60 min after submission, or fewer than half finished 12 h after the first start; then the feasibility reviewer is told, the priority subset runs on what starts, missing rows are labelled, the horizon is not shortened. No CPU fallback. At most one re-run of the whole grid.",
+  "P_hi2lo_reason": "rests on B's premise alone (lost directions keep a nonzero amplitude and the threshold at the low level re-admits them). The Adam re-escape mechanism of A-ii' needs eta |h| / (sqrt(vhat) + eps) to exceed the momentum stability limit 2 (1 + b1) / (1 - b1) ~ 38; under minibatch noise sqrt(vhat) is floored by the gradient noise and the cosine schedule shrinks eta, so it is not assumed to carry to the ViT. The registered D and f(20) values are unchanged.",
+  "early_reading_code": "baselines.early_reading is computed by code/e8_analyze.py early_reading (summary.json <cell>.early_reading: per row the mean count at epochs 2, 5, 10, 20, or at the switch epoch for switched rows, against epoch 50, with the f(e) the switch-epoch reading implies); added before any production E8 result was read (internal review point 3). Curves now step by 1 epoch."
+ },
+ "addendum_E8R": {
+  "status": "registered before any E8-R run is submitted (plan v2.7/v2.8 Sec. 3 C 'E8-R', advised in feasibility v7 at 10 runs, 2-4 GPU-h). The E8 grid, statistic and predictions above are unchanged; these rows do not enter D.",
+  "question": "Does the I-JEPA recipe's own weight-decay ramp (0.04 -> 0.4 over the schedule) end at the rank of its final or of its initial weight decay? Ties B2 (warm-up) and C4 (heuristics) to practice.",
+  "rows": {
+   "PR_ramp": "Arm P, --wd 0.04 0.4: the recipe's cosine increase wd(e) = 0.4 - 0.18 (1 + cos(pi e / 50)) over the 50-epoch schedule (0.074 at e = 10, 0.164 at e = 20, 0.366 at e = 40)",
+   "PR_c04": "Arm P, constant 0.4",
+   "reference": "E8's P_lo (constant 0.04, the same runs, seeds 0-4) is the constant-0.04 row"
+  },
+  "seeds": [
+   0,
+   1,
+   2,
+   3,
+   4
+  ],
+  "runs": 10,
+  "code": {
+   "frozen_commit": "fabd62c106709b2c357829647f091a938aa55573 (vit_jepa.py unchanged; the ramp is its default --wd schedule with --full-epochs 50)",
+   "driver": "code/e8_grid.py sbatch-ref -> results/e8/e8ref.sbatch (4 array tasks of <= 3 runs, <= 2 h, --nice=1000 so E8's pending tasks start first)",
+   "analysis": "code/e8_analyze.py practice_ref (summary.json 'E8R')",
+   "environment": "as E8"
+  },
+  "statistic": {
+   "rank": "as E8: online-token count_1e3 at epoch 50; horizons 30 and 40 and centred RankMe reported alongside",
+   "gap": "Delta_R = mean R(0.4) - mean R(0.04); informative iff its Welch 95% CI excludes 0 and |Delta_R| >= 5 (E8's rule)",
+   "ramp_fraction": "f_ramp = (mean R(ramp) - mean R(0.04)) / Delta_R, bootstrap 95% CI over seeds (2000 resamples), not clipped",
+   "tests": "Welch 95% CIs of R(ramp) - R(0.04) and R(ramp) - R(0.4); TOST equivalence of the ramp with each constant row at 0.2 |Delta_R|",
+   "nonfinite": "counted per row and excluded; recomputed with non-finite runs scored as rank 0; a row with < 4 finite seeds makes the reading 'undetermined'"
+  },
+  "references_for_f": {
+   "early_decision": {
+    "f": 0.0,
+    "account": "the delivered near-collapse premise: the rank is decided in the first epochs, where the ramp is still near 0.04"
+   },
+   "cumulative_dose": {
+    "f": 0.3056,
+    "account": "the rank follows the lr-weighted decay dose sum_t lr(t) wd(t): with the recipe's warmup + cosine lr the ramp's dose above 0.04 is 0.306 of constant 0.4's (computed from vit_jepa.hyper; 72% of it after epoch 20)"
+   },
+   "final_wd": {
+    "f": 1.0,
+    "account": "the rank follows the weight decay at the end of training"
+   }
+  },
+  "prediction": {
+   "basis": "direction B's premise, as for E8: after capture the rank follows the static threshold at the current weight decay (a moving boundary), so the final rank follows the late weight decay rather than the early one",
+   "informative": "not predicted: E3 has no Arm P level between 0.04 and 5.5 (counts 116 at 0 and 0.04, 28 at 5.5; 115 under the 100-epoch-schedule ramp read at epoch 20); the decoupled shrink exponent sum lr wd is 0.585 at constant 0.4 against 8.0 at 5.5",
+   "if_informative": "f_ramp >= 0.5 (point estimate; 'strong' if the CI's lower bound is >= 0.5)",
+   "if_uninformative": "no prediction is scored; the reading is the C4 statement that the recipe's ramp acts in a range where weight decay does not move the rank at this horizon",
+   "reading": "the report states which reference values of f (0, 0.306, 1) the CI of f_ramp contains; f_ramp in [0.5, 1] with 0 and 0.306 outside the CI supports B over both alternatives"
+  },
+  "baselines": "early reading as in E8: each row's count at epochs 2, 5, 10, 20 against epoch 50",
+  "amendment_E8R_1": {
+   "status": "registered after the 10 E8-R runs (SLURM 53931297) had finished on the cluster (final.json written 01:11-01:14 UTC on 2026-10-18) and before any of their outputs was read or copied; internal review points 1-3. It makes the holds rule stricter and adds a reference value; it changes no row, seed or statistic.",
+   "holds": "the prediction holds iff (i) Delta_R is informative (E8's rule), (ii) the Welch 95% CI of mean R(ramp) - mean R(0.04) excludes 0 (the difference is demonstrated, as amendment_1's 'late' needs at e = 20), and (iii) the point estimate of f_ramp >= 0.5; 'strong' if in addition the bootstrap CI's lower bound of f_ramp is >= 0.5. If (i) and (iii) hold without (ii) the reading is 'inconclusive at n=5'; if (i) and (ii) hold with f_ramp < 0.5 it fails.",
+   "nonfinite": "the reading is computed with non-finite runs excluded and with them scored as rank 0; the reported reading is 'undetermined' if the two disagree (as E8's D_final)",
+   "references_for_f": {
+    "delivered_linear": {
+     "f": [
+      0.0,
+      0.4
+     ],
+     "account": "the delivered reduced linear flow on the E1b spectrum with lam ramped 0.005 -> 0.05 by the recipe's cosine increase gives f_ramp 0.0-0.4 (constant step: 0.4 at T 20000, 0.0 at T 100000; recipe warm-up + cosine step: 0.25 / 0.2), the internal review's checks/e8r_linear_ramp.json; f moves in steps of 0.2-0.25 there because the gap is 4-5 modes"
+    }
+   },
+   "reading": "'supports B over the delivered account' needs the prediction to hold and the CI of f_ramp to lie above 0.4 (its lower bound > 0.4); a CI that overlaps [0, 0.4] cannot separate B from the delivered account, and a CI containing both 0.306 and 0.4 cannot separate the dose account from it. The report states which of 0, 0.306, [0, 0.4] and 1 the CI contains.",
+   "early_reading": "baselines.early_reading is computed (code/e8_analyze.py early_reading): each row's mean count at epochs 2, 5, 10, 20 against its epoch-50 count, and the f_ramp each early reading implies; E8's switched rows are read at their switch epoch with the implied f(e). Curves are reported at every epoch.",
+   "code": "code/e8_analyze.py practice_ref, practice_ref_combined (summary.json E8R.reading_final), early_reading; synthetic check code/checks/e8r_scoring_synthetic.py -> results/e8/scoring_synthetic_e8r.txt"
+  },
+  "amendment_E8R_2": {
+   "status": "registered AFTER the E8-R outputs were read (reading pushed in 10357a5, 01:45 UTC 2026-10-18; internal review point 1, posted 01:38, was not acted on before that reading). It corrects the branch amendment_E8R_1 loosened and is not a pre-registration: the paper reports E8-R's amendment_E8R_1 as registered after the runs had finished (01:11-01:14 UTC) but before any output was read, and this amendment as post-reading. It changes no E8-R reading: at epoch 50 Delta_R is uninformative, so no f-branch is reached; at the horizon-30 sensitivity the difference is demonstrated and f_ramp = 0.188 < 0.5 fails under both amendments.",
+   "rule": "(a) f_ramp < 0.5 (point estimate) fails whatever the R(ramp) - R(0.04) test says, as in v1 (44357b3) and E8's score_prediction; (b) 'inconclusive at n=5' only when Delta_R is informative, f_ramp >= 0.5 and the Welch 95% CI of R(ramp) - R(0.04) contains 0; (c) holds / strong as in amendment_E8R_1.",
+   "why": "under amendment_E8R_1, f_true = 0 (the ramp acting as constant 0.04, the outcome most against B) read 'inconclusive' in 93-99% of synthetic draws at n = 5 (the internal review's checks/e8r_rule_operating.json).",
+   "separates_B": "'supports B over the delivered account' is reported from the final reading (E8R.separates_B_from_delivered_final): it needs reading_final to be 'holds' or 'holds (strong)' and the f_ramp CI's lower bound > 0.4; a per-scoring flag is not reported as the result.",
+   "code": "code/e8_analyze.py practice_ref, separates_final; synthetic code/checks/e8r_scoring_synthetic.py -> results/e8/scoring_synthetic_e8r.txt (case small_diff_inconclusive renamed small_diff_fails, f 0.098 now fails); E8's synthetic output unchanged byte for byte"
+  }
+ }
+}

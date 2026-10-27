@@ -1,0 +1,23 @@
+"""Re-derive the cluster estimates off-cluster from the seeds in the batch scripts.
+
+Runs the same pure-Python loop as pi_sweep.sbatch (seed 1000+i, n=10^(5+i))
+and long.sbatch (seed 7, n=3e7); Python's Mersenne Twister is deterministic,
+so the results must equal the cluster outputs digit for digit.
+Usage: python3 reproduce_seeds.py TASK  (TASK = 0..3 or long) -> JSON line on stdout
+"""
+import json, math, random, sys, time
+
+task = sys.argv[1]
+if task == "long":
+    n, seed = 3 * 10 ** 7, 7
+else:
+    i = int(task)
+    n, seed = 10 ** (5 + i), 1000 + i
+t0 = time.time()
+rng = random.Random(seed)
+inside = sum(1 for _ in range(n) if rng.random() ** 2 + rng.random() ** 2 <= 1.0)
+e = 4 * inside / n
+print(json.dumps({"task": task, "samples": n, "seed": seed, "inside": inside,
+                  "estimate": f"{e:.8f}", "abs_error": f"{abs(e - math.pi):.3e}",
+                  "seconds": round(time.time() - t0, 1),
+                  "python": sys.version.split()[0]}), flush=True)

@@ -1,0 +1,30 @@
+import json, numpy as np
+from scipy import stats
+import matplotlib; matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+rng = np.random.default_rng(20261017)
+TRUE_A, TRUE_B, SIGMA, N = 1.5, 2.0, 1.0, 40   # intercept, slope, noise sd
+x = np.sort(rng.uniform(0, 10, N)); y = TRUE_A + TRUE_B*x + rng.normal(0, SIGMA, N)
+r = stats.linregress(x, y); t = stats.t.ppf(0.975, N-2)
+ci = lambda v, s: [v-t*s, v+t*s]
+# bootstrap check
+bs = []
+for _ in range(5000):
+    i = rng.integers(0, N, N); bs.append(np.polyfit(x[i], y[i], 1))
+bs = np.array(bs)
+res = dict(n=N, truth=dict(intercept=TRUE_A, slope=TRUE_B, noise_sd=SIGMA, seed=20261017),
+  slope=dict(est=r.slope, se=r.stderr, ci95=ci(r.slope, r.stderr), boot_ci95=np.percentile(bs[:,0],[2.5,97.5]).tolist()),
+  intercept=dict(est=r.intercept, se=r.intercept_stderr, ci95=ci(r.intercept, r.intercept_stderr), boot_ci95=np.percentile(bs[:,1],[2.5,97.5]).tolist()),
+  r2=r.rvalue**2, resid_sd=float(np.std(y-(r.intercept+r.slope*x), ddof=2)),
+  shapiro_p_resid=float(stats.shapiro(y-(r.intercept+r.slope*x)).pvalue))
+json.dump(res, open("results/fit.json","w"), indent=1)
+np.savetxt("results/data.csv", np.c_[x,y], delimiter=",", header="x,y", comments="")
+g = np.linspace(0, 10, 200); se = res["resid_sd"]*np.sqrt(1/N+(g-x.mean())**2/((x-x.mean())**2).sum())
+f = r.intercept+r.slope*g
+fig, ax = plt.subplots(figsize=(6,4))
+ax.scatter(x, y, s=18, color="#1f77b4", label="data (n=40)")
+ax.plot(g, f, color="#d62728", label=f"OLS: y={r.intercept:.2f}+{r.slope:.2f}x")
+ax.fill_between(g, f-t*se, f+t*se, color="#d62728", alpha=.2, label="95% CI of mean line")
+ax.set_xlabel("x"); ax.set_ylabel("y"); ax.legend(frameon=False); fig.tight_layout()
+fig.savefig("figures/fit.png", dpi=200)
+print(json.dumps(res, indent=1))

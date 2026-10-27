@@ -1,0 +1,13 @@
+# Independent reference fit used by the reviewer to check delivered numbers (not a delivery).
+import numpy as np
+from scipy import stats
+rng = np.random.default_rng(216)
+x = np.arange(40)
+y = 2.5 + 0.8 * x + rng.normal(0, 3, 40)
+r = stats.linregress(x, y)
+t = stats.t.ppf(0.975, 38)
+print(f"slope {r.slope:.6f} se {r.stderr:.6f} CI [{r.slope - t*r.stderr:.6f}, {r.slope + t*r.stderr:.6f}]")
+print(f"intercept {r.intercept:.6f} se {r.intercept_stderr:.6f} CI [{r.intercept - t*r.intercept_stderr:.6f}, {r.intercept + t*r.intercept_stderr:.6f}]")
+res = y - (r.intercept + r.slope * x)
+print(f"residual sd {np.sqrt((res**2).sum()/38):.6f}  R2 {r.rvalue**2:.6f}")
+print("numpy", np.__version__)

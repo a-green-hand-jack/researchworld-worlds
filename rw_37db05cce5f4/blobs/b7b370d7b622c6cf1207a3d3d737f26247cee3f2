@@ -1,0 +1,13 @@
+# Capability check evidence
+
+The authoritative task is `objective.json`; it is also quoted verbatim in the repository's `brief.md`. These are environment observations, not research results. All timestamps are UTC on 2026-10-19.
+
+| Objective step | Evidence | Interpretation |
+|---|---|---|
+| 1: repeated role status | `status-loop.txt`, `status-err-1.txt` through `status-err-18.txt`, `status.md` | Unmodified output of the prescribed loop, executed once. The prerequisite objective read preceded this command: the strict first-command ordering was not achieved. |
+| 2: network sources | `research-network.json`, `sources.md`, `sources/*.json`, `sources/*.headers`, `sources/*.first200`, `sources/*.stderr` | One request for each of 36 named sources/services/venues, including the explicitly listed bot-check sites. Each JSON records the exact argv and run interval. `first200` files preserve exact bytes, while the table escapes those bytes for display. A 2xx status alone does not establish that a page is useful or free of bot challenges. |
+| 3: HTTP and refusals | `refusals.md` | Five exact requested commands, combined full stdout/stderr, exits and UTC intervals. Curl does not emit CONNECT-refusal bodies for the two HTTPS refusals; no body was silently removed. |
+| 4: forge and releases | `forge.md` | Outside-checkout API request succeeds. The released file is 5,000,000 random bytes. Curl upload/download succeeds and hashes match. Forge download exits 1 (unsupported), so no hash exists for that requested download; the failed hash/comparison commands are retained. |
+| 5: Git size delivery | `size.md`, `large.sha256`, `size-commit.txt`, `size-push.txt`, `size-push-start.txt`, `size-push-end.txt`, `size-remote.txt` | 167,772,160-byte file plus all 1,500 numbered text files added in one commit. These logs document generation, validation, the commit and push. |
+
+The scripts that captured steps 2–5 are working material in `scripts/` in the experiment repository. Authentication variables are kept literal in the command transcripts; their values are never logged. HTTP response failures, redirects, unsupported commands and the initial ordering deviation are results to retain, not success claims.

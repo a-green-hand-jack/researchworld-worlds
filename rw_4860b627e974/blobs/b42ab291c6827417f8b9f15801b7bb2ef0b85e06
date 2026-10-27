@@ -1,0 +1,35 @@
+# Study plan and assignment
+
+## Objective and scope
+
+Fit a straight line to 40 synthetic noisy points generated as y=2x+1 plus independent Gaussian noise with standard deviation 0.5, x evenly spaced on [0,10], NumPy seed 0. Report slope and intercept with 95% confidence intervals and one figure. This is the complete objective from story-repo#1; no external dataset, comparison study, or venue submission is requested.
+
+## Settled producer responsibilities
+
+- experiment-repo owns numerical analysis and the otherwise unowned report function. Its accepted final path is report.md. Data, code, exact fit results, and validation remain its repository provenance.
+- figtab-repo owns the single final figure, figure.png, using the same observations and fitted line.
+- story-repo owns assignment.json and this plan, working coordination material.
+- idea-repo supplies objective/context interpretation; idea-review-repo supplies independent feasibility judgment. Neither requires a final artifact for the requested report and figure.
+- No review or venue owner is configured. Release authority cannot be inferred from numerical completion; the governance question remains in idea-review-repo#3.
+
+Acceptance is recorded in experiment-repo#2 and figtab-repo#2. assignment.json is unchanged because the accepted paths match the draft.
+
+## Data and analysis specification
+
+Use x=np.linspace(0,10,40) and a single np.random.RandomState(0).normal(0,0.5,40) draw for the additive noise. This legacy API is the agreed seed interpretation in idea-repo#2 and brief.md. Include the recipe in report.md.
+
+Fit y = intercept + slope*x by ordinary least squares. Estimate residual variance as RSS/(40-2); obtain coefficient standard errors from this variance times the inverse design cross-product. Report separate two-sided 95% Student-t confidence intervals, critical value t(0.975,38). These are marginal intervals for coefficients. The known generating SD 0.5 describes the simulation; the agreed inferential procedure estimates residual variance.
+
+All 40 observations enter the fit. There is no training/test split, model selection, deletion rule, or alternate RNG analysis. Check finite inputs, correct point count and spacing, coefficient ordering, degrees of freedom, and agreement between report and figure. The analysis owner determines numerical validity.
+
+## Presentation and acceptance checks
+
+The one figure shows all observations, fitted line, and labeled x/y axes. An optional band must identify its quantity; the delivered generator uses a pointwise 95% confidence interval for the mean response. It is not a prediction interval or simultaneous confidence band.
+
+The report must include both coefficient estimates, their intervals, generation recipe, inference method, and figure.png. Any statement about true-parameter coverage must be checked against actual interval endpoints. Coverage in one realization does not establish calibration.
+
+On checking the numerical report, its interval [1.0683,1.7290] excludes the true intercept 1; slope interval [1.8947,2.0084] includes 2. A correction request is open with the analysis owner because the current prose says both are included. The reported estimates match the figure legend at its displayed precision.
+
+## Feasibility dependency
+
+The study is a small closed-form regression, but the independent feasibility response requested in idea-review-repo#3 is still outstanding. Producer responsibilities are settled; feasibility acceptance and the report correction remain open checks, not fabricated approvals.

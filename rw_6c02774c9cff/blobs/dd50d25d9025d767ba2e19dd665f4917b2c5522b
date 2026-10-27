@@ -1,0 +1,66 @@
+"""Shared definitions: data loading, models and the cross-validation design."""
+import hashlib
+import pathlib
+
+import arff_lite
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+REPORT = pathlib.Path(__file__).resolve().parent.parent   # report/
+ARFF = REPORT / "results" / "openml_61" / "iris_openml_61.arff"
+ARFF_MD5 = "ad484452702105cbf3d30f8deaba39a9"  # published by OpenML for dataset 61
+
+SEED = 20261017          # outer repeated stratified K-fold
+N_SPLITS, N_REPEATS = 5, 10
+INNER_SPLITS = 5         # inner stratified K-fold used to choose k
+K_GRID = list(range(1, 32, 2))   # odd k = 1..31 (no voting ties among 2 classes)
+
+
+def load_iris():
+    raw = ARFF.read_bytes()
+    if hashlib.md5(raw).hexdigest() != ARFF_MD5:
+        raise SystemExit("data/iris_openml_61.arff does not match OpenML's md5; run code/fetch_data.py")
+    X, y_str, classes = arff_lite.parse(raw.decode())
+    y = np.array([classes.index(c) for c in y_str])
+    return X, y, classes
+
+
+def outer_cv():
+    return RepeatedStratifiedKFold(n_splits=N_SPLITS, n_repeats=N_REPEATS, random_state=SEED)
+
+
+def inner_cv(rep, fold):
+    # A fixed, distinct seed per outer fold so the inner split is reproducible.
+    return StratifiedKFold(n_splits=INNER_SPLITS, shuffle=True, random_state=SEED + 1000 * rep + fold)
+
+
+def make_lr(scale=True, C=1.0):
+    # lbfgs on >2 classes fits the multinomial (softmax) model in scikit-learn >= 1.5.
+    steps = [("scale", StandardScaler())] if scale else []
+    steps.append(("lr", LogisticRegression(C=C, solver="lbfgs", max_iter=10000, tol=1e-8)))
+    return Pipeline(steps)
+
+
+def make_knn(rep, fold, scale=True, grid=K_GRID):
+    steps = [("scale", StandardScaler())] if scale else []
+    steps.append(("knn", KNeighborsClassifier()))
+    # GridSearchCV keeps the first best grid point, i.e. the smallest k among ties.
+    return GridSearchCV(Pipeline(steps), {"knn__n_neighbors": grid}, cv=inner_cv(rep, fold),
+                        scoring="accuracy", n_jobs=1, refit=True)
+
+
+SETTINGS = {
+    "outer_cv": f"RepeatedStratifiedKFold(n_splits={N_SPLITS}, n_repeats={N_REPEATS}, random_state={SEED})",
+    "lr": "StandardScaler + LogisticRegression(multinomial/softmax, L2, C=1.0, solver='lbfgs', "
+          "max_iter=10000, tol=1e-8); not tuned",
+    "knn": "StandardScaler + KNeighborsClassifier(uniform weights, Euclidean, algorithm='auto'); "
+           f"k chosen from odd k = {K_GRID[0]}..{K_GRID[-1]} by GridSearchCV(accuracy) on each outer training set",
+    "inner_cv": f"StratifiedKFold(n_splits={INNER_SPLITS}, shuffle=True, random_state={SEED} + 1000*repetition + fold)",
+    "k_tie_break": "smallest k among equal inner-CV accuracy (GridSearchCV keeps the first best)",
+    "vote_tie_break": "lowest class index among tied classes (scikit-learn); odd k still allows 3-class ties, e.g. 1-1-1 at k=3",
+    "threads": "OMP/OPENBLAS/MKL_NUM_THREADS=1, n_jobs=1",
+}

@@ -1,0 +1,21 @@
+# Research brief
+
+## Objective (quoted in full)
+
+> Optimizer provenance fact sheet (a small look-up task).
+>
+> Produce a one-page fact sheet on three optimizers used in deep learning: Adam, AdamW (decoupled weight decay) and Lion (EvoLved Sign Momentum). For each optimizer give the paper that introduced it: its title, its first author, the year it first appeared, and its arXiv identifier.
+>
+> Every fact must be looked up on the web during this task, not given from memory, and each fact must cite the URL of the page it was read from. Find each paper with a web search first (do not start from a URL you already know), then open the page the search found to read the facts. If your environment has no web search tool, say so in your record and find the page another way the environment offers.
+>
+> Division of work: experiment-repo looks up Adam and records what it found, with its search query and URLs, in its repository; paper-repo looks up AdamW, collects the three entries and writes the fact sheet (`fact-sheet.md`) as the delivery; internal-review-repo independently looks up Lion and checks each entry of the fact sheet against a source it opens itself, reporting any disagreement before it approves.
+
+Source: world/experiment-repo issue #1, Research objective, read during activation 7d878e03b1de887c026dcab33f2da7e0.
+
+## Requirements and conventions
+
+The supplied material consists only of the objective; it provides no data files or related papers. This is a bibliographic lookup, with no experiment, quantitative comparison, figures, or statistical analysis required. Each entry needs an introducing-paper title, first author, first-appearance year, and arXiv identifier, with a source URL for every fact. Use the initial arXiv submission date to establish first appearance when supported by the opened record; distinguish it from later revision or conference years. Establish the connection between each optimizer and its paper from the opened source.
+
+The split is specified explicitly in the objective. experiment-repo owns the Adam lookup record, this brief, and the assignment. paper-repo owns AdamW lookup and the single-page final fact-sheet.md. internal-review-repo owns the independent Lion lookup, independent checking of all entries, and approval. Lookup records feed the final sheet and stay in their owners' repositories; only fact-sheet.md is a required delivered path.
+
+Web search is available. The completed Adam search and subsequent opened-source findings are recorded in adam-lookup.md. AdamW and Lion lookup and verification remain with their assigned owners.

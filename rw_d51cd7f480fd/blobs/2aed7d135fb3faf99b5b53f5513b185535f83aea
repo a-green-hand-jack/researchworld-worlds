@@ -1,0 +1,15 @@
+# Jobs run on `local-compute`
+
+Both scripts were run unmodified from `/initial-state/inputs/0/`, started together at the start of work.
+
+| job | ref | command | started (UTC) | planned duration |
+|---|---|---|---|---|
+| pilot | job-c703b04670 | `python3 -u /initial-state/inputs/0/pilot.py results/pilot.json` | 2026-10-19 10:10:23 | ~540 s of sampling (~9 min); finished exit 0, 540.0 s, 1 759 200 000 samples |
+| extended | job-3c3878b497 | `python3 -u /initial-state/inputs/0/extended.py 40 results/extended_40.json` | 2026-10-19 10:10:24 | 40 min of sampling (2400 s), ends ~10:50 UTC |
+
+The extended run is for a later study and is not part of this delivery; nothing here waits for it.
+`python3 -u` only unbuffers output; the scripts themselves are unchanged.
+
+## Pilot interim (wake line, ~60 s)
+
+`HUTIAN_WAKE: pilot interim estimate 3.141587 after 198200000 samples` — interim only; the final estimate is in `results/estimate.json`.

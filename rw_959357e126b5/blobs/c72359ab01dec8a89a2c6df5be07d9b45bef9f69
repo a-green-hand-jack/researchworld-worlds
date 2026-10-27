@@ -1,0 +1,112 @@
+"""E6 / rung 4 held-out scoring, amendment 1 (results/e6/prediction_r4_amendment1.json), committed before the score of
+code/e6_r4_heldout.py was read. It reads the same run file and changes only what review asked (experiment-repo#11):
+  R4-1  diverged base runs count as within-1 misses in the sample-robust and settled-only blocks too (the frozen
+        cmd_score passed ndiv = 0 there, so a divergence left those blocks instead of counting as a miss; the
+        registration says within-1 is over all base runs). Everything else of cmd_score is unchanged.
+  R4-2  the reading of a fail is conditioned on the rows: 'no inputs-only criterion of this paper' only if every
+        inputs-only row is outside rung 2's tolerance on the verdict's subset; otherwise the rows inside are named.
+        It is scoped to the grid, and only the R4 statements whose word is 'confirmed' are the held-out located cause.
+The frozen scorer's output (r4_heldout_score.json, written by the run) is kept as the as-frozen record beside this one.
+Usage: python3 code/e6_r4_score_a1.py OUTDIR -> OUTDIR/r4_heldout_score_a1.json"""
+import os, sys, json, gzip
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import e6_r4_heldout as h
+from e6_r4_heldout import block, CRIT, EXTRA, BASELINES, FRAGILE_MAX, GRID
+
+INPUTS_ONLY = [CRIT, EXTRA] + BASELINES + ["n2_init"]        # from inputs, W(0), P0 and the sample only
+MEASURED = ["early", "n2_meas", "n2_meas_full", "n2_meas_rot", "ln_static_T"]   # use the run's own training
+SCOPE = ("full-batch GD at eta = 0.1 on the rung 2 MLP encoder (n = 32, H = 64, d = 32, tanh / relu, no biases), "
+         "predictor P0 = p0 I, w0 = 1e-3, mask ratio 0.5, field and latent data, the held-out grid of "
+         "results/e6/prediction_r4.json")
+
+
+def inside_rows(blk):
+    if "criterion" not in blk:
+        return None
+    t = dict(blk["rows"]); t[CRIT] = blk["criterion"]; t[EXTRA] = blk["extra_row"]
+    return dict(inputs_only=[k for k in INPUTS_ONLY if k in t and t[k]["inside"]],
+                measured=[k for k in MEASURED if k in t and t[k]["inside"]])
+
+
+def score(outdir):
+    rows = [json.loads(l) for l in gzip.open(os.path.join(outdir, "r4_heldout_runs.jsonl.gz"), "rt")]
+    base = sorted([r for r in rows if "floor" not in r["cfg"]], key=lambda r: r["cfg"]["id"])
+    fl = {r["cfg"]["floor_of"]: r for r in rows if "floor" in r["cfg"]}
+    frag, nofloor = set(), []
+    for r in base:
+        f = fl.get(r["cfg"]["id"])
+        if f is None:
+            nofloor.append(r["cfg"]["id"]); continue
+        if r["truth"].get("rank") is None or f["truth"].get("rank") is None or r["truth"]["rank"] != f["truth"]["rank"]:
+            frag.add(r["cfg"]["id"])
+    fin = [r for r in base if r["truth"].get("rank") is not None]
+    div = [r["cfg"]["id"] for r in base if r["truth"].get("rank") is None]
+    robust = [r for r in fin if r["cfg"]["id"] not in frag]
+    settled = [r for r in fin if r["truth"]["settled"]]
+    nb = len(base); share = len(frag) / nb
+    diffs = [abs(r["truth"]["rank"] - fl[r["cfg"]["id"]]["truth"]["rank"]) for r in fin
+             if r["cfg"]["id"] in fl and fl[r["cfg"]["id"]]["truth"].get("rank") is not None]
+    out = dict(amendment=1, base_runs=nb, floor_runs=len(fl), no_floor=nofloor, diverged=div,
+               floor=dict(fragile=sorted(frag), share=share, share_diff_1=float(np.mean([x == 1 for x in diffs])),
+                          share_diff_gt1=float(np.mean([x > 1 for x in diffs])), ill_posed=share > FRAGILE_MAX,
+                          by_cell={f"{a}_{b}": sum(1 for r in base if r["cfg"]["id"] in frag and r["cfg"]["data"] == a
+                                                   and r["cfg"]["act"] == b) for a in GRID["data"] for b in ("tanh", "relu")}))
+    out["all"] = block(fin, len(div))
+    out["sample_robust"] = block(robust, len(div))            # R4-1: a diverged base run is a miss here too
+    out["settled_only"] = block(settled, len(div))            # R4-1
+    out["cells"] = {f"{a}_{b}": block([r for r in fin if r["cfg"]["data"] == a and r["cfg"]["act"] == b],
+                                      sum(1 for r in base if r["truth"].get("rank") is None and r["cfg"]["data"] == a
+                                          and r["cfg"]["act"] == b))
+                    for a in GRID["data"] for b in ("tanh", "relu")}
+    va, vr = out["all"]["verdict"], out["sample_robust"].get("verdict")
+    if len(robust) <= nb / 2:
+        word = "undetermined (truth ill-posed)"
+    elif share > FRAGILE_MAX:
+        word = f"{vr} on sample-robust runs"
+    else:
+        word = va if vr == va else "undetermined"
+    out["verdict_word"] = word
+    sw = lambda blk, s: (blk["statements"]["R4-a"]["word"] if s == "R4-a" else blk["statements"][s]) if "statements" in blk else None
+    src = "sample_robust" if share > FRAGILE_MAX else "all"
+    out["verdict_subset"] = src
+    out["statement_words"] = {}
+    for s in ("R4-a", "R4-b", "R4-c"):
+        wa, wr = sw(out["all"], s), sw(out["sample_robust"], s)
+        out["statement_words"][s] = dict(all=wa, sample_robust=wr,
+                                         word=sw(out[src], s) if wa == wr or wr is None else "undetermined")
+    ca, cr = out["all"]["conditional_word"], out["sample_robust"].get("conditional_word")
+    out["conditional_word"] = ca if ca == cr else "undetermined"
+    out["settled_sensitivity"] = dict(verdict=out["settled_only"].get("verdict"),
+                                      conditional=out["settled_only"].get("conditional_word"))
+    # R4-2: the reading, conditioned on the rows and scoped to the grid
+    ins = {k: inside_rows(out[k]) for k in ("all", "sample_robust", "settled_only")}
+    conf = [s for s in ("R4-a", "R4-b", "R4-c") if out["statement_words"][s]["word"] == "confirmed"]
+    rest = [s for s in ("R4-a", "R4-b", "R4-c") if s not in conf]
+    rd = dict(scope=SCOPE, inside_tolerance=ins, located_cause_heldout=conf, development_readings_only=rest)
+    if word.startswith("fail"):
+        named = ins[src]["inputs_only"]
+        rd["sentence"] = ("no inputs-only criterion of this paper predicts the MLP rank under an LN target on this grid"
+                          if not named else
+                          "the registered criterion fails; inputs-only rows inside rung 2's tolerance: " + ", ".join(named))
+        rd["no_inputs_only_row_inside"] = not named
+        other = "all" if src == "sample_robust" else "sample_robust"
+        rd["other_subset_inside"] = ins[other]["inputs_only"] if ins[other] else None
+        rd["plan_outcome"] = ("criterion fails, R4-a-c confirmed" if not named and not rest else
+                              "criterion fails with a partial located cause: only " + (", ".join(conf) or "none") +
+                              " held out; " + ", ".join(rest) + " stay development readings" if rest else
+                              "criterion fails, R4-a-c confirmed, but inputs-only rows inside tolerance are named")
+        rd["reading"] = "no validated LN criterion in the MLP encoder (a crossing, not a failure of A4)"
+    elif word.startswith("pass"):
+        rd["reading"] = "the criterion holds as registered on this grid; the development expectation (fail) was wrong"
+    else:
+        rd["reading"] = "undetermined"
+    out["reading"] = rd
+    json.dump(out, open(os.path.join(outdir, "r4_heldout_score_a1.json"), "w"), indent=1, allow_nan=False)
+    return out
+
+
+if __name__ == "__main__":
+    o = score(sys.argv[1])
+    print(json.dumps(dict(verdict_word=o["verdict_word"], statements={k: v["word"] for k, v in o["statement_words"].items()},
+                          conditional=o["conditional_word"], reading=o["reading"]), indent=1))

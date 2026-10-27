@@ -1,0 +1,82 @@
+"""Analysis of the pilot Monte Carlo run of pi (pilot.py, run unmodified).
+
+Reads the pilot's own JSON output and writes:
+  results/pilot_summary.json  final estimate, 95% CI (script's Wald interval,
+                              recomputed, plus a Wilson cross-check), coverage
+                              of the true pi, z-score, and input provenance
+  results/pilot_trace.csv     running estimate vs samples, with the 95%
+                              sampling envelope around pi at each n (for the figure)
+
+usage: python3 analysis/analyze_pilot.py [PILOT_JSON] [OUT_DIR]
+"""
+import csv
+import hashlib
+import json
+import math
+import sys
+
+Z = 1.959963984540054  # two-sided 95% normal quantile (the script uses 1.96)
+
+src = sys.argv[1] if len(sys.argv) > 1 else 'results/pilot.json'
+out_dir = sys.argv[2] if len(sys.argv) > 2 else 'results'
+raw = open(src, 'rb').read()
+d = json.loads(raw)
+
+n = d['samples']
+est = d['estimate']
+p = est / 4                      # fraction of points inside the quarter disc
+inside = round(p * n)            # exact count: estimate = 4*inside/n
+assert abs(4 * inside / n - est) < 1e-12, 'estimate is not 4*inside/n'
+
+# Wald interval exactly as pilot.py computes it (z = 1.96), recomputed as a check
+half_script = 1.96 * 4 * math.sqrt(p * (1 - p) / n)
+ci_script = [est - half_script, est + half_script]
+assert all(abs(a - b) < 1e-12 for a, b in zip(ci_script, d['ci95'])), 'CI does not reproduce'
+
+# Wilson score interval for p, scaled by 4 (cross-check of the normal approximation)
+den = 1 + Z * Z / n
+centre = (p + Z * Z / (2 * n)) / den
+hw = Z * math.sqrt(p * (1 - p) / n + Z * Z / (4 * n * n)) / den
+ci_wilson = [4 * (centre - hw), 4 * (centre + hw)]
+
+se = 4 * math.sqrt(p * (1 - p) / n)
+err = est - math.pi
+summary = {
+    'input': {'path': src, 'sha256': hashlib.sha256(raw).hexdigest()},
+    'samples': n,
+    'inside': inside,
+    'seconds': d['seconds'],
+    'estimate': est,
+    'standard_error': se,
+    'ci95': d['ci95'],
+    'ci95_method': 'Wald (normal approximation to the binomial), half-width 1.96*4*sqrt(p(1-p)/n), as computed by pilot.py',
+    'ci95_half_width': half_script,
+    'ci95_wilson': ci_wilson,
+    'true_pi': math.pi,
+    'error': err,
+    'relative_error': err / math.pi,
+    'z_vs_true_pi': err / se,
+    'ci95_covers_true_pi': d['ci95'][0] <= math.pi <= d['ci95'][1],
+    'trace_points': len(d['trace']),
+    # running estimates are cumulative (strongly correlated), so this is descriptive, not a test
+    'trace_points_outside_95_envelope': sum(
+        abs(e - math.pi) > 1.96 * 4 * math.sqrt(math.pi / 4 * (1 - math.pi / 4)) / math.sqrt(m)
+        for _, m, e in d['trace']),
+}
+json.dump(summary, open(f'{out_dir}/pilot_summary.json', 'w'), indent=1)
+
+# Running trace; envelope = pi +/- 1.96 * sigma / sqrt(n), sigma = 4*sqrt(q(1-q)), q = pi/4
+q = math.pi / 4
+sigma = 4 * math.sqrt(q * (1 - q))
+with open(f'{out_dir}/pilot_trace.csv', 'w', newline='') as f:
+    w = csv.writer(f)
+    w.writerow(['elapsed_s', 'samples', 'estimate', 'error', 'envelope95_low', 'envelope95_high'])
+    for t, m, e in d['trace']:
+        h = 1.96 * sigma / math.sqrt(m)
+        w.writerow([t, m, repr(e), repr(e - math.pi), repr(math.pi - h), repr(math.pi + h)])
+    # final point (the trace is sampled every ~10 s and may not include the last block)
+    if d['trace'][-1][1] != n:
+        h = 1.96 * sigma / math.sqrt(n)
+        w.writerow([d['seconds'], n, repr(est), repr(err), repr(math.pi - h), repr(math.pi + h)])
+
+print(json.dumps(summary, indent=1))

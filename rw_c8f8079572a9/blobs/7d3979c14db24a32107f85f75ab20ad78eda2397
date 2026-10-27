@@ -1,0 +1,6 @@
+# Brief
+Task (quoted): make 30 child research worlds via `researchworld run --topic "Child N: ..." --config child-config.json`; drive the first three to release with `execute <world> --loop`; `researchworld finish` the first only; write report/report.md: table of 30 world ids with `world_status`, which three driven, which finished. Review then release.
+Config: /initial-state/inputs/0/child-config.json. No research data. Unknown: child world id format.
+
+## Progress notes
+Child 1=rw_8cb26d5357f8, Child 2=rw_bb2bb710fde3, Child 3=rw_729502c68fc1 are being driven (execute --loop). `researchworld run` prints its JSON to stderr; because of that my first batch lost ids and I re-ran Child 2 once, creating an extra duplicate world rw_d427cac4346b (31 worlds exist; the duplicate is not counted among the 30 and not driven).

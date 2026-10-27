@@ -1,0 +1,12 @@
+# Review record
+
+Inspected the assembled delivery (`ht-role delivery`): assignment 3f081036f482 (experiment-repo: code/, results/), figtab-repo a87ccf226ddd (figures/, tables/), paper-repo ee7da5a97864 (report/report.md, README, venue-artifacts.json).
+
+- Re-ran `code/analysis.py` on a copy of the delivery (numpy 2.4.6, statsmodels 0.15.0): results.json, selected.json, data.csv and resid_*.csv are byte-identical to the delivered files.
+- Matches my independent reference values (review_notes.md): A OLS 3.100 [1.386,4.815] / 0.7552 [0.6795,0.8308]; B OLS 3.002 [0.945,5.059] / 0.8249 [0.7342,0.9157]; B WLS 2.609 [1.987,3.232] / 0.8473 [0.7769,0.9176]; Breusch-Pagan A p=0.194, B p=0.0045.
+- Report figures (BP, Spearman, classical Goldfeld-Quandt, half SDs, weighted-residual check, FWLS, Monte Carlo coverage/width, 3.3x CI ratio) agree with results.json; table in tables/coefficients.md agrees with selected.json.
+- Opened figures/fig1.png: two labelled panels (data + chosen fits + generating mean; OLS residuals on a shared scale showing B's fan shape), readable, legends present, captions consistent with the chosen methods.
+- Decision A->OLS, B->WLS is backed by three residual tests plus post-weighting residual check; limits (one seed, weak power for A, known weights) disclosed.
+- Report is a single short markdown page (51 lines) with code snippets beside every number group.
+
+Conclusion: delivery meets the objective; approved. No open findings.

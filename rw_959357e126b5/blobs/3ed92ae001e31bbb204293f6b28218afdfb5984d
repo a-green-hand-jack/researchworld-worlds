@@ -1,0 +1,34 @@
+"""Check of experiment f876189's E6 rung 1a location readings (results/README.md 'Where the generic miss lies'):
+per a0 cell of the generic and aligned arms (held-out and dev), A1 misses, their closest A1 escape margin, how many
+lie within 0.15 / [-0.15, +0.05] against the hits, and how many runs have the truth's count equal to its final value
+at every checkpoint. Margins from the experiment's margins() (validated in checks/e6_r1_margin_check.py: margin > 0
+count equals race_deep_A1 on 384/384 held-out runs; re-validated here on dev); selection and counting are my own.
+Usage: python3 checks/e6_r1_dev_location_check.py EXPERIMENT_TREE > checks/e6_r1_dev_location_check.json"""
+import sys, os, gzip, json
+import numpy as np
+EXP = sys.argv[1]
+sys.path.insert(0, os.path.join(EXP, "code")); sys.path.insert(0, os.path.join(EXP, "code", "checks"))
+from e6_r1_informative import margins
+rd = lambda p: [json.loads(l) for l in gzip.open(os.path.join(EXP, p), "rt")]
+out = {}
+for lab, p in (("heldout", "results/e6/r1heldout/r1_heldout_runs.jsonl.gz"), ("dev", "results/e6/r1dev/r1_dev_runs.jsonl.gz")):
+    R = [r for r in rd(p) if not r["cfg"].get("pert") and r["cfg"]["L"] >= 2 and r["truth"].get("counts")]
+    bad = 0; res = {}
+    for r in R:
+        m = margins(r); r["_m"] = m[np.isfinite(m)]
+        bad += int((m > 0).sum() != r["pred"]["race_deep_A1"])
+    for arm in ("generic", "aligned"):
+        for a0 in sorted({r["cfg"]["a0"] for r in R}):
+            S = [r for r in R if r["cfg"]["arm"] == arm and r["cfg"]["a0"] == a0]
+            mi = [r for r in S if r["pred"]["race_deep_A1"] != r["truth"]["counts"][-1]]
+            hi = [r for r in S if r["pred"]["race_deep_A1"] == r["truth"]["counts"][-1]]
+            cl = lambda r: float(r["_m"][np.argmin(np.abs(r["_m"]))]) if r["_m"].size else None
+            w15 = lambda r: bool((np.abs(r["_m"]) <= 0.15).any()); win = lambda r: bool(((r["_m"] >= -0.15) & (r["_m"] <= 0.05)).any())
+            n05 = lambda r: not bool((np.abs(r["_m"]) < 0.5).any())
+            fixed = [all(c == r["truth"]["counts"][-1] for c in r["truth"]["counts"]) for r in S]
+            res[f"{arm}_{a0}"] = dict(runs=len(S), misses=len(mi), under=sum(r["pred"]["race_deep_A1"] < r["truth"]["counts"][-1] for r in mi),
+                                     miss_closest=[cl(r) for r in mi], miss_within_0p15=sum(map(w15, mi)), miss_in_window=sum(map(win, mi)),
+                                     miss_none_within_0p5=sum(map(n05, mi)), hit_within_0p15=sum(map(w15, hi)), hit_in_window=sum(map(win, hi)),
+                                     truth_count_fixed=int(sum(fixed)))
+    out[lab] = dict(margin_vs_A1_mismatch=bad, runs_checked=len(R), cells=res)
+print(json.dumps(out, indent=1))

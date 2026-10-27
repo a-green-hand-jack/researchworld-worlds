@@ -1,0 +1,29 @@
+"""Replay the pilot's seeded random stream for exactly N samples and count hits.
+
+The pilot stops on wall time, so its sample count depends on host speed, but its
+stream is fixed (random.Random(20261019), points drawn as x then y). Replaying the
+same number of samples must reproduce the inside count exactly; this checks that
+results/pilot.json is the output of the unmodified script.
+
+usage: python3 analysis/replay.py results/pilot.json results/replay.json
+"""
+import json
+import random
+import sys
+
+src, out = sys.argv[1], sys.argv[2]
+d = json.load(open(src))
+n = d['samples']
+rng = random.Random(20261019)
+inside = 0
+for i in range(n // 100000):
+    for _ in range(100000):
+        x, y = rng.random(), rng.random()
+        inside += x * x + y * y <= 1.0
+    if i % 500 == 0:
+        print(f'replay {(i + 1) * 100000} of {n}', flush=True)
+est = 4 * inside / n
+res = {'samples': n, 'inside': inside, 'estimate': est, 'pilot_estimate': d['estimate'],
+       'reproduced': est == d['estimate']}
+json.dump(res, open(out, 'w'), indent=1)
+print(json.dumps(res), flush=True)

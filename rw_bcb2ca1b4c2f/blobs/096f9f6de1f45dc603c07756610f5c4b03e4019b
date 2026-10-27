@@ -1,0 +1,24 @@
+{
+ "experiment": "E6 / direction C rung 1b: deep predictor with random (non-identity) factors (plan v2.12 Sec. 3 C, L6)",
+ "status": "registered before any held-out run; frozen code = the commit adding this file (md5s below)",
+ "model": "n1g_K (theory/ext_C_ladder.md 'Rung 1b'): the general-factor capture rule a^2 (c - p_u s) K_u >= M lam p_u on N1-general's near-collapse linear integration; fixed on development (results/e6/r1b_dev/), unchanged here",
+ "md5": {
+  "code/e6_r1b.py": "8f80289eae9a597c0c6ecf628c7353ff",
+  "code/linjepa.py": "e7d569d4a3537aa3883ddfe847b3df66",
+  "code/baselines/dvd_mu.py": "88ed281a7bea8dc0b312f88221ff5f4d"
+ },
+ "tolerance": "results/e6/r1b_tolerance.json",
+ "grid": {
+  "heldout": "n = d = 16, s_k = linspace(1.6, 0.5), c_k = s_k 0.87^k (dev: 1.8-0.6, 0.90^k); M in {1, 2, 3, 4} (dev 1-3); p0 in {0.8, 1.2, 1.7} (dev 0.6, 1.0, 1.4); lam in {0.005, 0.011, 0.023} (dev 0.004-0.032; each >= 0.14 in |ln| from every static boundary c_k^2/(4 s_k)); arms gauss and nearid (EPS 0.5); seeds 410-414 (dev 400-402); 360 base runs + 720 truth-floor re-runs",
+  "command": "python3 code/e6_r1b.py run heldout results/e6/r1b_heldout 8 (scores itself into r1b_heldout_score.json)"
+ },
+ "predictions": {
+  "verdict_cells": "gauss_M_ge2 and nearid_M_ge2: pass (within-1 >= 0.90; MAE below n1g_d1, race_id, static, window_P0, early at t = 25 and 50, and every mu variant, paired CI > 0). Development under this rule: both pass (MAE 0.40 / 0.38, within-1 1.00)",
+  "per_M": "reported with the same rule; at M = 2 the margin over n1g_d1 may not clear 0 (development: CI [0.00, 0.39] and [0.00, 0.58]), at M = 3, 4 it should",
+  "L6_statement": "the depth correction holds for random factors: n1g_K beats the depth-1 rule n1g_d1 pooled over M >= 2 in each arm",
+  "reported_beside": "n1g_pL (expected indistinguishable from n1g_K), the count at 10% of T (expected to match n1g_K on Gaussian factors, as on development), the trajectory, the informative runs"
+ },
+ "mu_P2": "registered from the start: every dvd_mu.py variant on the actual P0; outside their Assumption 3.2 in every non-identity run (ass32 recorded per run), so dvd_pq / dvd_exact are the faithful forms",
+ "exit": "if a verdict cell fails, rung 1b is a located failure (which baseline, which M) and the depth correction is stated for identity factors only; reported with the same prominence as a pass; scored once, no iteration",
+ "pilot": "the scorer was smoke-tested on seeds 990-991 (not in any grid), outputs discarded"
+}

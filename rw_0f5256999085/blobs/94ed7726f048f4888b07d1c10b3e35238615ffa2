@@ -1,0 +1,27 @@
+{
+ "note": "The three sampler runs required by the objective, started together on local-compute at the start of the work (scripts run unmodified from /initial-state/inputs/0/). Only the pilot is part of this delivery; the extended runs are for a later study and nothing here waits for them.",
+ "started_utc": "2026-10-18T21:18:34Z",
+ "jobs": [
+  {
+   "ref": "job-bf747b5625",
+   "command": "python3 -u /initial-state/inputs/0/pilot.py /hutian/runs/pilot.json",
+   "planned_duration_min": 9,
+   "role": "pilot, delivered",
+   "status": "ended exit 0 after 540.0 s; delivered (results/pilot_*)"
+  },
+  {
+   "ref": "job-c8c836dd3a",
+   "command": "python3 -u /initial-state/inputs/0/extended.py 55 /hutian/runs/extended_55.json",
+   "planned_duration_min": 55,
+   "role": "extended run for a later study, not delivered",
+   "status": "ended exit 0 (~22:13Z); output kept outside the delivery for the later study"
+  },
+  {
+   "ref": "job-479fd6eba6",
+   "command": "python3 -u /initial-state/inputs/0/extended.py 120 /hutian/runs/extended_120.json",
+   "planned_duration_min": 120,
+   "role": "extended run for a later study, not delivered",
+   "status": "ended exit 0 (~23:18Z); output kept outside the delivery for the later study"
+  }
+ ]
+}

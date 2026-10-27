@@ -1,0 +1,18 @@
+# experiment-repo — analysis
+
+Logistic regression vs k-NN on Iris (OpenML 61), 10 x stratified 5-fold CV.
+Delivered paths (work assignment): `report/code/` (code, data) and `report/results/` (all results; methods and numbers in `report/results/README.md`).
+
+| file | what |
+|---|---|
+| `report/code/fetch_data.py` | downloads OpenML 61 metadata + ARFF from openml.org, checks the published md5 |
+| `report/code/data/` | `iris.arff` (md5 `ad484452702105cbf3d30f8deaba39a9`) and OpenML metadata |
+| `report/code/cv_study.py` | the study; `python cv_study.py results/<run>` |
+| `report/code/ibex_job.sbatch` | the SLURM CPU job that runs the same script on Ibex |
+| `report/code/compare_runs.py` | local vs Ibex number-by-number comparison -> `results/comparison.json` |
+| `report/code/sensitivity.py` | robustness checks (other seeds, no scaling, tuned C) -> `results/sensitivity.json` |
+| `report/code/requirements.txt` | pinned packages (same on both machines) |
+| `report/results/local/` | local run: `folds.csv`, `inner_cv.csv`, `predictions.csv`, `run.json` |
+| `report/results/ibex/` | Ibex run, same files (+ SLURM log) |
+
+Key numbers: `report/results/README.md`, macros in `report/results/numbers.tex`.

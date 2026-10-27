@@ -1,0 +1,53 @@
+"""Robustness check of the rate: many independent replicates per n (off-cluster).
+
+For each n, draws R independent estimates 4*k/n from n uniform points in the
+unit square (numpy PCG64, independent streams from one SeedSequence), and
+records the RMS error, the mean absolute error and their standard errors.
+Writes results/ensemble.csv. Prints HUTIAN_WAKE lines never; progress on stdout.
+"""
+import csv, math, sys, time
+import numpy as np
+
+OUT = sys.argv[1] if len(sys.argv) > 1 else "results/ensemble.csv"
+PLAN = [(10 ** 2, 4000), (10 ** 3, 4000), (10 ** 4, 4000), (10 ** 5, 2000),
+        (10 ** 6, 1000), (10 ** 7, 200), (10 ** 8, 20)]
+CHUNK = 5 * 10 ** 6
+ss = np.random.SeedSequence(20261018)
+
+
+def one_estimate(rng, n):
+    inside = 0
+    left = n
+    while left:
+        m = min(left, CHUNK)
+        x = rng.random(m)
+        y = rng.random(m)
+        inside += int(np.count_nonzero(x * x + y * y <= 1.0))
+        left -= m
+    return 4.0 * inside / n
+
+
+rows = []
+for n, R in PLAN:
+    t0 = time.time()
+    streams = ss.spawn(R)
+    err = np.array([one_estimate(np.random.Generator(np.random.PCG64(s)), n) - math.pi
+                    for s in streams])
+    sigma = math.sqrt(math.pi * (4 - math.pi) / n)
+    mse = float(np.mean(err ** 2))
+    rms = math.sqrt(mse)
+    # delta-method SE of RMS from the SE of the mean of err^2
+    se_rms = float(np.std(err ** 2, ddof=1) / math.sqrt(R)) / (2 * rms)
+    mae = float(np.mean(np.abs(err)))
+    se_mae = float(np.std(np.abs(err), ddof=1) / math.sqrt(R))
+    rows.append({"samples": n, "replicates": R, "mean_error": float(np.mean(err)),
+                 "rms_error": rms, "rms_error_se": se_rms,
+                 "mean_abs_error": mae, "mean_abs_error_se": se_mae,
+                 "sigma_theory": sigma, "mean_abs_theory": math.sqrt(2 / math.pi) * sigma})
+    print(f"n={n:.0e} R={R} rms={rms:.4e} sigma={sigma:.4e} ({time.time() - t0:.0f}s)", flush=True)
+
+with open(OUT, "w", newline="") as f:
+    w = csv.DictWriter(f, fieldnames=list(rows[0]))
+    w.writeheader()
+    w.writerows(rows)
+print(f"numpy {np.__version__}; wrote {OUT}", flush=True)

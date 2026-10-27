@@ -1,0 +1,39 @@
+"""Actual quarter-circle counts, nested paired-point streams; no synthetic errors."""
+import argparse, csv, json, math, platform, time
+from pathlib import Path
+import numpy as np
+
+NS = [1000, 10000, 100000, 1000000, 10000000]
+
+def simulate(i, chunk=250000):
+    rng = np.random.default_rng(2026 + i)
+    done = inside = 0
+    rows = []
+    for n in NS:
+        while done < n:
+            k = min(chunk, n - done)
+            xy = rng.random((k, 2))
+            inside += int(np.count_nonzero(xy[:, 0] ** 2 + xy[:, 1] ** 2 <= 1))
+            done += k
+        estimate = 4 * inside / n
+        rows.append((i, 2026+i, n, inside, estimate, abs(estimate-math.pi)))
+    return rows
+
+def main():
+    p=argparse.ArgumentParser()
+    p.add_argument('--start', type=int, default=0)
+    p.add_argument('--stop', type=int, default=200)
+    p.add_argument('--output', required=True)
+    args=p.parse_args()
+    begin=time.perf_counter()
+    out=Path(args.output); out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open('w') as f:
+        w=csv.writer(f); w.writerow(['run_index','seed','N','inside','estimate','absolute_error'])
+        for i in range(args.start,args.stop):
+            w.writerows(simulate(i)); f.flush()
+            if (i+1)%10==0 or i==args.stop-1:
+                print(f'completed run {i}; elapsed {time.perf_counter()-begin:.3f}s',flush=True)
+    out.with_suffix('.json').write_text(json.dumps(dict(start=args.start,stop=args.stop,
+        elapsed_seconds=time.perf_counter()-begin,numpy=np.__version__,python=platform.python_version(),
+        bit_generator=type(np.random.default_rng(2026).bit_generator).__name__,chunk=250000),indent=2)+'\n')
+if __name__=='__main__': main()

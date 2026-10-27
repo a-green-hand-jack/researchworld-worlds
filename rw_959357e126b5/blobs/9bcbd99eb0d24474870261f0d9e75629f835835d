@@ -1,0 +1,145 @@
+{
+ "release": "ext-runs-1",
+ "why": "kept outside the source tree for size (the tree is limited to 128 MiB); content byte-identical to the file at the commit given (except where an asset's note says otherwise)",
+ "fetch": "python3 code/fetch_release_assets.py SOURCE, with SOURCE the directory or URL holding the asset files; restores each file to its path and checks sha256",
+ "assets": [
+  {
+   "path": "results/e4/a3dev2/a3dev_runs.jsonl.gz",
+   "asset": "e4__a3dev2__a3dev_runs.jsonl.gz",
+   "sha256": "51893dc506f7b0b7e2899a86092476a5566c7dd6ad9bed8090c35e5a342e63a3",
+   "bytes": 27058773,
+   "added_in": "59d6d9c",
+   "what": "A3 development grid v2 (576 configs + 120 floor/long-double runs)"
+  },
+  {
+   "path": "results/e4/a3dev/a3dev_runs.jsonl.gz",
+   "asset": "e4__a3dev__a3dev_runs.jsonl.gz",
+   "sha256": "2ed2c7580cc78ad30d1063c2ee420eb7f5173f16d67895827c6fc19646c87183",
+   "bytes": 14281790,
+   "added_in": "3e21b7b",
+   "what": "A3 development grid v1 (576 configs)"
+  },
+  {
+   "path": "results/e8/e8r/runs_P_lo_PR_c04_PR_ramp.tar.gz",
+   "asset": "e8__e8r__runs_P_lo_PR_c04_PR_ramp.tar.gz",
+   "sha256": "510bfd6e48e49c970f1e9c9a89805b0570b5ef25b0eeb48802f842d4ed7f4d53",
+   "bytes": 8754003,
+   "added_in": "10357a5",
+   "what": "E8-R: 15 ViT runs (P_lo, PR_c04, PR_ramp x 5 seeds)",
+   "release": "ext-runs-2",
+   "note": "re-packed for anonymity (node names redacted, epoch label EPOCH); content otherwise identical to the original archives, which were deleted from ext-runs-1"
+  },
+  {
+   "path": "results/e4/dev/dev_runs.jsonl.gz",
+   "asset": "e4__dev__dev_runs.jsonl.gz",
+   "sha256": "7f0299039a72360b9a9c2227a407a967bf525d616b966909fd1e7f765148e966",
+   "bytes": 4683311,
+   "added_in": "ebc17db",
+   "what": "A1 development grid 1 (480 runs)"
+  },
+  {
+   "path": "results/e8/grid/runs_grid.tar.gz",
+   "asset": "e8__grid__runs_grid.tar.gz",
+   "sha256": "b5a404ca89c1899421962c1e57be2242ee40cf1d8daa32742d7c2ab6971ed676",
+   "bytes": 57874644,
+   "added_in": "not in the tree (uploaded directly)",
+   "what": "E8 production grid: SLURM 53931130, 22 rows x 5 seeds = 110 ViT runs (100 grid runs + the 10 E8-R constant-0.4/ramp runs from 53931297), directory runs8/<row>/s<seed>/ with log.jsonl, final.json, config.json, provenance.json",
+   "release": "ext-runs-2",
+   "note": "re-packed for anonymity (node names redacted, epoch label EPOCH); content otherwise identical to the original archives, which were deleted from ext-runs-1"
+  },
+  {
+   "path": "results/e5/b1dev/b1_dev_runs.jsonl.gz",
+   "asset": "e5__b1dev__b1_dev_runs.jsonl.gz",
+   "sha256": "f0d7815c9c3c75a2f2ba98fa48db9979811cc9790681feba20bbaee78464f7f5",
+   "bytes": 70246893,
+   "added_in": "8d6d29a",
+   "what": "E5/B1 development grid: 3240 stage-wise runs under weight-decay schedules (python3 code/e5_b1.py run dev results/e5/b1dev 8)"
+  },
+  {
+   "path": "results/e4/a3h/a3h_runs.jsonl.gz",
+   "asset": "e4__a3h__a3h_runs.jsonl.gz",
+   "sha256": "00f9bdb2b998729983a765cd030b5108d9384e281b308af7cf2032af51c96f92",
+   "bytes": 19442450,
+   "added_in": "4faa7a0",
+   "what": "E4 A3 held-out grid raw runs (480 truth + 96 precision runs); its scores stay in the tree (results/e4/a3h)",
+   "release": "ext-runs-3",
+   "note": "moved out of the tree for the size limit; byte-identical to the file at 4faa7a0"
+  },
+  {
+   "path": "results/e3/forces.jsonl",
+   "asset": "e3__forces.jsonl",
+   "sha256": "9db0093e4000c03344e6ca86bc30173f48f464edfc8c37ee0b59192b8b9cc44a",
+   "bytes": 8100483,
+   "added_in": "b3077db",
+   "what": "E3 per-direction force export of the production grid (code/e3_grid.py export_trajectories); summary.json and trajectories.jsonl stay in the tree",
+   "release": "ext-runs-3",
+   "note": "moved out of the tree for the size limit; byte-identical to the file at b3077db"
+  },
+  {
+   "path": "results/e5/b1heldout/b1_heldout_runs.jsonl.gz",
+   "asset": "e5__b1heldout__b1_heldout_runs.jsonl.gz",
+   "sha256": "8c8445112e46829af91ff7569c06b7b2f88b44efb4b7852b189f7b35f822f4a3",
+   "bytes": 100928229,
+   "added_in": "the commit that adds this entry (file written by the held-out run command in results/e5/b1heldout/b1_heldout_meta.json)",
+   "what": "E5 held-out grid: 4890 runs (truth, floor re-runs, frozen model and baselines per run)",
+   "release": "ext-runs-3"
+  },
+  {
+   "path": "results/e7/runs7.tar.gz",
+   "asset": "e7__production__runs7.tar.gz",
+   "sha256": "9cef8f059a6c072786ddfc314d1039dc688d7436b74e3b8f64ee100e4f5f65c4",
+   "bytes": 25401029,
+   "added_in": "the commit that adds this entry",
+   "what": "E7 production: 55 ViT run directories (40 Arm T decay rows x seeds 20-24, 15 toggle runs x seeds 20-22; config, log.jsonl, final.json, provenance.json, stdout log), run with code_commit cf58055 and vit_jepa md5 e503bee9; score with python3 code/e7_score.py runs7 DATA results/e7/score.json after unpacking",
+   "release": "ext-runs-3",
+   "note": "node names redacted and the epoch label written EPOCH; content otherwise as written by the runs"
+  },
+  {
+   "path": "results/e5/b1p/b1p_b1p_runs.jsonl.gz",
+   "asset": "e5__b1p__b1p_b1p_runs.jsonl.gz",
+   "sha256": "2ed2ac6710385a6ab65cb0b20deb1b8a4e2ab54ffbd9c70b37bc6c86e2f37b43",
+   "bytes": 35707913,
+   "added_in": "the commit that adds this entry",
+   "what": "B1' seed-replication grid b1p: 1770 runs (truth, floor re-runs, per-run record), written by the run command in b1p_b1p_meta.json",
+   "release": "ext-runs-3"
+  },
+  {
+   "path": "results/e5/b1p/b1p_b1p_scored_runs.jsonl.gz",
+   "asset": "e5__b1p__b1p_b1p_scored_runs.jsonl.gz",
+   "sha256": "29549b6155cc3d177cf8180fb61e8eda7a9c3c6adfbe0611cdf3badec1cb79a0",
+   "bytes": 5266465,
+   "added_in": "the commit that adds this entry",
+   "what": "B1' b1p per-run scores from python3 code/e5_b1p_a1.py score b1p results/e5/b1p",
+   "release": "ext-runs-3"
+  },
+  {
+   "path": "results/e5/b1p_fresh/b1p_b1p_fresh_runs.jsonl.gz",
+   "asset": "e5__b1p_fresh__b1p_b1p_fresh_runs.jsonl.gz",
+   "sha256": "68b88318112d810b033ba8dae894d308601c98852b64f5c37484bb18d1bc4374",
+   "bytes": 29305176,
+   "added_in": "the commit that adds this entry",
+   "what": "B1' prospective fresh-statistics grid b1p_fresh: 1650 runs, written by the run command in b1p_b1p_fresh_meta.json",
+   "release": "ext-runs-3"
+  },
+  {
+   "path": "results/e5/b1p_fresh/b1p_b1p_fresh_scored_runs.jsonl.gz",
+   "asset": "e5__b1p_fresh__b1p_b1p_fresh_scored_runs.jsonl.gz",
+   "sha256": "531299d5c5816348454dd37c29463a25c831d4c759f23ac5e4595cc9a998dc7c",
+   "bytes": 4295285,
+   "added_in": "the commit that adds this entry",
+   "what": "B1' b1p_fresh per-run scores from python3 code/e5_b1p_a1.py score b1p_fresh results/e5/b1p_fresh",
+   "release": "ext-runs-3"
+  },
+  {
+   "path": "results/e7/runs7g.tar.gz",
+   "asset": "e7__e7g__runs7g.tar.gz",
+   "sha256": "0e8d5c303003735377a993cc32a03e41dbe2f21fd60b1a3cdbcb70da5d18bc40",
+   "bytes": 1362539,
+   "added_in": "the commit that adds this entry",
+   "what": "E7-G: 3 ViT run directories (Arm T row T_wd0.0034, seeds 20-22, packed on one V100, gpu_env.csv), run with code_commit 0c8adec and vit_jepa md5 e503bee9; score with python3 code/e7g.py score runs7g DATA results/e7/score_rows.json results/e7/score.json results/e7/e7g.json after unpacking",
+   "release": "ext-runs-3",
+   "note": "node names redacted (gpu_env.csv carries the node as an md5 prefix) and the epoch label written EPOCH; content otherwise as written by the runs"
+  }
+ ],
+ "where": "separate files distributed with the supplementary material (too large for the source tree); their sha256 are listed here"
+}

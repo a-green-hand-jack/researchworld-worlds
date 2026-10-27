@@ -1,0 +1,9 @@
+# Proposed split review
+
+Inspected experiment-repo revision 0dca9f36ac1469cd0949ed78d7ae7714ffdd3f75, assignment.json and context/brief.md, against the full objective in internal-review-repo#1.
+
+The proposed staged release is scientifically and operationally suitable: paper generates and hosts; experiment independently downloads and fits; figtab independently downloads and produces all figures and media; paper uploads those media to its original release. This satisfies the cross-position input requirement without a circular dependency. Ownership agreement remains with those positions.
+
+The bin-integrated Poisson model, positive parameter optimization and profile-likelihood intervals are appropriate. Fixed simulated component totals warrant the brief's model-based uncertainty interpretation. Float32 quantization can round a background time to 1200 exactly; the final histogram bin must include that endpoint (standard NumPy histogram behavior), and extrema/out-of-range counts should be recorded. Goodness-of-fit checks are diagnostic, not a requirement to recover truth inside every interval.
+
+One assignment clarification remains: the agreed reviewer delivery is review/, while assignment currently gives review no paths. The analysis scripts, results and provenance also need a durable referenced location (repository revision or release); they need not enlarge the one-page report. No study result has yet been reviewed or approved.

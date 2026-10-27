@@ -1,0 +1,58 @@
+"""Generate the assigned figure for the seed-0 synthetic linear-fit objective.
+
+The data-generating specification is taken verbatim from Research objective #1:
+40 x values evenly spaced on [0, 10], y = 2*x + 1 + N(0, 0.5), numpy seed 0.
+The shaded region is the pointwise 95% confidence interval for the estimated
+mean response, using the ordinary-least-squares residual standard error and a
+Student-t critical value with n-2 degrees of freedom.
+"""
+
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+from scipy.stats import t
+
+
+def fit_data():
+    rng = np.random.RandomState(0)
+    x = np.linspace(0, 10, 40)
+    y = 2 * x + 1 + rng.normal(0, 0.5, size=x.size)
+    X = np.column_stack((np.ones_like(x), x))
+    beta, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+    residuals = y - X @ beta
+    n, p = X.shape
+    s2 = residuals @ residuals / (n - p)
+    cov_beta = s2 * np.linalg.inv(X.T @ X)
+    grid = np.linspace(x.min(), x.max(), 300)
+    Xg = np.column_stack((np.ones_like(grid), grid))
+    mean = Xg @ beta
+    se_mean = np.sqrt(np.einsum("ij,jk,ik->i", Xg, cov_beta, Xg))
+    margin = t.ppf(0.975, n - p) * se_mean
+    return x, y, beta, grid, mean, mean - margin, mean + margin
+
+
+def main():
+    x, y, beta, grid, mean, lower, upper = fit_data()
+    out = Path(__file__).with_name("figure.png")
+    plt.rcParams.update({"font.size": 11, "axes.spines.top": False, "axes.spines.right": False})
+    fig, ax = plt.subplots(figsize=(7.2, 4.8), constrained_layout=True)
+    ax.scatter(x, y, s=28, color="#1f77b4", alpha=0.85, edgecolor="white", linewidth=0.45,
+               label="Synthetic observations (n = 40)", zorder=3)
+    ax.fill_between(grid, lower, upper, color="#d62728", alpha=0.16,
+                    label="95% CI for mean response", zorder=1)
+    ax.plot(grid, mean, color="#d62728", linewidth=2.2,
+            label=fr"OLS fit: $\hat{{y}} = {beta[1]:.3f}x {beta[0]:+.3f}$", zorder=2)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_title("Straight-line fit to synthetic noisy data")
+    ax.set_xlim(-0.25, 10.25)
+    ax.legend(frameon=False, loc="upper left")
+    ax.grid(axis="y", color="#d9d9d9", linewidth=0.7, alpha=0.7)
+    fig.savefig(out, dpi=220, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    print(f"wrote {out} (slope={beta[1]:.8f}, intercept={beta[0]:.8f})")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,7 @@
+#!/bin/bash
+# A1: the full CV locally, same code, data and single-threaded settings as the Ibex job.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+echo "hostname=$(hostname)"
+python3 -u code/run_cv.py --data results/data/iris.arff --out results/run_local

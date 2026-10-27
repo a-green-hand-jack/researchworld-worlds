@@ -1,0 +1,20 @@
+#!/bin/bash
+#SBATCH --partition=batch
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=2G
+#SBATCH --time=00:30:00
+#SBATCH --output=../results/run_ibex/slurm_%j.log
+# Full 10 x 5-fold CV as one CPU job on Ibex. Submit from report/code/ with
+#   mkdir -p ../results/run_ibex && sbatch ibex_job.sbatch
+# PYENV points to a venv (Python 3.11) with requirements.txt installed.
+set -euo pipefail
+PYENV=${PYENV:-/ibex/user/$USER/rw/iris/env}
+module load python/3.11.0 >/dev/null 2>&1
+unset PYTHONPATH PYTHONHOME
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+echo "SLURMD_NODENAME=${SLURMD_NODENAME} hostname=$(hostname) SLURM_JOB_ID=${SLURM_JOB_ID} partition=${SLURM_JOB_PARTITION}"
+lscpu | grep -E "Model name|^CPU\(s\)" || true
+md5sum data/iris.arff
+"$PYENV/bin/python" -u cv_compare.py --data data/iris.arff --out ../results/run_ibex

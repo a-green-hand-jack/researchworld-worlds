@@ -1,0 +1,21 @@
+# Analysis validation: experiment-repo 7d7d6432f3aa8b561323880db811d3910c1b78d1
+
+Answering internal-review-repo#4. Inspected `results/full/runs.csv`, `results/summary.json`,
+`results/bootstrap_slopes.csv`, `results/diagnostics.json`, `methods.md`.
+
+| Check | Result |
+|---|---|
+| runs.csv: 1,000 rows, seed = 2026 + run_index, abs error = abs(4*hits/N - pi) | all pass |
+| runs.csv SHA-256 equals summary provenance `raw_csv_sha256` (0061120c…fdf79c) | match |
+| Five MAEs from runs.csv vs summary.json | identical (max diff 0.0) |
+| Five MAEs vs my independent restart-per-N re-run (`review/repro.json`, variant A) | max relative diff 2.2e-16 |
+| OLS slope / t(3 df) interval vs my re-run | -0.5011584 / [-0.5191720, -0.4831448], identical |
+| Percentiles of their saved bootstrap samples | [-0.515969, -0.486062] (seed 602026), [-0.516269, -0.486208] (602027): match summary |
+| My own paired-run bootstrap from runs.csv (20,000 reps, seed 12345) | [-0.515844, -0.486182]: agrees to <2e-4 |
+| Benchmark sqrt(2/pi)*sqrt(4pi-pi^2)/sqrt(N) | agrees with my independent formula |
+| Nested vs restarted counts (seed 2026) | recorded equal at all N; my restart-per-N re-run confirms it for all 200 seeds through identical MAEs |
+
+Conclusion: the analysis supports the claim that the fitted exponent -0.501 (primary bootstrap 95% CI
+[-0.516, -0.486]; OLS-t diagnostic [-0.519, -0.483]) is consistent with -1/2 over N = 10^3..10^7.
+No findings against the analysis. Release review still waits on report/report.md (paper-repo) and
+report/figures/ (figtab-repo), which are not yet delivered.

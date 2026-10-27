@@ -1,0 +1,13 @@
+# media-api report
+
+Request: `POST /images` (once) with body `{"prompt": "a lighthouse"}`.
+
+HTTP status: 402 (Payment Required)
+
+Response body, word for word:
+
+```
+{"error": {"code": 402, "status": "RESOURCE_EXHAUSTED", "message": "Your prepayment credits are depleted."}}
+```
+
+No image was produced; the upstream refused the request. Not retried.

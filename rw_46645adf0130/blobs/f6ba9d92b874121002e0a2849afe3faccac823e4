@@ -1,0 +1,108 @@
+# Brief: critical temperature of the 2D Ising model from a three-stage simulation study
+
+Kept by `experiment-repo` (context, plan, analysis). Source: the `Research objective` issue
+(`experiment-repo`#1) and its frozen material `/initial-state/inputs/0/ising.py`
+(sha256 `88bd6931eb74df0f85ed8cd23138e9c058ebeea3b9e6c28f10ec0628a42eb4c0`).
+
+## The task (quoted)
+
+> Locate the critical temperature T_c of the two-dimensional Ising model (square lattice, periodic
+> boundaries, J = 1, no field) from simulations made with the given program
+> `/initial-state/inputs/0/ising.py` (numpy only; `python3 ising.py --help`), and compare it with the
+> exact value 2/ln(1+sqrt(2)) = 2.2692.
+
+> The study has three stages; each is designed from the result of the one before:
+>
+> 1. Pilot: L = 64, T from 1.5 to 3.5 in steps of 0.1, seeds 1 and 2, 20,000 measured sweeps after
+>    2,000 burn-in. Locate the peak of the susceptibility.
+> 2. Crossing: L = 32, 64 and 128 at 9 equally spaced temperatures from 0.12 below to 0.12 above the
+>    pilot's peak, seeds 1 to 3, 20,000 sweeps, keeping the time series (`--series`). Estimate T_c
+>    where the Binder cumulants of the three sizes cross, with a bootstrap 95% interval over seeds,
+>    and the integrated autocorrelation time of |m| at each point, to say whether 20,000 sweeps are
+>    enough.
+> 3. Check: L = 256 at 5 equally spaced temperatures from 0.03 below to 0.03 above the stage-2
+>    estimate, seeds 1 and 2, 10,000 sweeps. Say whether the L = 256 Binder values agree with the
+>    stage-2 crossing.
+
+> Deliver the data and analysis code of every stage, two figures (the pilot's susceptibility and
+> heat capacity against T; the Binder cumulants of all sizes near the crossing), and a one-page
+> report `report/report.md` (Markdown is enough) with T_c, its interval, the comparison with the
+> exact value and what stage 3 showed. On this machine a single stage takes several minutes or more.
+
+> How the report is written is part of this task: the report states each stage's result as soon as
+> it is known. paper-repo opens one request in experiment-repo per stage (stage 1, then stage 2, then
+> stage 3), each asking for that stage's numbers, and opens the next one as soon as the previous one
+> has been answered, not before.
+
+## Requirements checklist
+
+| # | Requirement | Delivered by |
+|---|---|---|
+| R1 | Stage 1 data (L=64, T=1.5..3.5 step 0.1, seeds 1,2, 20000 sweeps, 2000 burn-in) and code; chi peak located | experiment-repo (`code/`, `data/stage1/`) |
+| R2 | Stage 2 data (L=32,64,128; 9 temps, peak ±0.12; seeds 1-3; 20000 sweeps; `--series`) and code | experiment-repo (`code/`, `data/stage2/`) |
+| R3 | T_c from the Binder crossing of the three sizes, bootstrap 95% interval over seeds | experiment-repo |
+| R4 | Integrated autocorrelation time of \|m\| at every stage-2 point, and a verdict on whether 20000 sweeps suffice | experiment-repo |
+| R5 | Stage 3 data (L=256; 5 temps, stage-2 estimate ±0.03; seeds 1,2; 10000 sweeps) and code; verdict on agreement with the stage-2 crossing | experiment-repo (`code/`, `data/stage3/`) |
+| R6 | Figure 1: pilot chi and c against T | figtab-repo (`figures/`) |
+| R7 | Figure 2: Binder cumulants of all sizes near the crossing | figtab-repo (`figures/`) |
+| R8 | `report/report.md`, one page: T_c, interval, comparison with 2.2692, what stage 3 showed; each stage's result written as soon as known | paper-repo |
+| R9 | Staged requests: one per stage in experiment-repo, in order, the next only after the previous is answered | paper-repo opens, experiment-repo answers |
+
+## What the program does (read from the code)
+
+- Metropolis, checkerboard (two sublattice) updates, random initial lattice for every (T, seed) run,
+  `--burn` discarded sweeps, then one measurement per sweep.
+- Per run it reports means of |m|, m², m⁴, e, e² (per site), chi = L²(<m²> − <|m|>²)/T (the
+  "connected" susceptibility built from |m|), c = L²(<e²> − <e>²)/T² and U = 1 − <m⁴>/(3<m²>²).
+- `--series DIR` stores per-sweep |m| and e as `L{L}-T{T:.4f}-s{seed}-{m,e}.npy`.
+- Measured cost on this host (single process): about 0.27, 0.40, 0.97 and 3.2 ms per sweep for
+  L = 32, 64, 128, 256. Stage 1 ≈ 6 CPU-min, stage 2 ≈ 17 CPU-min, stage 3 ≈ 6.5 CPU-min.
+
+## Conventions and reference values to compare against (sourced, not measured here)
+
+- Exact T_c = 2/ln(1+√2) = 2.269185… (Onsager 1944; Kramers–Wannier 1941).
+- Exponents: ν = 1, γ = 7/4, α = 0 (log divergence of c). The finite-size susceptibility peak lies
+  above T_c, shifted by ∝ L^(−1/ν); for L = 64 a peak near T ≈ 2.3 is expected, so the stage-2 window
+  (peak ± 0.12) should contain T_c.
+- Binder cumulant at criticality for periodic square lattices: U* ≈ 0.6107 (Kamieniarz & Blöte 1993,
+  J. Phys. A 26, 201; U* = 1 − Q/3 with Q ≈ 0.856). Crossings of finite pairs approach T_c with
+  corrections ∝ L^(−1/ν−ω).
+- Metropolis dynamic exponent z ≈ 2.17 (Nightingale & Blöte 1996): tau_int of |m| at T_c grows
+  roughly as L^2.17, so sweep counts that suffice at L = 32 may not at L = 128 or 256. Integrated
+  autocorrelation time estimated with Sokal's automatic window (window W ≥ c·tau, c ≈ 5); error bars
+  of means use N_eff = N/(2 tau_int).
+- Starting from a random lattice at low T, Metropolis may freeze into striped (domain-wall) states on
+  a periodic lattice; this can depress |m| and distort chi at the lowest pilot temperatures.
+
+## Analysis choices (plan, see `assignment.json` for who delivers what)
+
+- Stage 1: chi(T) and c(T) per seed and seed-mean; peak = grid argmax of the seed-mean chi, refined
+  by a parabola through the points around the maximum; the stage-2 centre is the refined peak rounded
+  to 0.01 (stated with the grid argmax for comparison).
+- Stage 2 (revised after seeing the data): U(T) per size from seed-pooled moments. Primary T_c: joint
+  finite-size-scaling fit U_L(T) = f((T − T_c) L^(1/ν)), ν = 1, f cubic, T = 2.22–2.31, weighted by
+  block-bootstrap errors; supporting: model-free pairwise crossings by linear interpolation; robustness:
+  fit window/order and free ν. The first plan (one polynomial per size over all 9 points) was rejected:
+  U(T) is sigmoidal over the window and all sizes merge at 2/3 below T ≈ 2.22, so low-order polynomials
+  cross spuriously there (≈ 2.22). 95% percentile bootstrap resampling seeds with replacement at each
+  (L, T), plus a time-series block bootstrap. tau_int of |m| per (L, T, seed) with N/tau_int reported.
+- Stage 3: U_256(T) at the 5 temperatures with errors (seeds and block bootstrap of per-run series,
+  kept as working data); test whether U_256 passes through the stage-2 crossing point (T*, U*) within
+  errors, and report tau_int / equilibration at L = 256 for 10000 sweeps.
+
+## What could not be established in advance
+
+- Whether 2000 burn-in sweeps from a random start equilibrate L = 128 and especially L = 256 near
+  T_c (expected relaxation times are of order 10³–10⁴ sweeps there); stage 2's tau_int and stage 3
+  will tell.
+- With only 3 seeds per point, a seed-level bootstrap has few distinct resamples per point; its
+  interval is reported as asked and compared with the time-series block bootstrap.
+
+## Findings that change the plan (recorded as they arise)
+
+- Stage 2: the first-pass crossing estimator was rejected (see the analysis choices above). 20000 sweeps are enough for
+  L = 32, marginal for L = 64 and not enough for L = 128 (tau_int(|m|) up to 619 sweeps).
+- Stage 3 as specified (L = 256, 2000 + 10000 sweeps from a random start) does not equilibrate: |m| is still
+  rising through the runs. Its disagreement with the stage-2 crossing is a sampling artefact, so the check is
+  inconclusive. A supplement beyond the design (`data/stage3_long/`, 50000 + 50000 sweeps, same temperatures
+  and seeds) is reported separately and does not replace stage 3.

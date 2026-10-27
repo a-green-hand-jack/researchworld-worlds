@@ -1,0 +1,84 @@
+"""Copied from the internal review's checks/e4_a1h2_exact_share.py (internal review point 2), run on this repository; code unchanged.
+How much of v4's A1d prediction on held-out grid 2 is exact integration? (commit 1d4c27e, frozen v4 4327b3d)
+v4 integrates the exact scalar AdamW map over short segments (seg 600 after a burst, seg_eos 1500 of chatter,
+seg_post 600 after a crossing, up to 12 events) between closed-form waits. Counts, per direction, the exact steps v4
+takes (instrumenting the frozen _segment_tog), and scores equal-exact-budget baselines built from the delivered truth:
+the exact state for the first S_k steps after K (S_k = v4's exact steps for that direction), then
+  (a) persistence of the last checkpoint state at or before K + S_k (the state at K if none);
+  (b) as (a), then the A-iv' settled law for directions alive at that point (alive iff c/s > thr);
+  (c) ceiling: the exact state through the first checkpoint at or after K + S_k, then persistence.
+Usage: python3 checks/e4_a1h2_exact_share.py /path/to/this/repository [NPROC] > checks/e4_a1h2_exact_share.json"""
+import sys, os, json, gzip, hashlib, subprocess, importlib.util
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+
+ROOT = sys.argv[1]
+sys.path.insert(0, os.path.join(ROOT, "code"))
+import e4_a1h2 as H  # noqa
+import e4_a1 as A  # noqa
+K, T, THR = 300, 60000, 0.05
+CK = np.array(A.CHECKS)
+src = subprocess.run(["git", "-C", ROOT, "show", "4327b3d35b86935d161b5c968c0d794c5a78e064:code/e4_theory.py"], capture_output=True, check=True).stdout
+assert hashlib.md5(src).hexdigest() == "72f6b4245a46a2a34c773052e5a5e160"
+open("/tmp/theory_v4_count.py", "wb").write(src)
+spec = importlib.util.spec_from_file_location("theory_v4_count", "/tmp/theory_v4_count.py"); V4 = importlib.util.module_from_spec(spec); spec.loader.exec_module(V4)
+_seg = V4._segment_tog
+COUNT = {}
+
+
+def counted(c, s, st, ts, m, n_steps, *a, **k):
+    COUNT["n"][m] += n_steps
+    return _seg(c, s, st, ts, m, n_steps, *a, **k)
+
+
+V4._segment_tog = counted
+
+
+def one(r):
+    c, s = A.stats(r["stats"]); st = {k: np.array(v) for k, v in r["state_K"].items()}
+    COUNT["n"] = np.zeros(c.size, int)
+    o = V4.phase_model_v4(c, s, st, K, r["lam"], r["eta"], T, b1=r["b1"], b2=r["b2"], checks=list(CK))
+    P = np.array([o["alive"][t] for t in CK], bool)
+    assert (P == np.array(r["pred_alive"], bool)).all()
+    return dict(id=r["id"], exact=COUNT["n"].tolist())
+
+
+def main():
+    nproc = int(sys.argv[2]) if len(sys.argv) > 2 else 8
+    runs = [json.loads(l) for l in gzip.open(os.path.join(ROOT, "results/e4/a1h2/a1h2_runs.jsonl.gz"), "rt")]
+    with Pool(nproc) as pool:
+        ex = {x["id"]: np.array(x["exact"]) for x in pool.map(one, runs)}
+    allS = np.concatenate(list(ex.values()))
+    acc = {k: [] for k in ("v4", "a_persist", "b_persist_settled", "c_ceiling")}
+    for r in runs:
+        c, s = A.stats(r["stats"]); pc = c / s
+        Tr = np.array(r["alive"], bool); aK = np.abs(np.array(r["state_K"]["a"])) > THR
+        S = ex[r["id"]]; preds = {k: np.zeros_like(Tr) for k in acc if k != "v4"}
+        for k in range(Tr.shape[1]):
+            last = np.where(CK <= K + S[k])[0]; nxt = np.where(CK >= K + S[k])[0]
+            i_last = last[-1] if last.size else -1; i_next = nxt[0] if nxt.size else len(CK) - 1
+            col = Tr[:, k]
+            hold = col[i_last] if i_last >= 0 else aK[k]
+            a = col.copy(); a[i_last + 1:] = hold; preds["a_persist"][:, k] = a
+            b = a.copy()
+            if hold:
+                b[i_last + 1:] = pc[k] > THR
+            preds["b_persist_settled"][:, k] = b
+            cc = col.copy(); cc[i_next + 1:] = col[i_next]; preds["c_ceiling"][:, k] = cc
+        preds["v4"] = np.array(r["pred_alive"], bool)
+        for k, P in preds.items():
+            acc[k].append((P, Tr))
+    score = lambda v: dict(error_rate=1 - float(np.mean(np.concatenate([(P == Tr).ravel() for P, Tr in v]))),
+                           rank_within_1=float(np.mean(np.concatenate([np.abs(P.sum(1) - Tr.sum(1)) <= 1 for P, Tr in v]))))
+    out = dict(source="commit 1d4c27e results/e4/a1h2/a1h2_runs.jsonl.gz; frozen v4 4327b3d", runs=len(runs),
+               exact_steps_per_direction=dict(mean=float(allS.mean()), median=float(np.median(allS)),
+                                              p90=float(np.quantile(allS, 0.9)), max=int(allS.max()),
+                                              share_of_horizon_mean=float(allS.mean() / (T - K)),
+                                              zero_share=float((allS == 0).mean())),
+               A1d={k: score(v) for k, v in acc.items()})
+    print(json.dumps(out, indent=1))
+
+
+if __name__ == "__main__":
+    main()

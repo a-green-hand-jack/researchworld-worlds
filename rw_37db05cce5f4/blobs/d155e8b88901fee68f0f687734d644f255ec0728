@@ -1,0 +1,26 @@
+{
+  "source": "OpenReview",
+  "url": "https://api2.openreview.net/notes/search?term=transformer&limit=1",
+  "start_utc": "2026-10-19T21:30:14.726033+00:00",
+  "end_utc": "2026-10-19T21:30:15.410946+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/openreview.headers",
+    "-o",
+    "/tmp/tmpfyxosvxu/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://api2.openreview.net/notes/search?term=transformer&limit=1"
+  ],
+  "exit": 0,
+  "curl_output": "200\napplication/json; charset=utf-8\n",
+  "stderr": "",
+  "first200": "{\"notes\":[{\"content\":{\"venue\":{\"value\":\"IEEE J. Biomed. Health Informatics 2025\"},\"pdf\":{\"value\":\"https://ieeexplore.ieee.org/iel8/6221020/10832115/10705991.pdf\"},\"venueid\":{\"value\":\"dblp.org/journals",
+  "body_bytes": 3374
+}

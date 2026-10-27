@@ -1,0 +1,9 @@
+# Task brief
+Objective (quoted): "Fit a straight line to 40 synthetic noisy points (y = 2x + 1 plus Gaussian noise of standard deviation 0.5, x evenly spaced on [0, 10], numpy seed 0). Report the slope and intercept with 95% confidence intervals and one figure."
+
+Requirements:
+- Data: n=40, x=np.linspace(0,10,40), y=2x+1+N(0,0.5), seed 0 (decided: legacy np.random.seed(0), i.e. RandomState(0); noise = normal(0,0.5,40), drawn once after seeding; state this in the report).
+- OLS fit; slope and intercept with 95% CIs (t distribution, df=38, s^2 = RSS/38).
+- One figure: data, fitted line, ideally CI band and true line; axes labelled.
+- Check: do CIs cover true values 2 and 1? Report as observation, not proof.
+No external related material supplied. Seed interpretation settled in issue #2.

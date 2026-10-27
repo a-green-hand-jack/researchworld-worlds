@@ -1,0 +1,758 @@
+"""E3 frozen grid, forward predictions from initialisation, SLURM job scripts and scoring.
+
+Grid (frozen after the E3 pilot; results/e3_pilot/): one factor at a time around two baselines, 3 seeds each.
+- Arm P ("practice"): our 32x32 scaling of the I-JEPA recipe (code/e3_ijepa.py defaults: AdamW, target LayerNorm,
+  lr warmup+cosine, wd cosine 0.04->0.4, EMA 0.996->1), schedules defined over FULL_EPOCHS, each sweep run is
+  its first RUN_EPOCHS epochs.
+- Arm T ("theory-aligned"): SGD momentum 0.9, constant lr 0.05, copy target (stop-grad, tau=0), no target LayerNorm,
+  no LayerNorm inside the predictor, weight decay on every parameter (norm gains included), constant wd.
+  Baseline wd 1e-2 (the predictor and target factors need lam > 0: the theory's alpha effect vanishes at lam = 0).
+Usage:
+  python3 code/e3_grid.py list                         # the grid
+  python3 code/e3_grid.py sbatch-init  DIR             # SLURM script: step-0 force decomposition of every run
+  python3 code/e3_grid.py predict INITDIR results/e3   # prediction.json from the step-0 logs only
+  python3 code/e3_grid.py sbatch-runs  DIR results/e3/prediction.json [names...]  # SLURM array scripts (one per arm), 1 config x 3 seeds per GPU task
+  python3 code/e3_grid.py analyze RUNDIR results/e3    # scoring -> results/e3/summary.json, runs.csv
+  python3 code/e3_grid.py predict-followup INITDIR results/e3  # C4 interventions + full-length runs -> prediction_followup.json
+  python3 code/e3_grid.py sbatch-followup DIR          # their SLURM array (needs DIR/e3_armT.sbatch as template)
+  python3 code/e3_grid.py analyze-followup RUNDIR results/e3   # -> results/e3/summary_followup.json
+  python3 code/e3_grid.py compute RUNDIR results/e3            # -> results/e3/compute.json (GPU and wall time per run)
+"""
+import sys, os, json, math, itertools, re
+import numpy as np
+
+FULL_EPOCHS = 50
+RUN_EPOCHS = 20
+SEEDS = [0, 1, 2]
+STEPS_PER_EPOCH = 195
+FORCE_STEPS = [0, 5, 10, 20, 50, 100, 200, 400, 800, 1600, 2400, 3200, 3800]
+COMMON = ["--epochs", str(RUN_EPOCHS), "--full-epochs", str(FULL_EPOCHS), "--threads", "2", "--probe-every", "0"]
+ARM_T = dict(opt="sgd", lr=0.05, sched="const", target="copy", target_ln=0, pred_norm=0, decay_norm=1, wd=[1e-2, 1e-2])
+
+
+def grid():
+    G = {}
+    P = dict()
+    G["P_base"] = ("P", "base", None, P)
+    for v in [1, 6]:
+        G[f"P_pdepth{v}"] = ("P", "pred_depth", v, dict(pred_depth=v))
+    G["P_pwidth128"] = ("P", "pred_width", 128, dict(pred_width=128))
+    for v in [0.1, 10]:
+        G[f"P_plr{v:g}"] = ("P", "pred_lr_mult", v, dict(pred_lr_mult=v))
+    for v in [0.1, 3]:
+        G[f"P_pinit{v:g}"] = ("P", "pred_init_scale", v, dict(pred_init_scale=v))
+    G["P_targets1"] = ("P", "mask", "targets1", dict(n_targets=1))
+    G["P_ctx0.4"] = ("P", "mask", "ctx0.4", dict(context_scale=[0.4, 0.5]))
+    G["P_tscale_hi"] = ("P", "mask", "tscale_hi", dict(target_scale=[0.3, 0.4]))
+    G["P_tscale_lo"] = ("P", "mask", "tscale_lo", dict(target_scale=[0.05, 0.1]))
+    G["P_nosg"] = ("P", "target", "nosg", dict(target="nosg"))
+    G["P_copy"] = ("P", "target", "copy", dict(target="copy"))
+    for v in [0.9, 0.99, 0.999]:
+        G[f"P_ema{v:g}"] = ("P", "target", f"ema{v:g}", dict(ema=[v, v]))
+    G["P_frozen"] = ("P", "target", "frozen", dict(target="frozen"))
+    G["P_wd0"] = ("P", "wd", 0.0, dict(wd=[0.0, 0.0]))
+    G["P_wd0.04"] = ("P", "wd", 0.04, dict(wd=[0.04, 0.04]))
+    G["P_wdlarge"] = ("P", "wd", "large", dict(wd=[None, None]))     # value set by the prediction (2x critical)
+    for v in [0.0, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1]:
+        G[f"T_wd{v:g}"] = ("T", "wd", v, dict(ARM_T, wd=[v, v]))
+    for v in [0.1, 10]:
+        G[f"T_plr{v:g}"] = ("T", "pred_lr_mult", v, dict(ARM_T, pred_lr_mult=v))
+    for v in [0.3, 3]:
+        G[f"T_pinit{v:g}"] = ("T", "pred_init_scale", v, dict(ARM_T, pred_init_scale=v))
+    G["T_nosg"] = ("T", "target", "nosg", dict(ARM_T, target="nosg"))
+    G["T_frozen"] = ("T", "target", "frozen", dict(ARM_T, target="frozen"))
+    G["T_ema0.99"] = ("T", "target", "ema0.99", dict(ARM_T, target="ema", ema=[0.99, 0.99]))
+    return G
+
+
+def cli_args(over):
+    out = []
+    for k, v in over.items():
+        flag = "--" + k.replace("_", "-")
+        out += [flag] + ([str(x) for x in v] if isinstance(v, list) else [str(v)])
+    return out
+
+
+def sbatch(name, lines, hours="01:00:00"):
+    tag = os.environ.get("HT_RESOURCE_TAG", "rw")
+    return "\n".join(["#!/bin/bash", f"#SBATCH --job-name={tag}-{name}", "#SBATCH --gres=gpu:1",
+                      "#SBATCH --cpus-per-task=6", "#SBATCH --mem=40G", f"#SBATCH --time={hours}",
+                      f"#SBATCH --output=%x_%j.out", "cd \"$SLURM_SUBMIT_DIR\"", "nvidia-smi --query-gpu=name --format=csv"]
+                     + lines + ["wait", f"echo HUTIAN_WAKE: {name} done"]) + "\n"
+
+
+def cmd_sbatch_init(d, wd_large=None):
+    """Every run of the grid (3 seeds), stopped after its first step: config.json and the step-0 force decomposition."""
+    G = grid(); lines = []
+    for i, (name, (_, _, _, over)) in enumerate(G.items()):
+        over = dict(over)
+        if over.get("wd") == [None, None]:
+            over["wd"] = [1.0, 1.0]           # unit decay: the decay force is linear in wd, rescaled in predict
+        for s in SEEDS:
+            out = f"init/{name}/s{s}"
+            lines.append(f"mkdir -p {out}; venv/bin/python -u e3_ijepa.py --out {out} --data data --seed {s} "
+                         + " ".join(COMMON + cli_args(over)) + f" --max-steps 1 --force-steps 0 > {out}.log 2>&1 &")
+        lines.append("wait")
+    open(os.path.join(d, "e3init.sbatch"), "w").write(sbatch("e3init", lines, "02:00:00"))
+    print(os.path.join(d, "e3init.sbatch"), len(G) * len(SEEDS), "runs")
+
+
+# ----------------------------------------------------------------------------- forward prediction
+
+def schedules(cfg, T):
+    tf = cfg["total_full"]; warm = int(cfg["warmup_frac"] * tf); lr0 = cfg["lr"]
+    s = np.arange(T); f = s / tf
+    if cfg["sched"] == "const":
+        lr = np.full(T, lr0)
+    else:
+        lr = np.where(s < warm, lr0 * s / max(warm, 1), 0.5 * lr0 * (1 + np.cos(np.pi * np.clip((s - warm) / max(tf - warm, 1), 0, 1))))
+    w0, w1 = cfg["wd"]
+    wd = w1 + (w0 - w1) * 0.5 * (1 + np.cos(np.pi * np.minimum(f, 1)))
+    return lr, wd
+
+
+def horizon_rule(cfg, f, T, wd_scale=1.0):
+    """Linearised race over the run's horizon T from the step-0 forces only.
+    Per eigendirection k of the online token covariance at init (eigenvalue e_k): the gradient part (drive D_k +
+    self-prediction S_k, x 1/(1-momentum) for SGD with momentum, whose steady-state step is that much larger) scales
+    with lr(t); the decoupled decay part L_k with lr(t) wd(t). log e_k(T) = log e_k + sum_t rate_k(t), and growth
+    saturates at the initial top eigenvalue. Predicted count = #{e_k(T) >= 1e-3 max_j e_j(T)} (the measured count's
+    rule); predicted total-variance ratio = sum e(T) / sum e(0)."""
+    D = np.array(f["d_eig_drive"]); S = np.array(f["d_eig_selfpred"]); L = np.array(f["d_eig_wd"]); ev = np.array(f["eig"])
+    lr, wd = schedules(cfg, T); lr_ref = cfg["lr"]; wd_ref = cfg["wd"][0]
+    M = 1.0 / (1.0 - cfg["momentum"]) if cfg["opt"] == "sgd" else 1.0
+    Gk = M * (D + S) * lr.sum() / lr_ref
+    Lk = L * wd_scale * (lr * wd).sum() / (lr_ref * wd_ref) if wd_ref > 0 else 0.0 * L
+    top = ev.max(); ok = ev > 1e-12 * top
+    R = np.where(ok, (Gk + Lk) / np.maximum(ev, 1e-300), -np.inf)
+    logT = np.minimum(np.log(np.maximum(ev, 1e-300)) + R, np.log(top))
+    eT = np.exp(logT)
+    return dict(count=int((eT >= 1e-3 * eT.max()).sum()), tv_ratio=float(eT.sum() / ev.sum()),
+                window=int(((M * (D + S) + L * wd_scale) > 0).sum()), count0=int((ev >= 1e-3 * top).sum()))
+
+
+def load_init(initdir, name):
+    out = []
+    for s in SEEDS:
+        d = os.path.join(initdir, name, f"s{s}")
+        cfg = json.load(open(os.path.join(d, "config.json")))
+        L = [json.loads(l) for l in open(os.path.join(d, "log.jsonl"))]
+        f = [r for r in L if r.get("force") and r["step"] == 0][0]
+        m0 = [r for r in L if r.get("full") and r["step"] == 0][0]
+        out.append((cfg, f, m0))
+    return out
+
+
+def critical_wd(runs, T, grid_w, frac=0.5):
+    """Smallest wd on a fine log grid at which the predicted count falls below frac x count at init, in >= 2 of 3
+    seeds; the forces were computed at the run's own wd and are rescaled linearly."""
+    for w in grid_w:
+        k = 0
+        for cfg, f, _ in runs:
+            r = horizon_rule(cfg, f, T, wd_scale=w / cfg["wd"][0])
+            k += r["count"] < frac * r["count0"]
+        if k >= 2:
+            return float(w)
+    return None
+
+
+CRITERIA = {
+    "C-rank (forward, primary)": "Spearman rho between the predicted count (horizon rule, mean over seeds) and the measured "
+                                 "online-token count at the end of the run (mean over seeds), within each arm (nosg "
+                                 "configs excluded, see the predictor note), >= 0.5 and "
+                                 "its bootstrap 95% CI (over configs) excludes 0",
+    "C-dir (forward)": "for each factor, each adjacent pair of grid values (each mask setting against the base) whose "
+                       "predicted mean counts differ by more than the tolerance max(2, sd_a + sd_b) (sd = sample standard "
+                       "deviation of the predicted count over the 3 seeds) has a predicted sign; the measured centred "
+                       "RankMe change has that sign in >= 2 of 3 seeds (plan default). Every other pair is registered "
+                       "as an explicit null ('no predicted difference'), which holds if the measured mean counts differ "
+                       "by at most max(2, sd_a + sd_b) of the measured counts. Scored as the fractions of signed pairs "
+                       "and of nulls that hold, and listed",
+    "C-loc wd (forward)": "location of the dimensional-collapse transition in weight decay (Arm T wd sweep): the observed "
+                          "transition (geometric midpoint of the last healthy and first collapsed grid value; collapsed = "
+                          "online count < 0.5 x its value at init in >= 2 of 3 seeds) lies within a factor of 2 of the "
+                          "predicted critical wd (plan default for log-scaled knobs)",
+    "C-theory signs (forward)": "signs from theory/derivations.md Sec. 4 independent of the init forces: rank falls with "
+                                "weight decay (both arms), with the predictor lr multiplier (both arms, lam > 0) and with "
+                                "predictor depth (Arm P); nosg ends in complete collapse (total online variance < 1e-6 x "
+                                "init, or centred RankMe < 1.5; Prop. 5); frozen target at standard init does not collapse "
+                                "(online count >= 0.5 x init; Sec. 4 frozen row with c|w0| > lam); EMA rate changes the "
+                                "count by less than the seed spread at matched schedule (EMA changes time scales, not the "
+                                "threshold) - each scored per seed majority",
+    "C-diag (diagnostic, not forward)": "the count of directions with measured drive+decay > 0 at step 800 and 3200 "
+                                        "(force decomposition during the run) vs the final count: Spearman within arm",
+}
+
+
+def cmd_predict(initdir, outdir):
+    G = grid(); T = RUN_EPOCHS * STEPS_PER_EPOCH
+    runs = {}; preds = {}
+    for name in G:
+        runs[name] = load_init(initdir, name)
+    # wd location predictions from the baselines' own forces
+    fine = list(np.geomspace(1e-4, 1e2, 121))
+    wdc_T = critical_wd(runs["T_wd0.01"], T, fine)
+    wdc_P = critical_wd(runs["P_wd0.04"], T, fine)
+    wdc_P_ext = critical_wd(runs["P_wd0.04"], T, list(np.geomspace(1e2, 1e5, 61)))
+    lr_P, _ = schedules(runs["P_wd0.04"][0][0], T)
+    if wdc_P is not None:
+        wd_large = float(f"{2 * wdc_P:.2g}"); wd_large_rule = "2 x the predicted Arm P critical wd (frozen grid)"
+    else:   # no predicted transition on the grid: fall back to the scale where decoupled decay alone is strong
+        wd_large = float(f"{5 / lr_P.sum():.2g}")
+        wd_large_rule = ("fallback: the horizon rule predicts no Arm P transition for wd <= 1e2, so 2 x critical is "
+                         "undefined; wd_large = 5 / sum_t lr(t) over the horizon, where decoupled decay alone would "
+                         "shrink every weight by e^-5 (constant wd)")
+    for name, (arm, factor, value, over) in G.items():
+        per = []
+        for cfg, f, m0 in runs[name]:
+            if name == "P_wdlarge":       # init run made at unit constant wd
+                r = horizon_rule(cfg, f, T, wd_scale=wd_large)
+            else:
+                r = horizon_rule(cfg, f, T)
+            gains = dict(online_count_1e3=m0["online_tok"]["count_1e3"], online_rankme_c=m0["online_tok"]["rankme_c"],
+                         online_total_var=m0["online_tok"]["total_var"])
+            per.append(dict(seed=cfg["seed"], **r, **gains))
+        preds[name] = dict(arm=arm, factor=factor, value=value, over=over,
+                           count_pred=float(np.mean([p["count"] for p in per])),
+                           tv_ratio_pred=float(np.mean([p["tv_ratio"] for p in per])),
+                           window=float(np.mean([p["window"] for p in per])), per_seed=per)
+    if wd_large is not None:
+        preds["P_wdlarge"]["value"] = wd_large; preds["P_wdlarge"]["over"] = dict(wd=[wd_large, wd_large])
+    # directional predictions: adjacent grid values of each factor (with the baseline in its place)
+    order = {"pred_depth": [("P_pdepth1", 1), ("P_base", 3), ("P_pdepth6", 6)],
+             "pred_width": [("P_base", 64), ("P_pwidth128", 128)],
+             "pred_lr_mult P": [("P_plr0.1", 0.1), ("P_base", 1), ("P_plr10", 10)],
+             "pred_init_scale P": [("P_pinit0.1", 0.1), ("P_base", 1), ("P_pinit3", 3)],
+             "wd P": [("P_wd0", 0), ("P_wd0.04", 0.04), ("P_wdlarge", wd_large)],
+             "ema P": [("P_copy", 0), ("P_ema0.9", 0.9), ("P_ema0.99", 0.99), ("P_ema0.999", 0.999)],
+             "wd T": [(f"T_wd{v:g}", v) for v in [0.0, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1]],
+             "pred_lr_mult T": [("T_plr0.1", 0.1), ("T_wd0.01", 1), ("T_plr10", 10)],
+             "pred_init_scale T": [("T_pinit0.3", 0.3), ("T_wd0.01", 1), ("T_pinit3", 3)],
+             "ema T": [("T_wd0.01", 0), ("T_ema0.99", 0.99)]}
+    pairs = [(fac, a, va, b, vb) for fac, seq in order.items() for (a, va), (b, vb) in zip(seq, seq[1:])]
+    pairs += [("mask P", "P_base", "base", m, m[2:]) for m in ["P_targets1", "P_ctx0.4", "P_tscale_hi", "P_tscale_lo"]]
+    dirs = []
+    # nosg is outside the horizon rule: its step-0 split detaches the target path (code/e3_ijepa.py losses), so the
+    # gradient through the target is missing; nosg is scored only by the theory sign (Prop. 5) and left out of C-rank
+    for fac, a, va, b, vb in pairs:
+        dc = preds[b]["count_pred"] - preds[a]["count_pred"]
+        sd = lambda n: float(np.std([q["count"] for q in preds[n]["per_seed"]], ddof=1))
+        tol = max(2.0, sd(a) + sd(b))
+        dirs.append(dict(factor=fac, low=a, high=b, low_value=va, high_value=vb, d_count_pred=dc, tolerance=tol,
+                         sign=(0 if abs(dc) <= tol else int(np.sign(dc))),
+                         registered=("no predicted difference" if abs(dc) <= tol else "sign")))
+    theory_signs = [
+        dict(test="rank falls with weight decay", runs=[s[0] for s in order["wd T"]], sign=-1),
+        dict(test="rank falls with weight decay", runs=[s[0] for s in order["wd P"]], sign=-1),
+        dict(test="rank falls with the predictor lr multiplier when lam > 0 (Sec. 4, alpha row)", runs=[s[0] for s in order["pred_lr_mult P"]], sign=-1),
+        dict(test="rank falls with the predictor lr multiplier when lam > 0 (Sec. 4, alpha row)", runs=[s[0] for s in order["pred_lr_mult T"]], sign=-1),
+        dict(test="rank falls with predictor depth (Sec. 4, depth row; E1c)", runs=[s[0] for s in order["pred_depth"]], sign=-1),
+        dict(test="nosg: complete collapse (Prop. 5)", runs=["P_nosg", "T_nosg"]),
+        dict(test="frozen target at standard init: no collapse of the online encoder", runs=["P_frozen", "T_frozen"]),
+        dict(test="EMA rate: no change beyond seed spread", runs=["P_copy", "P_ema0.9", "P_ema0.99", "P_ema0.999", "P_base"]),
+    ]
+    doc = dict(experiment="E3", status="pre-registered: computed from each run's own initialisation (step-0 force "
+                                       "decomposition, metrics at step 0) and hyperparameters, before any E3 sweep run",
+               note=__doc__.split("Usage")[0].strip(),
+               definitions=dict(
+                   space="online encoder token embeddings (the space the loss acts on and the force decomposition is "
+                         "computed in); target-encoder and mean-pooled ranks are reported alongside",
+                   rank_count="eigenvalues of the centred token covariance >= 1e-3 x the largest, on the first 10000 "
+                              "CIFAR-10 test images, at the end of the run (epoch RUN_EPOCHS)",
+                   rankme_c="exp-entropy of the normalised singular values of the centred embeddings; raw RankMe alongside",
+                   complete_collapse="total centred variance < 1e-6 x its value at init, or centred RankMe < 1.5",
+                   dimensional_collapse="count < 0.5 x the count at init (at init the count is ~27 of 128)",
+                   horizon=f"{RUN_EPOCHS} epochs = {T} steps of a {FULL_EPOCHS}-epoch schedule",
+                   seeds=SEEDS),
+               predictor=horizon_rule.__doc__.strip(),
+               development="the horizon rule was written after the 13 GPU pilot runs (results/e3_pilot/), and checked on "
+                           "them (development only); none of the sweep runs below had been run when this file was written",
+               critical_wd=dict(arm_T=wdc_T, arm_P_constant=wdc_P, arm_P_large_chosen=wd_large, arm_P_large_rule=wd_large_rule,
+                                arm_P_beyond_grid=wdc_P_ext,
+                                arm_P_beyond_grid_note="diagnostic only: there lr x wd > 1 for part of the horizon (lr0 = "
+                                                       f"{runs['P_wd0.04'][0][0]['lr']:g}), so decoupled decay is no longer a "
+                                                       "contraction and the linearised rule is outside its range",
+                                rule="smallest wd (log grid 1e-4..1e2) with predicted count < 0.5 x count at init in >= 2 of 3 seeds"),
+               adamw_note="under AdamW the step-0 update is lr sign(g) per parameter (Adam's first step), so the "
+                          "horizon rule is insensitive to gradient scale and the predictor lr multiplier never enters "
+                          "the encoder's step-0 force: in Arm P it predicts nearly equal counts for the predictor "
+                          "factors; their directions are registered from the theory signs instead",
+               masking_from_M2=json.load(open(os.path.join(outdir, "mask_stats.json")))["order_vs_base"]
+               if os.path.exists(os.path.join(outdir, "mask_stats.json")) else None,
+               masking_note="the linear M2 proxy (results/e3/mask_stats.json) leaves the order of the mask settings "
+                            "undetermined (it changes with lam, p0), so no masking direction is registered from it; the "
+                            "masking predictions are the horizon rule's",
+               success_criteria=CRITERIA, configs=preds, directions=dirs, theory_signs=theory_signs,
+               command=" ".join(sys.argv))
+    json.dump(doc, open(os.path.join(outdir, "prediction.json"), "w"), indent=1)
+    print("critical wd T", wdc_T, "P", wdc_P, "large", wd_large)
+    for n, p in preds.items():
+        print(f"{n:14s} count_pred {p['count_pred']:6.1f} tv {p['tv_ratio_pred']:.3g} window {p['window']:.0f}")
+    print(sum(d["sign"] != 0 for d in dirs), "directional pairs with a predicted sign of", len(dirs))
+    for d in dirs:
+        print(f"  {d['factor']:18s} {d['low']:12s} -> {d['high']:12s} d_count {d['d_count_pred']:+7.1f} tol {d['tolerance']:5.1f} {d['registered']} {d['sign']:+d}")
+
+
+def cmd_sbatch_runs(d, names, pred_file):
+    """One Slurm array per arm (Arm P first), one array task per config with its 3 seeds packed on one GPU, time
+    limit <= 2 h (story-repo#6 conditions). A task skips seeds whose final.json exists, so a failed or pre-empted
+    config is resumed by resubmitting its index. Each run directory gets provenance.json (code commit, md5 of
+    e3_ijepa.py, pip freeze, node, GPU)."""
+    P = json.load(open(pred_file))
+    G = grid(); names = names or list(G)
+    commit = os.environ.get("CODE_COMMIT", "unknown")
+    for arm in ["P", "T"]:
+        sel = [n for n in names if G[n][0] == arm]
+        if not sel:
+            continue
+        cases = []
+        for i, name in enumerate(sel):
+            over = dict(G[name][3])
+            if name == "P_wdlarge":
+                over["wd"] = P["configs"]["P_wdlarge"]["over"]["wd"]
+            body = []
+            for s_ in SEEDS:
+                out = f"runs/{name}/s{s_}"
+                body.append(f"  if [ ! -f {out}/final.json ]; then mkdir -p {out}; prov {out}; venv/bin/python -u e3_ijepa.py "
+                            f"--out {out} --data data --seed {s_} " + " ".join(COMMON + cli_args(over))
+                            + " --force-steps " + " ".join(map(str, FORCE_STEPS)) + f" > {out}.log 2>&1 & fi")
+            cases.append(f"{i}) # {name}\n" + "\n".join(body) + "\n  ;;")
+        tag = os.environ.get("HT_RESOURCE_TAG", "rw")
+        txt = "\n".join([
+            "#!/bin/bash", f"#SBATCH --job-name={tag}-e3arm{arm}", f"#SBATCH --array=0-{len(sel) - 1}",
+            "#SBATCH --gres=gpu:1", "#SBATCH --cpus-per-task=6", "#SBATCH --mem=40G", "#SBATCH --time=01:45:00",
+            "#SBATCH --output=logs/%x_%A_%a.out", "cd \"$SLURM_SUBMIT_DIR\"",
+            "GPU=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1); echo \"$GPU\"",
+            "prov() { venv/bin/python - \"$1\" <<'PY'",
+            "import json, sys, subprocess, hashlib, os, socket",
+            f"json.dump(dict(code_commit='{commit}', e3_ijepa_md5=hashlib.md5(open('e3_ijepa.py','rb').read()).hexdigest(),",
+            "               pip_freeze=subprocess.run([sys.executable, '-m', 'pip', 'freeze'], capture_output=True, text=True).stdout.split(),",
+            "               node=socket.gethostname(), gpu=os.environ.get('GPU'), slurm_job=os.environ.get('SLURM_JOB_ID'),",
+            "               array=os.environ.get('SLURM_ARRAY_JOB_ID'), task=os.environ.get('SLURM_ARRAY_TASK_ID')),",
+            "          open(os.path.join(sys.argv[1], 'provenance.json'), 'w'), indent=1)",
+            "PY",
+            "}", "export GPU",
+            "case $SLURM_ARRAY_TASK_ID in"] + cases + ["esac", "wait",
+            f"echo \"HUTIAN_WAKE: e3 arm {arm} task $SLURM_ARRAY_TASK_ID done\""]) + "\n"
+        open(os.path.join(d, f"e3_arm{arm}.sbatch"), "w").write(txt)
+        json.dump(sel, open(os.path.join(d, f"e3_arm{arm}_index.json"), "w"))
+        print(f"e3_arm{arm}.sbatch", len(sel), "array tasks")
+
+
+
+# ----------------------------------------------------------------------------- follow-up: C4 interventions, full-length runs
+
+FULL_PROBE_EVERY = 5
+
+
+def followup():
+    """C4 interventions and the full-length runs (story-repo plan v1.2 Sec. 3 E3). Chosen after the sweep runs had
+    started, from their partial logs (epoch ~6-16 of 20): in Arm T, wd 0.03 and 0.1 fall below 0.5 x the init count
+    (collapsing), wd 0 and 1e-3 rise above it (healthy); in Arm P, the copy target falls to ~21 of 116 (P_base).
+    Each intervention changes one knob of a sweep config (its parent, same seeds and initialisation), in the
+    direction prescribed by theory/derivations.md Sec. 4 (source "theory") or by the horizon rule (source "rule").
+    Its step-0 forces are those of an existing init run (`init`), rescaled to its wd (`wd_scale`): the predictor lr
+    and the target update do not enter the encoder's step-0 force, and the decay force is linear in wd."""
+    T = lambda wd, **k: dict(ARM_T, wd=[wd, wd], **k)
+    F = {}
+    for wd in (0.1, 0.03):
+        F[f"I_T_wd{wd:g}_plr0.1"] = dict(arm="T", kind="rescue", parent=f"T_wd{wd:g}", over=T(wd, pred_lr_mult=0.1),
+                                       init="T_wd0.01", wd_scale=wd / 1e-2, sign=+1, source="theory",
+                                       why="Sec. 4 alpha row: with lam > 0 a slower predictor (smaller alpha) lengthens the race clock 1/(alpha lam), so more directions escape")
+        F[f"I_T_wd{wd:g}_pinit3"] = dict(arm="T", kind="rescue", parent=f"T_wd{wd:g}", over=T(wd, pred_init_scale=3),
+                                       init="T_pinit3", wd_scale=wd / 1e-2, sign=+1, source="rule",
+                                       why="the horizon rule's step-0 drive grows with the predictor init scale (T_pinit3 predicted 115 vs 18 at wd 1e-2); Sec. 4's p0 row is non-monotone, so the sign is the rule's")
+    F["I_T_wd0.001_plr10"] = dict(arm="T", kind="break", parent="T_wd0.001", over=T(1e-3, pred_lr_mult=10), init="T_wd0.01",
+                                  wd_scale=0.1, sign=-1, source="theory",
+                                  why="Sec. 4 alpha row: a faster predictor shortens the race clock, so fewer directions escape")
+    F["I_T_wd0.001_pinit0.3"] = dict(arm="T", kind="break", parent="T_wd0.001", over=T(1e-3, pred_init_scale=0.3),
+                                     init="T_pinit0.3", wd_scale=0.1, sign=-1, source="rule",
+                                     why="the horizon rule predicts 30.3 against the parent's 35.7 at wd 1e-3 (a fall of 5.4, above its tolerance); at wd 1e-2 the same init gave 20.0 against 18.0, so this sign holds only at small wd")
+    F["I_P_copy_wd0"] = dict(arm="P", kind="rescue", parent="P_copy", over=dict(target="copy", wd=[0.0, 0.0]), init="P_copy",
+                             wd_scale=0.0, sign=+1, source="theory",
+                             why="Sec. 3-4: without decay there is no race (the predictor does not drift and no direction is lost to decay)")
+    F["I_P_copy_plr0.1"] = dict(arm="P", kind="rescue", parent="P_copy", over=dict(target="copy", pred_lr_mult=0.1), init="P_copy",
+                                wd_scale=1.0, sign=+1, source="theory",
+                                why="Sec. 4 alpha row, as for Arm T; registered although the running sweep's P_plr0.1 (epoch 20) was below P_base, i.e. against this sign in Arm P")
+    # full-length runs with the linear probe every FULL_PROBE_EVERY epochs: the two baselines and one collapsing config
+    F["F_P_base"] = dict(arm="P", kind="full", parent="P_base", over=dict(), init="P_base", wd_scale=1.0)
+    F["F_T_wd0.01"] = dict(arm="T", kind="full", parent="T_wd0.01", over=T(1e-2), init="T_wd0.01", wd_scale=1.0)
+    F["F_T_wd0.03"] = dict(arm="T", kind="full", parent="T_wd0.03", over=T(0.03), init="T_wd0.01", wd_scale=3.0)
+    return F
+
+
+def followup_args(f):
+    a = list(COMMON)
+    if f["kind"] == "full":
+        a[a.index("--epochs") + 1] = str(FULL_EPOCHS); a[a.index("--probe-every") + 1] = str(FULL_PROBE_EVERY)
+    return a + cli_args(f["over"])
+
+
+def cmd_predict_followup(initdir, outdir):
+    F = followup(); P = json.load(open(os.path.join(outdir, "prediction.json")))["configs"]
+    out = {}
+    for name, f in F.items():
+        T = (FULL_EPOCHS if f["kind"] == "full" else RUN_EPOCHS) * STEPS_PER_EPOCH
+        per = []
+        for cfg, fo, m0 in load_init(initdir, f["init"]):
+            r = horizon_rule(cfg, fo, T, wd_scale=f["wd_scale"]) if cfg["wd"][0] > 0 else horizon_rule(cfg, fo, T)
+            per.append(dict(seed=cfg["seed"], **r, online_count_1e3=m0["online_tok"]["count_1e3"]))
+        c = float(np.mean([p["count"] for p in per]))
+        rec = dict(f, count_pred=c, per_seed=per, horizon_steps=T,
+                   collapse_pred=bool(sum(p["count"] < 0.5 * p["online_count_1e3"] for p in per) >= 2),
+                   parent_count_pred=P[f["parent"]]["count_pred"])
+        if f["kind"] == "full":
+            rec["count_pred_epoch20"] = P[f["parent"]]["count_pred"] if f["parent"] in P else None
+        out[name] = rec
+    crit = {
+        "C4 direction": "for each intervention, the measured centred RankMe of the intervention minus that of its parent "
+                        "(same seed) has the prescribed sign in >= 2 of 3 seeds; scored separately for source theory "
+                        "and source rule, per arm",
+        "C4 crossing": "rescue: the parent is dimensionally collapsed (>= 2 of 3 seeds) and the intervention is not "
+                       "(<= 1 of 3); break: the parent is healthy (<= 1 of 3) and the intervention collapses (>= 2 of 3); "
+                       "scored only where the parent behaves as stated",
+        "C-full count": "full-length (50-epoch) runs: the horizon rule at 9750 steps (count_pred) against the measured "
+                        "final count, and the collapse flag (collapse_pred) against measured dimensional collapse "
+                        "(>= 2 of 3 seeds); reported per run, with the epoch-20 count of the same run beside it",
+        "C-full probe": "the collapsing full-length config (F_T_wd0.03) has a lower final linear-probe accuracy than "
+                        "the Arm T baseline (F_T_wd0.01) in >= 2 of 3 seeds; the random-init probe (43.65%, "
+                        "results/e3_pilot) is the reference",
+    }
+    doc = dict(experiment="E3 follow-up", status="pre-registered: written before any of these runs, after the sweep runs "
+                                                 "had started (selection from their partial logs, see note)",
+               note=followup.__doc__.strip(), predictor=horizon_rule.__doc__.strip(), success_criteria=crit, configs=out,
+               command=" ".join(sys.argv))
+    json.dump(doc, open(os.path.join(outdir, "prediction_followup.json"), "w"), indent=1)
+    for n, r in out.items():
+        print(f"{n:22s} {r['kind']:6s} parent {r['parent']:10s} pred {r['count_pred']:6.1f} parent_pred {r['parent_count_pred']:6.1f} collapse {r['collapse_pred']} sign {r.get('sign')}")
+
+
+def cmd_sbatch_followup(d):
+    """One array (one config x 3 seeds per GPU task), same structure as cmd_sbatch_runs."""
+    F = followup(); names = list(F)
+    txt = open(os.path.join(d, "e3_armT.sbatch")).read()
+    head, rest = txt.split("case $SLURM_ARRAY_TASK_ID in")
+    cases = []
+    for i, name in enumerate(names):
+        body = []
+        for s_ in SEEDS:
+            out = f"runs/{name}/s{s_}"
+            body.append(f"  if [ ! -f {out}/final.json ]; then mkdir -p {out}; prov {out}; venv/bin/python -u e3_ijepa.py "
+                        f"--out {out} --data data --seed {s_} " + " ".join(followup_args(F[name]))
+                        + " --force-steps " + " ".join(map(str, FORCE_STEPS)) + f" > {out}.log 2>&1 & fi")
+        cases.append(f"{i}) # {name}\n" + "\n".join(body) + "\n  ;;")
+    head = re.sub(r"--array=0-\d+", f"--array=0-{len(names) - 1}", head).replace("e3armT", "e3follow")
+    head = head.replace("--time=01:45:00", "--time=02:00:00")
+    head = re.sub(r"code_commit='[^']*'", "code_commit='" + os.environ.get("CODE_COMMIT", "unknown") + "'", head)
+    txt = head + "case $SLURM_ARRAY_TASK_ID in\n" + "\n".join(cases) + "\nesac\nwait\necho \"HUTIAN_WAKE: e3 follow-up task $SLURM_ARRAY_TASK_ID done\"\n"
+    open(os.path.join(d, "e3_follow.sbatch"), "w").write(txt)
+    json.dump(names, open(os.path.join(d, "e3_follow_index.json"), "w"))
+    print("e3_follow.sbatch", len(names), "array tasks")
+
+
+
+def cmd_analyze_followup(rundir, outdir):
+    D = json.load(open(os.path.join(outdir, "prediction_followup.json")))["configs"]
+    parents = {f["parent"] for f in D.values()}
+    M = {n: measured(rundir, n) for n in list(D) + sorted(parents)}
+    def coll(n):
+        return sum(r["dim_collapse"] for r in M[n])
+    rows = []; c4 = []
+    for n, f in D.items():
+        m = M[n]
+        if not m:
+            continue
+        rec = dict(name=n, arm=f["arm"], kind=f["kind"], parent=f["parent"], seeds=len(m), count_pred=f["count_pred"],
+                   collapse_pred=f["collapse_pred"],
+                   count=float(np.mean([r["online_tok"]["count_1e3"] for r in m])),
+                   rankme_c=float(np.mean([r["online_tok"]["rankme_c"] for r in m])),
+                   dim_collapse=coll(n), complete_collapse=sum(r["complete_collapse"] for r in m),
+                   probe=[r["probe"]["probe_acc"] if r.get("probe") else None for r in m])
+        if M[f["parent"]]:
+            rec.update(parent_count=float(np.mean([r["online_tok"]["count_1e3"] for r in M[f["parent"]]])),
+                       parent_dim_collapse=coll(f["parent"]))
+        if f["kind"] in ("rescue", "break") and M[f["parent"]]:
+            lo = {r["seed"]: r["online_tok"]["rankme_c"] for r in M[f["parent"]]}; hi = {r["seed"]: r["online_tok"]["rankme_c"] for r in m}
+            k = sum(np.sign(hi[s] - lo[s]) == f["sign"] for s in SEEDS if s in lo and s in hi)
+            if f["kind"] == "rescue":
+                elig = coll(f["parent"]) >= 2; cross = coll(n) <= 1
+            else:
+                elig = coll(f["parent"]) <= 1; cross = coll(n) >= 2
+            c4.append(dict(name=n, arm=f["arm"], source=f["source"], kind=f["kind"], sign=f["sign"], seeds_agree=int(k),
+                           direction_holds=bool(k >= 2), crossing_eligible=bool(elig), crossing_holds=bool(cross) if elig else None))
+        if f["kind"] == "full":
+            per = []
+            for r in m:
+                L = [json.loads(l) for l in open(os.path.join(rundir, n, f"s{r['seed']}", "log.jsonl"))]
+                full = [x for x in L if x.get("full")]
+                e20 = [x for x in full if abs(x.get("epoch", 0) - RUN_EPOCHS) < 1e-6]
+                per.append(dict(seed=r["seed"], count_final=r["online_tok"]["count_1e3"], count_epoch20=e20[0]["online_tok"]["count_1e3"] if e20 else None,
+                                probe_curve=[(x["epoch"], x["online_probe"]["probe_acc"]) for x in full if x.get("online_probe")]))
+            rec["per_seed"] = per
+        rows.append(rec)
+    crit = {}
+    for arm in ("T", "P"):
+        for src in ("theory", "rule"):
+            cc = [c for c in c4 if c["arm"] == arm and c["source"] == src]
+            if cc:
+                ce = [c for c in cc if c["crossing_eligible"]]
+                crit[f"C4 arm {arm} {src}"] = dict(n=len(cc), direction_held=sum(c["direction_holds"] for c in cc),
+                                                   crossing_eligible=len(ce), crossing_held=sum(bool(c["crossing_holds"]) for c in ce))
+    R = {r["name"]: r for r in rows}
+    if "F_T_wd0.03" in R and "F_T_wd0.01" in R:
+        a = {p["seed"]: p["probe_curve"][-1][1] for p in R["F_T_wd0.03"]["per_seed"] if p["probe_curve"]}
+        b = {p["seed"]: p["probe_curve"][-1][1] for p in R["F_T_wd0.01"]["per_seed"] if p["probe_curve"]}
+        k = sum(a[s] < b[s] for s in a if s in b)
+        crit["C-full probe"] = dict(seeds_lower=int(k), passed=bool(k >= 2))
+    crit["C-full count"] = [dict(name=r["name"], count_pred=r["count_pred"], count=r["count"], collapse_pred=r["collapse_pred"],
+                                 collapsed_meas=bool(r["dim_collapse"] >= 2), flag_right=bool((r["dim_collapse"] >= 2) == r["collapse_pred"]))
+                            for r in rows if r["kind"] == "full"]
+    meta = {n: dict(arm=f["arm"], kind=f["kind"], parent=f["parent"], count_pred=f["count_pred"], collapse_pred=f["collapse_pred"])
+            for n, f in D.items()}
+    nt, nf = export_trajectories(rundir, meta, os.path.join(outdir, "trajectories_followup.jsonl"), os.path.join(outdir, "forces_followup.jsonl"))
+    S = dict(scored_against="results/e3/prediction_followup.json", rows=rows, c4=c4, criteria=crit,
+             files=dict(trajectories=nt, forces=nf), command=" ".join(sys.argv))
+    json.dump(S, open(os.path.join(outdir, "summary_followup.json"), "w"), indent=1)
+    for k, v in crit.items():
+        print(k, json.dumps(v)[:300])
+
+
+def spearman(x, y):
+    from scipy.stats import spearmanr
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    if len(x) < 3 or np.ptp(x) == 0 or np.ptp(y) == 0:
+        return dict(rho=None, ci=None, n=len(x))
+    rho = float(spearmanr(x, y)[0]); rng = np.random.default_rng(0); bs = []
+    for _ in range(2000):
+        i = rng.integers(0, len(x), len(x))
+        if np.ptp(x[i]) > 0 and np.ptp(y[i]) > 0:
+            bs.append(spearmanr(x[i], y[i])[0])
+    return dict(rho=rho, ci=[float(np.nanpercentile(bs, 2.5)), float(np.nanpercentile(bs, 97.5))], n=len(x))
+
+
+def measured(rundir, name):
+    out = []
+    for s in SEEDS:
+        d = os.path.join(rundir, name, f"s{s}")
+        if not os.path.exists(os.path.join(d, "final.json")):     # unfinished or failed run: not scored
+            continue
+        try:
+            L = [json.loads(l) for l in open(os.path.join(d, "log.jsonl"))]
+        except FileNotFoundError:
+            continue
+        full = [r for r in L if r.get("full")]; F = {r["step"]: r for r in L if r.get("force")}
+        nonfinite = any(r.get("nonfinite") for r in L)
+        m0, m1 = full[0], full[-1]
+        rec = dict(seed=s, steps=m1["step"], nonfinite=nonfinite)
+        for sp in ["online_tok", "target_tok", "online_pool", "target_pool"]:
+            if sp in m1:
+                rec[sp] = {k: m1[sp][k] for k in ["count_1e3", "rankme_c", "rankme_raw", "total_var"] if k in m1[sp]}
+                rec[sp + "_0"] = {k: m0[sp][k] for k in ["count_1e3", "rankme_c", "total_var"] if k in m0[sp]}
+        o, o0 = rec["online_tok"], rec["online_tok_0"]
+        rec["complete_collapse"] = bool(nonfinite or o["total_var"] < 1e-6 * o0["total_var"] or o["rankme_c"] < 1.5)
+        rec["dim_collapse"] = bool(rec["complete_collapse"] or o["count_1e3"] < 0.5 * o0["count_1e3"])
+        for st in (800, 3200):
+            if st in F:
+                f = F[st]; D, S_, W = (np.array(f[k]) for k in ("d_eig_drive", "d_eig_selfpred", "d_eig_wd"))
+                rec[f"n_net_growth_{st}"] = int((D + S_ + W > 0).sum())
+        rec["probe"] = m1.get("online_probe") or m1.get("target_probe")
+        # linear probe (ridge on pooled features, ridge picked on a validation split, CIFAR-10 test accuracy)
+        pa = lambda r, k: (r.get(k) or {}).get("probe_acc", np.nan)
+        rec["probe_online"], rec["probe_target"], rec["probe_init"] = pa(m1, "online_probe"), pa(m1, "target_probe"), pa(m0, "online_probe")
+        out.append(rec)
+    return out
+
+
+
+def export_trajectories(rundir, meta, outpath, forcepath):
+    """Per-run files for the figures: trajectories (every logged step) and spectra, one JSON line per (config, seed).
+    meta: name -> dict of fields copied into each line (arm, factor, value, count_pred, collapse_pred, ...)."""
+    nt = nf = 0
+    with open(outpath, "w") as ft, open(forcepath, "w") as ff:
+        for name, mt in meta.items():
+            for s in SEEDS:
+                d = os.path.join(rundir, name, f"s{s}")
+                if not os.path.exists(os.path.join(d, "final.json")):
+                    continue
+                L = [json.loads(l) for l in open(os.path.join(d, "log.jsonl"))]
+                M = [r for r in L if not r.get("force")]; full = [r for r in M if r.get("full")]
+                g = lambda sp, k: [r[sp][k] if sp in r else None for r in M]
+                rec = dict(name=name, seed=s, **mt, step=[r["step"] for r in M], epoch=[r.get("epoch") for r in M],
+                           full=[bool(r.get("full")) for r in M], loss=[r.get("loss") for r in M], lr=[r.get("lr") for r in M],
+                           wd=[r.get("wd") for r in M], ema=[r.get("ema") for r in M])
+                for sp in ("online_tok", "target_tok", "online_pool", "target_pool"):
+                    for k in ("count_1e3", "rankme_c", "rankme_raw", "total_var", "std"):
+                        rec[f"{sp}_{k}"] = g(sp, k)
+                # spectra (eigenvalues of the centred token covariance, 10000 test images): init, epoch 1, epoch 5, final
+                rec["spectra"] = {f"{r['step']}": dict(online=[float(f"{x:.5g}") for x in r["online_tok"]["eig"]],
+                                                        target=[float(f"{x:.5g}") for x in r["target_tok"]["eig"]])
+                                  for r in full if r["step"] in (0, STEPS_PER_EPOCH, 5 * STEPS_PER_EPOCH) or r is full[-1]}
+                rec["probe"] = [dict(step=r["step"], epoch=r.get("epoch"), online=r["online_probe"]["probe_acc"],
+                                     target=r["target_probe"]["probe_acc"] if r.get("target_probe") else None)
+                                for r in full if r.get("online_probe")]
+                ft.write(json.dumps(rec) + "\n"); nt += 1
+                for r in L:
+                    if r.get("force"):
+                        D, S_, W = (np.array(r[k]) for k in ("d_eig_drive", "d_eig_selfpred", "d_eig_wd"))
+                        rd = lambda v: [float(f"{x:.5g}") for x in v]     # 5 significant digits
+                        ff.write(json.dumps(dict(name=name, seed=s, arm=mt.get("arm"), step=r["step"], eig=rd(r["eig"]),
+                                                 d_eig_drive=rd(r["d_eig_drive"]), d_eig_selfpred=rd(r["d_eig_selfpred"]), d_eig_wd=rd(r["d_eig_wd"]),
+                                                 n_net_growth=int((D + S_ + W > 0).sum()))) + "\n"); nf += 1
+    return nt, nf
+
+
+def cmd_analyze(rundir, outdir):
+    P = json.load(open(os.path.join(outdir, "prediction.json")))
+    C = P["configs"]; M = {n: measured(rundir, n) for n in C}
+    rows = []
+    for n, c in C.items():
+        m = M[n]
+        if not m:
+            continue
+        mean = lambda f: float(np.mean([f(r) for r in m]))
+        rows.append(dict(name=n, arm=c["arm"], factor=c["factor"], value=c["value"], seeds=len(m),
+                         count_pred=c["count_pred"], tv_ratio_pred=c["tv_ratio_pred"],
+                         count=mean(lambda r: r["online_tok"]["count_1e3"]), rankme_c=mean(lambda r: r["online_tok"]["rankme_c"]),
+                         tv_ratio=float(np.exp(np.mean([np.log(max(r["online_tok"]["total_var"], 1e-300) / r["online_tok_0"]["total_var"]) for r in m]))),
+                         target_count=mean(lambda r: r["target_tok"]["count_1e3"]), target_rankme_c=mean(lambda r: r["target_tok"]["rankme_c"]),
+                         complete_collapse=sum(r["complete_collapse"] for r in m), dim_collapse=sum(r["dim_collapse"] for r in m),
+                         nonfinite=sum(r["nonfinite"] for r in m),
+                         n_net_growth_800=mean(lambda r: r.get("n_net_growth_800", np.nan)),
+                         n_net_growth_3200=mean(lambda r: r.get("n_net_growth_3200", np.nan)),
+                         count_sd=float(np.std([r["online_tok"]["count_1e3"] for r in m], ddof=1)) if len(m) > 1 else float("nan"),
+                         count_seeds=" ".join(str(r["online_tok"]["count_1e3"]) for r in m),
+                         count_init=mean(lambda r: r["online_tok_0"]["count_1e3"]),
+                         rankme_c_seeds=" ".join(f'{r["online_tok"]["rankme_c"]:.2f}' for r in m),
+                         probe_online=mean(lambda r: r["probe_online"]), probe_target=mean(lambda r: r["probe_target"]),
+                         probe_init=mean(lambda r: r["probe_init"])))
+    R = {r["name"]: r for r in rows}
+    crit = {}
+    for arm in ["P", "T"]:
+        rr = [r for r in rows if r["arm"] == arm and r["value"] != "nosg"]   # nosg is outside the horizon rule (cmd_predict)
+        sp = spearman([r["count_pred"] for r in rr], [r["count"] for r in rr])
+        crit[f"C-rank arm {arm}"] = dict(sp, passed=None if sp["rho"] is None else bool(sp["rho"] >= 0.5 and sp["ci"][0] > 0))
+        dg = {st: spearman([r[f"n_net_growth_{st}"] for r in rr], [r["count"] for r in rr]) for st in (800, 3200)}
+        crit[f"C-diag arm {arm}"] = dg
+    # directions
+    dres = []; nres = []
+    for d in P["directions"]:
+        if not M.get(d["low"]) or not M.get(d["high"]):
+            continue
+        if d["sign"] != 0:
+            lo = {r["seed"]: r["online_tok"]["rankme_c"] for r in M[d["low"]]}; hi = {r["seed"]: r["online_tok"]["rankme_c"] for r in M[d["high"]]}
+            k = sum(np.sign(hi[s] - lo[s]) == d["sign"] for s in SEEDS if s in lo and s in hi)
+            dres.append(dict(d, seeds_agree=int(k), holds=bool(k >= 2)))
+        else:
+            ca = [r["online_tok"]["count_1e3"] for r in M[d["low"]]]; cb = [r["online_tok"]["count_1e3"] for r in M[d["high"]]]
+            tol = max(2.0, float(np.std(ca, ddof=1) + np.std(cb, ddof=1))) if min(len(ca), len(cb)) > 1 else 2.0
+            dm = float(np.mean(cb) - np.mean(ca))
+            nres.append(dict(d, d_count_meas=dm, tolerance_meas=tol, holds=bool(abs(dm) <= tol)))
+    frac = lambda x: (sum(d["holds"] for d in x) / len(x)) if x else None
+    crit["C-dir"] = dict(signed_pairs=len(dres), signed_held=sum(d["holds"] for d in dres), signed_fraction=frac(dres),
+                         nulls=len(nres), nulls_held=sum(d["holds"] for d in nres), nulls_fraction=frac(nres),
+                         signed=dres, null_list=nres)
+    # wd location, Arm T
+    seq = [n for n in C if n.startswith("T_wd")]
+    seq.sort(key=lambda n: C[n]["value"])
+    healthy = [n for n in seq if n in R and R[n]["dim_collapse"] < 2]; coll = [n for n in seq if n in R and R[n]["dim_collapse"] >= 2]
+    obs = None
+    if coll:
+        first = coll[0]; prev = [n for n in seq if C[n]["value"] < C[first]["value"] and n in healthy]
+        if prev and C[prev[-1]]["value"] > 0:
+            obs = float(math.sqrt(C[prev[-1]]["value"] * C[first]["value"]))
+        elif prev:
+            obs = float(C[first]["value"]) / 2 ** 0.5
+    pc = P["critical_wd"]["arm_T"]
+    crit["C-loc wd arm T"] = dict(observed=obs, predicted=pc, ratio=(obs / pc) if (obs and pc) else None,
+                                  passed=(None if not (obs and pc) else bool(0.5 <= obs / pc <= 2.0)))
+    # theory signs
+    ts = []
+    for t in P["theory_signs"]:
+        runs = [n for n in t["runs"] if n in R]
+        if "sign" in t:
+            pairs = list(zip(runs, runs[1:])); hold = []
+            for a, b in pairs:
+                lo = {r["seed"]: r["online_tok"]["rankme_c"] for r in M[a]}; hi = {r["seed"]: r["online_tok"]["rankme_c"] for r in M[b]}
+                k = sum(np.sign(hi[s] - lo[s]) == t["sign"] for s in SEEDS if s in lo and s in hi)
+                hold.append(dict(low=a, high=b, seeds_agree=int(k), holds=bool(k >= 2)))
+            ts.append(dict(t, pairs=hold, passed=bool(hold) and all(h["holds"] for h in hold)))
+        elif t["test"].startswith("nosg"):
+            ts.append(dict(t, result={n: R[n]["complete_collapse"] for n in runs}, passed=bool(runs) and all(R[n]["complete_collapse"] >= 2 for n in runs)))
+        elif t["test"].startswith("frozen"):
+            ts.append(dict(t, result={n: R[n]["dim_collapse"] for n in runs}, passed=bool(runs) and all(R[n]["dim_collapse"] <= 1 for n in runs)))
+        else:   # EMA: no change beyond the seed spread
+            vals = {n: [r["online_tok"]["count_1e3"] for r in M[n]] for n in runs}
+            spread = max(np.std(v) for v in vals.values()) if vals else None
+            means = [np.mean(v) for v in vals.values()]
+            ts.append(dict(t, means={n: float(np.mean(v)) for n, v in vals.items()}, max_seed_std=float(spread) if spread is not None else None,
+                           range=float(np.ptp(means)) if means else None,
+                           passed=None if not means else bool(np.ptp(means) <= 2 * spread + 1e-9)))
+    crit["C-theory signs"] = ts
+    meta = {n: dict(arm=c["arm"], factor=c["factor"], value=c["value"], count_pred=c["count_pred"],
+                    collapse_pred=bool(sum(q["count"] < 0.5 * q["online_count_1e3"] for q in c["per_seed"]) >= 2))
+            for n, c in C.items()}
+    nt, nf = export_trajectories(rundir, meta, os.path.join(outdir, "trajectories.jsonl"), os.path.join(outdir, "forces.jsonl"))
+    # post hoc (not registered): what Arm T's C-rank rests on, wd sweep vs the other factors
+    rT = [r for r in rows if r["arm"] == "T" and r["value"] != "nosg"]
+    split = {k: dict(spearman([r["count_pred"] for r in g], [r["count"] for r in g]), configs=[r["name"] for r in g],
+                     count_pred=[r["count_pred"] for r in g], count=[r["count"] for r in g])
+             for k, g in (("wd sweep", [r for r in rT if r["factor"] == "wd"]), ("other factors", [r for r in rT if r["factor"] != "wd"]))}
+    at_base = {r["name"]: r["count"] for r in rows if r["arm"] == "T" and (r["factor"] != "wd" or r["value"] == 0.01)}
+    post_hoc = {"C-rank arm T split": dict(split, note="post hoc diagnostic, not a registered criterion"),
+                "Arm T variants at wd 0.01 (count)": dict(at_base, T_wd0=R["T_wd0"]["count"] if "T_wd0" in R else None,
+                                                          note="every non-wd Arm T config runs at the baseline wd 0.01")}
+    S = dict(prediction_commit_note="scored against results/e3/prediction.json", rows=rows, criteria=crit, post_hoc=post_hoc,
+             files=dict(trajectories=nt, forces=nf), command=" ".join(sys.argv))
+    json.dump(S, open(os.path.join(outdir, "summary.json"), "w"), indent=1)
+    import csv
+    with open(os.path.join(outdir, "runs.csv"), "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
+    for k, v in crit.items():
+        print(k, json.dumps(v)[:400])
+
+
+def cmd_compute(rundir, outdir):
+    """Per-run compute record from each run's provenance.json and final.json -> results/e3/compute.json."""
+    runs = []
+    for name in sorted(os.listdir(rundir)):
+        for s in SEEDS:
+            d = os.path.join(rundir, name, f"s{s}")
+            if not os.path.exists(os.path.join(d, "final.json")):
+                continue
+            pv, fn = json.load(open(os.path.join(d, "provenance.json"))), json.load(open(os.path.join(d, "final.json")))
+            runs.append(dict(name=name, seed=s, gpu=pv.get("gpu"), code_commit=pv.get("code_commit"),
+                             e3_ijepa_md5=pv.get("e3_ijepa_md5"), steps=fn["steps"], seconds=round(fn["seconds"], 1)))
+    by = {}
+    for r in runs:
+        b = by.setdefault(r["gpu"], dict(runs=0, run_hours=0.0, configs=set()))
+        b["runs"] += 1; b["run_hours"] += r["seconds"] / 3600; b["configs"].add(r["name"])
+    by = {g: dict(runs=b["runs"], run_hours=round(b["run_hours"], 2), configs=sorted(b["configs"])) for g, b in by.items()}
+    S = dict(note="wall time of each training run (final.json seconds, evaluation included) on one GPU of a SLURM cluster; "
+                  "3 runs (the seeds of one config) shared one GPU at a time, so GPU-hours are lower than run-hours",
+             runs_total=len(runs), run_hours_total=round(sum(r["seconds"] for r in runs) / 3600, 2), by_gpu=by, runs=runs,
+             command=" ".join(sys.argv))
+    json.dump(S, open(os.path.join(outdir, "compute.json"), "w"), indent=1)
+    print(json.dumps({g: {k: v for k, v in b.items() if k != "configs"} for g, b in by.items()}), S["run_hours_total"])
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "list":
+        for n, g in grid().items():
+            print(n, g[:3], cli_args(g[3]))
+    elif cmd == "sbatch-init":
+        cmd_sbatch_init(sys.argv[2])
+    elif cmd == "predict":
+        cmd_predict(sys.argv[2], sys.argv[3])
+    elif cmd == "sbatch-runs":
+        cmd_sbatch_runs(sys.argv[2], sys.argv[4:], sys.argv[3])
+    elif cmd == "analyze":
+        cmd_analyze(sys.argv[2], sys.argv[3])
+    elif cmd == "predict-followup":
+        cmd_predict_followup(sys.argv[2], sys.argv[3])
+    elif cmd == "sbatch-followup":
+        cmd_sbatch_followup(sys.argv[2])
+    elif cmd == "analyze-followup":
+        cmd_analyze_followup(sys.argv[2], sys.argv[3])
+    elif cmd == "compute":
+        cmd_compute(sys.argv[2], sys.argv[3])

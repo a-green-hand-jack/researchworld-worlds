@@ -1,0 +1,36 @@
+"""An extended Monte Carlo run of pi on one CPU for MINUTES minutes.
+
+It prints its running estimate every five minutes, writes the final estimate
+as JSON to OUT and exits 0.
+
+usage: python3 extended.py MINUTES OUT
+"""
+import json
+import math
+import random
+import sys
+import time
+
+minutes, out = float(sys.argv[1]), sys.argv[2]
+rng = random.Random(int(minutes * 1000))
+start = time.monotonic()
+inside = total = 0
+said = 0.0
+while True:
+    for _ in range(100000):
+        x, y = rng.random(), rng.random()
+        inside += x * x + y * y <= 1.0
+    total += 100000
+    elapsed = time.monotonic() - start
+    if elapsed - said >= 300:
+        said = elapsed
+        print(f'extended {minutes:g} min: {elapsed / 60:.0f} min, estimate {4 * inside / total:.6f} '
+              f'after {total} samples', flush=True)
+    if elapsed >= minutes * 60:
+        break
+estimate = 4 * inside / total
+p = inside / total
+half = 1.96 * 4 * math.sqrt(p * (1 - p) / total)
+json.dump({'minutes': minutes, 'samples': total, 'estimate': estimate, 'ci95': [estimate - half, estimate + half]},
+          open(out, 'w'), indent=1)
+print(f'extended {minutes:g} min final estimate {estimate:.6f} +/- {half:.6f} after {total} samples', flush=True)

@@ -1,0 +1,29 @@
+# Review record (internal-review-repo)
+
+Standard: my recorded commitment (revision 1), derived from objective #1 and the brief (idea-repo f177b55c).
+
+## Independent reproduction (working material, not delivered)
+`check/reproduce.py` -> `check/reproduce.json` (NumPy as recorded in the json), seeds 2026+i, i=0..199.
+Draw convention `rng.random((N,2))` (= prefix of one stream with adjacent x,y) gives
+MAE = 0.041887, 0.0144063, 0.0043101, 0.0013988, 0.0004195 for N=1e3..1e7;
+OLS slope -0.50116, 95% t(3) CI [-0.51917, -0.48314]. (x-then-y convention would give a different MAE and slope -0.4950,
+so the convention matters at the 4th digit; the delivery documents the one it uses.)
+
+## Pass 1 — assembled delivery at paper-repo 9e8fa87b2c74, experiment-repo 6cb94ccdef05, figtab-repo a2be28bb4ada
+- (1)(2) Method/seeding: analysis/simulate.py matches the objective; stated in the report. OK.
+- (3) Table: analysis/mae_table.csv and report table match my reproduction digit-for-digit. OK.
+- (4) OLS exponent -0.5012, CI [-0.5192, -0.4831] match mine exactly. OK.
+- Paired bootstrap CI [-0.5161, -0.4860], SE 0.00764: my independent resample from runs_*.csv gives [-0.5162, -0.4863], SE 0.00762. OK.
+- (5) Comparison with -1/2 is correct and claims are appropriately limited. Exact-binomial column checked against sqrt(2(4-pi)/N); "within 1.74 SE" checked (N=1e4). OK.
+- (6) FIGURE MISSING: report/figures/mae_loglog.png is linked from the report but not delivered (figtab-repo, turn in progress). Also report/tables/ is an assigned path with no file. Both are figtab-repo's open delivery gaps; no other position can act on them now.
+- (7) Report length ~one page; numbers trace to analysis files. OK.
+
+Conclusion at pass 1: not approvable until the figure is delivered and inspected; everything else checked is supported.
+
+## Pass 2 — assembled delivery at paper-repo 9e8fa87b2c741262887a13bebcbc4912f3687664, experiment-repo 6cb94ccdef057908bf489882cd13261bab2105c6, figtab-repo d03a17b2e76917175097b1b58a730ac62445f599, idea-review-repo e99862e6fddb0528f0e94d39abb2a379b4e410bd
+Report and analysis are unchanged since pass 1, so checks (1)–(5) and (7) stand.
+- (6) Figure `report/figures/mae_loglog.png`: delivered, and it resolves from `report/report.md` as `figures/mae_loglog.png`. I opened it. It has log-log axes labeled "sample count N per estimate" and "mean absolute error |pi_hat - pi|", and five MAE points with ±1 SE bars at the tabulated values (0.0419 … 4.19e-4). The OLS fit line (slope -0.5012) is in the legend, along with the dashed asymptotic theory sqrt(2(4-pi)) N^-1/2 (the prefactor 1.310 is correct: sqrt(2/pi)·sqrt(pi(4-pi))). An annotation gives both 95% intervals and says -1/2 lies inside both. Nothing overlaps the data, and the figure is legible. `provenance.json` cites experiment-repo 6cb94ccd with SHA-256 of mae_table.csv (7de3aa3c…) and fit.json (638e7cce…), and both match the delivered files.
+- `report/tables/table_mae.md`: its values agree with `analysis/mae_table.csv` to 6 significant digits, and its slope and intervals agree with fit.json. It also agrees with the table in the report, which rounds to 4 digits.
+- Minor point, not blocking: the report's "exact expectation" column is the exact binomial E|pi_hat - pi|, and the dashed line in the figure is its large-N normal approximation. The report footnote, the table footnote and the caption all say so.
+
+Conclusion at pass 2: the delivery meets the objective. Every required item is present and agrees with my independent reproduction, and the claims stay within what the five-point fit supports. Approved.

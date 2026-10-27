@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Multinomial logistic regression vs k-NN (k by inner CV) on Iris (OpenML 61).
+
+Outer evaluation: 10 repetitions of stratified 5-fold CV (50 paired folds).
+Both methods are fit and scored on exactly the same outer splits, so the
+per-fold accuracy differences are paired.
+
+Usage (from report/code/): python cv_compare.py --data data/iris.arff --out ../results/run_local
+Writes folds.csv (per outer fold), predictions.csv (per test case) and
+run.json (run metadata) into --out. Summary statistics: summarize.py.
+"""
+import os
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")  # single-threaded BLAS for reproducibility
+
+import argparse, hashlib, json, platform, socket, sys, time, warnings
+import numpy as np
+import pandas as pd
+import arff
+import sklearn
+from sklearn.exceptions import ConvergenceWarning
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+SEED = 20261017          # outer repeated-CV seed
+N_SPLITS, N_REPEATS = 5, 10
+INNER_SPLITS = 5
+K_GRID = list(range(1, 31))   # candidate k for the inner CV
+OPENML_MD5 = "ad484452702105cbf3d30f8deaba39a9"
+
+
+def load_iris_arff(path):
+    raw = open(path, "rb").read()
+    md5 = hashlib.md5(raw).hexdigest()
+    d = arff.loads(raw.decode("utf-8"))
+    cols = [a[0] for a in d["attributes"]]
+    df = pd.DataFrame(d["data"], columns=cols)
+    y = df.pop("class").astype(str).to_numpy()
+    X = df.to_numpy(dtype=float)
+    return X, y, cols[:-1], md5
+
+
+def make_lr(scale=True):
+    # lbfgs fits the multinomial (softmax) model for >2 classes in sklearn 1.5
+    lr = LogisticRegression(solver="lbfgs", C=1.0, max_iter=10000)
+    return make_pipeline(StandardScaler(), lr) if scale else lr
+
+
+def make_knn(inner_seed, scale=True):
+    base = make_pipeline(StandardScaler(), KNeighborsClassifier()) if scale \
+        else make_pipeline(KNeighborsClassifier())
+    inner = StratifiedKFold(n_splits=INNER_SPLITS, shuffle=True, random_state=inner_seed)
+    # GridSearchCV keeps the first (smallest) k among ties in mean inner accuracy
+    return GridSearchCV(base, {"kneighborsclassifier__n_neighbors": K_GRID},
+                        cv=inner, scoring="accuracy", n_jobs=1, refit=True)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data", required=True)
+    ap.add_argument("--out", required=True)
+    args = ap.parse_args()
+    os.makedirs(args.out, exist_ok=True)
+    t0 = time.time()
+
+    X, y, feats, md5 = load_iris_arff(args.data)
+    assert md5 == OPENML_MD5, f"ARFF md5 {md5} != OpenML md5 {OPENML_MD5}"
+    assert X.shape == (150, 4) and len(np.unique(y)) == 3
+
+    outer = RepeatedStratifiedKFold(n_splits=N_SPLITS, n_repeats=N_REPEATS, random_state=SEED)
+    rows, preds, n_conv_warn = [], [], 0
+    for i, (tr, te) in enumerate(outer.split(X, y)):
+        rep, fold = divmod(i, N_SPLITS)
+        row = {"rep": rep, "fold": fold, "n_train": len(tr), "n_test": len(te),
+               "test_idx_md5": hashlib.md5(np.sort(te).tobytes()).hexdigest()}
+        p = {"rep": rep, "fold": fold, "idx": te, "y": y[te]}
+        for scale, tag in ((True, ""), (False, "_unscaled")):
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always", ConvergenceWarning)
+                lr = make_lr(scale).fit(X[tr], y[tr])
+            n_conv_warn += sum(issubclass(x.category, ConvergenceWarning) for x in w)
+            p["pred_lr" + tag] = lr.predict(X[te])
+            row["acc_lr" + tag] = float(np.mean(p["pred_lr" + tag] == y[te]))
+            knn = make_knn(inner_seed=SEED + 1000 + i, scale=scale).fit(X[tr], y[tr])
+            p["pred_knn" + tag] = knn.predict(X[te])
+            row["acc_knn" + tag] = float(np.mean(p["pred_knn" + tag] == y[te]))
+            row["k" + tag] = int(knn.best_params_["kneighborsclassifier__n_neighbors"])
+            row["inner_acc_knn" + tag] = float(knn.best_score_)
+        rows.append(row)
+        preds.append(pd.DataFrame(p))
+        print(f"rep {rep} fold {fold}: lr={row['acc_lr']:.4f} knn={row['acc_knn']:.4f} k={row['k']}", flush=True)
+
+    folds = pd.DataFrame(rows)
+    folds.to_csv(os.path.join(args.out, "folds.csv"), index=False, float_format="%.17g")
+    pd.concat(preds).to_csv(os.path.join(args.out, "predictions.csv"), index=False)
+    meta = {
+        "hostname": socket.gethostname(),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "slurmd_nodename": os.environ.get("SLURMD_NODENAME"),
+        "slurm_job_nodelist": os.environ.get("SLURM_JOB_NODELIST"),
+        "slurm_partition": os.environ.get("SLURM_JOB_PARTITION"),
+        "python": sys.version.split()[0], "platform": platform.platform(),
+        "cpu": platform.processor() or platform.machine(),
+        "numpy": np.__version__, "sklearn": sklearn.__version__, "pandas": pd.__version__,
+        "scipy": __import__("scipy").__version__, "joblib": __import__("joblib").__version__,
+        "threadpoolctl": __import__("threadpoolctl").__version__,
+        "blas_threads_env": {v: os.environ.get(v) for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")},
+        "lr_convergence_warnings": n_conv_warn,
+        "data_md5": md5, "features": feats, "seed": SEED, "k_grid": [K_GRID[0], K_GRID[-1]],
+        "outer": f"{N_REPEATS}x stratified {N_SPLITS}-fold", "inner": f"stratified {INNER_SPLITS}-fold",
+        "folds_csv_md5": hashlib.md5(open(os.path.join(args.out, "folds.csv"), "rb").read()).hexdigest(),
+        "predictions_csv_md5": hashlib.md5(open(os.path.join(args.out, "predictions.csv"), "rb").read()).hexdigest(),
+        "wall_seconds": round(time.time() - t0, 2),
+        "finished_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    json.dump(meta, open(os.path.join(args.out, "run.json"), "w"), indent=2)
+    print(json.dumps(meta), flush=True)
+
+
+if __name__ == "__main__":
+    main()

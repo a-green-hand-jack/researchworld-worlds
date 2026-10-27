@@ -1,0 +1,26 @@
+{
+  "source": "ScienceDirect",
+  "url": "https://www.sciencedirect.com/",
+  "start_utc": "2026-10-19T21:30:16.091700+00:00",
+  "end_utc": "2026-10-19T21:30:16.780402+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/sciencedirect.headers",
+    "-o",
+    "/tmp/tmphpnlqntl/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://www.sciencedirect.com/"
+  ],
+  "exit": 0,
+  "curl_output": "403\ntext/html; charset=UTF-8\n",
+  "stderr": "",
+  "first200": "<!DOCTYPE html>\n<html lang='en-us'>\n<head>\n  <meta content=\"text/html; charset=UTF-8\" http-equiv=\"Content-Type\" >\n  <meta content=\"IE=edge\" http-equiv=\"X-UA-Compatible\" >\n  <meta content=\"1\" name=\"tdm",
+  "body_bytes": 832805
+}

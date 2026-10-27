@@ -1,0 +1,45 @@
+"""Early check of the A3 tolerance (experiment-repo 7a04f53): how reproducible is the registered truth itself?
+On a subset of A3 development configurations (code/e4_a3.py dev_configs, stats e1b, p0 = 2, seed 1), compare the
+registered rank_tavg (per-direction count, mean over checkpoints in [T/2, T]) of the float64 run with
+(a) the same run with a0 scaled by (1 + 1e-15) (a rounding-size change of the initialisation, same precision), and
+(b) the split-half difference of the time average (checkpoints in [T/2, 3T/4) vs [3T/4, T]),
+and report the per-checkpoint SD of the rank over [T/2, T].  These are floors for A3r's per-run rank error and
+for A3s's |mean difference| >= 0.5.
+Usage: python3 checks/e4_a3_truth_floor.py /hutian/experiment-repo/code > checks/e4_a3_truth_floor.json"""
+import sys, os, json, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, sys.argv[1])
+import e4_a3 as A
+
+
+def stats(r, T):
+    t = np.array(r["t"]); amp = np.array(r["log10_amp"]); rk = (amp > np.log10(A.THR)).sum(1)
+    h = t >= T / 2; q1 = (t >= T / 2) & (t < 3 * T / 4); q2 = t >= 3 * T / 4
+    return dict(rank_tavg=float(rk[h].mean()), sd=float(rk[h].std()), split_half=float(rk[q2].mean() - rk[q1].mean()))
+
+
+def one(cfg):
+    a = A.matrix_adamw(cfg)
+    b = A.matrix_adamw(dict(cfg, a0=cfg["a0"] * (1 + 1e-15)))
+    sa, sb = stats(a, cfg["T"]), stats(b, cfg["T"])
+    return dict(cfg=cfg, base=sa, perturbed=sb, pert_diff=sb["rank_tavg"] - sa["rank_tavg"],
+                registered_rank_tavg=a["rank_tavg"])
+
+
+if __name__ == "__main__":
+    cfgs = [c for c in A.dev_configs() if c["stats"] == "e1b" and c["p0"] == 2.0 and c["seed"] == 1 and c["theta"] > 0]
+    t0 = time.time()
+    with Pool(8) as p:
+        res = p.map(one, cfgs)
+    pd = np.abs([r["pert_diff"] for r in res]); sh = np.abs([r["base"]["split_half"] for r in res])
+    sd = np.array([r["base"]["sd"] for r in res])
+    json.dump(dict(source="experiment-repo 7a04f53 code/e4_a3.py matrix_adamw; dev_configs() subset stats=e1b, p0=2, "
+                          "seed=1, theta > 0 (5 rotations x 3 lam x 2 a0 = 30 runs), T = 100000, float64",
+                   numpy=np.__version__, seconds=round(time.time() - t0, 1),
+                   summary=dict(abs_pert_diff_median=float(np.median(pd)), abs_pert_diff_p90=float(np.quantile(pd, 0.9)),
+                                abs_pert_diff_max=float(pd.max()), share_pert_diff_gt_0p5=float((pd > 0.5).mean()),
+                                abs_split_half_median=float(np.median(sh)), abs_split_half_p90=float(np.quantile(sh, 0.9)),
+                                checkpoint_sd_median=float(np.median(sd))),
+                   runs=res), sys.stdout, indent=1)

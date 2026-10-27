@@ -1,0 +1,11 @@
+# Review record
+
+Inspected: assembled delivery (paper-repo f82dc749319b `report/report.md`; experiment-repo 1cf9d24c53d4 `results/`), brief and assignment at 1cf9d24c53d4.
+
+- Independent re-check (this reviewer, own download over HTTPS at revision d90ca5fe260221311c53c58e660288d3deb8d356): file listing = 6 files, sizes and SHA-256 of all 6 files equal the report table; `model.bin` API `lfs.oid` equals the local SHA-256 (dcb76c65…e6d1). Total of sizes 78,207,087 consistent.
+- Non-LFS files: the report states honestly that the API gives only git blob SHA-1 and reports the secondary blob-SHA-1 check (results/files.csv, all True).
+- Versions (huggingface_hub 2.2.0, hf_xet 1.7.0) present with provenance; HF_HUB_DISABLE_XET unset stated.
+- Xet use: evidenced by the client log (Xet Storage message and xet-read-token request only for model.bin, Xet hash in HEAD); report states no byte-level trace was taken. Adequate; I could not re-run the download with hf_xet myself.
+- Report is one page, cites its sources, no fabricated numbers.
+
+Conclusion: meets the objective; approved.

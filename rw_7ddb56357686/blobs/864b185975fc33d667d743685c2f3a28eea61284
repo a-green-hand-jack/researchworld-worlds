@@ -1,0 +1,64 @@
+# Two small computations: line and quadratic fits to 40 noisy points, and a Monte Carlo estimate of pi
+
+## 1. Straight-line fit to 40 noisy points
+
+Data: x = 0, 1, ..., 39; y = 2.5 + 0.8 x + e, with e ~ N(0, 3^2) drawn as `rng.normal(0, 3, size=40)` after `numpy.random.default_rng(227)`. Ordinary least squares; 95% confidence intervals are t-intervals with df = 38 (t = 2.0244).
+
+| parameter | estimate | std. error | 95% CI | generating value |
+|---|---|---|---|---|
+| slope | 0.7484 | 0.0387 | [0.6701, 0.8267] | 0.8 |
+| intercept | 3.9447 | 0.8769 | [2.1696, 5.7198] | 2.5 |
+
+R^2 = 0.908, residual SD = 2.825 (generating SD 3). Both CIs contain the generating values.
+
+### 1b. Quadratic fit and comparison with the line (AIC)
+
+Same 40 points (`results/data.csv`), model y = a + b x + c x^2 fitted by OLS; 95% CIs are t-intervals with df = 37 (t = 2.0262). The generating model has c = 0.
+
+| parameter | estimate | std. error | 95% CI | generating value |
+|---|---|---|---|---|
+| a | 4.9716 | 1.2718 | [2.3947, 7.5484] | 2.5 |
+| b | 0.5863 | 0.1509 | [0.2806, 0.8919] | 0.8 |
+| c | 0.00416 | 0.00374 | [-0.00342, 0.01173] | 0 |
+
+Residual SD = 2.816, R^2 = 0.911 (line: 2.825, 0.908). The CI for c contains 0 (p = 0.273, equivalent F-test for c = 0: F = 1.236); the CIs for a and b contain the generating values. a, b and c are strongly correlated (covariance matrix in `results/fit_quadratic.json`, `cov_abc`), so the shift of a and b relative to the line fit is not independent evidence of anything.
+
+AIC = 2k - 2 log L with the Gaussian log-likelihood at the MLE variance RSS/n and k = number of coefficients + 1 (the error variance); the same constant enters both models, so differences are exact.
+
+| model | k | RSS | AIC | AICc | Akaike weight (AIC) |
+|---|---|---|---|---|---|
+| line | 3 | 303.27 | 200.55 | 201.21 | 0.585 |
+| quadratic | 4 | 293.47 | 201.23 | 202.37 | 0.415 |
+
+**Which model the data support:** the straight line, but only mildly. AIC(quadratic) - AIC(line) = 0.69 (AICc: 1.16), i.e. the line is preferred by less than 2 AIC units, the usual threshold for a meaningful difference. The extra parameter lowers RSS by only 3.2% (303.3 to 293.5), which does not pay for the penalty of 2 AIC units. Together with the CI of c including 0, this gives no support for curvature; it is not strong evidence either way, and the data are consistent with the true (linear) generating model.
+
+![Data, OLS line with 95% confidence band, quadratic fit, and generating line](figures/fit.png)
+
+*Figure 1. The 40 simulated points, the OLS line with its 95% confidence band, the quadratic fit, and the generating line.*
+
+## 2. Monte Carlo estimate of pi (`simulate.py`)
+
+`code/simulate.py` (the unmodified script supplied in the initial state) was run once in full as `python3 -u simulate.py --out results.json`: 90 chunks x 60,000,000 points, chunk i seeded `random.Random(227+i)`, wall time 750.5 s. The estimate is the mean of the 90 chunk estimates; the interval it prints is mean +/- 1.96 * sd / sqrt(90) (normal quantile).
+
+| quantity | value |
+|---|---|
+| estimate of pi | 3.1415628 |
+| printed 95% interval | [3.1415193, 3.1416063] |
+| pi = 3.14159265... inside the interval? | **yes** |
+
+The full printed log is `results/simulate.log`; the numbers are in `results/results.json`. `results/simulate_partial_aborted.log` is an abandoned earlier attempt (67 of 90 chunks) and is not used anywhere in this report.
+
+## Code and provenance
+
+The pi simulation was not rerun for the quadratic extension; Section 2 is the previously delivered run, unchanged.
+
+| number | produced by | output |
+|---|---|---|
+| line fit (Section 1) | `code/fit_line.py` (seed 227) | `results/fit.json`, `results/data.csv` |
+| quadratic fit and AIC comparison (Section 1b) | `code/fit_quadratic.py` (same data, `results/data.csv`) | `results/fit_quadratic.json` |
+| figure (line and quadratic) | `code/figures/make_fit_figure.py` | `report/figures/fit.png` |
+| pi estimate (Section 2) | `code/simulate.py`, run as `python3 -u simulate.py --out results.json` (chunk i seeded `random.Random(227+i)`) | `results/results.json`, `results/simulate.log` |
+
+All numbers above are quoted from `results/fit.json` (Section 1), `results/fit_quadratic.json` (Section 1b; RSS, AIC and weights as stored there, percent RSS reduction is read off the two RSS values) and `results/results.json` (Section 2); the report computes nothing itself.
+
+Software versions, quoted from `results/environment.txt`: Python 3.11.2 (Linux x86-64); `code/fit_line.py` used numpy 2.4.6 and scipy 1.17.1, and re-running it on these versions reproduces `results/fit.json` and `results/data.csv` byte-for-byte; `code/simulate.py` uses only the standard library (the job did not record its own interpreter string, but it ran in the same environment). The figure script `code/figures/make_fit_figure.py` ran in that environment, where matplotlib 3.11.2 is installed; `figtab-repo` has not recorded its own version string.

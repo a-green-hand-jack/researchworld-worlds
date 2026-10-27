@@ -1,0 +1,560 @@
+# Study plan: when do JEPAs collapse, and what do the heuristics change?
+
+Owner: `story-repo` (plan). Status: **v1.2**. Builds on v0.1 (decisions answering story-repo#3,
+#4, #5), the feasibility judgement of v0.1 (`idea-review-repo` `feasibility.md` v2 at e79c3d3,
+answering idea-review-repo#2) and the context answer to idea-repo#2 (`idea-repo` brief v3 §5.5-5.6,
+`refs/ijepa_recipe.md`, at 45cdf92). New in v1: prior-work status of every prediction and what is
+credited (section 2), the regime statement against Tian 2021, the E3 baseline recipe and grids
+(section 3), the comparisons and prediction baselines (section 4). Still *open*: the exact E3 grid,
+fixed after the E3 pilot and sent to `idea-review-repo` for a go/no-go. **v1.1** records the E3
+decisions taken on the pilot (story-repo#6, experiment-repo 6b6cbda): where E3 runs, the sweep
+length, Arm T's normalisation and how masking is registered (section 3, "E3 after the pilot").
+**v1.2** records `idea-review-repo`'s go on that grid (`feasibility.md` v3 at 56f3f52, answering
+idea-review-repo#5): Ibex GPUs under stated job conditions, a fallback trigger, the exact meaning
+of "20 of 50" and four conditions before any sweep launches (section 3, items 2, 3 and 8). The objective (`story-repo`#1) wins over this plan wherever they differ.
+The work assignment is in `assignment.json`; section 8 says which position delivers each requirement.
+
+## 0. What the objective requires (checklist this plan answers)
+
+| id | requirement (from the objective) | answered by |
+|----|----------------------------------|-------------|
+| O1 | A **theory**, built on the drive-vs-decay insight near the collapsed solution, that **explains** when JEPAs collapse | Q1-Q2, section 2 |
+| O2 | The theory **predicts** collapse and how much rank survives | Q2, P1-P2 |
+| O3 | The theory says **what the common heuristics change**: predictor design and scale, masking ratio, target-encoder update (plus stop-gradient and weight decay, which are part of the same picture) | Q3, P3-P7 |
+| O4 | An **empirical test** of the theory | section 3, E1-E4 |
+| O5 | A **complete NeurIPS 2026 paper** to the venue's submission requirements: LaTeX in the NeurIPS template and compiled PDF | section 6, `paper-repo` + `venue-repo` |
+| O6 | The **code and experimental results** the claims rest on | `code/`, `results/` |
+| O7 | No paper, preprint, code release or written work first published **after 1 September 2026** | section 7 |
+
+Brief numbering (idea-repo `brief.md`): O1 = R1, O2 = R2 + R4, O3 = R3a-c (+ weight decay),
+O4 = R5, O5 = R6, O6 = R7, O7 = R8. The three named heuristic families (predictor, masking,
+target update) are **must-have**; weight decay is **should-have** (it is the explicit decay knob
+and the pilot shows it changes the criterion, so it is in E1/E2 and in E3 if the grid allows).
+
+## 1. Research questions
+
+- **Q1 (mechanism).** Near the collapsed solution (small embeddings), how does the JEPA loss
+  act on each direction of representation space? Can its gradient be split into a *driving
+  force* that grows a direction and a *decay effect* that shrinks it, and what sets each?
+- **Q2 (prediction).** Does the sign of (drive − decay), evaluated early in training, predict
+  (a) whether training collapses completely and (b) how many directions survive, i.e. the rank
+  the representation develops? How accurate is the prediction, and where does it fail?
+- **Q3 (heuristics).** Through which of the two terms does each heuristic act: predictor
+  (presence, scale/initialisation, learning rate, width/depth), masking ratio, target-encoder
+  update (stop-gradient vs. none, EMA momentum), weight decay? Does the theory predict the
+  direction and the location of each heuristic's effect on collapse and rank?
+- **Q4 (scope).** How far does a theory derived for a tractable model carry to deep nonlinear
+  JEPAs (I-JEPA-style ViT), and what changes there (nonlinearity, normalisation layers, finite
+  learning rate, coupling between directions)?
+
+## 2. Theoretical programme (to be derived, proved and numerically checked by `experiment-repo`; written up by `paper-repo`)
+
+The sketch below fixes the *questions and candidate predictions* the analyses must settle; it is
+not a result. Every statement has to be derived properly, its assumptions stated, and checked
+against simulation before it becomes a claim.
+
+**Model M1 (linear JEPA).** Data $x\in\mathbb R^n$; context view $x_c$ and target view $x_t$
+(e.g. masked copies of $x$). Online encoder $W\in\mathbb R^{d\times n}$, target encoder
+$\bar W=\mathrm{sg}(\mathrm{EMA}_\tau(W))$, predictor $P$ (linear, optionally deep linear).
+Loss $L=\tfrac12\mathbb E\|PWx_c-\bar Wx_t\|^2+\tfrac{\lambda}{2}(\|W\|^2+\|P\|^2)$.
+Statistics: $\Sigma_c=\mathbb E[x_cx_c^\top]$, $\Sigma_{tc}=\mathbb E[x_tx_c^\top]$.
+
+**Key identity.** $L=\tfrac12\|Pz\|^2-\langle Pz,\mathrm{sg}(\bar z)\rangle+\text{const}$, so the
+gradient splits *exactly* into a **drive** term (from $-\langle Pz,\bar z\rangle$) and a **decay**
+term (from $\tfrac12\|Pz\|^2$ plus weight decay). This split is defined for any architecture
+and is the basis of the diagnostic in E3.
+
+**Mode dynamics (candidate, to verify).** Under a common eigenbasis for $\Sigma_c,\Sigma_{tc}$
+(holds e.g. for stationary signals with random masking, Fourier modes) and an aligned predictor,
+direction $k$ with encoder strength $w_k$, target strength $\bar w_k$, predictor gain $p_k$,
+context variance $\sigma_k$ and context-target covariance $c_k$:
+
+- $\dot w_k = p_k c_k\,\bar w_k - (p_k^2\sigma_k+\lambda)\,w_k$  (drive − decay)
+- $\dot p_k = \alpha\,[\,w_k(c_k\bar w_k - p_k\sigma_k w_k) - \lambda p_k\,]$  ($\alpha$ = predictor/encoder LR ratio)
+- $\dot{\bar w}_k = \beta\,(w_k-\bar w_k)$, $\beta=(1-\tau)/\eta$ (stop-grad copy: $\beta\to\infty$)
+
+Near collapse ($w_k$ small) the growth rate of direction $k$ is $g_k(p)=p\,c_k-p^2\sigma_k-\lambda$,
+while the predictor is driven only at rate $O(w_k^2)$ and otherwise decays. Candidate predictions
+the derivation must confirm, correct or reject:
+
+- **P1 (survival).** Direction $k$ can grow only if $\max_p g_k(p)=c_k^2/(4\sigma_k)-\lambda>0$
+  and the predictor gain sits in the window where $g_k>0$ long enough; complete collapse when no
+  direction qualifies.
+- **P2 (rank).** Rank developed ≈ number of directions that escape; in the quasi-static
+  predictor limit, $\#\{k:\,c_k^2/(4\sigma_k)>\lambda\}$; with a decaying/slow predictor, fewer
+  (a race between growth of $w_k$ and decay of $p_k$, which is why collapse is decided early).
+  At $\lambda=0$, growth rates still differ by orders of magnitude, so finite training gives an
+  effective rank set by the same ordering.
+- **P3 (stop-gradient).** Letting gradient flow into the target adds
+  $p c_k-\sigma^{t}_k$ to $g_k$; by Cauchy-Schwarz the total is $\le0$, so every direction
+  decays: collapse without stop-gradient.
+- **P4 (predictor).** With no predictor ($p\equiv1$) growth needs $c_k>\sigma_k+\lambda$, which
+  fails when context and target are equally scaled; a learnable predictor makes $g_k>0$ possible
+  for $0<p<c_k/\sigma_k$. Predictor scale, initialisation and learning rate move $p_k$ through
+  or out of the growth window (too small: drive loses to weight decay; too large: self-decay
+  $p^2\sigma$ wins); width/depth act through the effective gain and its dynamics.
+- **P5 (masking).** The masking scheme sets $c_k$ and $\sigma_k$ per direction, so the mask ratio
+  moves directions across the threshold. The hypothesis to test is that **surviving rank follows the
+  computed per-direction profile of $c_k^2/\sigma_k$ as a function of the mask ratio** (Model M2). It
+  does *not* presume that rank falls monotonically. With disjoint Bernoulli context and target masks
+  the cross-covariance scales like $m(1-m)$ while the context variance scales like $(1-m)$ (brief
+  §5.6), so the profile may be non-monotone. The derivation states its shape, including whether
+  extreme masking collapses, and E2/E3 test that shape.
+- **P6 (EMA).** In the linearised system with an $O(1)$ predictor, the EMA changes the *growth rate*
+  but not the *sign*: the survival threshold is the same as for stop-grad. Its effect on collapse
+  then comes through the race with predictor decay and weight decay, i.e. through time scales. The
+  derivation must reconcile this with Tian 2021, where a slower EMA *enlarges the collapse basin* in
+  the quadratic-drive regime. The expected reconciliation is that both are time-scale effects
+  entering through the race. E1 tests P6 in both regimes (see "Regime" below).
+- **P7 (weight decay).** Raises the threshold uniformly; predicted rank decreases stepwise in
+  $\lambda$ at the values $c_k^2/(4\sigma_k)$.
+
+**Model M2 (stationary random field + random patch masking).** Gaussian fields with a power-law
+spectrum $\propto|f|^{-\gamma}$ (natural images: $\gamma\approx2$), random block/patch masking at
+ratio $r$. Then $c_k,\sigma_k$ per Fourier mode are computable in closed form, giving predicted
+phase boundaries in $(r,\lambda,\alpha,\tau)$ and which frequencies survive. Tools: masked moment
+identities (Bisulco et al. 2025; Dong et al. NeurIPS 2025) and the masked-PLS threshold scaling
+(Gjølbye et al. 2026); see brief §5.2 G3.
+
+**Prior-work status of the predictions (brief §5.6, decided in v1).** $g_k(p)=pc_k-p^2\sigma_k-\lambda$
+is the polynomial of Tian, Chen & Ganguli 2021, $\Delta_j=\tau p-(1+s^2)p^2-\eta$, with $c\leftrightarrow\tau$
+and $\sigma\leftrightarrow1+s^2$. It also appears as Littwin et al. 2024's $\rho=c/\sigma$ and as
+Halvagal et al. 2023's $\lambda_m(1-\lambda_m)$. The paper therefore **claims no novelty** for the
+following, and the theory work re-derives them only as consistency checks, with citations:
+
+- P1's static threshold $c^2/(4\sigma)>\lambda$ (Tian 2021; Wang et al. 2021; PEIRA 2026);
+- P3, collapse without stop-gradient (Tian 2021; Halvagal 2023; Ponce et al. 2025);
+- P7's weight-decay threshold (Tian; Wang; PEIRA; Kobayashi et al. 2024);
+- P2's ordering of directions by growth rate at $\lambda=0$ (Saxe 2014; Simon 2023; Littwin 2024);
+- P4's growth window $0<p<c/\sigma$ (Halvagal 2023).
+
+The contributions the plan aims at, where the evidence supports them (the novelty statement of
+brief §5.6):
+
+- **N1.** The first-order-drive regime and the time-dependent race criterion, computed from data
+  statistics, initialisation scales and hyperparameters (P1-P2).
+- **N2.** Predictor init scale, width and depth acting as an effective gain, with the predicted
+  location of the transition (P4; gap G2).
+- **N3.** The masking ratio through anisotropic $c_k,\sigma_k$ (P5; gap G3).
+- **N4.** EMA as a time-scale effect, stated as a linear-stability result and reconciled with Tian's
+  basin result (P6; gap G4).
+- **N5.** The criterion tested as a *rank* predictor in neural JEPAs (gaps G5-G6).
+
+LeJEPA (2025) is cited only as the explicit-regulariser alternative.
+
+**Regime (decided in v1; reviewers will read the theory against Tian 2021).** Tian's drive is
+*quadratic* at the origin, because the predictor is small together with the encoder. With weight
+decay the collapsed point is then linearly stable, and survival is a basin question. The plan's
+regime is different: the predictor is $O(1)$ (as at a standard initialisation) while the encoder is
+small, so the drive is *first order*. In Tian's invariant
+$WW^\top=\alpha_p^{-1}W_p^\top W_p+e^{-2\eta t}C$ this is the *unbalanced* initialisation
+($C\gg0$), which Tian sets aside by analysing $C\to0$. The theory work must:
+
+1. state which regime each result covers;
+2. show what the criterion reduces to in the balanced limit, i.e. recover Tian's threshold and basin
+   picture or say where it differs;
+3. say which regime the neural networks of E3 start in, measured from the predictor gain at
+   initialisation.
+
+E1 runs both initialisations (balanced small predictor vs. $O(1)$ predictor) so the two regimes are
+compared directly.
+
+**Pilot evidence (experiment-repo `pilot/`, commit 262f42d, working material, one seed).** At
+$\lambda=0$ the final rank equalled the number of directions in the initial growth window; with
+$\lambda>0$ the collapsed point is locally stable and the outcome is set by a race (the predictor
+decays into or out of the window while directions grow).
+
+**Headline criterion (decided in v0.2).** The paper's survival/rank criterion is the
+**time-dependent (race) criterion**, e.g. integrated growth exponent $\int_0^T g_k(p_k(t))\,dt$
+against $\log(1/w_{k,0})$ along the predictor trajectory; the static window count
+$\#\{k: c_k^2/(4\sigma_k)>\lambda\}$ is stated only as a bound. P1/P2 are restated accordingly by the
+derivation; the plan does not presume the exact form. The criterion must be **computable from data
+statistics ($c_k,\sigma_k$), initialisation scales and hyperparameters alone** (brief R2: predict
+rank from data and set-up quantities), so that forward predictions do not use the run's own
+trajectory.
+
+**Optimiser.** The derivation is for gradient flow / SGD. Practice uses AdamW, which rescales the
+per-parameter growth and decouples weight decay. The theory work states what changes under a
+diagonal (Adam-type) preconditioner: at least whether the *sign* condition (drive vs. decay) is
+preserved while the *rates* change, and how decoupled weight decay enters. E3 has an SGD arm
+(section 3) so a mismatch can be attributed to the optimiser or to nonlinearity.
+
+**Normalisation and the collapsed solution in nonlinear networks.** For a nonlinear encoder the
+collapsed solution is an input-independent (constant) embedding, and the theory concerns the
+input-dependent part (the centred embedding covariance) around it. I-JEPA normalises target
+outputs with LayerNorm and the ViT has internal LayerNorms, so the "small fluctuations" regime may
+be reached differently; E3 has an arm without target output normalisation, and C5 reports what
+normalisation changes.
+
+**M2 priority.** M1 (+ its numerical verification) is the core and must not wait for M2. M2 is
+second priority: exact for the circulant (torus) case; for non-circular patch masking it is a
+derived per-mode approximation validated by E2, stated as such (not cut, not claimed exact).
+
+**Deliverable of the theory work.** Precise statements (propositions/theorems) with assumptions,
+proofs (appendix), a list of what is exact vs. approximate, and code that computes the predicted
+growth rates, survival criterion and rank from given statistics and hyperparameters. For each
+proposition, the derivation states the prior result it reduces to or extends, using the
+correspondence above and the list in section 4.
+
+## 3. Empirical programme (owned by `experiment-repo`)
+
+**Tiers and gating.** Tier A = E1 (exact/near-exact model, CPU). Tier B = E2 (synthetic, linear +
+small nonlinear, CPU). Tier C = E3 (neural JEPA on a standard image benchmark; brief R5 requires
+it), on `local-compute` CPUs. Any run longer than a few minutes is a `local-compute` job, not a
+turn-shell process. No ImageNet-scale claims.
+
+**Go (feasibility v2):** E1, E2 and the E3 pilot now. **E3 sweeps** start after the pilot: config
+and metric code (rank, std, force decomposition, thresholds) are frozen, and the grid with measured
+per-run time is posted **once** to `idea-review-repo` for a bounded go/no-go. v1 said no
+must-have result may depend on Ibex GPUs. v1.1 revised this subject to that go/no-go, and
+feasibility v3 gave it (GO with conditions); see "E3 after the pilot" below.
+
+**Pre-registration and forward predictions (brief R4).** Before each sweep runs,
+`experiment-repo` commits, under `results/<exp>/prediction.json` and in a commit preceding the
+run results:
+1. the **definitions**:
+   - *Effective rank.* The theory's quantity is a **centred RankMe**: the exp-entropy of the
+     normalised singular values of the *centred* embeddings. Centring removes the constant
+     (collapsed) component; the paper says this is a centred variant. **Raw RankMe**, as published
+     (uncentred N x K matrix, $\varepsilon\approx10^{-7}$; Garrido et al. 2023), is reported
+     alongside for comparability.
+   - *Thresholded count.* Default: eigenvalues of the centred embedding covariance
+     $\ge 10^{-3}\times$ the largest.
+   - *Data.* Both are computed on $N\ge10^4$ held-out images (the CIFAR-10 test set) at stated
+     checkpoints.
+   - **Complete collapse.** Default: total centred variance below $10^{-6}\times$ its value at
+     initialisation, or centred RankMe $<1.5$.
+   - **Dimensional collapse** vs. **healthy.** Default: thresholded count below vs. above a stated
+     fraction of the embedding dimension.
+   - *Space measured (E3).* Per-direction quantities use the covariance of the **token**
+     embeddings, which is the space the loss acts on. Rank is reported for the token embeddings and
+     for the mean-pooled embedding, of the target encoder (which I-JEPA evaluates) and of the
+     online encoder. The pre-registration names which one each prediction is about;
+2. the **prediction**: for E1/E2 the predicted rank / boundary from the theory; for E3 the
+   predicted **direction** of each heuristic's effect and the predicted **location of the
+   transition** (critical weight decay, predictor LR multiplier or init scale, mask ratio, EMA
+   rate), computed from statistics of the network **at initialisation** under the masking scheme
+   and the hyperparameters, never from the run's own trajectory;
+3. the **success criterion** (defaults: a location prediction succeeds if the observed transition,
+   the midpoint between the last healthy and the first collapsed grid value, lies within a factor
+   of 2 of the prediction for log-scaled knobs, or within $\pm0.1$ for mask ratio; a direction
+   prediction succeeds if the sign of the effect on RankMe holds in at least 2 of 3 seeds at each
+   adjacent grid pair; E1 rank predictions are scored by exact-match fraction and mean absolute
+   rank error).
+`experiment-repo` may change the defaults before a sweep, with the reason; never after seeing its
+results. Failed predictions are reported.
+
+All experiments: $\ge3$ seeds per configuration (E1: $\ge5$, it is cheap), mean with spread (std or
+95% CI). Results are machine-readable files under `results/`, each naming the command, config,
+inputs and seed that produced it. Dependencies are pinned to versions released **on or before
+2026-09-01** (e.g. torch $\le$ 2.13.0; the PyPI default 2.14.x is after the cutoff), with the pin
+file in `code/`.
+
+- **E1 Linear JEPA, theory vs. simulation.** Exact population gradient flow and finite-batch SGD
+  on M1 with synthetic data of known spectra, small initialisation. Measure per-direction
+  $w_k(t),p_k(t)$ and compare with the theory; sweep $\lambda$, predictor LR ratio $\alpha$,
+  predictor init scale, $\tau$, stop-grad on/off, predictor present/absent, deep vs. shallow
+  linear predictor, mask ratio (through $c_k,\sigma_k$). Report predicted vs. measured growth rates
+  ($R^2$), predicted vs. measured rank, and phase diagrams with the predicted boundary. Relax the
+  aligned-predictor / common-eigenbasis assumptions (random predictor init, non-commuting
+  statistics) to show where the reduction holds. Include an Adam-type-update arm for the optimiser
+  statement of section 2. Include the **two regimes** of section 2: a balanced small predictor
+  (Tian 2021's setting; check that its threshold $\eta>\tau^2/(4(1+s^2))$ and basin picture are
+  reproduced) and an $O(1)$ predictor (the plan's first-order regime). Run the EMA sweep in both
+  regimes (P6).
+- **E2 Masking model M2 (second priority).** Linear and small nonlinear (MLP / small conv) JEPAs on
+  random-field data with patch masking; sweep mask ratio x weight decay (and predictor LR);
+  compare surviving frequencies and rank with the M2 prediction (exact on the torus; approximate
+  otherwise).
+- **E3 Neural JEPA on CIFAR-10 (I-JEPA-style small ViT, CPU).** Encoder: a small ViT (e.g. width
+  128, depth 4-6, patch 4, 64 tokens) with a transformer predictor and block masking on patch
+  tokens; measured cost 1.6-2.4 min/epoch on 8 CPUs at batch 256 (feasibility v2). Describe it as a
+  small ViT, not ViT-Tiny. Data: CIFAR-10, pre-fetched (Hugging Face or OpenML) into storage that
+  `local-compute` jobs read, since they have no network.
+  - **Baseline (decided in v1).** The official I-JEPA recipe (Assran et al. 2023, official code at
+    52c1ae95, read by `idea-repo` in `refs/ijepa_recipe.md`), scaled to 32x32 as that file's §C
+    suggests. The paper labels it "our scaling of the I-JEPA recipe", not a published 32x32 recipe.
+    `experiment-repo` may change a value after the pilot, before the sweeps, recording the reason.
+
+    | item | baseline value |
+    |---|---|
+    | tokens | patch 4, an 8x8 grid of 64 tokens |
+    | target masks | 4 blocks, scale (0.15, 0.2), aspect (0.75, 1.5) |
+    | context mask | 1 block, scale (0.85, 1.0), target blocks removed; `min_keep` ≈ 4 |
+    | augmentation | RandomResizedCrop (0.3, 1.0) only |
+    | predictor | narrow ViT: width 64 (a bottleneck, as I-JEPA's 384 for wider encoders), depth 3-4, mask tokens with positional embeddings |
+    | target | LayerNorm over features (no affine) on the target-encoder output |
+    | loss | **MSE**, since the theory is for squared loss; the official code uses smooth-L1, and the paper states the choice |
+    | optimiser | AdamW, linear warmup over the first ~13% of the full schedule (the recipe's 40 of 300 epochs), then cosine; peak lr 3e-4 at batch 256 |
+    | weight decay | cosine 0.04 → 0.4, with no decay on biases or norm parameters |
+    | EMA | linear 0.996 → 1.0 over the full schedule |
+
+    **Short runs are prefixes of the full-length schedule.** Every schedule (lr, weight decay,
+    EMA) is defined over the full-length run, and a sweep run is its first epochs: v1.1 uses 20 of 50,
+see below. The
+    early dynamics, where collapse is decided, are then the same as in the full-length runs that
+    confirm the outcome.
+  - **Arm P ("practice")**: AdamW, I-JEPA target normalisation, the recipe's schedules. One factor
+    at a time around the shared baseline. Each factor takes about 2-3 off-baseline values, chosen
+    from the pre-registered prediction to span the transition and anchored on practice's grids
+    (brief §5.5). This is about 20 configs in total; the pilot's measured time and the go/no-go of
+    `idea-review-repo` set the final grid. Factors:
+    - **Must-have, predictor:** depth (from 1 up to 6), width (bottleneck below vs. equal to the
+      encoder width), LR multiplier (e.g. 0.1 to 10), init scale.
+      - In I-JEPA a predictor-free model is undefined: target positions are absent from the
+        context, so something must map context to target positions. Predictor *presence* is
+        therefore tested in E1/E2. E3's minimal case is the depth-1 predictor.
+    - **Must-have, masking:** the amount masked, varied through target-block scale and number of
+      blocks (practice: 1 vs. 4 blocks) and context scale (practice: 0.4 vs. 0.85), reported as the
+      effective fraction of tokens masked. The predicted shape comes from $c_k,\sigma_k$ computed
+      for the actual mask distribution (P5) and may be non-monotone.
+    - **Must-have, target update:**
+      - no stop-gradient;
+      - stop-grad copy ($\tau=0$);
+      - constant EMA $\tau\in\{0.99, 0.999\}$;
+      - frozen random target ($\tau=1$);
+      - the baseline schedule 0.996 → 1.
+      (Practice's grid is $\{0,0.9,0.99,0.996,0.999,1\}$; add 0.9 if the budget allows.)
+    - **Should-have, weight decay:** 0, a fixed value, and the baseline ramp, plus a large value
+      predicted to collapse.
+  - **Arm T ("theory-aligned")**: SGD with momentum, no target output normalisation, constant
+    LR. Baseline + weight-decay sweep + predictor (LR or init scale) sweep, where the theory gives
+    quantitative thresholds. Comparing arms P and T separates optimiser/normalisation effects from
+    nonlinearity (C5).
+  - Size (feasibility v2 estimate, to be replaced by the pilot's measured time): Arm P ~20
+    distinct configs + Arm T ~8-10, x 3 seeds x ~8 epochs (~13 min/run at width 128, depth 4),
+    + ~10 intervention runs + 2-3 full-length runs (~100 epochs, ~2.7 h each); about 20-25
+    job-hours on 8 CPUs, run 2-3 jobs in parallel. One-factor-at-a-time, not a full cross. If it
+    does not fit, cut in this order: Arm T factor sweeps to baseline + one factor; then C4
+    interventions; never the must-have Arm P factors.
+  - **Optional extension (no claim waits on it):** ViT-Tiny (192, 12) on Ibex GPUs for the
+    baseline and one sweep; submit one speculative array once the pilot code exists, track it,
+    use it only if it starts.
+  - **E3 after the pilot (v1.1; story-repo#6; pilot and grid at experiment-repo 6b6cbda,
+    `results/e3_pilot/summary.json`, `code/e3_grid.py list`).** These decisions supersede the size
+    estimate above.
+    1. **Grid.** 34 configs x 3 seeds = 102 runs, one factor at a time: Arm P has 21 configs and
+       Arm T 13, as listed by `code/e3_grid.py`. The grid then adds about 10 intervention runs
+       (C4) and 3 full-length runs with the probe: baseline P, baseline T and one collapsing
+       config.
+    2. **Sweep length.** Each sweep run is the first **20 epochs of a 50-epoch schedule** (3900
+       steps). The full-length runs are those 50 epochs. Reason: 8 of 100 epochs lay inside the
+       13-epoch warmup, and the pilot baseline's rank was still rising at 5 epochs.
+       - *Definition (feasibility v3).* A sweep run stops at epoch 20 of the 50-epoch schedule,
+         so its lr, weight decay and EMA at the stop are those of epoch 20 of the 50-epoch run.
+       - The pre-registered predictions and thresholds of `prediction.json` (horizon rule,
+         critical wd, signs) are stated for that horizon, epoch 20.
+       - Probe accuracy and every full-length claim are about the 50-epoch runs only.
+       - *Re-runs.* One whole-grid re-run (~7 GPU-h) is affordable; several are not. Freeze
+         before sweeping.
+    3. **Where E3 runs: Ibex GPUs — GO** (feasibility v3, 56f3f52). v2's no-go rested on
+       `sbatch --test-only` estimates. These proved wrong for short jobs: the six E3 pilot jobs
+       waited 2-4 min (`sacct`, one evening, limits <= 2 h).
+       - *Job shape (condition of the go).* Independent, resumable per-config jobs, 3 seeds packed
+         per GPU, submitted as an array, each with a time limit <= 2 h; never one long job.
+       - *Measured.* 0.16 s/step with 3 runs packed per V100 or RTX 2080 Ti, about 7 GPU-hours for
+         the grid and about 10 GPU-hours with interventions and full-length runs; pilot jobs
+         started within minutes.
+       - *Against CPU.* `local-compute` measured 0.75-10 s/step, so the grid alone would take
+         about 80 job-hours.
+       - *Order.* Arm P's must-have factors are submitted first.
+       - *Fallback trigger.* Start the CPU fallback **in parallel**, without cancelling Ibex, if
+         either (a) no must-have Arm P job has started 60 min after submission, or (b) fewer than
+         half of the submitted must-have jobs have finished 12 h after the first start. Ibex
+         becoming unavailable also triggers it.
+       - *Fallback scope.* It is marginal: at the measured 10 s/step under host load, 54 runs x
+         1560 steps is ~240 h. So it covers a priority subset only, in this order: predictor,
+         target update, masking, then wd. The factor extremes with 3 seeds go first.
+       - *Fallback schedule.* The schedule is scaled to the short horizon (warmup at the same
+         fraction), not a prefix cut inside the warmup. That changes the horizon, so those cells
+         get their own predicted counts from the unchanged horizon rule, committed before they
+         run.
+       - *Labelling.* Every cell says which resource and which horizon it ran at, in the results
+         and in the paper.
+       - *Cut order*, unchanged: Arm T factor sweeps, then C4 interventions; never Arm P's
+         must-have factors.
+    4. **Arm T as run.** SGD with momentum 0.9, constant lr, stop-grad copy target. It also has no
+       target LayerNorm, **no predictor LayerNorm**, and weight decay on **all** parameters,
+       norm gains included. The pilot found that with an undecayed encoder-output LayerNorm gain
+       the output scale is a flat direction. This normalisation finding is part of C5.
+    5. **Scoring.**
+       - Complete collapse is scored on total centred variance as well as on rank. The no-stop-grad
+         pilot run collapsed in scale (variance fell to 6.8e-4 of its initial value) while the
+         scale-free RankMe stayed at 53.7.
+       - Frozen-target runs are scored on the **online** encoder.
+    6. **Masking registration (must-have, R3b/R4).** The linear M2 proxy leaves the order of the
+       mask settings undetermined (`results/e3/mask_stats.json`). The forward masking prediction
+       of E3 therefore comes from the **step-0 force decomposition under each mask setting** (the
+       predicted count of the horizon rule). For each mask setting against the baseline,
+       `prediction.json` registers either a sign or, where the predicted counts are within their
+       seed spread, "no predicted difference" as a testable null. A masking factor left
+       unregistered would make C3b exploratory only in E3.
+    7. **Disclosure.** The horizon rule was written after the pilot and checked on it; the paper
+       says so. It is applied unchanged to the sweeps.
+    8. **Before any sweep launches (conditions of the go, feasibility v3).**
+       1. `results/e3/prediction.json` is committed first, in a commit preceding every sweep
+          result. It holds a sign or an explicit "no predicted difference" null, with its
+          tolerance, for **every** mask setting (item 6).
+       2. Code and metric definitions are frozen at a recorded commit. Every run result carries
+          its config, seed, code commit and package versions.
+       3. The Ibex environment is pinned to releases on or before 2026-09-01 (feasibility names
+          torch <= 2.13.0), and the pin is checked on Ibex.
+       4. Arm P and Arm T are reported as **separate arms in every table and figure**. Arm P is
+          AdamW with LayerNorm; Arm T is plain SGD and the only direct test of the gradient-flow
+          theory. Arm P results are tests of the theory's transfer to practice, and C5 reads the
+          gap between the arms.
+       - A failed prediction is reported as failed.
+  Measurements:
+  1. **Force decomposition** (early-training **diagnostic**, not a forward prediction): in the
+     eigenbasis of the centred embedding covariance, the first-order change of each eigenvalue
+     under the drive gradient and the decay gradient separately (the exact split of section 2),
+     under the optimiser actually used, giving measured $g_k$ per direction. Also recorded: the
+     predictor's gain at initialisation, which decides the regime of section 2.
+  2. Collapse/rank trajectory, over training: embedding std, the sorted log spectrum, centred and
+     raw RankMe, and the thresholded count (brief §5.5 conventions).
+  3. Downstream: a linear probe (and k-NN) **on the full-length runs only**, since short runs are
+     uninformative for accuracy.
+     - *Probe.* Frozen, mean-pooled target-encoder features. Logistic regression or a linear head
+       trained on the CIFAR-10 train set and tested on the test set, over $\ge3$ seeds. The paper
+       states the probe and its training budget (brief §5.5).
+     - *References.* The full-length baseline is the reference accuracy and a random-initialisation
+       encoder is the floor.
+     - *No published anchor.* `idea-repo` found no verified published accuracy for a comparable
+       small-ViT I-JEPA on CIFAR-10. The paper says so, and may quote C-JEPA's ViT-T (22.1% linear
+       on IN-1K at 100 epochs) only as context for why absolute accuracy is low at small scale. The
+       paper's claims are about collapse and rank, not accuracy. LiDAR (Thilak et al. 2024) reports
+       that I-JEPA's best accuracy is not at maximal rank, and the paper does not claim otherwise.
+  Tests: (i) **forward**: the pre-registered direction/location predictions per heuristic;
+  (ii) **diagnostic**: does the early count of directions with measured drive > decay match the
+  final rank, and does each heuristic move drive/decay as derived (P3-P7)? (iii) **interventions**:
+  rescue a collapsing configuration by the change the theory prescribes (e.g. predictor LR/scale,
+  weight decay), and break a working one by the converse.
+- **E4 Accuracy of the prediction.** Across all E1-E3 runs: rank correlation and $R^2$ of
+  predicted vs. measured growth rates, collapse/no-collapse classification accuracy, rank error,
+  success rate of the pre-registered predictions; where the theory fails, why (nonlinearity,
+  normalisation, optimiser, finite LR, coupling between directions).
+
+Collapse is decided early, so sweeps use short runs for the collapse/rank question; the full-length
+runs confirm that the early outcome holds at the end and give probe accuracy.
+
+## 4. Comparisons
+
+### Against prior accounts
+
+The list comes from brief §5.1-5.3, with every v1 date on or before 2026-09-01. The theory work
+states each relation as a proposition or remark, and the related-work section states it in prose.
+No novelty is claimed for a prediction that §5.6 marks as established.
+
+| prior account | what it establishes | what the paper must show relative to it |
+|---|---|---|
+| Tian, Chen & Ganguli 2021 (DirectPred) | Same growth polynomial; quadratic drive (balanced init); with weight decay, survival by basin, total collapse iff $\eta>\tau^2/(4(1+s^2))$; EMA slows growth and enlarges the basin | Regime difference (first-order drive, unbalanced init); reduction to Tian in the balanced limit, checked in E1; reconciliation of P6 with the basin result |
+| Wang, Chen, Du & Tian 2021 (DirectSet/DirectCopy) | A feature is dropped iff $s^2>1/(4\eta)-1$ | The special case of the static bound; credited |
+| PEIRA (Arbel, Terver & Ponce 2026); Ponce et al. 2025 | Optimal ridge predictor: survive iff $c^2\ge4\lambda$; total collapse stable; EMA stability open | Credited for the static threshold. The plan's EMA statement (P6) speaks to the open question; say so, without overclaiming |
+| Halvagal et al. 2023 | Predictor eigenvalue as rate multiplier $\lambda(1-\lambda)$; no stop-grad gives collapse | The growth window and P3, credited |
+| Littwin et al. 2024 (deep linear JEPA) | Greedy learning in $\rho=c/\sigma$; no weight decay, EMA or masking, so no collapse | Reduction at $\lambda=0$; ordering credited |
+| Saxe 2014; Simon et al. 2023; Jacot et al. 2021; Li, Luo & Lyu 2021 | Small-init growth rates; step time $\sim\log(1/w_0)/\text{rate}$; depth-dependent escape time | The race criterion builds on them; Jacot's depth scaling informs the predictor-depth prediction (N2) |
+| Ziyin et al. ICLR 2023 | Stability at the origin decides collapse, for contrastive/decorrelation losses | The analogous criterion for JEPA (predictor, stop-grad, EMA); not the same loss |
+| Kobayashi et al. 2024; Ziyin, Li & Meng 2022 | Weight decay on a factorised map soft-thresholds singular values | P7 consistency; credited |
+| Busbridge et al. 2023 | EMA scaling rule $\rho\to\rho^\kappa$ | Consistent with EMA as a time-scale effect (N4); also used when rescaling momentum |
+| Bisulco et al. 2025; Dong et al. 2025; Gjølbye et al. 2026 | Masked moment identities; masked-PLS threshold scaling | Tools for M2 (N3); credited |
+| LeJEPA (Balestriero & LeCun 2025) | Explicit regulariser prevents collapse by construction | Alternative approach; no dynamics comparison |
+| Empirical: I-JEPA ablations; BYOL App. I; SimSiam; LiDAR | Heuristic effects on accuracy; I-JEPA rank rises then falls | E3 tests the same heuristics against *rank*; the paper states where its predictions agree or disagree with these reported effects |
+
+### Against baselines for predicting collapse and rank (E4)
+
+The race criterion is compared, on the same runs and with the same scores (classification accuracy
+of collapse vs. not, rank error, location error of transitions), with:
+
+- (a) the **static threshold** $\#\{k: c_k^2/(4\sigma_k)>\lambda\}$ of Tian, Wang and PEIRA,
+  evaluated with the same $c_k,\sigma_k$;
+- (b) the **data spectrum alone**: the count of eigenvalues of $\Sigma_{tc}$ above a threshold;
+- (c) the **growth-rate ordering** at $\lambda=0$ (Littwin): the top-$r$ by $c_k/\sigma_k$ with $r$
+  fitted once;
+- (d) the **initial loss**.
+
+The race criterion has to beat (a) for N1 to stand. If it does not, the paper says so, and the
+claim reduces to "the established static threshold, extended to masking and the predictor".
+
+### Against the standard recipe
+
+Arm P sweeps are centred on the I-JEPA settings, so the heuristics are tested where they are used.
+
+## 5. Claims the paper may make, and the evidence each needs
+
+Claims are conditional on results; a claim the evidence does not support is dropped or
+weakened, and negative results are reported.
+
+| claim (if supported) | evidence required | where it is shown (main text unless noted; figtab decides rendering) |
+|----------------------|-------------------|------------------|
+| C1 Near collapse each direction's fate is set by drive vs. decay, with explicit expressions and a (time-dependent) survival criterion in the first-order-drive regime (N1); reduces to the established static threshold (Tian 2021, Wang 2021, PEIRA 2026, credited) in the stated limit | theorem + proof (appendix); E1 per-direction trajectories match the theory in both regimes | Theory section; F1 |
+| C2 The criterion, computed from data statistics and set-up, predicts complete collapse, dimensional collapse or healthy rank, and the rank that develops (N1, N5) | E1/E2 phase diagrams with the predicted boundary committed in advance; E3 forward predictions; E4 accuracy **against baselines (a)-(d) of section 4** | F2, T2 |
+| C3a Predictor (presence, scale/init, LR, depth/width) acts through drive and decay as derived (new: init scale, width, depth as effective gain, N2; window and LR effect credited to Halvagal 2023, Tian 2021) | P4 derived; E1 sweeps; E3 Arm P (+T) predictor sweep with force decomposition | F3 panel, T1 row |
+| C3b Masking ratio acts by changing context-target predictability per direction, with the predicted (possibly non-monotone) rank profile (N3) | P5 derived; M2/E2; E3 mask sweep | F3 panel (or F2), T1 row |
+| C3c Target update: EMA changes time scales, not the threshold, reconciled with Tian's basin result (or whatever the derivation shows) (N4); stop-gradient necessity is established (Tian, Halvagal, Ponce) and shown only as a consistency check | P3, P6 derived; E1; E3 no-stop-grad and EMA sweep | F3 panel, T1 row |
+| C3d Weight decay raises the threshold (credited) / shapes the race, with mask-dependent stepwise rank | P7 derived; E1/E2; E3 Arm T (+P if run) | F2, T1 row |
+| C4 The theory can set heuristics (rescue a collapsing set-up, break a working one) | E3 (iii) | F4 or T2 |
+| C5 Where the theory fails or is only qualitative (optimiser, normalisation, nonlinearity) | E3 Arm P vs. T, E4 failure analysis | Discussion; F4; appendix |
+
+Budget (venue, 9 pages): **at most 4 figures and 2 tables in the main text** (feasibility v2); the
+critical evidence for C1-C3 must be in the main text, the rest in the appendix. C4 is the first
+claim to cut if E3 slips; C5 is never cut (it carries the honest negative results).
+
+## 6. Figures, tables and the paper (owners: `figtab-repo`, `paper-repo`; this is the plan's view, theirs decide)
+
+Candidate main-text figures: (F1) drive vs. decay per direction near collapse and E1 predicted vs.
+measured trajectories; (F2) E1/E2 phase diagrams with the pre-registered predicted boundary
+overlaid; (F3) E3 heuristic sweeps (RankMe/spectrum vs. each heuristic) with the predicted
+transition; (F4) E3 force decomposition: early drive vs. decay per direction and final rank, Arm P
+vs. T. Candidate tables: (T1) each heuristic: derived mechanism, predicted vs. observed effect;
+(T2) prediction accuracy across settings (incl. probe accuracy of full-length runs). Appendix:
+proofs, hyperparameters, extra sweeps, Ibex extension if run.
+Paper: NeurIPS 2026 template and page limit, checklist, anonymised submission, appendix with proofs
+and full experimental details, a README that says how to reproduce each figure/table from `code/`
+and `results/`.
+
+## 7. Context and constraints
+
+- Prior work and conventions: `idea-repo` brief v3 §5 and `refs/` (answer to idea-repo#2, closed),
+  applied in sections 2-4. **Post-cutoff work on this exact question exists** (brief §6). No
+  position opens, cites or uses it, and novelty is judged against pre-cutoff work only.
+- **Date cutoff (O7):** only work first published on or before 1 September 2026 may be used,
+  cited or built on (papers, preprints, code). `idea-repo` vets the bibliography; every software
+  dependency is pinned to a release on or before 2026-09-01.
+- Resources (feasibility v2, measured 2026-10-17): sandbox and `local-compute` 8 CPUs, no GPU,
+  `local-compute` without network; Ibex GPUs reachable only via default routing or `debug`, with
+  an estimated start around 2026-10-24, hence optional in v1. The E3 pilot (experiment-repo
+  6b6cbda) then measured GPU jobs starting within minutes and `local-compute` at 0.75-10 s/step, so
+  v1.1 moved E3 to Ibex. Feasibility v3 (56f3f52) gave the go for short (<= 2 h) resumable jobs,
+  with the CPU fallback and trigger of section 3. The binding constraints are wall-clock per
+  sweep and re-runs, not model time: freeze before sweeping.
+
+## 8. Who delivers what (mirrors `assignment.json`)
+
+| requirement | position | delivered path |
+|-------------|----------|----------------|
+| Plan, assignment | `story-repo` | (working; not delivered) |
+| Context brief, prior-work map, vetted bibliography, date-cutoff check | `idea-repo` | (feeds plan and paper) |
+| Feasibility judgement of this plan and of the E3 grid | `idea-review-repo` | (feeds plan) |
+| Theory: model, assumptions, propositions, proofs (committed note, e.g. `theory/` in its repository, working material) + numerical checks; experiments E1-E4; pre-registered predictions; their code (with README, pinned dependencies, seeds) and results | `experiment-repo` | `code/`, `results/` |
+| Figures and tables (from `results/` only), and the scripts that render them | `figtab-repo` | `paper/figures/`, `paper/tables/`, `code/figures/` |
+| Venue requirements (format, length, checklist, anonymisation, template, conformance checker); required delivered paths in `venue-artifacts.json` | `venue-repo` | none (template reaches the paper through `paper-repo`'s `paper/neurips_2026.sty`, checked by hash) |
+| Manuscript LaTeX (`paper/main.tex`, sections, `references.bib`, `checklist.tex`, style file) + compiled `paper/main.pdf`; writes the theory into the paper and checks every step; delivery `README.md` at its root with the claim → evidence map | `paper-repo` | `paper/` (and its repository root) |
+| Independent review, approval | `internal-review-repo` | — |
+
+Delivered layout (matches `venue-artifacts.json` at venue-repo 6057029): `paper/main.tex`,
+`paper/main.pdf`, `paper/neurips_2026.sty`, `paper/checklist.tex`, `paper/references.bib`,
+`paper/figures/`, `paper/tables/`, `code/` with `code/README.md`, `code/figures/`, `results/`,
+`README.md`. The paper includes figures as `figures/<name>` and tables as `tables/<name>` relative
+to `paper/`. Delivered code + results stay anonymous and well under the venue's 100 MB
+supplementary limit (no checkpoints in the delivery).
+
+## 9. Milestones (order, not dates)
+
+1. Plan v1 (feasibility and prior work absorbed; E3 baseline fixed). Next revision after the E3 pilot (grid) or when results change scope.
+2. Theory statements for M1 + E1 validation (cheap; first checkpoint for everyone; review checks
+   the derivation here, before costly runs depend on it).
+3. E3 pilot (done: timing, baseline healthy, settings that collapse; experiment-repo 6b6cbda);
+   grid go from `idea-review-repo` (done, feasibility v3); freeze config and metric code; commit
+   pre-registration with the mask signs/nulls; pin and check the Ibex environment.
+4. E3 sweeps (Arm P, Arm T), interventions, full-length runs; M2/E2 in parallel; E4.
+5. Figures/tables; paper draft; review; revisions; release.

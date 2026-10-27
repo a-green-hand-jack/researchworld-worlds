@@ -1,0 +1,10 @@
+# experiment-repo: analysis for "LR vs kNN on Iris"
+
+Delivered paths (work assignment, `story-repo` `assignment.json`): `report/code/` and `report/results/`.
+Start at `report/results/README.md` (which file supports which claim) and `report/code/README.md`.
+
+`pilot/` is working material and is not delivered. It holds a first full run made before the
+plan's design details were read: k grid 1..30, different inner seeds, no saved predictions.
+Its local and Ibex runs (job 53905790, node cn504-26, AMD EPYC 9655) were also byte-identical.
+That pilot gave LR 95.4%, kNN 94.4% and a difference of +1.0 pp [-2.4, 4.4] (corrected t),
+which agrees with the final pre-specified run.

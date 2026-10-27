@@ -1,0 +1,7 @@
+The exact requested loop was executed once and allowed to finish. Its stdout is preserved unchanged in status-loop.txt; stderr files retain all 24 calls' stderr, including empty files. Iteration 14 returned HTTP 422 with a TimeoutError. The loop itself exited with code 0.
+
+Ordering deviation: reading the objective issue, an initial ht-role status call, and an ls -la listing preceded discovery of the first-action requirement. The checks directory was then created before running the exact loop. This deviation cannot be corrected retroactively and the loop was not repeated.
+
+File convention: f0001.txt contains `1` followed by a newline; f1500.txt contains `1500` followed by a newline, with the same convention throughout. create_and_verify.py records the generation and validation procedure; verification.txt contains its output.
+
+The delivery was pushed to main, and git ls-remote matched the local revision. An attempt to release using ht-role approve exited 1 with the exact error saved in release-error.json. No active review owner is configured, so repository delivery is complete but world release approval is unavailable.

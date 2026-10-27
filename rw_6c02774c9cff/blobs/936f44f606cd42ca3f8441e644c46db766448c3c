@@ -1,0 +1,117 @@
+"""Write numbers.tex: LaTeX macros for every number stated in report.tex.
+
+Reads the experiment's committed results (report/results/, delivered by
+experiment-repo): summary.json for accuracies, intervals, chosen k and
+provenance; reproducibility.json for the Ibex job and the Ibex-vs-local
+comparison; sensitivity/sensitivity_summary.json for the robustness checks.
+A file that does not exist yet yields visible ?? placeholders.
+Usage: python3 make_numbers.py > numbers.tex
+"""
+import json
+from pathlib import Path
+
+RES = Path(__file__).resolve().parent / "results"
+MISSING = r"\textbf{??}"
+
+
+def load(name):
+    p = RES / name
+    return json.loads(p.read_text()) if p.exists() else None
+
+
+def num(x, signed=False, nd=3):
+    """Same convention as figtab-repo's tables: 3 decimals, typographic minus."""
+    s = f"{abs(x):.{nd}f}"
+    if x < 0 and float(s) != 0:
+        return "$-$" + s
+    return ("+" + s) if signed else s
+
+
+def ci(st, signed=False):
+    return f"[{num(st['ci_low'], signed)}, {num(st['ci_high'], signed)}]"
+
+
+def tex_escape(s):
+    return str(s).replace("_", r"\_").replace("&", r"\&").replace("%", r"\%")
+
+
+macros = {}
+s = load("summary.json")
+if s:
+    info, data = s["run_info"], s["run_info"]["data"]
+    grid = s["run_info"]["design"]["k_grid"]
+    k = s["k_knn"]
+    d = s["diff"]
+    macros.update({
+        "NReps": s["n_repetitions"],
+        "NFolds": s["run_info"]["design"]["n_splits"],
+        "NFoldsTotal": s["n_folds"],
+        "NInner": s["run_info"]["design"]["inner_splits"],
+        "NTest": f"{s['n_test']:g}",
+        "NTrain": f"{s['n_train']:g}",
+        "DF": s["n_folds"] - 1,
+        "NSamples": data["n"],
+        "NFeatures": data["n_features"],
+        "NClasses": len(data["classes"]),
+        "NPerClass": data["class_counts"][0],
+        "DataVersion": data["version"],
+        "DataMD": data["md5"],
+        "Seed": s["run_info"]["design"]["seed"],
+        "KMin": grid[0], "KMax": grid[-1],
+        "LRAcc": num(s["lr"]["mean"]), "LRCI": ci(s["lr"]),
+        "KNNAcc": num(s["knn"]["mean"]), "KNNCI": ci(s["knn"]),
+        "DiffAcc": num(d["mean"], True), "DiffCI": ci(d, True),
+        "DiffNaiveCI": f"[{num(d['ci_naive_t'][0], True)}, {num(d['ci_naive_t'][1], True)}]",
+        "DiffRepCI": f"[{num(d['ci_repetition_means_t'][0], True)}, {num(d['ci_repetition_means_t'][1], True)}]",
+        "DiffP": f"{d['corrected_p_two_sided']:.2f}",
+        "DiffT": f"{d['corrected_t']:.2f}",
+        "WinsLR": d["wins_lr"], "Ties": d["ties"], "WinsKNN": d["wins_knn"],
+        "DiffVerdict": ("which excludes zero" if d["ci_excludes_zero"]
+                        else "which includes zero"),
+        "KMedian": f"{k['median']:g}", "KMode": k["mode"],
+        "KLo": k["min"], "KHi": k["max"],
+        "KModeCount": k["counts"][str(k["mode"])],
+        "PooledLR": s["pooled_correct"]["lr"], "PooledKNN": s["pooled_correct"]["knn"],
+        "NPred": s["pooled_correct"]["n_predictions"],
+        "LocalCPU": tex_escape(info["cpu_model"].replace("(R)", "")),
+        "LocalSeconds": f"{info['wall_seconds']:.0f}",
+        "SklearnVersion": info["sklearn"], "NumpyVersion": info["numpy"],
+        "PythonVersion": info["python"],
+    })
+
+r = load("reproducibility.json")
+if r:
+    macros.update({
+        "IbexNode": tex_escape(r["ibex_node"]),
+        "IbexJob": r["ibex_job_id"],
+        "IbexCPU": tex_escape(r["ibex_info"]["cpu_model"].replace("(R)", "")),
+        "IbexPython": r["ibex_info"]["python"],
+        "IdentityVerdict": ("gave identical numbers: byte-identical per-fold "
+                            "results and test predictions" if r["identical"]
+                            else "did not give identical numbers (largest absolute "
+                                 f"difference {r['max_abs_diff']:.2g})"),
+    })
+
+sens = load("sensitivity/sensitivity_summary.json")
+if sens:
+    diffs = [v["diff"] for v in sens.values()]
+    seeds = [k for k in sens if k.startswith("seed_")]
+    macros.update({
+        "SensNSeeds": len(seeds),
+        "SensDiffMin": num(min(d["mean"] for d in diffs), True),
+        "SensDiffMax": num(max(d["mean"] for d in diffs), True),
+        "SensVerdict": ("every interval includes zero"
+                        if not any(d["ci_excludes_zero"] for d in diffs)
+                        else "some intervals exclude zero"),
+    })
+
+for name in ["NReps", "NFolds", "NFoldsTotal", "NInner", "NTest", "NTrain", "DF",
+             "NSamples", "NFeatures", "NClasses", "NPerClass", "DataVersion",
+             "DataMD", "Seed", "KMin", "KMax", "LRAcc", "LRCI", "KNNAcc", "KNNCI",
+             "DiffAcc", "DiffCI", "DiffNaiveCI", "DiffRepCI", "DiffP", "DiffT",
+             "WinsLR", "Ties", "WinsKNN", "DiffVerdict", "KMedian", "KMode", "KLo",
+             "KHi", "KModeCount", "PooledLR", "PooledKNN", "NPred", "LocalCPU",
+             "LocalSeconds", "SklearnVersion", "NumpyVersion", "PythonVersion",
+             "IbexNode", "IbexJob", "IbexCPU", "IbexPython", "IdentityVerdict",
+             "SensNSeeds", "SensDiffMin", "SensDiffMax", "SensVerdict"]:
+    print(r"\newcommand{\%s}{%s}" % (name, macros.get(name, MISSING)))

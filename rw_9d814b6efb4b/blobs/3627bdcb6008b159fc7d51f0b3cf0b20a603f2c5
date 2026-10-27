@@ -1,0 +1,36 @@
+"""Check committed result provenance and recompute statistics from integer counts."""
+import csv
+import hashlib
+import json
+import math
+import statistics
+from pathlib import Path
+from scipy.stats import t
+
+root = Path(__file__).resolve().parents[1]
+s = json.loads((root / 'results/summary.json').read_text())
+rows = list(csv.DictReader((root / 'results/per_seed.csv').open()))
+assert len(rows) == 20
+assert [int(r['seed_index']) for r in rows] == list(range(20))
+assert all(int(r['points']) == 1_000_000 for r in rows)
+assert all(int(r['root_entropy']) == s['root_entropy'] for r in rows)
+assert [int(r['spawn_key']) for r in rows] == list(range(20))
+values = [4 * int(r['inside']) / int(r['points']) for r in rows]
+assert all(v == float(r['estimate']) for v, r in zip(values, rows))
+mean = statistics.mean(values)
+sd = statistics.stdev(values)
+se = sd / math.sqrt(len(values))
+half = t.ppf(.975, len(values)-1) * se
+expected = dict(mean=mean, sample_sd=sd, standard_error=se,
+                ci_low=mean-half, ci_high=mean+half, ci_half_width=half,
+                signed_error=mean-math.pi, absolute_error=abs(mean-math.pi))
+for key, value in expected.items():
+    assert math.isclose(value, s[key], rel_tol=1e-12, abs_tol=1e-15), key
+assert sum(int(r['points']) for r in rows) == s['total_points'] == 20_000_000
+assert sum(int(r['inside']) for r in rows) == s['total_inside']
+for key, path in [('script_sha256', 'code/monte_carlo.py'),
+                  ('per_seed_sha256', 'results/per_seed.csv')]:
+    assert hashlib.sha256((root / path).read_bytes()).hexdigest() == s[key]
+print('PASS: all 20 seed records, integer counts, summary statistics, total points and hashes')
+print(f'Observed/theoretical per-seed SD: {sd/s["theoretical_per_seed_sd"]:.6f}')
+print(f'Mean error/theoretical SE: {(mean-math.pi)/s["theoretical_mean_se"]:.6f}')

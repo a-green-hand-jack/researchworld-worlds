@@ -1,0 +1,32 @@
+# Results (code: `code/quad.py`, `code/supplement.py`; numpy/scipy/mpmath, double precision, exact integrals e-1, atan(5)/5, 2/3)
+
+Files: `errors.csv` (3 functions x 3 rules x k=1..12, n=2^k, absolute error), `fits.csv` (table), `results.json` (errors, fits, threshold sensitivity), `supplement.json` (local orders log2(e_k/e_{k+1}); 50-digit Simpson/GL errors for exp, Runge).
+
+Conventions: Simpson = composite over n panels, each panel uses its endpoints and midpoint (2n subintervals). GL = n panels x 4 nodes (`leggauss(4)`). Fit: OLS of ln(err) on ln(n) over points with err > 1e-15 (~4.5 eps; absolute, integrals are O(1)); order = -slope; 95% CI = slope ± t_{0.975, m-2} * SE (needs m >= 3 points). Threshold sensitivity (1e-16, 1e-14, 1e-13) is in `results.json`.
+
+## Fitted orders (theory 2 / 4 / 8)
+| function | rule | order | 95% CI | points (k range) |
+|---|---|---|---|---|
+| exp(x) | trapezoid | 1.9997 | [1.9994, 1.9999] | 12 (1-12) |
+| exp(x) | Simpson | 3.9969 | [3.9941, 3.9997] | 9 (1-9) |
+| exp(x) | Gauss | 7.996 | undefined (2 points, k=1,2) | 2 |
+| 1/(1+25x²) | trapezoid | 2.29 | [2.02, 2.55] | 12 (1-12) |
+| 1/(1+25x²) | Simpson | 5.39 | [4.57, 6.21] | 9 (1-9) |
+| 1/(1+25x²) | Gauss | 8.76 | [2.93, 14.60] | 4 (1-4) |
+| sqrt(x) | trapezoid | 1.483 | [1.477, 1.489] | 12 |
+| sqrt(x) | Simpson | 1.49995 | [1.49990, 1.50000] | 12 |
+| sqrt(x) | Gauss | 1.4999999816 | [1.49999996, 1.50000000] | 12 |
+
+## Findings
+- exp(x): trapezoid and Simpson match theory 2 and 4 (CI of Simpson just excludes 4 at 3.9941–3.9997: tail points near 1e-14 are contaminated by rounding; at threshold 1e-14 the fit is 3.999). Gauss reaches the rounding floor at k=2 (1.5e-14), so only 2 points exist: no CI can be given; the order 8 is confirmed only by 50-digit data (fit over 12 points: 7.999; local orders 8.00). 
+- Runge 1/(1+25x²): poles at ±i/5 make the regime pre-asymptotic until panel width h ≲ 0.1–0.2 (k ≲ 3–4). Local orders overshoot (Simpson 7.2, 11.0; GL 14.5, 21.4 at k=3–4) before settling at 2/4/8 (50-digit data: exactly 4.0 and 8.0 for k>=5). Fitted orders over the whole range therefore sit above theory for Simpson (5.4) and Gauss (8.8, only 4 usable points, CI 2.9–14.6, essentially uninformative) and the trapezoid slope is 2.29 (CI excludes 2 narrowly) because of the transient at k=1–4 (local order 3.8, 5.8, 1.5). Fits that exclude the pre-asymptotic points are not what the task asks for, but local orders support theory.
+- sqrt(x): f' ~ x^{-1/2} unbounded at 0, f has an x^{1/2} branch singularity; the error of every rule is dominated by the first panel [0,h] and scales h^{3/2}: all three rules give order 1.5 (Simpson, GL to 4–8 digits; trapezoid 1.483 with local order rising 1.43 -> 1.50 as the Euler–Maclaurin/zeta correction term decays). Higher-order rules give a smaller constant, not a higher order: GL error is ~180x smaller than trapezoid at n=4096 (4.4e-9 vs 7.9e-7) but the same slope. Theoretical expectation 3/2 is matched within CI for Simpson/GL (CI of GL contains 1.5 up to 1e-9), trapezoid CI [1.477,1.489] excludes 1.5 due to pre-asymptotic bias.
+- Limitation: the error at the rounding floor for GL(exp) and GL(Runge) means two of nine fits are not meaningful as order estimates.
+
+## Provenance for independent re-computation
+- Exact integrals (`code/quad.py`, `F`): exp: e-1 = np.e-1; Runge: np.arctan(5)/5; sqrt: 2/3 (double precision).
+- Reproduce: `pip install numpy scipy mpmath; python3 code/quad.py; python3 code/supplement.py` (runs in seconds; writes `results/*`). Versions used: numpy/scipy as installed by pip in the sandbox (see `pip list`).
+- Errors: `errors.csv` (108 rows; column `above_threshold_1e-15` is the fit-inclusion flag).
+- Point selection: absolute error > 1e-15 (strict), same cut for all nine series; a series with <2 included points has no fit, with exactly 2 a slope but no interval.
+- Regression: natural log of error and of n; `scipy.stats.linregress`; observed order = -slope; 95% interval = slope ± t_{0.975, m-2}·stderr (m = included points), reported as order bounds (sign flipped).
+- Fit results per series (order, bounds, m, k range): `fits.csv`.

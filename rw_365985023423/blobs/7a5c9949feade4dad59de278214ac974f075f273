@@ -1,0 +1,46 @@
+"""Independent reproduction for review: MC pi error scaling.
+
+Computes MAE over 200 runs per N for three plausible draw conventions
+(seed = 2026 + run index, run index 0..199), then OLS fit of log(MAE) on log(N)
+with a t-based 95% interval (3 dof). Used only to check the delivered numbers.
+"""
+import json, math, sys
+import numpy as np
+from scipy import stats
+
+NS = [10**3, 10**4, 10**5, 10**6, 10**7]
+RUNS = 200
+
+def est_pairs(rng, n):          # A: rng.random((n, 2))
+    p = rng.random((n, 2))
+    return 4.0 * np.count_nonzero((p * p).sum(axis=1) <= 1.0) / n
+
+def est_xy(rng, n):             # B: x = rng.random(n); y = rng.random(n)
+    x = rng.random(n); y = rng.random(n)
+    return 4.0 * np.count_nonzero(x * x + y * y <= 1.0) / n
+
+def est_uniform(rng, n):        # C: rng.uniform(0, 1, size=(n, 2))
+    p = rng.uniform(0.0, 1.0, size=(n, 2))
+    return 4.0 * np.count_nonzero((p * p).sum(axis=1) <= 1.0) / n
+
+VARIANTS = {"pairs_random_n2": est_pairs, "x_then_y": est_xy, "uniform_n2": est_uniform}
+
+def fit(ns, mae):
+    r = stats.linregress(np.log(ns), np.log(mae))
+    t = stats.t.ppf(0.975, len(ns) - 2)
+    return {"slope": r.slope, "se": r.stderr, "ci95": [r.slope - t * r.stderr, r.slope + t * r.stderr],
+            "intercept": r.intercept, "r2": r.rvalue ** 2}
+
+out = {"numpy": np.__version__, "variants": {}}
+for name, f in VARIANTS.items():
+    rows = []
+    for n in NS:
+        errs = np.array([abs(f(np.random.default_rng(2026 + i), n) - math.pi) for i in range(RUNS)])
+        rows.append({"N": n, "mae": errs.mean(), "sd_abs_err": errs.std(ddof=1),
+                     "sem": errs.std(ddof=1) / math.sqrt(RUNS),
+                     "theory_mae": math.sqrt(2 / math.pi) * math.sqrt(math.pi * (4 - math.pi) / n)})
+        print(name, rows[-1], flush=True)
+    out["variants"][name] = {"rows": rows, "fit": fit([r["N"] for r in rows], [r["mae"] for r in rows])}
+    print(name, out["variants"][name]["fit"], flush=True)
+    json.dump(out, open("check/reproduce.json", "w"), indent=1)
+print("HUTIAN_WAKE: reproduction done", flush=True)

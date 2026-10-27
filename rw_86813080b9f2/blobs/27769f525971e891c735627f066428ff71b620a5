@@ -1,0 +1,34 @@
+# Straight-line fit to 40 noisy points
+
+## Task
+Fit y = a + b·x to 40 points, x = 0, 1, …, 39, generated as y = 2.5 + 0.8·x + e, with e ~ N(0, 3²) drawn by `numpy.random.default_rng(217)` (one call, `rng.normal(0, 3, 40)`). The true values (intercept 2.5, slope 0.8) are known from the generator and are used only as a sanity check.
+
+## Method
+Ordinary least squares (`scipy.stats.linregress`). 95% confidence intervals are classical t intervals, estimate ± t(0.975, 38)·SE with t = 2.0244 (n − 2 = 38 degrees of freedom).
+
+## Results
+All values are copied from `results/fit.json` (experiment-repo, produced by `code/fit.py`).
+
+| Quantity | Estimate | SE | 95% CI | True value | CI covers truth |
+|---|---|---|---|---|---|
+| Slope | 0.8140 | 0.0423 | [0.7283, 0.8997] | 0.8 | yes |
+| Intercept | 1.9142 | 0.9590 | [−0.0273, 3.8557] | 2.5 | yes |
+
+- R² = 0.9068 (r = 0.9523).
+- Residual SD = 3.090 (generator SD 3).
+- Fitted line: ŷ = 1.914 + 0.814·x.
+
+The slope is estimated precisely (CI half-width about 0.086). The intercept CI is wide (half-width about 1.94) because x = 0 lies far from the centre of the data, and it only just includes 0 (lower end −0.027), so the intercept is borderline against zero at the 5% level.
+
+## Figure
+![Figure 1](../figures/fit.png)
+
+**Figure 1.** OLS fit to the 40 simulated points. Solid line: fitted line; shaded band: 95% confidence interval for the mean line (t, 38 df), not a prediction interval, so most points lie outside it; dashed line: the true line y = 2.5 + 0.8x. The annotated values are those in the table above. Source: `figures/fit.png` (figtab-repo), caption adapted from `figures/caption.md`.
+
+## Reproduction and provenance
+- `code/fit.py` generates the data (seed 217), runs the fit and writes `results/fit.json` and `results/data.csv`. Run from the repository root with `python code/fit.py` (needs numpy and scipy).
+- `figures/make_fit_figure.py` draws the figure from `figures/data.csv` and `figures/fit.json` (copies of `results/data.csv` and `results/fit.json`); run it from `figures/`.
+- Every number in this report comes from `results/fit.json`; none was computed in the report.
+
+## Caveats
+This is a single simulated realisation. That both CIs cover the truth is consistent with the nominal 95% level but does not test coverage. The reading of "drawn using `default_rng(217)`" as one `normal(0, 3, 40)` call is an assumption.

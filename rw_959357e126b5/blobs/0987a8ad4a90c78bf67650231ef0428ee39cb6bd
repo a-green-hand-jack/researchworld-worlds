@@ -1,0 +1,288 @@
+# Plan v3: the writing revision of the ICLR 2027 paper (objective `story-repo`#22)
+
+Owner: `story-repo` (plan and work assignment). v3.2, 2026-10-22 (v3.2: A-cite done and passed on, feasibility and venue reading taken up, mapping to brief v5.1; v3.1: the audits in flight recorded in Section 6).
+
+The previous objective (#7, the extension) is finished and released; its plan is kept as
+`plan_v2.md` (v2.36) and the first study plan as `plan_v1.md`. This plan replaces them for #22.
+
+Inputs read for v3.0: the delivered paper `paper-repo` 771f5a90e56b (47 pp; main text pp. 1-9,
+references pp. 10-13, appendices A-F after them), built with `figtab-repo` 924ea5af4d20 and
+`experiment-repo` 4207193fc02e; `venue-repo` b9451dd25f8c (VENUE.md, venue-artifacts.json);
+the brief at `idea-repo` 1ca75c434899 (still v4.3 for the old objective; v3 is checked against the
+revised brief when it is pushed).
+
+## 0. What #22 asks (W1-W10)
+
+Each requirement quotes #22; every one has an owner in Section 7.
+
+| id | requirement (from #22) |
+|---|---|
+| W1 | "the structure and order of the argument" |
+| W2 | "how each claim is stated and supported" |
+| W3 | "the wording" |
+| W4 | "how figures and tables are introduced and interpreted, the captions" |
+| W5 | "whether each citation sits in a sentence about the cited work" |
+| W6 | "Where the text claims more or less than the evidence in the repositories shows, change the text to match the evidence." |
+| W7 | No new experiments, no change to results or conclusions, no new research directions; "A figure or table may be redrawn or laid out again only for readability, from results that already exist." Work that is not the writing answers what the writing asks. |
+| W8 | "the LaTeX source in the ICLR 2027 template and the compiled PDF, within the ICLR 2027 submission requirements, the page limit of the main text included, with the appendices kept as supplementary material" |
+| W9 | "Record next to the paper what was changed and why." |
+| W10 | No paper, preprint, code release or other written work first published after 18 October 2026. |
+
+The standard is a paper "a reviewer would call clearly and convincingly written" (W1-W5),
+whose text claims exactly what the repositories show (W6).
+
+Brief v5.1 (`idea-repo` 079d1f3) numbers the same requirements differently; the two map as
+plan W1-W3 = brief W1-W3, W4 = brief W4 + W5, W5 = brief W6, W6 = brief W7, W7 = brief K1-K6,
+W8 = brief D1-D4, W9 = brief D5, W10 = brief K7. The brief's reading of D4 (the 9 pages must
+state and support every main claim on their own; an appendix holds proofs, details and further
+results) is the plan's too.
+
+## 1. What is fixed and what may change
+
+Fixed (W7): every result and number (the `paper/numbers.tex` macros and the `results/` files
+behind them), every verdict and its status (registered pass/fail, undetermined, post hoc,
+retrospective, development, theory), the paper's conclusions, and the set of studies. No run, no
+new analysis, no new statistic computed from raw runs, no new direction.
+
+May change: the order and division of sections, paragraphs and sentences; wording and terminology;
+which detail sits in the main text and which in the appendices; figure and table rendering and
+layout drawn from values already in `results/` (W7); captions; the sentences around citations
+and, where a sentence misdescribes a work, the citation itself (no work after 18 Oct 2026); the
+strength or scope of a claim's wording, in either direction, to what the evidence shows (W6).
+
+Decision rule. A change is in scope if it changes how a result is stated, ordered or shown. It is out
+of scope if it changes a number, a verdict or its status, adds a claim no results file supports, or
+needs a computation that is not already in the repositories. When the text and the evidence
+disagree, the evidence wins and the text changes (W6); a number in the text that differs from its
+results file is corrected, never the file. Whether the evidence supports a wording is
+`experiment-repo`'s call (analysis); whether a change alters a conclusion is the plan's
+(`story-repo`, asked in this repository); `paper-repo` writes the text. Every change to a claim's
+strength or scope names its evidence in the change record (Section 8).
+
+## 2. Reading of the delivered paper (the plan's diagnosis)
+
+This is the plan's reading of the main text at 771f5a9, to direct the audits of Section 3. It is not
+a review verdict; each owner confirms or rejects the points in its part. Locations are PDF pages.
+
+### 2.1 Structure and order (W1)
+
+- S1. Two papers in one: Secs. 3-6 (the race and its tests) and Sec. 7 (five extensions) each carry
+  their own results summary; the abstract and the contribution list enumerate about twelve results
+  with about twenty numbers, with no order of importance. The answer to the title question is not
+  stated in one place.
+- S2. Topics are split across sections: AdamW appears in Fig. 1 (grey points), Sec. 6.1 "Where it
+  fails", Sec. 7.1, Sec. 7.3 (two-layer encoder) and Sec. 8; the ViT in Sec. 6.3 and Sec. 7.5; the
+  two-layer encoder in Sec. 6.2 and Sec. 7.3; the layer-normalised target in Sec. 7.2 and Sec. 7.3.
+- S3. Sec. 7.3 "A deep linear encoder" also carries the deep random predictor, the two-layer MLP
+  encoder under gradient descent, under AdamW and under the normalised target (pp. 8-9): five
+  results under one heading.
+- S4. The picture of the mechanism (Fig. 3, drive against decay, App. A) is cited from Sec. 4.2 but
+  lives in the appendix; the main text shows no picture of the race before Fig. 1 (p. 6).
+- S5. Sec. 8 is one paragraph, mostly limitations; the conclusions and the paper's position on
+  design (no schedule or predictor design is recommended) are scattered over Secs. 7.4, 8.
+- S6. The appendix order (A proofs, B further limits, C aligned structure, D related work,
+  E experimental details, F extension) does not follow the main text (Sec. 2 points to D, Sec. 3 to
+  C), and appendices are cited as "Section A".
+
+### 2.2 How claims are stated and supported (W2, W6)
+
+- C1. Numbers appear before what they measure is said: the rank error (mean absolute error of
+  the predicted rank over runs, bootstrap 95% interval) is defined in Sec. 6, after the abstract
+  and contributions use it; "within one", "majority oracle", "precision", "sample-robust runs",
+  "the count at T_h" are used without a definition at first use.
+- C2. Sentences carry four to eight numbers (Secs. 7.1-7.5); the verdict of a test is hard to find,
+  and the registered / post hoc / retrospective status is marked unevenly.
+- C3. Process detail stands in for the claim: "A first frozen model (v3) ... with (iv) added (v4)",
+  "known before the last scorer fix", "the word is undetermined (truth ill-posed)".
+- C4. Places where the plan expects the claim-evidence audit to look first (not findings):
+  (a) contribution 3's "the race predicts the epoch-50 critical weight decay" against Sec. 7.5's
+  "right in direction and rough size only" and "not separated from E3's step-0 rule";
+  (b) the scope words of the AdamW and normalised-target claims (aligned basis, full batch, linear
+  encoder, fixed horizon) in the abstract, contributions and Sec. 8;
+  (c) "the premise fails" (contributions) against Sec. 7.5 (raising decay: no cell; lowering:
+  D = 10 and 20);
+  (d) the general sentences of the introduction and conclusion ("no criterion predicts when a
+  configuration collapses", "with weight decay collapse is an attractor, escaped by outgrowing
+  the predictor's decay") against what the linear and ViT results show;
+  (e) "Weight decay, not the predictor or target, sets Arm T's collapse" (Sec. 6.3);
+  (f) "We recover these results as limits (Section D)" (Sec. 2).
+  Statements the text makes weaker than the evidence count as much as stronger ones (W6).
+
+### 2.3 Wording (W3)
+
+- T1. Internal labels of the study plan in the main text: E1, E1b, E1c, E2, E3, A1, A2', N2, B1',
+  B3, v3, v4, rung 1a-4, Arm T / Arm P, T_h, D, TOST, "word", "truth ill-posed", "tight / signed /
+  gain-adapted mu count". A reader of the 9 pages cannot decode them.
+- T2. Related baselines go by several names: "initial window", "stability count at
+  initialisation", "mu count", "step-0 rule", "static bound", "static threshold".
+- T3. Long sentences with nested parentheses and semicolon chains (abstract, contributions,
+  Sec. 7).
+
+### 2.4 Figures and tables (W4)
+
+- F1. Fig. 2 joins three unrelated results (AdamW count, deep-encoder reading time, ViT switch);
+  its panel text uses internal labels ("rung 1a", "A1", "A2'", "premise D <= 5", "T_h").
+- F2. Fig. 1's caption describes encodings but not what the reader should see; the figure needs
+  "E1b" to be read.
+- F3. The main text cites appendix tables for its verdicts (Tables 1, 4, 5, 7, 8): the reader of
+  the 9 pages sees no list of the registered tests and their verdicts. A compact main-text table
+  built from Table 8's existing values could replace much of the number-dense prose of Sec. 7.
+
+### 2.5 Citations (W5, W10)
+
+- R1. Sentences where a citation backs a step of our own argument rather than saying what the
+  cited work shows, e.g. "the step is close to eta sign (Kunstner et al., 2024; Sabanayagam &
+  Lucey, 2026)", "which a rotated encoder breaks (Xie et al., 2025)", "as known in substance
+  (Tian et al., 2021; Halvagal et al., 2023)". Whether each sentence describes its work correctly
+  is `idea-repo`'s audit.
+- R2. The cutoff: the 2026 arXiv entries (2609.35288, 2610.02344, 2610.04249 and others) were
+  checked in the last world; any citation added now must be checked the same way.
+
+### 2.6 Venue (W8)
+
+- V1. The main text ends exactly at page 9: any added interpretation is paid for by moving detail
+  to the appendices or by a table that replaces prose.
+- V2. "with the appendices kept as supplementary material": the plan reads it as the appendices
+  kept in full, after the references, outside the 9 pages, as the ICLR template and VENUE.md
+  rule 10 place them; whether a separate supplementary PDF is required instead is `venue-repo`'s
+  call (Section 3, A-venue).
+
+## 3. Questions and the audits that answer them
+
+| id | question | audit (owner) | input | output and consumer | standard |
+|---|---|---|---|---|---|
+| Q1 | In which order must a reader meet the argument, and which result carries which part? | A-outline (`paper-repo`) | this plan's Sec. 2 and 4, the audits below | revised outline in `paper-repo` before the full rewrite: section order, the claim of each paragraph, page budget per section, the label glossary (T1) and one baseline naming scheme (T2) | every section and paragraph states its claim first; every W6 item from A-claims placed |
+| Q2 | Does each claim sentence say exactly what its evidence shows? | A-claims (`experiment-repo`) | `paper-repo` 771f5a9 text, `results/`, `numbers.tex` | sentence-level audit file in `experiment-repo` for `paper-repo`: abstract, introduction and contributions, section openings, Secs. 6-8, main-text captions; per sentence the results file, the status (registered / post hoc / retrospective / development / theory) and the verdict (supported / overstated / understated / number differs), with the wording the evidence supports | every main-text number and claim sentence covered; reading existing results only, no new computation |
+| Q3 | Is every figure and table introduced, interpreted and captioned so a reader sees its claim? | A-fig (`figtab-repo`) | the main text, the figures and tables, `results/` | per figure and table: the claim it supports, where the text introduces it and says what to see, caption content (what is plotted, n, statistic, the claim), internal labels to remove from panels, legibility at 5.5 in; the redraw list (readability only, from existing results), for `paper-repo` | no value that is not already in `results/`; every output opened and inspected |
+| Q4 | Does each citation sit in a sentence about the cited work, and say what it shows? | A-cite (`idea-repo`) | `paper/references.bib`, every `\cite` in the sections | per citation: the sentence, whether it describes the cited work, whether the description is right (with section / equation of the work), the fix; cutoff and bibliographic record checked; for `paper-repo` (through `story-repo` if no direct channel) | every citation in the main text and appendices covered; W10 respected |
+| Q5 | What do the ICLR 2027 rules require of this revision? | A-venue (`venue-repo`) | VENUE.md, the template | reading of "appendices kept as supplementary material" (V2), the statements' placement, the checker run on each build, for `paper-repo` | rules sourced; checker output cited |
+| Q6 | Can the revision be done within the shared budget? | A-feas (`idea-review-repo`, optional) | this plan, `ht-role status` | judgement in `story-repo` | grounded in the measured budget |
+| Q7 | What changed and why? | change record (`paper-repo`) | the diff of the paper | `paper/CHANGES.md` (Section 8) | every change traced to W1-W6 or W8; every change of claim strength names its evidence |
+
+A-claims, A-fig, A-cite and A-venue run on the delivered paper now, in parallel with A-outline, so
+the rewrite starts from their results; each is re-run only on the sentences, figures or citations
+the rewrite changes.
+
+## 4. Recommended structure (a recommendation; `paper-repo` decides)
+
+The argument the evidence supports, in the order a reader needs it: near the collapsed solution
+collapse is an attractor and survival a race against the predictor's decay (theory); the race
+predicts held-out linear JEPAs (tests, with failures); it carries to some optimisers, targets and
+depths in linear models and not to others (extensions, each with its scope); in a ViT its premise,
+that collapse is decided early, fails (scope of the theory). The recommendation, with an
+indicative page budget:
+
+1. Introduction (~1.2 pp): the question; the premise; the mechanism in plain words; what is
+   tested (held-out, pre-registered, no fitted constants) with two or three headline numbers; how
+   far it carries and where it stops, one sentence each; three contributions (theory; held-out
+   linear tests and their failures; extensions and the ViT premise test, each with its scope). The
+   existing drive-against-decay figure (now Fig. 3, App. A) can serve as the first figure (S4).
+2. Related work (~0.6 pp): the static threshold line, Tian et al., De Melo Costa et al. in their own
+   sentences; the rest to App. D.
+3. Setup (~0.8 pp) and 4. The race (~1.4 pp): as now, with the metric of success (the rank and
+   how it is predicted) stated before the experiments.
+5. What the heuristics change (~0.5 pp).
+6. Held-out tests in linear JEPAs (~1.4 pp with Fig. 1): the rank error defined once; aligned and
+   general statistics; masking; where it fails (deep predictor, EMA sign, tanh under Bernoulli
+   masks), AdamW pointed to Sec. 7.
+7. Beyond the race's assumptions, in linear and two-layer models (~1.8 pp with a summary table of
+   the registered tests): one fixed pattern per subsection: what changes in the theory, what was
+   predicted and registered, the held-out result against the best baseline, the verdict and its
+   scope. AdamW; the normalised target; depth (deep linear encoder, deep predictor); the two-layer
+   encoder (gradient descent passes; AdamW and normalised target not validated, hence linear-only
+   results); weight-decay schedules.
+8. A vision transformer (~0.8 pp with the switch figure): the step-0 rule (now Sec. 6.3), the race
+   readout and the switch test (now Sec. 7.5) together: collapse is not decided early there.
+9. Discussion and limitations (~0.4 pp): the answer to the title question, what is and is not
+   supported, and why no design is recommended.
+
+Fig. 2's panels would then sit with their sections (F1); the appendices follow the main text's
+order (S6) and keep the registration identifiers as provenance, with a glossary to the main
+text's names (T1).
+
+## 5. Writing standards the revision is checked against
+
+1. Each paragraph opens with its claim; numbers follow as support, at most two or three per
+   sentence; the rest goes to a table or the appendix.
+2. Every quantity is defined at first use (metric, interval, n); every result states its status
+   (registered and its verdict, post hoc, retrospective, development, theory) the same way
+   throughout.
+3. No internal label in the main text; one name per baseline across text, figures and tables.
+4. Every figure and table is cited in the text before or beside it with what to see; captions say
+   what is plotted, n and the statistic, and the claim; no internal labels in panels.
+5. Every citation sits in a sentence that says what the cited work shows; our own steps are
+   stated as ours.
+6. Every claim matches A-claims' verdict; every change in a claim's strength is in the change
+   record with its evidence.
+7. Main text within 9 pages; references and appendices after it; ICLR 2027 template unmodified;
+   venue checker passes; no work after 18 Oct 2026.
+
+## 6. Order of work, checkpoints, budget
+
+1. Now (first round, in parallel): this plan and the assignment pushed; A-claims, A-fig, A-cite
+   and A-venue on the delivered paper; A-outline in `paper-repo`.
+2. Rewrite: `paper-repo` rewrites from its outline and the audits; `figtab-repo` redraws and
+   re-lays-out what A-fig and the outline need; one build checked by `venue-repo`'s checker.
+3. Re-check of what changed: `experiment-repo` on changed claim sentences, `idea-repo` on changed
+   citation sentences, `figtab-repo` on the figures as placed.
+4. Review by `internal-review-repo`; revisions; approval.
+
+In flight (v3.1, 2026-10-22 07:30 UTC): A-claims' first round is `experiment-repo`'s evidence
+check in `paper-repo`#16 (results at f7c0d8f4; nine items, four that change what a claim says),
+with the four C4 places it does not cover asked for its re-check there; A-fig started with the
+figures redrawn for readability in `paper-repo`#17 (`figtab-repo` 387de9b); the main-text summary
+table of registered tests (F3) is asked of `figtab-repo` in `figtab-repo`#32; A-cite is asked of
+`idea-repo` in `idea-repo`#6, and `story-repo` passes its content on to `paper-repo`.
+
+v3.2 (2026-10-22): A-cite is done (`idea-repo` `refs/citation_audit.md` at 5ef737e: 109
+citations, 98 correct, 7 vague or backing our own step, 4 wrong about the work, 2 of them in the
+main text; nothing after the cutoff; 3 bib records to update) and passed on to `paper-repo` in
+`paper-repo`#19. The table of the summary of registered tests (F3) is pushed (`figtab-repo`
+cc6777f, `tab_summary`); `venue-repo` (1f0048a) reads the appendices as kept after the
+references and now requires `paper/CHANGES.md` and `paper/CLAIMS.md` in the delivery, both under
+`paper-repo`'s `paper/`. `idea-review-repo`'s v11 feasibility (22a08f1) is a go with no compute,
+the 9 pages and the generated number macros as the binding limits and the rewrite's priority
+order abstract, introduction, Secs. 5-7, discussion, related work, then appendices for
+consistency; the plan takes it up as is. `internal-review-repo` posted its referee findings on the
+released text in `paper-repo`#18.
+
+The world's budget is 30 000 model seconds and 150 turns (8 used at the start). The rewrite is
+`paper-repo`'s main work; the other positions deliver one audit each and a re-check, which should
+need about two turns per position before review. A request carries the whole need, so a round
+trip is not spent on a clarification.
+
+## 7. Requirement to position (the work assignment)
+
+| req. | delivering position | delivered path or form |
+|---|---|---|
+| W1, W2, W3 (text) | `paper-repo` | `paper/` (LaTeX source, compiled `paper/main.pdf`) |
+| W2, W6 (claim-evidence audit) | `experiment-repo` | audit for `paper-repo`; `results/` and `code/` delivered unchanged |
+| W4 (figures, tables) | `figtab-repo` renders; `paper-repo` writes the text and captions around them | `paper/figures/`, `paper/tables/`, `code/figures/` |
+| W5, W10 (citations) | `idea-repo` audits; `paper-repo` writes | audit for `paper-repo`; `paper/references.bib` |
+| W7 | every position | no new run, result or direction; redraws from existing results only |
+| W8 | `paper-repo` builds; `venue-repo` states the rules and runs the checker | `paper/` in the ICLR 2027 template; checker output |
+| W9 | `paper-repo` | `paper/CHANGES.md` |
+| plan, assignment | `story-repo` | `plan.md`, `assignment.json` |
+
+`assignment.json` keeps the delivered paths of the last world, as `venue-repo`'s
+`venue-artifacts.json` still requires them (paper source and PDF, sty, bst, bib, figures,
+tables, code, code/README.md, results, README.md); only the work labels change.
+
+## 8. The change record (W9)
+
+`paper/CHANGES.md` (`paper-repo`), rewritten for #22, next to the paper: for each change, where
+(section or figure, old and new), what changed, and why (the W item and the problem it fixes);
+for each change in a claim's strength or scope, the evidence (results file and A-claims entry);
+for each figure or table redrawn, the reason and the results files it was drawn from (from
+`figtab-repo`); and a short list of what was deliberately not changed (results, verdicts,
+conclusions). The old extension account moves to history.
+
+## 9. Risks and what the plan does about them
+
+- The 9-page limit against added interpretation: paid for by the summary table and by moving
+  process detail to the appendices (Sec. 4); if it still does not fit, the cut is detail, never a
+  registered failure or a scope sentence.
+- Rewording drifting into a change of conclusion: the decision rule of Section 1; disputed cases
+  asked in `story-repo`.
+- Audits arriving after the rewrite: they start on the delivered paper now, and the rewrite can
+  begin with the sections they do not touch (setup, theory).

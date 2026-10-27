@@ -1,0 +1,47 @@
+<img src="cover.png" alt="cover illustration" width="340">
+
+*Cover: generated with the world's image-generation tool (gpt-image-2) by `figtab-repo`; prompt in `presentation/`. No data.*
+
+# Convergence orders of trapezoid, Simpson and 4-node Gauss–Legendre quadrature
+
+**Setup.** How fast do three composite rules converge on [0, 1], and does the order match theory (2, 4, 8)? Integrands exp(x) (exact e−1), 1/(1+25x²) (exact atan(5)/5) and √x (exact 2/3). Rules: composite trapezoid; composite Simpson with *n* panels, each using its endpoints and midpoint (2*n* subintervals); Gauss–Legendre with *n* panels × 4 nodes (`numpy.polynomial.legendre.leggauss`). *n* = 2^k, k = 1…12; double precision; error = |computed − exact|. Order = −slope of an ordinary least-squares fit of ln(error) on ln(*n*) over points with error > 10⁻¹⁵ (about 4.5 ε; the integrals are O(1)); 95 % interval = slope ± t₀.₉₇₅,ₘ₋₂·SE for *m* fitted points. Numbers: `experiment-repo` `results/` (`errors.csv`, `fits.csv`, `supplement.json`).
+
+## Fitted orders
+
+| function | rule | theory | fitted order | 95 % interval | points (k) |
+|---|---|---|---|---|---|
+| exp(x) | trapezoid | 2 | 1.9997 | [1.9994, 1.9999] | 12 (1–12) |
+| exp(x) | Simpson | 4 | 3.9969 | [3.9941, 3.9997] | 9 (1–9) |
+| exp(x) | Gauss–Legendre | 8 | 7.996 | undefined (2 points, k = 1–2) | 2 |
+| 1/(1+25x²) | trapezoid | 2 | 2.29 | [2.02, 2.55] | 12 (1–12) |
+| 1/(1+25x²) | Simpson | 4 | 5.39 | [4.57, 6.21] | 9 (1–9) |
+| 1/(1+25x²) | Gauss–Legendre | 8 | 8.76 | [2.93, 14.60] | 4 (1–4) |
+| √x | trapezoid | 2 | 1.483 | [1.477, 1.489] | 12 (1–12) |
+| √x | Simpson | 4 | 1.49995 | [1.49990, 1.50000] | 12 (1–12) |
+| √x | Gauss–Legendre | 8 | 1.49999998 | [1.49999996, 1.50000000] | 12 (1–12) |
+
+## Convergence plots
+
+<img src="figures/exp.png" alt="exp(x)" width="520">
+
+<img src="figures/runge.png" alt="1/(1+25x^2)" width="520">
+
+<img src="figures/sqrt.png" alt="sqrt(x)" width="520">
+
+*Figures 1–3 (exp(x), 1/(1+25x²), √x): absolute error versus panel count n (Simpson uses 2n subintervals). Filled symbols enter the fits (error > 10⁻¹⁵); hollow symbols are excluded; shading marks errors ≤ 10⁻¹⁵; ▽ marks a computed zero, drawn at 10⁻¹⁸ for display only and offset horizontally by about ±3 % by method so coincident symbols are visible. Dashed lines are slope references with arbitrary offsets, not fits. The √x panel has a different vertical range.*
+
+## Where and why the order departs from theory
+
+- **exp(x): near-nominal, intervals just exclude the nominal orders.** Trapezoid (1.9997 [1.9994, 1.9999]) and Simpson (3.9969 [3.9941, 3.9997]) are within 0.004 of 2 and 4, but both 95 % intervals lie just below the nominal value. The cause is mainly finite-grid: local orders between successive halvings are 1.9955 (trapezoid) and 3.9920 (Simpson) at k = 1→2 and rise towards 2 and 4 (Simpson 3.99996 at k = 5→6), so the all-point fit includes coarse-panel higher-order terms. Rounding adds a smaller effect at the Simpson tail (errors near 10⁻¹⁴: local orders fall to 3.968): with threshold 10⁻¹⁴ the interval is still [3.9978, 3.9999], and the 50-digit fit over all 12 points gives 3.9995, still below 4 for the same finite-grid reason. The intervals describe regression scatter, not bias from the model, so these are slight departures, not a failure of the theory. Gauss–Legendre hits the rounding floor from k = 3, so only two points survive: 7.996 is a two-point slope with **no interval**. Order 8 is supported by 50-digit data (7.999 over 12 points), not by the double-precision fit.
+- **1/(1+25x²): pre-asymptotic.** The poles at ±i/5 keep the error away from its h^p asymptote until the panel width is below about 0.1–0.2 (k ≲ 4). Local orders log₂(eₖ/eₖ₊₁) overshoot (Simpson 7.2 and 11.0, Gauss 14.5 at k = 3–4; trapezoid 3.8, 5.8, 1.5 at k = 1–3) before settling at 2 and 4 (50-digit data: 4.0 and 8.0 for k ≥ 5). Because the fit is over all points above the floor, the fitted orders sit above theory for Simpson (5.39) and Gauss (8.76), and the trapezoid interval [2.02, 2.55] narrowly excludes 2. The Gauss fit has four points and interval [2.9, 14.6]: uninformative. The Simpson fit also depends on the threshold (5.17 at 10⁻¹⁶, 6.01 at 10⁻¹³). These numbers measure the transient, not the asymptotic order.
+- **√x: all rules ≈ 1.5.** See below.
+
+Two of nine fits (Gauss on exp(x) and on 1/(1+25x²)) are not meaningful order estimates.
+
+## Discussion of √x
+
+√x has a branch singularity at 0 (f′ ∼ x^(−1/2) unbounded), so the smoothness assumed by the error expansions of all three rules fails. The error is dominated by the first panel [0, h], which contributes O(h^(3/2)) whatever the rule, so every rule converges at order 3/2 instead of 2, 4 and 8: Simpson 1.49995 and Gauss 1.49999998, whose intervals contain or touch 1.5. The trapezoid fit, 1.483 [1.477, 1.489], excludes 1.5 because its local order approaches the limit slowly (1.43 at k = 1 to 1.498 at k = 11), as the next Euler–Maclaurin-type correction term decays; it is a pre-asymptotic bias. Higher-order rules reduce the constant, not the order: at n = 4096 the Gauss error is 4.4·10⁻⁹ against 7.9·10⁻⁷ for the trapezoid rule (about 180× smaller) with the same slope. Higher order would need panels graded towards 0 or x = t² (not tested).
+
+## Limitations
+
+Double precision; the 10⁻¹⁵ threshold is a choice (sensitivity in `results/results.json`); OLS *t*-intervals assume independent residuals, which successive halvings violate, so they are descriptive.

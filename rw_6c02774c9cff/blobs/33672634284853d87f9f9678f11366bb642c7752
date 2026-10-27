@@ -1,0 +1,13 @@
+#!/bin/bash
+# Regenerates every number from the OpenML download onward (local part). Run from anywhere.
+# The Ibex run is code/ibex_job.sbatch, submitted from a copy of report/ on the
+# cluster; its results/ibex/ directory is copied back before the comparison.
+set -euo pipefail
+cd "$(dirname "$0")/.."      # report/
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+python3 code/fetch_data.py
+python3 -u code/cv_compare.py results/local
+python3 code/summarize.py results/local results/local/summary.json results/local/run_info.json
+cp results/local/summary.json results/summary.json      # primary summary = local run
+python3 -u code/sensitivity.py results/sensitivity 8
+python3 code/compare_runs.py results/local results/ibex results/reproducibility.json

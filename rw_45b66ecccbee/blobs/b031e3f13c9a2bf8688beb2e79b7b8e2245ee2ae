@@ -1,0 +1,29 @@
+"""Download the Iris data (OpenML dataset id 61) from OpenML itself and verify it.
+
+Writes data/openml_61_description.json (OpenML metadata) and data/iris.arff
+(the ARFF file named by that metadata), and checks the file's md5 against the
+checksum OpenML publishes.
+"""
+import hashlib
+import json
+import pathlib
+import urllib.request
+
+DATA = pathlib.Path(__file__).resolve().parent / "data"
+META_URL = "https://www.openml.org/api/v1/json/data/61"
+
+
+def main():
+    DATA.mkdir(exist_ok=True)
+    meta_raw = urllib.request.urlopen(META_URL).read()
+    (DATA / "openml_61_description.json").write_bytes(meta_raw)
+    meta = json.loads(meta_raw)["data_set_description"]
+    arff = urllib.request.urlopen(meta["url"]).read()
+    md5 = hashlib.md5(arff).hexdigest()
+    assert md5 == meta["md5_checksum"], (md5, meta["md5_checksum"])
+    (DATA / "iris.arff").write_bytes(arff)
+    print(f"{meta['name']} v{meta['version']} from {meta['url']}: md5 {md5} OK")
+
+
+if __name__ == "__main__":
+    main()

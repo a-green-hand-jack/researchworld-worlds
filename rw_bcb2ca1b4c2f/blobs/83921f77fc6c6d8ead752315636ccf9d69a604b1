@@ -1,0 +1,97 @@
+"""E1: linear JEPA verification of the near-collapse theory (population gradient descent).
+
+Sub-experiments (all with d = n = 32, S11 = diag(s), S21 = diag(c), c_k = 0.9^k, s_k = 1):
+  race  : weight decay lam (W and P) x predictor gain p0 x predictor lr multiplier alpha x init scale w0
+  ema   : EMA target rate kappa (continuous; momentum m = 1 - eta*kappa) at fixed lam, p0
+  depth : identity-initialised deep linear predictor, depth L in {1,2,3}
+Each run records measured rank (singular values of W above 0.05), the parameter-free race prediction,
+the static initial-window count and the fixed-point upper bound, and per-mode survival.
+Usage: python3 code/e1_linear.py OUTDIR [--quick]
+"""
+import sys, os, json, time, itertools
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+from linjepa import simulate, escape_score, race_end_time, window, growth_rate, rankme, reduced_flow
+
+n = d = 32
+C = 0.9 ** np.arange(n)
+S = np.ones(n)
+ETA = 0.1
+T_CAP = 1500.0      # time units
+SV_THR = 0.05
+
+
+def one(cfg):
+    lam, p0, alpha, w0, kappa, depth, seed, exp, init, d = cfg
+    t_race = race_end_time(C, S, lam, lam, alpha, p0, depth)
+    t_end = min(1.3 * t_race + 300.0, T_CAP) if lam > 0 else T_CAP
+    if kappa is not None:
+        t_end = min(t_end + 5.0 / kappa, T_CAP)
+    T = int(t_end / ETA)
+    out = simulate(np.diag(S), np.diag(C), d, lam, lam, p0=p0, w0=w0, eta=ETA, T=T, alpha=alpha,
+                   kappa=kappa, depth=depth, seed=seed, w_init=init)
+    w_init = np.linalg.norm(out["W_init"], axis=0)
+    norms = out["mode_norms"]
+    surv = norms > SV_THR
+    scores = np.array([escape_score(C[k], S[k], lam, lam, alpha, p0, np.log(w_init[k]), kappa=kappa,
+                                    t_end=t_end, depth=depth) for k in range(n)])
+    pred = scores >= 0
+    red = np.full(n, -1)
+    if depth == 1:
+        a_red, _ = reduced_flow(C, S, w_init, p0, lam, lam, alpha=alpha, eta=ETA, T=T, kappa=kappa)
+        red = (a_red > SV_THR).astype(int)
+    p_eff0 = p0
+    win = (growth_rate(p_eff0, C, S, lam, kappa) > 0)
+    bound = (C ** 2 >= 4 * lam * S)
+    sv = out["sv"]
+    return dict(exp=exp, init=init, d=d, lam=lam, p0=p0, alpha=alpha, w0=w0, kappa=kappa, depth=depth, seed=seed,
+                t_end=t_end, t_race=t_race, race_finished=bool(t_end >= t_race),
+                rank_meas=int((sv > SV_THR).sum()), rank_pred=int(pred.sum()),
+                rank_reduced=int(red.sum()) if depth == 1 else None,
+                mode_acc_reduced=float((red == surv).mean()) if depth == 1 else None,
+                rank_window=int(win.sum()), rank_bound=int(bound.sum()),
+                mode_acc=float((pred == surv).mean()), rankme=rankme(sv),
+                p_final=float(np.linalg.svd(out["P"], compute_uv=False).max()),
+                surv=surv.astype(int).tolist(), pred=pred.astype(int).tolist(),
+                scores=[float(x) for x in scores])
+
+
+def grid(quick=False):
+    seeds = range(2 if quick else 5)
+    cfgs = []
+    lams = [0.0, 0.002, 0.005, 0.01, 0.02, 0.05] if not quick else [0.0, 0.01, 0.05]
+    p0s = [0.1, 0.25, 0.5, 1.0, 1.5, 2.5] if not quick else [0.25, 1.0, 2.5]
+    for (init, dd), lam, p0, alpha, w0, seed in itertools.product(
+            [("orthogonal", 32), ("gaussian", 32), ("gaussian", 128)], lams, p0s, [0.25, 1.0, 4.0],
+            [1e-4, 1e-2], seeds):
+        cfgs.append((lam, p0, alpha, w0, None, 1, seed, "race", init, dd))
+    for kappa, lam, p0, seed in itertools.product([None, 0.03, 0.1, 0.3, 1.0, 10.0], [0.0, 0.01, 0.02],
+                                                  [0.5, 1.0], seeds):
+        cfgs.append((lam, p0, 1.0, 1e-3, kappa, 1, seed, "ema", "orthogonal", 32))
+    for depth, lam, p0, seed in itertools.product([1, 2, 3], [0.0, 0.005, 0.01, 0.02], [0.5, 1.0, 1.5], seeds):
+        cfgs.append((lam, p0, 1.0, 1e-3, None, depth, seed, "depth", "orthogonal", 32))
+    return cfgs
+
+
+if __name__ == "__main__":
+    outdir = sys.argv[1]
+    quick = "--quick" in sys.argv
+    os.makedirs(outdir, exist_ok=True)
+    cfgs = grid(quick)
+    print(f"E1: {len(cfgs)} runs", flush=True)
+    t0 = time.time()
+    res = []
+    with Pool(int(os.environ.get("NPROC", "8"))) as pool:
+        for i, r in enumerate(pool.imap_unordered(one, cfgs, chunksize=2)):
+            res.append(r)
+            if (i + 1) % 100 == 0:
+                print(f"{i+1}/{len(cfgs)} done, {time.time()-t0:.0f}s", flush=True)
+    with open(os.path.join(outdir, "e1_runs.jsonl"), "w") as f:
+        for r in res:
+            f.write(json.dumps(r) + "\n")
+    meta = dict(n=n, d=d, c="0.9^k", s="1", eta=ETA, t_cap=T_CAP, sv_thr=SV_THR, runs=len(res),
+                seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv))
+    json.dump(meta, open(os.path.join(outdir, "e1_meta.json"), "w"), indent=1)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E1 linear sweep finished", len(res), "runs", f"{time.time()-t0:.0f}s", flush=True)

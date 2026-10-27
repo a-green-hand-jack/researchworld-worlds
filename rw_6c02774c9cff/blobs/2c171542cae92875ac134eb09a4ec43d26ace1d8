@@ -1,0 +1,22 @@
+"""Minimal reader for the Iris ARFF file (numeric attributes + one nominal class)."""
+import numpy as np
+
+
+def parse(text):
+    attrs, rows, in_data = [], [], False
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("%"):
+            continue
+        if in_data:
+            rows.append([v.strip().strip("'\"") for v in s.split(",")])
+        elif s.lower().startswith("@attribute"):
+            attrs.append(s)
+        elif s.lower().startswith("@data"):
+            in_data = True
+    cls_decl = attrs[-1]
+    classes = [c.strip().strip("'\"") for c in cls_decl[cls_decl.index("{") + 1:cls_decl.index("}")].split(",")]
+    X = np.array([[float(v) for v in r[:-1]] for r in rows])
+    y = [r[-1] for r in rows]
+    assert X.shape == (150, 4) and set(y) == set(classes), (X.shape, set(y))
+    return X, y, classes

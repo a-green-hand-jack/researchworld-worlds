@@ -1,0 +1,45 @@
+"""Spot reproduction of experiment-repo results/e4/floor (4faa7a0, code/checks/e4_truth_floor_full.py): for a seeded
+sample of H2, H3 and A2 runs (every failing H3 and A2 run included) re-run the registered 1e-15-perturbed truth with the
+registered code and compare the per-run rank-within-1 failure with the stored one; also check the hard-coded H2
+statistics against code/e4_a1h2.py. Usage: python3 checks/e4_floor_full_spot.py EXPERIMENT_CHECKOUT > OUT.json"""
+import sys, os, json, gzip
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+EXP = sys.argv[1]
+sys.path.insert(0, os.path.join(EXP, "code")); sys.path.insert(0, os.path.join(EXP, "code", "checks"))
+import e4_truth_floor_full as F
+import e4_a1 as A, e4_a1h2 as H2, e4_a1h3 as H3, e4_a2 as A2
+import importlib
+a1 = importlib.reload(A)
+F.H2_T, F.H2_CHECKS = a1.T, list(a1.CHECKS)
+F.H2_STATS = {"h2a": (np.linspace(2.2, 0.45, 32), 0.88), "h2b": (np.linspace(1.4, 0.6, 32), 0.95)}
+F.A = A
+
+
+def job(j):
+    e, cfg, r = j
+    _, i, fl = F.floor_one((e, cfg))
+    return e, i, F.metrics(e, r, fl)["fail"]
+
+
+if __name__ == "__main__":
+    stored = {(d["exp"], d["id"]): d for d in (json.loads(l) for l in gzip.open(os.path.join(EXP, "results/e4/floor/truth_floor_full_runs.jsonl.gz"), "rt"))}
+    A.STATS = dict(F.H2_STATS); cf = {"H2": {c["id"]: c for c in H2.configs()}}
+    A.STATS = dict(H3.H3_STATS); cf["H3"] = {c["id"]: c for c in H3.configs()}
+    A.STATS = dict(A2.A2_STATS); cf["A2"] = {c["id"]: c for c in A2.configs()}
+    runs = {"H2": F.load("results/e4/a1h2/a1h2_runs.jsonl.gz"), "H3": F.load("results/e4/a1h3/a1h3_runs.jsonl.gz"),
+            "A2": F.load("results/e4/a2/a2_runs.jsonl.gz")}
+    rng = np.random.default_rng(20261018); pick = {}
+    for e, n in (("H2", 24), ("H3", 6), ("A2", 6)):
+        fail = [i for i in cf[e] if stored[(e, i)]["fail"] > 0]; ok = [i for i in cf[e] if stored[(e, i)]["fail"] == 0]
+        nf = 8 if e == "H2" else len(fail)
+        pick[e] = sorted(set(rng.choice(fail, min(nf, len(fail)), replace=False).tolist()) | set(rng.choice(ok, n, replace=False).tolist()))
+    jobs = [(e, cf[e][i], runs[e][i]) for e in pick for i in pick[e]]
+    with Pool(8) as P:
+        res = P.map(job, jobs, chunksize=1)
+    rows = [dict(exp=e, id=i, fail_rerun=f, fail_stored=stored[(e, i)]["fail"]) for e, i, f in res]
+    stats_src = open(os.path.join(EXP, "code", "e4_a1h2.py")).read()
+    print(json.dumps(dict(sampled={e: len(v) for e, v in pick.items()}, equal=sum(abs(r["fail_rerun"] - r["fail_stored"]) < 1e-12 for r in rows),
+                          n=len(rows), h2_stats_line_in_e4_a1h2='"h2a": (np.linspace(2.2, 0.45, 32), 0.88)' in stats_src and '"h2b": (np.linspace(1.4, 0.6, 32), 0.95)' in stats_src,
+                          rows=rows), indent=1))

@@ -1,0 +1,54 @@
+"""F4: per-direction E1 trajectories against the race prediction and the capture nullcline (single seed, development set).
+Row 1: log10 a_k(t) measured (solid) vs log a_k(0)+F_k(t) (dashed, drawn until the predicted amplitude reaches 0.2, where the near-collapse
+approximation ends). Row 2: measured (log10 a_k, p_k) path against the capture nullcline a^2 = lam_P p/(c_k - p sigma_k) (dotted).
+Inputs: results/e1/trajectories.csv (experiment-repo code/e1_traj.py)."""
+import csv, os, sys
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+import matplotlib.pyplot as plt
+
+CFG = [("lam0.01_p01_w01e-4", r"$p_0=1$, $\lambda=0.01$"), ("lam0.01_p00.25_w01e-4", r"$p_0=0.25$, $\lambda=0.01$")]
+KS = [0, 4, 7, 10]
+COLS = {0: "#0072B2", 4: "#D55E00", 7: "#009E73", 10: "#CC79A7"}
+F = lambda r, c: float(r[c]) if r[c] != "" else np.nan
+
+def make(outdir):
+    fs.setup()
+    path = os.path.join(common.results_dir(), "e1", "trajectories.csv")
+    rows = list(csv.DictReader(open(path)))
+    fig, axs = plt.subplots(2, 2, figsize=(fs.TEXTWIDTH, 3.9), constrained_layout=True)
+    ann = {}
+    for j, (cfg, title) in enumerate(CFG):
+        for k in KS:
+            h = [r for r in rows if r["config"] == cfg and int(r["k"]) == k]
+            t = np.array([F(r, "t") for r in h]); a = np.array([F(r, "a_k") for r in h]); pk = np.array([F(r, "p_k") for r in h])
+            pl = np.array([F(r, "pred_log_a") for r in h]) / np.log(10); nc = np.array([F(r, "nullcline_a") for r in h])
+            surv, pred = int(h[0]["surv"]), int(h[0]["pred"])
+            lab = rf"$k={k}$ " + ("survives" if surv else "collapses") + ("" if surv == pred else " (race pred. misses)")
+            ann.setdefault(j, []).append(rf"$k={k}$: " + ("survives" if surv else "collapses") + ("" if surv == pred else ", miss"))
+            ax = axs[0, j]
+            ax.plot(t[1:], np.log10(a[1:]), color=COLS[k], ls="-")
+            stop = np.argmax(pl > np.log10(0.2)) if (pl > np.log10(0.2)).any() else len(pl)
+            ax.plot(t[1:stop], pl[1:stop], color="k", ls="--", lw=0.8)
+            ax = axs[1, j]
+            ax.plot(np.log10(a), pk, color=COLS[k], ls="-")
+            ax.plot(np.log10(a[0]), pk[0], marker="o", ms=3, color=COLS[k], ls="none")
+            pg = np.linspace(0.005, pk[0], 300); cg, sg, lam = float(h[0]["c_k"]), float(h[0]["sigma_k"]), 0.01
+            den = cg - pg * sg; ok = den > 0
+            ax.plot(np.log10(np.sqrt(lam * pg[ok] / den[ok])), pg[ok], color=COLS[k], ls=":", lw=1.0)
+        ax = axs[0, j]
+        ax.set_xscale("log"); ax.set_xlim(1, t[-1]); ax.set_ylim(-7 if j == 0 else -5, 1.0)
+        ax.text(0.03, 0.97, "\n".join(ann[j]), transform=ax.transAxes, va="top", fontsize=6.3, linespacing=1.15)
+        ax.set_title(title, fontsize=8); ax.set_xlabel("time $t$"); ax.set_ylabel(r"$\log_{10}a_k(t)$")
+        axs[1, j].set_xlabel(r"$\log_{10}a_k$"); axs[1, j].set_ylabel("measured gain $p_k$")
+        axs[1, j].set_xlim(-5, 1.0); axs[1, j].set_ylim(0, pk[0] * 1.05)
+    from matplotlib.lines import Line2D
+    H = [Line2D([], [], color=COLS[k], label=rf"$k={k}$") for k in KS]
+    H += [Line2D([], [], color="k", ls="--", lw=0.8, label=r"race prediction $\log a_k(0)+F_k(t)$"), Line2D([], [], color="k", ls=":", label="capture nullcline (bottom row)")]
+    fig.legend(handles=H, loc="outside lower center", ncol=3, frameon=False, fontsize=6.5)
+    fs.save(fig, "fig4_e1_trajectories", outdir)
+    common.record_inputs(outdir, "fig4_e1_trajectories", [path])
+
+if __name__ == "__main__":
+    make(sys.argv[1] if len(sys.argv) > 1 else "../../paper/figures")

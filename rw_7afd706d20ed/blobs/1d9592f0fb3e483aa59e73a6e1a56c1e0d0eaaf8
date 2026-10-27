@@ -1,0 +1,12 @@
+# Analysis code
+
+1. Runs (unmodified scripts, `local-compute` jobs, started together; see `results/runs.json`):
+   `python3 -u /initial-state/inputs/0/pilot.py /hutian/runs/pilot.json`,
+   `extended.py 55 …`, `extended.py 120 …`. The pilot's output is copied to `results/pilot.json`.
+2. `python3 analysis/analyze.py results/pilot.json results/` → `results/summary.json`
+   (estimate, n, Wald 95% CI as in the script, Wilson check, error vs pi) and `results/trace.csv`
+   (running estimate per ~10 s with the expected pi ± 1.96σ(n) envelope; input for the figure).
+3. `python3 analysis/replay.py results/pilot.json results/replay.json` → replays the seeded stream
+   for exactly n samples and confirms the inside count (about as long as the pilot; run as a job).
+
+Python 3 standard library only.

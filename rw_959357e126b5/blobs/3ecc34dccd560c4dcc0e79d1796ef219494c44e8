@@ -1,0 +1,58 @@
+"""E6 rung 1a held-out grid (experiment results/e6/r1heldout/r1_heldout_runs.jsonl.gz, 83e5918), re-scored with my own
+code against results/e6/r1_tolerance_v2.json: per arm at L = 2, L = 3 and pooled L >= 2, MAE / within-1 of race_deep_A1
+and of every baseline (race_depth1, static1, staticL, window, early at t = 25 and 50) against the measured final count;
+paired bootstrap 95% CI of (baseline error - A1 error), 10,000 resamples of runs, default_rng(11). Fragile = a floor
+re-run's final count differs. Also: L = 1 control, non-finite runs (scored as misses here, not dropped), the trajectory
+count at 5/10/15% of T, and the dev v2 values from my checks/e6_r1_fixed_early_dev.json for the side-by-side.
+Usage: python3 checks/e6_r1_heldout_score.py RUNS.jsonl.gz > checks/e6_r1_heldout_score.json"""
+import sys, gzip, json
+import numpy as np
+rows = [json.loads(l) for l in gzip.open(sys.argv[1], "rt")]
+base = [r for r in rows if not r["cfg"].get("pert")]; fl = [r for r in rows if r["cfg"].get("pert")]
+fin = {r["cfg"]["id"]: (r["truth"].get("counts") or [None])[-1] for r in base}
+frag = {r["cfg"]["floor_of"] for r in fl if (r["truth"].get("counts") or [None])[-1] != fin[r["cfg"]["floor_of"]]}
+NAMES = ["race_depth1", "static1", "staticL", "window", "early_25", "early_50"]
+
+
+def val(r, nm):
+    if nm.startswith("early_"):
+        return r["truth"]["early"][str(float(nm.split("_")[1]))]
+    return r["pred"][nm]
+
+
+def summ(R):
+    ok = [r for r in R if r["truth"].get("counts")]
+    out = dict(runs=len(R), nonfinite=len(R) - len(ok))
+    if not ok:
+        return out
+    y = np.array([r["truth"]["counts"][-1] for r in ok]); ea = np.abs(np.array([r["pred"]["race_deep_A1"] for r in ok]) - y)
+    rng = np.random.default_rng(11); idx = rng.integers(0, len(ok), size=(10000, len(ok)))
+    out["A1"] = dict(mae=float(ea.mean()), within1=float((ea <= 1).mean()))
+    passed = out["A1"]["within1"] >= 0.90
+    for nm in NAMES:
+        e = np.abs(np.array([val(r, nm) for r in ok]) - y); d = e - ea; bs = d[idx].mean(1)
+        ci = [float(np.quantile(bs, .025)), float(np.quantile(bs, .975))]
+        out[nm] = dict(mae=float(e.mean()), minus_A1=float(d.mean()), ci=ci); passed &= ci[0] > 0
+    e1d = np.abs(np.array([r["pred"]["race_deep_1d"] for r in ok]) - y); out["race_deep_1d"] = dict(mae=float(e1d.mean()))
+    for j in (0, 1, 2):
+        e = np.abs(np.array([r["truth"]["counts"][j] for r in ok]) - y); out[f"traj_{5 * (j + 1)}pct_mae"] = float(e.mean())
+    fr = np.array([r["cfg"]["id"] in frag for r in ok]); out["fragile"] = int(fr.sum())
+    out["A1_miss"] = int((ea > 0).sum()); out["A1_miss_on_fragile"] = int(((ea > 0) & fr).sum())
+    out["pass"] = bool(passed)
+    # where the t = 50 reading sits: t50 / T and share of runs whose count at t = 50 already equals the final count
+    T = np.array([r["cfg"]["T"] for r in ok]); out["t50_over_T_median"] = float(np.median(50.0 / T))
+    out["early50_equals_final_share"] = float(np.mean(np.array([val(r, "early_50") for r in ok]) == y))
+    return out
+
+
+res = dict(runs=len(base), floor_runs=len(fl), fragile=len(frag),
+           nonfinite=sum(1 for r in rows if not r["truth"].get("counts")))
+ctl = [r for r in base if r["cfg"]["L"] == 1]
+res["control_L1"] = dict(runs=len(ctl), A1_equals_race_depth1=all(r["pred"]["race_deep_A1"] == r["pred"]["race_depth1"] for r in ctl))
+for arm in ("aligned", "generic"):
+    R = [r for r in base if r["cfg"]["arm"] == arm and r["cfg"]["L"] >= 2]
+    res[arm] = dict(L_ge2=summ(R), L2=summ([r for r in R if r["cfg"]["L"] == 2]), L3=summ([r for r in R if r["cfg"]["L"] == 3]),
+                    seeds=sorted({r["cfg"]["seed"] for r in R}))
+    for a0 in sorted({r["cfg"]["a0"] for r in R}):
+        res[arm][f"a0_{a0:g}"] = summ([r for r in R if r["cfg"]["a0"] == a0])
+print(json.dumps(res, indent=1))

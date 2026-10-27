@@ -1,0 +1,48 @@
+"""E7 development: the mu count of arXiv 2610.02344 (code/baselines/vit_mu.py) on every E3 run, against the measured
+epoch-20 count, beside the step-0 rule and the headroom race (results/e7/dev/headroom_race.json). Development data:
+E3 is the data the headroom race was developed on; nothing here is a test.
+Usage: python3 code/checks/e7_dev_vit_mu.py DATA_DIR results/e7/dev/vit_mu_e3.json
+"""
+import sys, os, json, csv
+import numpy as np
+HERE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(HERE, "code")); sys.path.insert(0, os.path.join(HERE, "code", "baselines"))
+from e3_grid import grid, cli_args
+import vit_mu as M
+
+
+def main():
+    data, outp = sys.argv[1], sys.argv[2]
+    G = grid()
+    R = {r["name"]: r for r in csv.DictReader(open(os.path.join(HERE, "results/e3/runs.csv")))}
+    X, _ = M.V.load(data, "train"); X = X[:M.N_IMG]
+    rows = []
+    for n in sorted(G):
+        if n not in R:
+            continue
+        over = dict(G[n][3])
+        if None in over.get("wd", [0]):
+            continue
+        for s, meas in enumerate(R[n]["count_seeds"].split()):
+            cfg = M.cfg_from_cli(s, cli_args(over))
+            m = M.mu_of(cfg, X)
+            rows.append(dict(name=n, seed=s, arm=G[n][0], wd=cfg["wd"][0], measured=int(meas), n_mu=m["n_mu"], n_modes=m["n_modes"],
+                             n_mu_diag=m["n_mu_diag"], n_mu_wd=(list(m["n_mu_wd"].values())[0] if m["n_mu_wd"] else None),
+                             context_ratio=m["context_ratio"]))
+            print(n, s, meas, m["n_mu"], m["n_mu_diag"], m["n_mu_wd"], flush=True)
+    H = json.load(open(os.path.join(HERE, "results/e7/dev/headroom_race.json")))
+    mae = {}
+    for a in ("T", "P"):
+        rr = [r for r in rows if r["arm"] == a]
+        mae[a] = dict(runs=len(rr), **{k: float(np.mean([abs(r[k] - r["measured"]) for r in rr if r[k] is not None]))
+                                       for k in ("n_mu", "n_mu_diag", "n_mu_wd") if any(r[k] is not None for r in rr)})
+        mae[a]["n_mu_wd_runs"] = sum(r["n_mu_wd"] is not None for r in rr)
+    ref = {a: {k: v for k, v in H["E3"]["mae"][a].items() if k in ("step0", "headroom_200", "headroom_400", "early_200")} for a in ("T", "P")}
+    tw = sorted({r["wd"] for r in rows if r["name"].startswith("T_wd")})
+    series = {str(w): {k: float(np.mean([r[k] for r in rows if r["name"].startswith("T_wd") and r["wd"] == w])) for k in ("measured", "n_mu_diag", "n_mu_wd")} for w in tw}
+    json.dump(dict(what=__doc__, n_images=M.N_IMG, mae=mae, reference_mae_same_runs=ref, T_wd_series=series, rows=rows), open(outp, "w"), indent=1)
+    print(json.dumps(dict(mae=mae, ref=ref, series=series), indent=1))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,40 @@
+{
+ "note": "All three sampler scripts run unmodified from /initial-state/inputs/0/ as local-compute jobs, started together by experiment-repo.",
+ "started_utc": "2026-10-18T22:17:58Z",
+ "runs": [
+  {
+   "job": "job-01d6629e93",
+   "command": "python3 -u /initial-state/inputs/0/pilot.py /hutian/runs/pilot.json",
+   "planned_duration": "about 9 min (stops after 540 s of sampling)",
+   "part_of_delivery": true,
+   "outcome": {
+    "exit_status": 0,
+    "samples": 1604600000,
+    "sampling_seconds": 540.0,
+    "output": "results/pilot.json"
+   }
+  },
+  {
+   "job": "job-05bb25a09f",
+   "command": "python3 -u /initial-state/inputs/0/extended.py 55 /hutian/runs/extended55.json",
+   "planned_duration": "55 min",
+   "part_of_delivery": false,
+   "status": "completed (exit 0) after the pilot was delivered; its results are reserved for the later study and are not part of this delivery"
+  },
+  {
+   "job": "job-819805e818",
+   "command": "python3 -u /initial-state/inputs/0/extended.py 120 /hutian/runs/extended120.json",
+   "planned_duration": "120 min",
+   "part_of_delivery": false,
+   "status": "completed (exit 0) after the pilot was delivered; its results are reserved for the later study and are not part of this delivery"
+  }
+ ],
+ "checks": [
+  {
+   "job": "job-3ae2f4dbe4",
+   "command": "python3 analysis/replay.py results/pilot.json results/replay.json",
+   "outcome": "exit 0; seeded replay of exactly 1604600000 samples gives inside = 1260237839, estimate identical to the pilot's (reproduced: true)",
+   "output": "results/replay.json"
+  }
+ ]
+}

@@ -1,0 +1,73 @@
+"""B1' development reference (before the B1' registration): the post-loss model stage_model_pl (code/e5_b1p.py)
+against stage_model_qs (E5's frozen model) on E5's held-out runs, which were scored and read before B1' existed, so
+this is development use of them, never a test. Copy-target runs only (the model's scope). Per run: B1d's log error of
+|p| on the truth's post-loss pairs (score_run_v2's definition) for both models, the alive-state agreement on all
+checkpoints, and regains (truth, model, both). Summaries by alpha rho class and by kind.
+Usage: python3 code/checks/e5_b1p_dev.py RUNS.jsonl.gz OUT.json [NPROC]"""
+import sys, os, json, gzip
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import e5_b1p as P, e5_b1 as B
+
+THR = B.THR
+
+
+def regains(alive):
+    lost = np.zeros(alive.shape[1], bool); reg = np.zeros(alive.shape[1], bool)
+    for j in range(1, alive.shape[0]):
+        lost |= alive[j - 1] & ~alive[j]; reg |= lost & alive[j]
+    return reg
+
+
+def one(line):
+    rec = json.loads(line); cfg, tr, pr = rec["cfg"], rec["truth"], rec["pred"]
+    if cfg["kappa"] is not None:
+        return None
+    G = B.GRIDS[cfg["grid"]]; c, s = B.stats(G); n = c.size
+    t = np.array(tr["t"]); A = np.array(tr["a"], float); Pt = np.array(tr["p"], float); am = A > THR
+    w0 = np.linalg.norm(B.init_amp(cfg, n), axis=0)
+    m = P.stage_model_pl(c, s, w0, cfg["p0"], cfg["kW"], cfg["kP"], cfg["alpha"], None, cfg["T"], dt=B.ETA, t_out=t)
+    sq = B.unbits(pr["model"]["chk"], n); sm = m["W"] > THR
+    out = dict(id=cfg["id"], kind=cfg["kind"], variant=cfg["variant"], ar=cfg["alpha"] * cfg["rho"],
+               agree=dict(pl=int((sm == am).sum()), qs=int((sq == am).sum()), pairs=int(am.size)))
+    rt = regains(am)
+    out["regain"] = dict(truth=int(rt.sum()), pl=int(regains(sm).sum()), qs=int(regains(sq).sum()),
+                         truth_and_pl=int((rt & regains(sm)).sum()), truth_and_qs=int((rt & regains(sq)).sum()))
+    dead = np.maximum.accumulate(am, axis=0) & ~am
+    if dead.any():
+        Pq = np.array(pr["model"]["P"], float)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out["pl"] = np.log(np.abs(Pt[dead]) / np.maximum(m["P"][dead], 1e-300)).tolist()
+            out["qs"] = np.log(np.abs(Pt[dead]) / np.maximum(Pq[dead], 1e-300)).tolist()
+        out["both_dead"] = (~sm[dead] & ~sq[dead]).tolist()
+    return out
+
+
+def summ(rows):
+    R = [r for r in rows if "pl" in r]
+    out = dict(runs=len(rows), runs_post_loss=len(R))
+    if R:
+        bd = np.array([v for r in R for v in r["both_dead"]], bool)
+        for k in ("pl", "qs"):
+            v = np.array([x for r in R for x in r[k]], float)
+            out[k] = dict(median_abs=float(np.nanmedian(np.abs(v))), median_signed=float(np.nanmedian(v)),
+                          median_abs_both_dead=float(np.nanmedian(np.abs(v[bd]))) if bd.any() else None, pairs=int(v.size))
+    out["agree"] = {k: sum(r["agree"][k] for r in rows) / max(sum(r["agree"]["pairs"] for r in rows), 1) for k in ("pl", "qs")}
+    out["regain"] = {k: sum(r["regain"][k] for r in rows) for k in rows[0]["regain"]} if rows else {}
+    return out
+
+
+if __name__ == "__main__":
+    src, outp = sys.argv[1], sys.argv[2]; npr = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    with gzip.open(src, "rt") as fh, Pool(npr) as pool:
+        rows = [r for r in pool.imap_unordered(one, fh, chunksize=4) if r is not None]
+    cls = lambda a: "<1" if a < 1 - 1e-9 else "=1" if a < 1 + 1e-9 else "1-2" if a < 2 - 1e-9 else "=2" if a < 2 + 1e-9 else ">2"
+    res = dict(question=__doc__.split("\n")[0:3], source=os.path.basename(src), all=summ(rows),
+               by_class={c: summ([r for r in rows if cls(r["ar"]) == c]) for c in ("<1", "=1", "1-2", "=2", ">2")},
+               by_variant={v: summ([r for r in rows if r["variant"] == v]) for v in sorted({r["variant"] for r in rows})},
+               by_kind={k: summ([r for r in rows if r["kind"] == k]) for k in sorted({r["kind"] for r in rows})})
+    json.dump(res, open(outp, "w"), indent=1)
+    print(json.dumps(dict(all=res["all"], by_class=res["by_class"]), indent=1))
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "B1' dev reference done", flush=True)

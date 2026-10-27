@@ -1,0 +1,34 @@
+# Results
+
+- `summary.json` — primary summary (the local run; identical copy of `local/summary.json`).
+  `lr`, `knn`, `diff` (= accuracy LR − accuracy kNN, paired by outer fold) each give
+  `mean`, `ci_low`, `ci_high` (primary 95% interval: corrected repeated-CV t of
+  Nadeau & Bengio 2003, variance factor 1/50 + 30/120, df 49), plus `ci_naive_t`
+  (50 folds treated as independent; too narrow) and `ci_repetition_means_t` (10
+  repetition means, df 9) as robustness. `diff` also has wins/ties/losses, the corrected
+  t statistic and p value; `k_knn` the distribution of the chosen k; `run_info` the
+  data provenance, settings, host and versions.
+- `local/`, `ibex/` — each run's `per_fold.csv` (one row per outer fold: `repetition` 0–9,
+  `fold` 0–4, `n_train`, `n_test`, `correct_*`, `acc_lr`, `acc_knn`, `diff_lr_minus_knn`,
+  `k_knn`, inner-CV accuracy of the chosen k, LR diagnostics and hashes),
+  `predictions.csv` (all 1500 outer test predictions), `run_info.json`, `summary.json`.
+- `reproducibility.json` — Ibex vs local: `ibex_node`, `ibex_job_id`, `identical`,
+  `max_abs_diff`, file hashes, every differing field, both hosts' CPU and versions.
+- `sensitivity/` — robustness variants (`sensitivity_summary.json`).
+- `openml_61/` — the ARFF file downloaded from OpenML and its dataset description.
+
+## Findings (values from the files above)
+
+- C1/C2: on the main run, both methods are near ceiling and their paired difference
+  has a 95% corrected interval that includes 0, so the data show no detectable
+  difference. The robustness variants in `sensitivity/` agree: unscaled features, LR with C tuned by
+  inner CV, k grid 1..30, and 5 other outer seeds all give a mean difference between +0.001
+  and +0.009, and every interval includes 0.
+- C3: the Ibex job (`ibex_job_id`, `ibex_node` in `reproducibility.json`) and the
+  local run gave byte-identical `per_fold.csv` and `predictions.csv`, including the
+  LR coefficient hashes and the exact float bits of each fold's LR test log-loss.
+  So `identical` = true and `max_abs_diff` = 0.
+  Caveat for the text: the CPUs differ (AMD EPYC on Ibex, Intel Xeon locally) and Python
+  differs in the patch version (3.11.17 vs 3.11.2). The package versions are pinned and equal, BLAS is
+  single-threaded, and OpenBLAS selected the same `SkylakeX` kernel on both hosts. Identity is
+  shown for this configuration, not guaranteed across BLAS builds or kernels.

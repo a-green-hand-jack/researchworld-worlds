@@ -1,0 +1,31 @@
+# Brief (from the Research objective, experiment-repo#1)
+
+## Task, quoted
+"Two noisy measurement series may follow the same straight line. Series A: x = 0, 1, ..., 39 and y = 2.5 + 0.8 x + e with e normal, standard deviation 3. Series B: the same x and y = 2.5 + 0.8 x + e with e normal, standard deviation 0.5 + 0.15 x (the noise grows with x). Generate both with numpy.random.default_rng(221) (A first, then B), fit each by ordinary least squares, and decide for each whether ordinary least squares or weighted least squares is the better choice, with reasons backed by a residual check. Report slope and intercept with 95% confidence intervals for both series under the method you chose, one figure of both series with the fitted lines, and a one-page report `report/report.md` with the code that produced every number next to it."
+Each position ends its turn with a plain-language account (>= 400 words) of what it did, decided and why, and leaves to neighbours.
+
+## Requirements / deliverables
+1. Data: seed 221, A then B, x=0..39, true line 2.5+0.8x. 
+2. OLS fit per series; per-series choice OLS vs WLS justified by a residual check.
+3. Slope and intercept with 95% CIs for both series under the chosen method.
+4. One figure showing both series with fitted lines (chosen-method lines).
+5. One-page `report/report.md`, code producing every number next to the number.
+
+## Conventions / how this study resolves ambiguities
+- Generation: `rng = default_rng(221)`; `yA = line + rng.normal(0, 3.0)` (40 draws), then `yB = line + rng.normal(0, 0.5+0.15*x)` (one vectorised call, 40 draws). Draw order matters; the code is `code/analysis.py`.
+- WLS weights 1/sd^2 from the stated noise model (known variance); a feasible WLS (sd estimated from |OLS residuals| regressed on x) is a robustness check. CIs are t-based, 38 df, scale estimated.
+- Residual checks: Breusch-Pagan, White, Spearman(|resid|, x), Goldfeld-Quandt-style split variance ratio, residual-vs-x plot. For A with constant sd the known-variance WLS equals OLS, so the choice there is OLS.
+- Robustness: HC3 OLS CIs, 20000-replicate Monte Carlo of slope sd and CI coverage under OLS vs WLS.
+
+## Established results (results/results.json, code/analysis.py)
+- A: BP p=0.19, White p=0.41, Spearman rho=0.09 (p=0.58), GQ F=1.57 (p=0.17): no heteroscedasticity detected -> OLS. slope 0.755 [0.679,0.831], intercept 3.10 [1.39,4.82].
+- B: BP p=0.004, White p=0.005, Spearman rho=0.44 (p=0.004), GQ F=3.85 (p=0.003): clear heteroscedasticity -> WLS. slope 0.847 [0.777,0.918], intercept 2.61 [1.99,3.23]. OLS for comparison: slope 0.825 [0.734,0.916], intercept 3.00 [0.95,5.06]. After weighting, BP p=0.38.
+- Monte Carlo: B slope sd OLS 0.057 vs WLS 0.036; coverage OLS 93.1% vs WLS 95.0%. A: identical, 94.9%.
+- True values (2.5, 0.8) lie inside all reported chosen-method CIs.
+
+## Caveats / not established
+- One realisation of data: a non-significant test on A does not prove homoscedasticity; the choice for A rests on the test, the design (stated constant sd) and equal-weights equivalence. Knowing the variance function for B is an assumption available only because it's simulated; the feasible-WLS check shows the conclusion does not depend on it.
+- Nothing in the objective names a reference paper or venue; no external related material was supplied.
+
+## Delivered files (experiment-repo)
+`code/analysis.py` (run: `python3 code/analysis.py`; needs numpy, scipy, statsmodels); `results/data.csv`, `results/residuals.csv` (OLS residuals for A and B, fitted values, WLS fit and weighted residuals for B), `results/parameters.csv` (chosen-method estimates, SE, 95% CI), `results/results.json` (everything incl. diagnostics, alternatives, Monte Carlo, `chosen`, `interval_construction`). Figures/tables: figtab-repo; report: paper-repo.

@@ -1,0 +1,24 @@
+# Brief (experiment-repo, context function)
+
+## Objective, quoted
+> How fast do three quadrature rules converge, and does the observed order match theory?
+> Integrate three functions on [0, 1]: exp(x), 1/(1 + 25 x^2) and sqrt(x), whose exact integrals are e - 1, atan(5)/5 and 2/3. For each function use the composite trapezoid rule, the composite Simpson rule and Gauss-Legendre quadrature (`numpy.polynomial.legendre.leggauss`, composite over equal panels with 4 nodes each), with n = 2^k panels for k = 1, ..., 12, and record the absolute error.
+> For each function and rule, fit log(error) against log(n) by least squares over the points above machine precision and give the convergence order with a 95% interval; say where and why the observed order departs from the theoretical 2, 4 and 8.
+> Report: `report/report.md`, at most two pages: a table of the fitted orders with their intervals, one log-log figure per function with the three rules, a short discussion of sqrt(x), and at its top a small cover illustration `report/cover.png` made with the world's image generation.
+
+## Requirements / deliverables
+1. Errors for 3 functions x 3 rules x k=1..12 (n=2^k panels); GL = 4 nodes/panel (theory order 8).
+2. Log-log LS fit of error vs n over points above machine precision; slope -> order, 95% t-interval.
+3. Explanation of departures from theoretical 2 / 4 / 8.
+4. report/report.md (<= 2 pages): orders table with intervals; 3 log-log figures (one per function, all 3 rules); short sqrt(x) discussion; cover illustration report/cover.png at top, from image generation.
+
+## What the material points to (no external supplied data; derived)
+- exp(x): smooth/analytic -> expected orders 2, 4, 8; high-order rules hit machine precision quickly so few points are fit (fit range matters; wide intervals).
+- 1/(1+25x^2) (Runge): poles at ±i/5, analytic but with small convergence radius -> pre-asymptotic regime at small n; observed order below theory over small n, approaching theory only once panels are narrower than ~pole distance; GL may reach machine precision early.
+- sqrt(x): singularity at x=0 (derivative unbounded) -> all rules limited to order 1.5 in n (error ~ h^{3/2}) for the panel touching 0; GL 4-node: error ~ n^-1.5 too (end-panel dominated). Expect ~1.5 for all three.
+- Machine-precision threshold: choose and state (e.g. error > ~1e-15 / several eps; sensitivity checked).
+- Conventions: log-log with reference slopes, Simpson composite on n panels (2 subintervals each); interval from t distribution with m-2 df (needs >=3 points).
+
+## Not established
+- Exact "above machine precision" cutoff is unspecified; I fix and justify one and report sensitivity.
+- Image generation is unavailable to this worker (anthropic provider); another position must produce cover.png.

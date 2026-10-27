@@ -1,0 +1,25 @@
+# Working material (not part of the delivery)
+
+The delivered path of this repository is `report/figures/` only; everything
+under `work/` is generation-side material kept for provenance and re-runs.
+
+- `work/data/co2_annmean_mlo.csv`, `work/data/provenance.json` — byte-identical
+  working copies of `experiment-repo`'s canonical `data/` files, taken from its
+  `main` at dbca53e57f9008bbdfef20d0d222946ffa0168dd; the CSV's SHA-256
+  (bdd956e8d7e05ebc3c61ac1f8f8c8cea4a505df56724fba5200b4eb1e0089b2b) matches
+  the provenance record. The canonical, delivered copy is `experiment-repo`'s.
+- `work/results.json`, `work/annual_fits.csv` — byte-identical working copies
+  of `experiment-repo`'s analysis handoff at its main
+  c13de7506c14e619ababe6358efdb826b05d7b89 (`analysis/results.json`,
+  `analysis/annual_fits.csv`); `results.json` records the same input SHA-256.
+- `work/draft_fits.json` — SYNTHETIC placeholder handoff (round numbers, marked
+  so in `_NOTE`) used only to exercise `report/figures/make_figure.py` and
+  check the layout before the real analysis handoff arrived. Never a result.
+- `work/inspect_render.py` — programmatic inspection of a rendered
+  `co2_mlo_fits.png/.pdf` (page size, verbatim strings, no provenance text in
+  the figure, nothing off-page, curves equal the handoff's `annual_fits.csv`
+  predictions, pixel size, ink, both fit colors). The final figure passed all
+  checks:
+  `python3 work/inspect_render.py report/figures work/results.json work/data/provenance.json work/annual_fits.csv`
+- Draft renders live outside git (transient); the final figure is rendered from
+  the real handoff into `report/figures/`.

@@ -1,0 +1,87 @@
+"""Numerical checks of the N2 statements (theory/ext_A_lntarget.md) on configurations outside every A4 grid
+(seeds 79xxx). Writes results/e4/a4_theory_checks.json.
+  N2-i   E[LN(W x2) x1^T] = G(W) W S21 with G = E[J_LN(W x2)]: both sides by Monte Carlo on independent joint
+         samples (x1, x2), for a random W at three scales; relative Frobenius difference.
+  N2-ii  scale covariance of the drive (eps -> 0): |G(bW) W S21 b - G(W) W S21| / |G(W) W S21| for b in {1e-1, 1e-2}
+         at eps = 1e-5 (deviation grows once |Pi y|^2/d approaches eps); single-direction drive
+         D = c sqrt(2d/(pi tau)) against the MC value.
+  N2-iii the reduced flow is exact for an orthogonal init (columns orthonormal, orthogonal to 1, P0 = p0 I):
+         exact GD (code/e4_a4.truth) vs the flow (code/e4_a4.flow), per-direction amplitude at the 20 checks.
+Usage: python3 code/checks/e4_a4_theory.py OUT_JSON"""
+import sys, os, json, math
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import e4_a4 as A
+
+
+def jac_mean(W, tau, d, M, rng, eps=A.EPS):
+    Y = (rng.standard_normal((M, A.N)) * np.sqrt(tau)) @ W.T
+    Pi = np.eye(d) - 1.0 / d
+    Yc = Y @ Pi; r2 = (Yc ** 2).sum(1) / d + eps; r = np.sqrt(r2)
+    G = (Pi[None] - Yc[:, :, None] * Yc[:, None, :] / (d * r2[:, None, None])) / r[:, None, None]
+    return G.mean(0)
+
+
+def check_i(out):
+    tau, c, s = A.spectra("flat"); d = 12; rng = np.random.default_rng(79001)
+    rho = c / tau; sig = np.sqrt(s - rho ** 2 * tau)
+    res = []
+    for scale in (1.0, 1e-2, 1e-4):
+        W = scale * rng.standard_normal((d, A.N)) / np.sqrt(A.N)
+        M = 400000
+        x2 = rng.standard_normal((M, A.N)) * np.sqrt(tau); x1 = rho * x2 + sig * rng.standard_normal((M, A.N))
+        lhs = A.ln(x2 @ W.T).T @ x1 / M
+        rhs = jac_mean(W, tau, d, 400000, rng) @ W @ np.diag(c)
+        x2 = rng.standard_normal((M, A.N)) * np.sqrt(tau); x1 = rho * x2 + sig * rng.standard_normal((M, A.N))
+        lhs2 = A.ln(x2 @ W.T).T @ x1 / M          # independent replicate: the Monte Carlo noise floor
+        res.append(dict(scale=scale, rel_diff=float(np.linalg.norm(lhs - rhs) / np.linalg.norm(rhs)),
+                        lhs_replicate_rel_diff=float(np.linalg.norm(lhs - lhs2) / np.linalg.norm(rhs)),
+                        mc_rel_se=float(1 / math.sqrt(M))))
+    out["N2_i"] = res
+
+
+def check_ii(out):
+    tau, c, s = A.spectra("flat"); d = 12; rng = np.random.default_rng(79002)
+    W = rng.standard_normal((d, A.N)) / np.sqrt(A.N)
+    base = jac_mean(W, tau, d, 200000, np.random.default_rng(5)) @ W @ np.diag(c)
+    res = []
+    for b in (1e-1, 1e-2, 1e-3):
+        Wb = b * W
+        v = jac_mean(Wb, tau, d, 200000, np.random.default_rng(5)) @ Wb @ np.diag(c)
+        res.append(dict(b=b, rms_y_over_sqrt_eps=float(b * np.sqrt((W ** 2 * tau).sum() / d) / np.sqrt(A.EPS)),
+                        rel_change=float(np.linalg.norm(v - base) / np.linalg.norm(base))))
+    out["N2_ii_scale"] = res
+    # single active direction: target sqrt(d) sign(y) up to eps; drive D = E[LN(y)_1 x1_1] / a
+    i = 0; u = np.ones(d); u[: d // 2] = -1; u /= np.linalg.norm(u)    # unit vector orthogonal to 1
+    res = []
+    for a in (1.0, 1e-1):
+        M = 400000; x2 = rng.standard_normal(M) * np.sqrt(tau[i]); x1 = (c[i] / tau[i]) * x2 + np.sqrt(s[i] - c[i] ** 2 / tau[i]) * rng.standard_normal(M)
+        Y = a * np.outer(x2, u); t = A.ln(Y) @ u
+        res.append(dict(a=a, D_mc=float((t * x1).mean()), D_theory=float(c[i] * np.sqrt(2 * d / (np.pi * tau[i])))))
+    out["N2_ii_single"] = res
+
+
+def check_iii(out):
+    rows = []
+    for fam, d, p0, lam in (("flat", 12, 1.0, 0.05), ("decay", 32, 2.0, 0.015), ("flat", 32, 0.6, 0.25)):
+        cfg = dict(id=0, grid="check", fam=fam, d=d, p0=p0, lam=lam, w0=1e-3, eta=0.05,
+                   T=max(4000, int(math.ceil(8 / (0.05 * lam)))), seed=79100 + len(rows), init="orth")
+        _, W0 = A.init(cfg); a0 = np.linalg.norm(W0, axis=0)
+        tr = A.truth(cfg); fl = A.flow(cfg, a0, record=True)
+        ce = np.array(tr["cols"]); cf = np.array(fl["rec"])
+        alive = ce > A.THR
+        rel = np.abs(cf - ce)[alive] / ce[alive]
+        rows.append(dict(cfg=cfg, truth_rank=tr["rank"], flow_count=fl["count"],
+                         max_rel_err_alive=float(rel.max()) if rel.size else None,
+                         median_rel_err_alive=float(np.median(rel)) if rel.size else None,
+                         max_abs_err_dead=float(np.abs(cf - ce)[~alive].max()) if (~alive).any() else None,
+                         one_norm_T=tr["one_norm_T"]))
+    out["N2_iii_orth"] = rows
+
+
+if __name__ == "__main__":
+    out = {}
+    check_i(out); check_ii(out); check_iii(out)
+    json.dump(out, open(sys.argv[1], "w"), indent=1)
+    print(json.dumps(out, indent=1))

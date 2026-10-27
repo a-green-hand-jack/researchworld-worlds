@@ -1,0 +1,120 @@
+# Results — what each number is and where it comes from
+
+All numbers are computed by the scripts in `code/` from the data in `data/`; nothing is typed in by hand.
+Program: `code/ising.py`, byte-identical to the frozen `/initial-state/inputs/0/ising.py`
+(sha256 88bd6931eb74df0f85ed8cd23138e9c058ebeea3b9e6c28f10ec0628a42eb4c0), run unmodified, one invocation per
+(L, T, seed) by `code/run_points.py` (identical results to one long invocation: each run is seeded by its seed only).
+Exact value: T_c = 2/ln(1+√2) = 2.269185.
+
+Series format: the program's `--series` output (float64 `…-m.npy`, `…-e.npy` per run) is stored losslessly compacted by
+`code/compact_series.py` as one `L{L}-T{T}-s{seed}.npz` per run holding the integer totals M = |m|·L², E = e·L² (int32);
+dividing by L² reproduces the program's arrays bit for bit (checked before each original was removed), and
+`common.load_series` reads them. This keeps the delivery under its size limit; all results were recomputed from the
+compacted files and are unchanged.
+
+## Stage 1 — pilot (`code/stage1.sh`, `code/stage1_analysis.py`)
+
+Data `data/stage1/summary-L64.json`: L = 64, T = 1.5 … 3.5 (step 0.1), seeds 1 2, 20,000 sweeps after 2,000 burn-in.
+
+- `stage1_pilot.csv`: per T the seed mean of χ, C, ⟨|m|⟩, U, the standard error over the 2 seeds (`*_err`) and the per-seed values.
+- `stage1_peak.json`: χ peaks at the **grid point T = 2.3** (also for each seed separately); a quadratic through the three points around the maximum gives 2.307. C peaks at the 2.3 grid point too (quadratic 2.292). The finite-size χ peak lies above T_c, as expected. Stage-2 grid: 2.18, 2.21, …, 2.42 (2.3 ± 0.12, step 0.03).
+
+## Stage 2 — crossing (`code/stage2.sh`, `code/stage2_analysis.py`)
+
+Data `data/stage2/summary-L{32,64,128}.json` and per-sweep series `data/stage2/series/L{L}-T{T}-s{seed}.npz`:
+9 temperatures × seeds 1 2 3 × L = 32, 64, 128, 20,000 sweeps after the program's default 2,000 burn-in.
+
+- `stage2_binder.csv`: U at each (L, T) from the seed-pooled moments; `U_err_seed` = standard error over the 3 seeds;
+  `U_err_block` = bootstrap error from resampling 1,000-sweep blocks of each series; per-seed U; ⟨χ⟩, ⟨|m|⟩.
+  For error bars use the larger of the two.
+- `stage2_crossing.json`:
+  - Estimator: for each size pair the crossing is the first − → + sign change of U_small − U_large with T, located with a
+    cubic through the four grid points around the bracketing interval (all three pairs cross between 2.24 and 2.27).
+    `Tc` is the mean of the three pairwise crossings, `U_at_crossing` the mean U there.
+  - `bootstrap_seeds.ci95`: 95 % percentile interval from 4,000 resamples of the seeds (3 drawn with replacement per L,
+    the same draw at every T of that L, since the program reuses a seed's random stream at every T). With 3 seeds only
+    10 distinct seed multisets exist per size, so this interval is coarse.
+  - `bootstrap_blocks_robustness.ci95`: the same estimator under a block bootstrap within the series (all seeds kept).
+  - `variants_robustness`: linear interpolation and PCHIP instead of the local cubic, each with its seed-bootstrap interval.
+  - Method history: a first version fitted one cubic to all 9 temperatures and minimised the spread of the three curves.
+    It returned T = 2.181 at the grid edge, because the sigmoid curves are not cubic over 0.24 in T and the spread has a
+    trivial minimum where every U → 2/3. It was discarded before stage 3 was run at its temperatures (those runs were
+    stopped and deleted).
+- `stage2_tau.csv`: integrated autocorrelation time of |m| (Sokal automatic window, c = 6) per (L, T, seed), its error,
+  window (−1 = not converged within N/4), N_eff = N/(2τ), N/τ, burn/τ, τ of e, the first-half vs second-half drift of
+  ⟨|m|⟩ in units of its error, and U from each half.
+
+**Autocorrelation verdict.** Near T_c (|T − T_c| ≲ 0.03) the mean τ(|m|) is ≈ 43 sweeps at L = 32, ≈ 140 at L = 64 and
+≈ 450 at L = 128, reaching 500–1,150 at L = 128, T = 2.27 (one window not converged). Thus 20,000 sweeps give
+N/τ ≥ 300 at L = 32 (ample), ≈ 80–100 at L = 64 (adequate for means, marginal for U), but only 17–40 at L = 128
+near T_c (N_eff ≈ 9–20 independent samples per run), and the 2,000-sweep burn-in is only 2–4 τ there.
+**20,000 sweeps are not enough for L = 128 near T_c** with this single-spin Metropolis program (z ≈ 2.2). The seed
+spread of U(128, 2.27) (0.54 – 0.61) shows it. An extra long-run check (below) tests whether the stage-2 crossing is biased by this.
+
+Exact numbers: see the JSON (`autocorrelation`), not this text.
+
+## Stage 3 — check at L = 256 (`code/stage3.sh`, `code/stage3_analysis.py`)
+
+Data `data/stage3/summary-L256.json` (+ series, kept beyond the requirement to measure τ): L = 256 at
+2.2293, 2.2443, 2.2593, 2.2743, 2.2893 (stage-2 T* ± 0.03, step 0.015), seeds 1 2, 10,000 sweeps after 2,000 burn-in.
+
+- `stage3_binder.csv`: U(256) per T (seeds pooled), seed and block errors, per-seed U, τ_int(|m|) and its window per seed.
+- `stage3_check.json`: linear fit of U(256) vs T, its value at the stage-2 T_c against the stage-2 crossing value
+  (`U256_minus_Ustar_in_sigma`), the L = 128/256 crossing with a resampled interval, the slope ratio to L = 128,
+  τ at L = 256, `formal_agreement`, `validity_problems` and `verdict`.
+
+**What stage 3 showed: inconclusive — the L = 256 runs are not equilibrated, so they neither confirm nor refute the
+stage-2 crossing.** The formal test passes (`formal_agreement` = true, U256(T*) − U* ≈ −1.5σ), but only because the errors are
+huge. The data fail every validity check: U(256) is not monotonic in T (0.63, 0.32, 0.62, −0.34, 0.38; a negative
+U means the |m| distribution is far from its equilibrium shape); the linear fit has χ² = 16.6 on 3 dof (p < 0.001);
+the L = 256 curve is flatter than L = 128 (slope ratio 0.45, while finite-size scaling expects ≈ 2); N/τ ≤ 6 and
+burn/τ ≈ 1 with 6 of 10 τ windows not converged. The series show why: from a random start the T ≤ 2.26 runs need
+3,000–8,000 sweeps after the burn-in to order (⟨|m|⟩ per 1,000-sweep block rises from ≈ 0.1 to 0.7), and the
+first-half and second-half U differ by up to 0.4 (`U256_first_half_second_half`). With this Metropolis program,
+10,000 sweeps after 2,000 burn-in are far too few at L = 256 near T_c. This stays the record of the specified stage-3
+run; the equilibrated repeat below (3) gives the stage-3 question its answer.
+
+## Checks beyond the objective: long runs, reweighting, equilibrated L = 256
+
+Summary for the report: **the stage-2 result as specified is T_c = 2.259, 95 % interval [2.254, 2.268]**
+(`stage2_crossing.json`). **Stage 3, repeated with equilibrated L = 256 runs, disagrees with that crossing point:** at
+T* = 2.259 the Binder cumulant still rises with L (U = 0.622, 0.632, 0.639, 0.659 for L = 32, 64, 128, 256; L = 256 lies
+6.7σ above L = 128), so T* is below where the curves cross, and the L = 256 curve crosses the smaller sizes at
+2.267–2.269, at the upper edge of the stage-2 interval and consistent with the exact 2.2692. The cause is mostly the
+stage-2 estimator, not the data: interpolating U between grid points 0.03 apart with a cubic places the crossing
+low by ≈ 0.003–0.007; reweighting the same data instead gives 2.262 [2.256, 2.271] from the stage-2 runs and **2.268
+[2.265, 2.272] from the long runs, which is the best estimate of this study** (deviation from exact −0.001).
+How the report presents the estimates is the report owner's choice; the numbers are in the files below.
+
+1. `code/extra_long.sh` (done): L = 32, 64, 128 at 2.21, 2.24, 2.27, 2.30, independent seeds 11–13, 100,000 sweeps
+   after 20,000 burn-in → `extra_long_binder.csv`, `extra_long_check.json` (`code/extra_long_analysis.py`). Tests whether the
+   stage-2 crossing is biased low by the short L = 128 runs.
+   **Result:** with N/τ ≥ 160 at every point (τ(|m|) ≤ 620 at L = 128) the stage-2 estimator (cubic on the grid) gives
+   `Tc_long` = 2.261, seed-bootstrap 95 % interval [2.258, 2.270]: +0.002 from stage 2. The short runs made stage 2
+   noisier (U(128, 2.27) = 0.600 ± 0.008 long vs 0.571 ± 0.019 in stage 2; every long-run U agrees with its stage-2 value
+   within 1.5σ, `diff_sigma`) but did not shift it beyond its interval. The spread of the pairwise crossings (32/64 2.272,
+   32/128 2.260, 64/128 2.251) comes from interpolating curves that change steeply between grid points; see 2.
+2. `code/reweighted_crossings.py` → `reweighted_crossings.json`: the same crossings without assuming a curve shape.
+   Each run's per-sweep (|m|, E) is reweighted (single histogram) to a 0.0005 grid around its own T, from the nearest
+   run and only while the Kish effective sample fraction of every seed stays ≥ 0.1; errors by block bootstrap and by
+   resampling seeds. Stage-2 data: T_c = 2.262 (block 95 % [2.256, 2.271], seed [2.259, 2.269]); long runs: **2.268
+   (block [2.265, 2.272], seed [2.266, 2.271])**, pairwise 2.274 / 2.267 / 2.264. Both contain the exact value; the
+   grid-cubic values (`grid_cubic_estimates`) are lower by 0.003 (stage 2) and 0.007 (long). Caveat:
+   `reweighting_consistency` gives the largest difference between the two neighbouring runs' reweightings where both
+   reach (up to 0.03 at L = 64/128 at the edges of reach), a systematic of the order of the statistical errors.
+3. `code/extra_long256.sh` (done): stage 3 repeated at the same five temperatures, seeds 11–14, 100,000 sweeps after
+   30,000 burn-in; `code/extra_long256_analysis.py` → `extra_long256_binder.csv` (U(256) per T, as `stage3_binder.csv`),
+   `extra_long256_reweighted.csv` (U_L(T') of all four sizes on the fine grid), `extra_long256_verdict.json`.
+   - Validity: U(256) now decreases monotonically (0.666, 0.664, 0.659, 0.545, 0.254); at T* τ(|m|) ≤ 765, N/τ = 131,
+     burn/τ = 39; no drift between run halves beyond 1.6σ (`half_run_drift_in_sigma`). Caveat: at 2.2743 τ reaches
+     2,460 (N/τ = 41), so the errors there are less certain; the seed spread there (0.49–0.61) is in `U_err_seed`.
+   - Direct test at T* (`U_by_L_at_stage2_Tc`, `U256_minus_U128_at_stage2_Tc_in_sigma`): U(256) = 0.6587 ± 0.0007 at the
+     simulated point vs U* = 0.62 at the stage-2 crossing (`U256_minus_Ustar_in_sigma` = 6.8) and U(128) = 0.639 ± 0.003.
+   - Crossings with L = 256 (`crossings_with_256`): 32/256 2.268 [2.267, 2.270], 64/256 2.267 [2.267, 2.270],
+     128/256 2.269 [2.267, 2.276]; all contain the exact value, none contains the stage-2 T_c.
+     The L = 256 grid step (0.015) leaves a region near 2.267 that the two neighbouring L = 256 runs reach only with
+     low weight, and the crossings fall in it, so their positions are good to ≈ ±0.003, not to the quoted bootstrap
+     width; with a stricter reach (Kish ≥ 0.3) the region is not covered at all. Variants with Kish ≥ 0.05, ≥ 0.3 and
+     20,000-sweep blocks are in `robustness/`; the direct test above and the verdict are the same in all of them.
+   - **Verdict (`verdict`): disagree.** The equilibrated L = 256 Binder values do not agree with the stage-2 crossing
+     point; they put the crossing at ≈ 2.268, at the upper edge of the stage-2 interval and in agreement with the exact T_c.

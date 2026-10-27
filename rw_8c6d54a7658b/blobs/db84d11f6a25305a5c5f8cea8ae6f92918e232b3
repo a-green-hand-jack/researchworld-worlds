@@ -1,0 +1,81 @@
+"""Figure: per-fold accuracy and paired difference, LR vs kNN on Iris (OpenML 61).
+Reads ../results/{folds_long.csv,intervals.csv} (experiment-repo); writes fig_accuracy.pdf/.png,
+fig_accuracy_caption.tex, fig_accuracy_provenance.json.
+Usage: python make_fig_accuracy.py [results_dir]   (default ../results)"""
+import sys, json, hashlib, pathlib
+import numpy as np, pandas as pd
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+here = pathlib.Path(__file__).resolve().parent
+res = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else here.parent / "results"
+RUN = "local"  # the Ibex run is byte-identical (results/reproducibility.json)
+
+folds = pd.read_csv(res / "folds_long.csv")
+iv = pd.read_csv(res / "intervals.csv")
+folds = folds[folds.run == RUN]
+iv = iv[(iv.run == RUN) & (iv.interval == "corrected_t")].set_index("quantity")
+wide = folds.pivot_table(index=["repeat", "fold"], columns="method", values="accuracy")
+acc = {"LR": wide["logistic_regression"].values * 100, "kNN": wide["knn"].values * 100}
+diff = acc["LR"] - acc["kNN"]
+assert len(diff) == 50
+
+BLUE, ORANGE, GREY = "#0072B2", "#D55E00", "#333333"
+plt.rcParams.update({"font.family": "serif", "font.serif": ["Times New Roman", "Times", "Nimbus Roman", "DejaVu Serif"],
+                     "font.size": 8, "axes.labelsize": 8, "xtick.labelsize": 8, "ytick.labelsize": 8,
+                     "axes.linewidth": 0.6, "pdf.fonttype": 42})
+
+def bubbles(ax, y, vals, color, scale=20):
+    v, c = np.unique(np.round(vals, 2), return_counts=True)
+    ax.scatter(v, np.full(len(v), y), s=c * scale, color=color, alpha=0.45, edgecolor=color, linewidth=0.6, zorder=2)
+    for x, n in zip(v, c):
+        ax.annotate(str(n), (x, y), xytext=(0, np.sqrt(n * scale / np.pi) + 1.5), textcoords="offset points",
+                    ha="center", va="bottom", fontsize=8, color="#333333",
+                    bbox=dict(fc="white", ec="none", pad=0.4), zorder=5)
+    return v, c
+
+def interval(ax, y, mean, lo, hi, color):
+    ax.plot([lo, hi], [y, y], color=color, lw=2.0, solid_capstyle="butt", zorder=3)
+    ax.plot([mean], [y], marker="D", color="white", mec=color, mew=1.2, ms=4.5, zorder=4)
+
+fig, (a, b) = plt.subplots(1, 2, figsize=(5.5, 1.95), gridspec_kw={"width_ratios": [1, 1], "wspace": 0.12})
+
+# (a) accuracy per method
+for y, (name, col, q) in enumerate([("kNN", ORANGE, "acc_knn"), ("LR", BLUE, "acc_lr")]):
+    bubbles(a, y + 0.0, acc[name], col)
+    r = iv.loc[q]
+    interval(a, y - 0.33, 100 * r["mean"], 100 * r["lo"], 100 * r["hi"], col)
+a.set_yticks([0, 1]); a.set_yticklabels(["$k$NN", "LR"]); a.set_ylim(-0.6, 1.62)
+a.set_xlim(78, 101.5); a.set_xticks([80, 85, 90, 95, 100])
+a.set_xlabel("Test accuracy per fold (%)")
+a.axvline(100, color="#999999", lw=0.5, ls=":", zorder=1)
+a.set_title("(a) accuracy, 50 folds", fontsize=8, loc="left", pad=3)
+
+# (b) paired difference, annotated with counts
+v, c = bubbles(b, 0.0, diff, GREY, scale=20)
+r = iv.loc["diff_lr_minus_knn"]
+interval(b, -0.33, 100 * r["mean"], 100 * r["lo"], 100 * r["hi"], GREY)
+b.axvline(0, color="black", lw=0.8, zorder=1)
+b.set_yticks([]); b.set_ylim(-0.6, 1.62)
+b.set_xlim(-8, 16); b.set_xticks([-5, 0, 5, 10, 15])
+b.set_xlabel("LR $-$ $k$NN, accuracy per fold (pp)")
+b.set_title("(b) paired difference", fontsize=8, loc="left", pad=3)
+
+for ax in (a, b):
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.tick_params(length=2.5, width=0.6)
+b.spines["left"].set_visible(False)
+fig.subplots_adjust(left=0.085, right=0.99, bottom=0.22, top=0.88)
+fig.savefig(here / "fig_accuracy.pdf")
+fig.savefig(here / "fig_accuracy.png", dpi=300)
+
+d = iv.loc["diff_lr_minus_knn"]
+n_w, n_t, n_l = int((diff > 0).sum()), int((diff == 0).sum()), int((diff < 0).sum())
+cap = (r"\caption{LR and $k$NN are not distinguishable on Iris. Bubble area $\propto$ number of the 50 test folds (numbers above) with that accuracy: "
+       r"(a)~per method, (b)~paired difference LR$-k$NN. Diamonds, bars: mean and 95\% corrected resampled-$t$ interval \citep{nadeau2003inference}. "
+       r"LR better in NW, tied in NT, $k$NN better in NL folds.}"
+       r"\label{fig:accuracy}").replace("NW", str(n_w)).replace("NT", str(n_t)).replace("NL", str(n_l))
+(here / "fig_accuracy_caption.tex").write_text(cap + "\n")
+prov = {f.name: hashlib.sha256((res / f.name).read_bytes()).hexdigest() for f in [res / "folds_long.csv", res / "intervals.csv"]}
+(here / "fig_accuracy_provenance.json").write_text(json.dumps({"inputs_sha256": prov, "run_plotted": RUN}, indent=1) + "\n")

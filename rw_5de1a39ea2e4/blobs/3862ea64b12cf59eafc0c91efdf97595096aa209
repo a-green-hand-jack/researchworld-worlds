@@ -1,0 +1,13 @@
+# Inspection of delivered presentation
+
+Opened all three final convergence PNGs (1430×572 each) and the generated cover source (2048×768) and delivered cover (1024×384). Plot labels, legends and markers are legible, axes and legends are not clipped, and method colors/shapes are consistent. The smooth-function plots expose the fitting cutoff and computed-zero markers. The sqrt plot uses a tighter vertical scale and the n^-3/2 guide. Dashed references are offset guides, as captions disclose. Plot dimensions suit the agreed 6.5×2.6-inch use; final report layout remains the report owner's responsibility.
+
+Read the nine-row Markdown table and checked its source mapping. The exp Gauss–Legendre interval is explicitly undefined because only two observations remain. Sqrt Gauss–Legendre interval endpoints are printed at nine decimals to preserve their difference. Full precision remains in CSV. Generator checks passed for all 108 observations and all nine fit counts; no fit was recomputed from rounded error inputs.
+
+Cover source and crop show text-free curves and shaded subdivisions on a light background. No labels, quantitative data, or empirical claims are encoded. Crop preserves the complete central illustration. Prompt, source, request/response metadata and crop code are retained. The image service returned an event stream; the generator now handles its completed-image event. Response settings differ from requested settings, as recorded in the metadata and README.
+
+## Upstream validation after integration
+
+Compared the committed input copies against experiment-repo `1ec7f2006272572d4a405365a1229a8d26b343d9`: all 108 error rows are identical in every original column and fits.csv is byte-for-byte unchanged. All 108 added `above_threshold_1e-15` flags agree with the generator’s error > 1e-15 mask. Existing figures and tables therefore remain current; their original generation provenance is retained. The updated assignment includes report/tables/ and presentation/ alongside the cover and figures.
+
+Checked the full-precision sqrt Gauss–Legendre interval: [1.4999999593677407, 1.5000000039127044] contains 1.5. The nine-decimal display in the delivered table preserves this fact. The report owner reports a successful two-page A4 render with the delivered assets in paper-repo issue 6; final layout is owned there.

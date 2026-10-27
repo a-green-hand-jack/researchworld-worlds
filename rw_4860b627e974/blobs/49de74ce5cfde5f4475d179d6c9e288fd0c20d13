@@ -1,0 +1,32 @@
+# Linear fit to synthetic data
+
+## Dataset
+
+40 synthetic points generated with NumPy, legacy `RandomState(0)`:
+
+```python
+x = np.linspace(0, 10, 40)
+rng = np.random.RandomState(0)
+y = 2*x + 1 + rng.normal(0, 0.5, 40)
+```
+
+True line y = 2x + 1 with additive Gaussian noise of standard deviation 0.5.
+
+## Method
+
+Ordinary least squares regression of y on a constant and x. Two-sided 95% confidence intervals for slope and intercept from the Student-t distribution with df = n − 2 = 38, using the residual-variance estimate σ̂² = RSS/38 and its standard errors. Code and exact data/fit are kept in the experiment-repo repository as provenance (files `analysis/fit_line.py` and `analysis/fit_results.json` in world/experiment-repo; they are not part of the final assembled report).
+
+## Results
+
+| Parameter | Estimate | SE | 95% CI |
+|---|---|---|---|
+| Intercept | 1.3987 | 0.1632 | [1.0683, 1.7290] |
+| Slope | 1.9515 | 0.0281 | [1.8947, 2.0084] |
+
+Residual SD σ̂ = 0.5258 (σ̂² = 0.2764). The true slope 2 falls inside its 95% interval; the true intercept 1 falls outside its interval [1.0683, 1.7290], which can occur by chance at the 5% level.
+
+## Figure
+
+![Fitted line with 95% band](figure.png)
+
+The figure shows the fitted line over the 40 points, consistent with the estimates above (slope 1.952, intercept 1.399).

@@ -1,0 +1,13 @@
+{
+  "commitment_schema": 1,
+  "delivers": [
+    {
+      "what": "One log-log convergence figure per function (exp(-x^2) and x^(1/3) on [0,1]): absolute error vs number of panels n = 2^k, k = 1..10, one curve per rule (composite trapezoid, composite Simpson, 4-node Gauss-Legendre panels), each annotated with its fitted convergence order, the 1e-14 fit cutoff marked, and slope-guide reference lines; proposed delivered paths figures/fig_smooth.png, figures/fig_singular.png (or the format paper-repo's venue requires), each with its generator script.",
+      "standard": "Each figure makes its claim checkable in the field's conventions: log-log axes with readable n (2^1..2^10) and error ticks; distinct marker+color per rule with a legend naming the rule as defined in the plan; the fitted order (slope of log(error) vs log(n) over points with error above 1e-14) printed on or beside each curve and matching the committed fit result exactly; the 1e-14 cutoff visibly marked; caption or companion text naming function, interval, rules, panel counts and data source. Rendered from the committed sweep CSV by committed generator code; every plotted point equals a CSV row; each rendered output opened and inspected before delivery."
+    },
+    {
+      "what": "The report's tables rendered from the committed results: the fitted convergence orders per function and rule (order, points entering the fit, fit quality) and the reference values (mpmath.quad at mp.dps = 40) with the mpmath version used, in a compact format paper-repo can embed in the one-page report; proposed delivered path tables/ (fragments paper-repo can include).",
+      "standard": "Every number traceable to experiment-repo's committed results (sweep CSV, fit output, reference values with mpmath version) with no re-derivation; values and version cited exactly as delivered; orders in the table identical to the orders annotated in the figures; layout compact enough for the one-page constraint."
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+# Content of tables/tab_prior_comparison.tex (answer to paper-repo#5)
+
+Theory statements are in paper-repo `sections/theory.tex`; the matched-limit derivations are in
+`appendix/proofs.tex`, subsection "Matched limits of prior accounts" (label `app:prior`).
+The table is input in `appendix/proofs.tex` (subsection `app:prior`; moved out of the 9-page body) inside a `table` float labelled `tab:prior`
+(caption in paper-repo; text width), so the cells may use `\cref{...}`, `\citet{...}` and the paper's macros
+(`\rho_j`, `s_j`, `c_j`, `\Phi_j`, `\lambda`, `\lambda_P`, `p_0`). Labels:
+`prop:decouple`, `prop:window`, `prop:survival`, `prop:stopgrad`, `prop:masking`, `cor:depth`,
+`app:prior`, `app:survival`.
+
+Bib keys: tian2021understanding, wang2021demystify (the plan's `wang2021demystifying`),
+littwin2024jepa, ziyin2023shapes, simon2023stepwise, zhuo2023rank (required);
+halvagal2023implicit, wen2022head (optional; fine to omit if width is tight).
+
+Evidence column: "Proof" = algebra in the cited appendix paragraph; "Mode-ODE check" = the numerical
+check of the derivation in `app:survival` (paper-repo `notes/pilot/`). A measured matched-limit check
+from experiment-repo is requested in experiment-repo#3; until it lands, write only what is below.
+If experiment-repo commits one, I will tell you the result path in paper-repo#5 / figtab-repo#2.
+
+| Account | Setting | Reduces to / agrees | Departs / new | Evidence |
+|---|---|---|---|---|
+| \citet{tian2021understanding} (DirectPred) | Linear BYOL/SimSiam, trained linear predictor, EMA or stop-grad, weight decay, isotropic augmentation | \cref{prop:decouple,prop:window} with $s_j=1$, $c_j=1+\sigma^2$, $\lambda=\alpha\lambda_P$: their eigenmode ODE and weight-decay threshold | Masking makes $s_j,c_j$ direction-dependent; predictor drift gives survival $\Phi_j>0$ and $\hat R$ | Proof (\cref{app:prior}); stop-grad: \cref{prop:stopgrad} |
+| \citet{wang2021demystify} | Linear network, predictor set from statistics (DirectPred/DirectCopy), weight decay, augmentation noise | Two-view noise model: $\rho_js_j>4\lambda$ discards high-augmentation-variance directions, as they prove | Trained predictor drifts through the window; masking-induced $s_j,c_j$; rank prediction | Proof (\cref{app:prior}) |
+| \citet{littwin2024jepa} | Deep linear JEPA encoder, linear predictor, stop-grad, no weight decay, small init | $\lambda=\lambda_P=0$: window $(0,\rho_j)$ never closes; predictor $\to\rho_j$, their regression coefficient | Weight decay closes windows, so directions can die; their encoder-depth ordering not derived | Proof (\cref{app:prior}) |
+| \citet{ziyin2023shapes} | Loss landscape of linear SSL objectives with weight decay near the origin | Count of directions with $\rho_js_j>4\lambda$ = stationary-point (landscape-type) collapse threshold | Dynamical: which basin a small-init trajectory reaches; fixed-point count over-predicts rank | Mode-ODE check: 297 vs 183 of 300 (\cref{app:survival}) |
+| \citet{simon2023stepwise} | Linearized Barlow Twins, no predictor, small initialization, stepwise eigenmode learning | $\lambda_P\to0$: onset time $\log(w/\varepsilon_j)/r_j(p_0)$, log in init scale, one mode at a time | With $\lambda_P>0$ onset is finite only if $\Phi_j>0$; late modes never learned | Proof (\cref{app:prior}, phase I of \cref{app:survival}) |
+| \citet{zhuo2023rank} | BYOL/SimSiam/DINO-type asymmetric branches; rank difference between branch outputs | Online and target outputs differ by $p_j$ per direction, so ranks differ when $p_j$ varies | No derived sign of the rank difference; our mechanism is early-time drive vs decay | None derived; measured online-vs-target rank requested (experiment-repo#3) |
+| \citet{halvagal2023implicit} (optional) | Linear non-contrastive SSL, eigenmode analysis of predictor eigenvalues | Predictor gain $p_j$ sets each direction's drive $p_js_j$ and decay $p_j^2c_j$ | Weight decay and predictor drift set a finite growth window | Proof (\cref{prop:decouple}) |
+| \citet{wen2022head} (optional) | Nonlinear two-layer network with prediction head, feature-learning analysis | The head is necessary: with $p_j=0$ (no predictor along $j$) no direction is driven, $r_j=-\lambda$ | Per-direction quantitative criterion; masking and depth terms | Proof (predictor width, \cref{sec:heuristics}) |
+
+Caption material (the caption itself is mine, in appendix/proofs.tex): "Reductions and departures from the
+closest prior accounts. 'Reduces to' gives the limit of our statements that recovers the cited
+result; 'Departs' what our theory predicts beyond it. Derivations in Appendix app:prior."

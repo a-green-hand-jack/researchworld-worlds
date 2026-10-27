@@ -1,0 +1,23 @@
+# Research brief
+
+## Objective (verbatim from experiment-repo issue #1)
+
+> Monte Carlo estimate of pi and how its error scales with the number of samples.
+>
+> Estimate pi by sampling points uniformly in the unit square and counting those inside the quarter circle. For each N in 10^3, 10^4 and 10^5, run 50 independent estimates with `numpy.random.default_rng` seeded from 2026 plus the run index, and record the mean absolute error against `math.pi`.
+>
+> Fit log(mean absolute error) against log(N) by least squares and give the exponent; compare it with the -1/2 expected for Monte Carlo.
+>
+> Report: `report/report.md`, one short page with the table of N and mean absolute error and the fitted exponent.
+
+## Inputs and interpretation
+
+The entire supplied material is this issue; the repository README identifies only the role. No datasets, attached papers or external reference values are supplied. Uniform points will be generated on [0,1)^2, with inside defined by x²+y² <= 1 and pi estimate 4 times the inside fraction. Run index is zero based (0–49), so seeds are 2026–2075. Each (N, run) reinitializes default_rng with the run seed. Runs are independent within each N; reuse of the same seeds makes estimates across N paired and nested, which must not be mistaken for independent errors across N.
+
+Required quantities: 50 estimates at each of 1,000, 10,000 and 100,000; absolute deviations from math.pi; arithmetic mean absolute error for each N; an unweighted ordinary least-squares slope of natural log MAE on natural log N with an intercept. The comparison is descriptive against -0.5; a finite collection of 50 runs need not yield exactly -0.5. Binomial variance gives theoretical root-N scaling. Optional paired bootstrap diagnostics may assess finite-run slope uncertainty, without replacing the requested primary calculation.
+
+## Settled responsibilities
+
+experiment-repo supplies reproducible code, all raw estimates, aggregates, fit and diagnostic evidence in its working repository; it maintains this brief and assignment. figtab-repo supplies the report-ready three-row table and precision/caption choices to paper-repo. paper-repo provides the one-short-page report at report/report.md, integrates that table and explains methods, exponent and comparison. internal-review-repo independently checks objective compliance and numerical validity and owns release approval. No figure is required. No feasibility function beyond this small CPU computation is needed; experiment-repo covers it.
+
+The split above was accepted by all three neighboring owners. Results and numerical validation are now complete; see results/findings.md and its referenced CSV/JSON files.

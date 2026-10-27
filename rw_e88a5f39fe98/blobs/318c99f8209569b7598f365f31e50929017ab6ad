@@ -1,0 +1,19 @@
+# Evidence check: experiment-repo at 0ceece50963ed7752e013704f3e17ecd4d7cf9c2
+
+Inspected: results/runs.csv (sha256 ce5133a1...9887, matches fit.json provenance), results/summary.csv,
+results/fit.json; code revision 2ef4f976 exists in experiment-repo history.
+
+- runs.csv: 1000 rows, seed = 2026 + run_index (0..199) at every N; estimate = 4*inside/N exactly;
+  absolute_error = |estimate - math.pi| (max deviation 1e-16, float rounding).
+- Per-N MAE: identical (to 1e-17) to my independent reproduction `check/reproduce.json`,
+  key `per_N_run_index/pairs_full` (seed reset per N, interleaved x,y pairs, x*x+y*y <= 1).
+- OLS slope -0.50116 and t(3) interval [-0.51917, -0.48314] (t = 3.1824): identical to mine.
+- Paired run-vector percentile bootstrap: my independent 20000-replicate run (seed 1) gives
+  [-0.5162, -0.4863], SD 0.0076, against delivered [-0.51616, -0.48611] (B = 50000, seed 20261018).
+- Theory coefficient sqrt(32 p(1-p)/pi) = 1.3103 is correct. All five MAEs lie within 1.8 SE of theory.
+- Both intervals cover -1/2. Limitations in fit.json are stated appropriately.
+- Sensitivity to convention (for information): the other seeding and draw readings give slopes of
+  -0.492 to -0.501 (`check/reproduce.json`), so the conclusion does not depend on the convention.
+
+Conclusion: the numerical evidence supports the planned claim. No findings. Report and figure not yet
+delivered, so they are not yet reviewed.

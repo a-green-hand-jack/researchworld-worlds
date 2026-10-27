@@ -1,0 +1,32 @@
+# Growth of insertion sort and merge sort running time
+
+## Setup
+Pure-Python insertion sort and merge sort on random integers, n = 1000, 2000, 4000, 8000, 16000, 5 repeats each (code: `code/run_timing.py`; raw data: `results/timings.csv`; fits: `results/fits.json`). Python 3.11.2, numpy 2.4.6, Linux-7.0.0-38-generic-x86_64-with-glibc2.36.
+
+## Results
+Mean ± sd of wall time over 5 repeats (insertion in seconds, merge in milliseconds). The formatted table and the log-log figure are in `tables/` and `figures/`.
+
+| n | insertion (s) | merge |
+|---|---|---|
+| 1000 | 0.0150 ± 0.0004 | 1.29 ± 0.05 ms |
+| 2000 | 0.0621 ± 0.0010 | 2.80 ± 0.08 ms |
+| 4000 | 0.2510 ± 0.0056 | 5.91 ± 0.09 ms |
+| 8000 | 1.0889 ± 0.0543 | 13.89 ± 1.58 ms |
+| 16000 | 4.2520 ± 0.1165 | 28.06 ± 1.09 ms |
+
+Log-log least-squares slope of mean time vs n:
+
+| algorithm | slope | 95% CI | expected |
+|---|---|---|---|
+| insertion | 2.042 | [2.006, 2.078] | 2 |
+| merge | 1.119 | [1.067, 1.171] | about 1.1 (n log n over this range) |
+
+Doubling ratios (time(2n)/time(n)): insertion 4.13, 4.04, 4.34, 3.90 (n^2 predicts 4); merge 2.16, 2.11, 2.35, 2.02 (n log n predicts 2.2 down to 2.1).
+
+Log-RMS residual of the shape fits: insertion n^2 0.045 vs n log n 0.902; merge n log n 0.028 vs n^2 0.864.
+
+## Conclusion
+Yes, the measured growth matches the expected shapes. Insertion sort scales as n^2: its slope CI contains 2 only at the edge (the CI is [2.006, 2.078]), so it is marginally above 2, and its n^2 fit is far better than n log n. Merge sort's slope of 1.12 is consistent with n log n (a pure power law n^1 would give 1.0, and n log n gives about 1.1 over this range), and n log n fits far better than n^2. Merge sort is about 11x faster at n = 1000 and about 150x faster at n = 16000.
+
+## Limitations
+Single machine and pure-Python implementations, so constants are not hardware independent. Only five sizes, spanning a factor of 16, cannot distinguish n log n from n^1.1 power laws by slope alone; the residual comparison and doubling ratios support it but do not prove it. The slightly-above-2 insertion slope may reflect cache or timing noise (n = 8000 has a larger sd).

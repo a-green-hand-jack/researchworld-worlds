@@ -1,0 +1,57 @@
+# LR vs kNN on Iris — short paper
+
+`report.pdf` is compiled from `report.tex` with the official NeurIPS 2026
+style file `neurips_2026.sty` (from
+`https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip`,
+zip sha256 `82473931e3ef710fcd3f4a8cd4119b9de32e56825f90f9e5a6d55f2d01b817d9`,
+sty sha256 `c3fc2894e83d2517ca18b66741d6c595986d97957dc08ec08bb2125a7ec4555a`,
+unmodified), default option (Main Track, anonymous submission).
+
+## Build
+
+    cd report
+    latexmk -pdf report.tex      # TeX Live 2026: pdflatex + bibtex
+
+## Layout
+
+| Path | Content | Produced by |
+|---|---|---|
+| `report.tex`, `references.bib`, `neurips_2026.sty`, `report.pdf` | paper source and PDF | paper (this repository) |
+| `code/` | code that produced every number, the table and the figure; Ibex job script | analysis (experiment-repo) |
+| `results/` | raw per-fold results of the local and Ibex runs, Ibex job log, `numbers.tex` (generated macros) | analysis (experiment-repo) |
+| `tables/results.tex` | the table | presentation (experiment-repo) |
+| `figures/accuracy.pdf` | the figure | presentation (experiment-repo) |
+
+`report.pdf` was compiled against experiment-repo `main` at
+`71ac236351917e5df0536545a5c2de4c50705c3f` (its `report/code`, `report/results`,
+`report/figures`, `report/tables`), TeX Live 2026, `latexmk -pdf`.
+
+## Where every number comes from
+
+No result in `report.tex` is typed by hand: each is a macro in
+`results/numbers.tex`, written by `code/analyze.py` from `results/local/` and
+`results/ibex/`. The table (`tables/results.tex`) and figure
+(`figures/accuracy.pdf`) are written by the same script.
+
+| In the paper | Macro(s) | Source |
+|---|---|---|
+| mean accuracies, corrected and naive 95% intervals | `\LRmean \LRlo \LRhi \KNNmean \KNNlo \KNNhi` (+`Naive`) | `results/summary.json` (`logreg`, `knn`) |
+| paired difference, intervals, p | `\DIFFmean \DIFFlo \DIFFhi \DIFFloNaive \DIFFhiNaive \DIFFp` | `results/summary.json` (`difference_logreg_minus_knn`) |
+| folds LR better / tied / kNN better | `\FoldsLRbetter \FoldsTied \FoldsKNNbetter` | `results/local/folds.csv` |
+| chosen k (min, max, median, mode), k grid | `\Kmin \Kmax \Kmedian \Kmode \Kgrid` | `results/summary.json` (`chosen_k_counts`), `code/cv.py` |
+| design: 150 flowers, 10 x 5 folds, 50 folds, 120/30, inner 5 folds, seed | `\Nsamples \Nreps \Nfolds \Nouter \Ntrain \Ntest \Ninner \Seed` | `results/*/run_info.json`, `code/cv.py` |
+| data checksum | `\DataMD` | `code/data/openml_61_meta.json`, `code/fetch_data.py` |
+| LR convergence warnings | `\LRconvWarnings` | `results/*/run_info.json` |
+| Ibex node, job id, CPUs (vendors, both x86-64), versions | `\IbexNode \IbexJob \IbexCPU \LocalCPU \NumpyVersion \ScipyVersion \SklearnVersion \PythonVersion` | `results/ibex/ibex_53909243.log`, `results/*/run_info.json` |
+| local vs Ibex identical | (text) | `results/summary.json` (`reproducibility`: sha256 of `folds.csv`, `predictions.csv`) |
+| k grid 1..30 sensitivity | (text) | `code/README.md` |
+
+Method settings stated in the text (L2, C = 1, lbfgs, Euclidean, uniform
+weights, ties to smallest k) are those in `code/cv.py`.
+
+## Venue notes
+
+* The objective limits the paper to two pages in total, references included.
+  The NeurIPS paper checklist (`checklist.tex` in the template) cannot fit in
+  that limit and is therefore omitted; this PDF is a research report in the
+  submission format, not a submission.

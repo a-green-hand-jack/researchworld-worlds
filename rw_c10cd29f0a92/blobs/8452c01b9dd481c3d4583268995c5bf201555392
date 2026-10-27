@@ -1,0 +1,69 @@
+"""Run the given program ising.py over a grid of temperatures, one subprocess per (T, seed), in parallel.
+
+Each (T, seed) is an independent invocation of the unmodified program (code/ising.py, identical to the
+frozen /initial-state/inputs/0/ising.py), so results are bit-identical to one long invocation with the same
+arguments: the program seeds each run from its seed only. Writes one JSON per run under OUT/raw/ and the
+merged list (sorted by T, seed) to OUT/summary.json; with --series the per-sweep |m| and e go to OUT/series/.
+
+  python3 code/run_points.py --L 64 --temps 1.5 1.6 --seeds 1 2 --sweeps 20000 --burn 2000 --out data/stage1 --jobs 2
+"""
+import argparse
+import fcntl
+import json
+import subprocess
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+PROGRAM = Path(__file__).with_name('ising.py')
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument('--L', type=int, required=True)
+    p.add_argument('--temps', type=float, nargs='+', required=True)
+    p.add_argument('--seeds', type=int, nargs='+', required=True)
+    p.add_argument('--sweeps', type=int, required=True)
+    p.add_argument('--burn', type=int, default=2000)
+    p.add_argument('--out', required=True)
+    p.add_argument('--series', action='store_true')
+    p.add_argument('--jobs', type=int, default=2)
+    a = p.parse_args()
+    out = Path(a.out)
+    (out / 'raw').mkdir(parents=True, exist_ok=True)
+    start = time.time()
+
+    def one(T, seed):
+        f = out / 'raw' / f'L{a.L}-T{T:.4f}-s{seed}.json'
+        if f.exists():
+            return f
+        cmd = [sys.executable, '-u', str(PROGRAM), '--L', str(a.L), '--temps', repr(T), '--seeds', str(seed),
+               '--sweeps', str(a.sweeps), '--burn', str(a.burn), '--out', str(f) + '.tmp']
+        if a.series:
+            cmd += ['--series', str(out / 'series')]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode:
+            print(r.stderr, flush=True)
+            raise SystemExit(f'failed: {cmd}')
+        Path(str(f) + '.tmp').rename(f)
+        print(r.stdout.strip(), f'[wall {time.time() - start:.0f} s]', flush=True)
+        return f
+
+    with ThreadPoolExecutor(a.jobs) as ex:
+        files = list(ex.map(lambda ts: one(*ts), [(T, s) for T in a.temps for s in a.seeds]))
+    rows = [r for f in files for r in json.loads(f.read_text())]
+    merged = out / f'summary-L{a.L}.json'
+    lock = open(out / '.merge.lock', 'w')
+    fcntl.flock(lock, fcntl.LOCK_EX)  # several jobs may merge into the same summary
+    if merged.exists():
+        old = {(r['T'], r['seed']): r for r in json.loads(merged.read_text())}
+        old.update({(r['T'], r['seed']): r for r in rows})
+        rows = list(old.values())
+    rows.sort(key=lambda r: (r['T'], r['seed']))
+    merged.write_text(json.dumps(rows, indent=1))
+    print(f'wrote {merged} ({len(rows)} runs) in {time.time() - start:.0f} s', flush=True)
+
+
+if __name__ == '__main__':
+    main()

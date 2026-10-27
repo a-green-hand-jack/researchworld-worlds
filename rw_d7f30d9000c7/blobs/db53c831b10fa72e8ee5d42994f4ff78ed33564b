@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Inspect a rendered figure (co2_mlo_fits.png/.pdf) programmatically.
+
+Checks, and prints a PASS/FAIL line for each:
+  PDF: page size matches the intended inches; every expected string is
+       present verbatim (axis labels, legend, both growth-rate annotations
+       exactly as they will appear in the report); no provenance text in
+       the figure (the report body carries it, per paper-repo's answer);
+       no text runs off the page.
+  PNG: pixel size matches inches x 300 dpi; the image is not blank; the
+       marker red of the quadratic fit and the dark slate of the observed
+       means are both present (both fit lines actually drawn).
+
+Usage: inspect_render.py <outdir> <fits.json> <provenance.json> [annual_fits.csv] [--draft]
+"""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import fitz  # PyMuPDF
+from PIL import Image
+
+WIDTH_IN, HEIGHT_IN, DPI = 6.5, 3.2, 300
+MARKER_RED = (196, 78, 44)    # COLOR_QUAD #c44e2c
+MARKER_SLATE = (38, 52, 63)   # COLOR_DATA #26343f
+NEAR = 28                    # per-channel tolerance for a color match
+
+
+def fmt(v):
+    return f"{v:.3f}"
+
+
+def expected_strings(fits: dict, prov: dict, draft: bool) -> list[str]:
+    strings = [
+        "Year",
+        "CO\u2082 annual mean (ppm)",
+        "OLS quadratic fit",
+        "Observed annual mean CO\u2082",
+        f"OLS linear fit: {fmt(fits['linear']['slope_ppm_per_yr'])} ppm/yr average",
+    ]
+    for w in fits["growth_windows"]:
+        lo, hi = w["ci95_ppm_per_yr"]
+        strings.append(w.get("display") or (
+            f"{w['label']}: {fmt(w['rate_ppm_per_yr'])} ppm/yr "
+            f"(95% CI {fmt(lo)}\u2013{fmt(hi)})"))
+    return strings
+
+
+def check(name: str, ok: bool, detail: str = "") -> bool:
+    print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  ({detail})" if detail else ""))
+    return ok
+
+
+def main() -> None:
+    args = [a for a in sys.argv[1:] if a != "--draft"]
+    outdir, fits_path, prov_path = (Path(args[0]), Path(args[1]), Path(args[2]))
+    annual_csv = Path(args[3]) if len(args) > 3 else None
+    draft = "--draft" in sys.argv
+    fits = json.loads(fits_path.read_text())
+    prov = json.loads(prov_path.read_text())
+
+    ok = True
+    pdf = fitz.open(outdir / "co2_mlo_fits.pdf")
+    page = pdf[0]
+    pw, ph = page.rect.width, page.rect.height
+    ok &= check(f"pdf page size {WIDTH_IN} x {HEIGHT_IN} in",
+                abs(pw - WIDTH_IN * 72) < 1 and abs(ph - HEIGHT_IN * 72) < 1,
+                f"{pw / 72:.2f} x {ph / 72:.2f} in")
+
+    words = page.get_text("words")
+    joined = page.get_text()
+    for s in expected_strings(fits, prov, draft):
+        # annotations/legend strings are single text runs; the footer may be
+        # re-flowed per word, so check a word-split-tolerant containment too
+        compact = " ".join(" ".join(joined.split()).split())
+        found = s in joined or " ".join(s.split()) in compact
+        ok &= check(f"pdf contains {s[:60]!r}", found)
+
+    off = [w for w in words if w[0] < -1 or w[1] < -1 or w[2] > pw + 1 or w[3] > ph + 1]
+    ok &= check("pdf no text off-page", not off, f"{len(off)} offenders")
+    if off:
+        print("  ", [w[4] for w in off][:6])
+
+    # provenance stays out of the figure (paper-repo#3: the report body
+    # carries it), so verify exactly that
+    for banned in (prov["url"], prov["sha256"], "Fetched"):
+        ok &= check(f"pdf free of provenance text {banned[:30]!r}", banned not in joined)
+
+    # the rendered curves must BE the handoff's fits: evaluate the delivered
+    # quadratic/linear coefficients and compare with annual_fits.csv's
+    # predictions to machine precision
+    if annual_csv and ({"a0_ppm", "a1_ppm_per_yr", "a2_ppm_per_yr2"} <= fits["quadratic"].keys()
+                        and "intercept_ppm" in fits["linear"]):
+        import csv as _csv
+        c = fits["center_year"]
+        a0, a1, a2 = (fits["quadratic"]["a0_ppm"], fits["quadratic"]["a1_ppm_per_yr"],
+                      fits["quadratic"]["a2_ppm_per_yr2"])
+        b0, b1 = fits["linear"]["intercept_ppm"], fits["linear"]["slope_ppm_per_yr"]
+        rows = [r for r in _csv.DictReader(open(annual_csv))
+                if int(r["year"]) >= fits["fit_years"][0]]
+        dq = max(abs((a0 + a1 * (int(r["year"]) - c) + a2 * (int(r["year"]) - c) ** 2)
+                     - float(r["quadratic_fit_ppm"])) for r in rows)
+        dl = max(abs((b0 + b1 * (int(r["year"]) - c))
+                     - float(r["linear_fit_ppm"])) for r in rows)
+        n_rows = len(rows)
+        ok &= check("curves equal handoff predictions (quadratic)", dq < 1e-9, f"max dev {dq:.2e} ppm over {n_rows} yrs")
+        ok &= check("curves equal handoff predictions (linear)", dl < 1e-9, f"max dev {dl:.2e} ppm")
+
+    img = Image.open(outdir / "co2_mlo_fits.png").convert("RGB")
+    ok &= check("png size 1950 x 960", img.size == (WIDTH_IN * DPI, HEIGHT_IN * DPI),
+                str(img.size))
+    px = img.getdata()
+    n = len(px)
+    nonwhite = sum(1 for p in px if p != (255, 255, 255))
+    ok &= check("png not blank", nonwhite > n // 20, f"{100 * nonwhite / n:.1f}% ink")
+    for name, rgb in (("quadratic red", MARKER_RED), ("data slate", MARKER_SLATE)):
+        hits = sum(1 for p in px if all(abs(p[i] - rgb[i]) <= NEAR for i in range(3)))
+        ok &= check(f"png contains {name}", hits > 200, f"{hits} px")
+
+    print("RESULT:", "PASS" if ok else "FAIL")
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()

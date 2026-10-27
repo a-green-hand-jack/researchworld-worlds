@@ -1,0 +1,49 @@
+import numpy as np, json, csv, sys
+from scipy import stats
+F = {"exp": (np.exp, np.e-1), "runge": (lambda x:1/(1+25*x**2), np.arctan(5)/5), "sqrt": (np.sqrt, 2/3)}
+xg, wg = np.polynomial.legendre.leggauss(4)
+def trap(f,n):
+    x=np.linspace(0,1,n+1); y=f(x); h=1/n
+    return h*(y.sum()-0.5*(y[0]+y[-1]))
+def simp(f,n):  # n panels, each Simpson with midpoint
+    x=np.linspace(0,1,n+1); h=1/n; m=(x[:-1]+x[1:])/2
+    return h/6*(f(x[:-1]).sum()+4*f(m).sum()+f(x[1:]).sum())
+def gl(f,n):
+    x=np.linspace(0,1,n+1); a=x[:-1,None]; h=1/n
+    return (h/2*(wg*f(a+h*(xg+1)/2))).sum()
+R={"trapezoid":trap,"simpson":simp,"gauss4":gl}
+rows=[]
+for fn,(f,ex) in F.items():
+    for rn,r in R.items():
+        for k in range(1,13):
+            n=2**k; rows.append((fn,rn,k,n,abs(r(f,n)-ex)))
+with open("results/errors.csv","w",newline="") as fh:
+    w=csv.writer(fh); w.writerow(["function","rule","k","n","abs_error","in_primary_fit_1e-14","in_fit_1e-15","in_fit_1e-13"]); 
+    for r in rows: w.writerow([r[0],r[1],r[2],r[3],repr(float(r[4])),int(r[4]>1e-14),int(r[4]>1e-15),int(r[4]>1e-13)])
+def fit(n,e):
+    x,y=np.log(n),np.log(e); m=len(x)
+    if m<2: return None
+    res=stats.linregress(x,y); o=-res.slope
+    if m<3: return dict(order=o,lo=None,hi=None,m=m,r2=None)
+    t=stats.t.ppf(0.975,m-2); hw=t*res.stderr
+    return dict(order=o,lo=o-hw,hi=o+hw,m=m,r2=res.rvalue**2)
+cuts={"1e-14":1e-14,"1e-15":1e-15,"1e-13":1e-13}
+out=[]
+for fn in F:
+    for rn in R:
+        sel=[r for r in rows if r[0]==fn and r[1]==rn]
+        n=np.array([r[3] for r in sel],float); e=np.array([r[4] for r in sel])
+        loc=[float(-np.log(e[i+1]/e[i])/np.log(2)) if e[i]>0 and e[i+1]>0 else None for i in range(11)]
+        d=dict(function=fn,rule=rn,local_slopes=loc)
+        for cn,c in cuts.items():
+            mask=e>c
+            d["cut_"+cn]=fit(n[mask],e[mask]) | dict(kmin=int(np.log2(n[mask][0])),kmax=int(np.log2(n[mask][-1]))) if mask.sum()>=2 else None
+        out.append(d)
+json.dump(out,open("results/orders.json","w"),indent=1)
+with open("results/orders.csv","w",newline="") as fh:
+    w=csv.writer(fh); w.writerow(["function","rule","cutoff","order","ci95_lo","ci95_hi","n_points","k_range","r2"])
+    for d in out:
+        for cn in cuts:
+            q=d["cut_"+cn]
+            if q: w.writerow([d["function"],d["rule"],cn,*(f"{q[k]:.4f}" if q[k] is not None else "" for k in("order","lo","hi")),q["m"],f'{q["kmin"]}-{q["kmax"]}',"" if q["r2"] is None else f'{q["r2"]:.5f}'])
+            else: w.writerow([d["function"],d["rule"],cn,"","","",0,"",""])

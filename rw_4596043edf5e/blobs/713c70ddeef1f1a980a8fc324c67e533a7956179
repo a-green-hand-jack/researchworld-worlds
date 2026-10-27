@@ -1,0 +1,68 @@
+# Probe Results
+
+## 1. `curl -fsSL https://antigravity.google/cli/install.sh | bash` (the official installer), then `~/.local/bin/agy --version`
+
+### Command
+```bash
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+~/.local/bin/agy --version
+```
+
+### Output
+```
+⠋ Detecting system environment...
+✓ Platform detected: linux_amd64
+⠋ Querying release repository...
+✓ Latest available version: 1.4.4
+⠋ Downloading release package...
+✓ Download complete and checksum verified.
+⠋ Extracting binary from archive...
+⠋ Configuring shell environment...
+ERROR: logging before google.Init: I1021 23:56:03.714273       1 installer.go:27] Running Antigravity CLI setup...
+ERROR: logging before google.Init: I1021 23:56:03.714513       1 installer.go:147] Appending PATH export to profile /hutian/.home/.profile: export PATH="/hutian/.home/.local/bin:$PATH"
+ERROR: logging before google.Init: I1021 23:56:03.714814       1 installer.go:184] Successfully updated shell profile: /hutian/.home/.profile
+ERROR: logging before google.Init: I1021 23:56:03.714847       1 installer_unix.go:40] PATH verification: ~/.local/bin is correctly configured in active PATH environment.
+
+✅ Antigravity CLI installed successfully at /hutian/.home/.local/bin/agy
+Run 'agy' to start the CLI
+
+$ ~/.local/bin/agy --version
+1.4.4
+```
+
+## 2. `AGY_LLM_GATEWAY_URL="$(ht-resource url gemini-api)" AGY_LLM_GATEWAY_API_KEY="$HT_RESOURCE_TOKEN" ~/.local/bin/agy -p 'What is 6 times 7? Answer with the number only.' --model gemini-3.8-flash-low --output-format json --print-timeout 180s`
+
+### Command
+```bash
+AGY_LLM_GATEWAY_URL="$(ht-resource url gemini-api)" AGY_LLM_GATEWAY_API_KEY="$HT_RESOURCE_TOKEN" ~/.local/bin/agy -p 'What is 6 times 7? Answer with the number only.' --model gemini-3.8-flash-low --output-format json --print-timeout 180s
+```
+
+### Output (stdout)
+```json
+{"conversation_id":"","status":"ERROR","response":"","error":"invalid model selection (--model \"gemini-3.8-flash-low\" --effort \"\"): model gemini-3.8-flash-low is not recognized as a known model or custom model in settings\nAvailable models:\n  Gemini 2.5 Flash\n  Gemini 2.5 Pro\n  Gemini 2.5 Flash Preview TTS\n  Gemini 2.5 Pro Preview TTS\n  Gemma 4 26B A4B IT\n  Gemma 4 31B IT\n  Gemini Flash Latest\n  Gemini Flash-Lite Latest\n  Gemini Pro Latest\n  Gemini 2.5 Flash-Lite\n  Gemini 3 Flash Preview\n  Gemini 3.1 Pro Preview\n  Gemini 3.1 Pro Preview Custom Tools\n  Gemini 3.1 Flash Lite Preview\n  Gemini 3.1 Flash Lite\n  Nano Banana Pro\n  Nano Banana 2.1\n  Gemini 3.5 Flash\n  Gemini 3.5 Flash Lite\n  Gemini Omni Flash Preview\n  Gemini Omni 1.1 Flash\n  Gemini 3.5 Transcribe\n  Gemini 3.6 Flash\n  Gemini 3.7 Flash\n  Gemini 3.8 Flash\n  Gemini 4 Argon\n  Lyria 3 Clip Preview\n  Lyria 3 Pro Preview\n  Lyria 3.5\n  Gemini 3.1 Flash TTS Preview\n  Gemini 3.8 Flash TTS\n  Gemini 3.8 Flash Lite TTS\n  Gemini Robotics-ER 2 Preview\n  Gemini 2.5 Computer Use Preview 10-2025\n  Antigravity Agent Preview\n  Antigravity Agent Preview\n  Antigravity Agent Preview Latest\n  Deep Research Max Preview (Apr-21-2026)\n  Deep Research Preview (Apr-21-2026)\n  Deep Research Pro Preview (Dec-12-2025)","duration_seconds":0,"num_turns":0,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0}}
+```
+
+### Output (stderr, first 20 lines)
+```
+error: invalid model selection (--model "gemini-3.8-flash-low" --effort ""): model gemini-3.8-flash-low is not recognized as a known model or custom model in settings
+Available models:
+  Gemini 2.5 Flash
+  Gemini 2.5 Pro
+  Gemini 2.5 Flash Preview TTS
+  Gemini 2.5 Pro Preview TTS
+  Gemma 4 26B A4B IT
+  Gemma 4 31B IT
+  Gemini Flash Latest
+  Gemini Flash-Lite Latest
+  Gemini Pro Latest
+  Gemini 2.5 Flash-Lite
+  Gemini 3 Flash Preview
+  Gemini 3.1 Pro Preview
+  Gemini 3.1 Pro Preview Custom Tools
+  Gemini 3.1 Flash Lite Preview
+  Gemini 3.1 Flash Lite
+  Nano Banana Pro
+  Nano Banana 2.1
+  Gemini 3.5 Flash
+  Gemini 3.5 Flash Lite
+```

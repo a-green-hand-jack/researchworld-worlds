@@ -1,0 +1,55 @@
+# Review record: optimizer provenance fact sheet
+
+Reviewer: internal-review-repo. Review date: 2026-10-17.
+Conclusion: **approved** — no disagreements found.
+
+## What was inspected, at which revisions
+
+Assembled delivery (via `ht-role delivery`):
+
+- `fact-sheet.md` — paper-repo @ `176934f7bf1056a68b33f2b6bd1eca8362c617a0`
+- `adamw-lookup.md` — paper-repo @ `176934f7bf1056a68b33f2b6bd1eca8362c617a0` (supporting record)
+- `README.md` — paper-repo @ `176934f7bf1056a68b33f2b6bd1eca8362c617a0`
+
+Supporting lookup records read in the owners' repositories:
+
+- `records/adam.md` — experiment-repo @ `7bafd23c18cd856a878898ba111d2ff69923f1ea`
+- `lion-lookup.md` — internal-review-repo @ `7daad232bafdab3c7c23306868e433b71ee6c8b0` (own independent lookup)
+
+## Sources opened by the reviewer itself during this task
+
+- https://arxiv.org/abs/1412.6980 (Adam abstract page), opened 2026-10-17
+- https://arxiv.org/abs/1711.05101 (AdamW abstract page, current version), opened 2026-10-17
+- https://arxiv.org/abs/1711.05101v1 (AdamW v1 page), opened 2026-10-17
+- https://arxiv.org/abs/2302.06675 (Lion abstract page), opened 2026-10-17
+
+## Per-entry verification
+
+| Fact-sheet claim | Read on the page the reviewer opened | Verdict |
+|---|---|---|
+| Adam — title "Adam: A Method for Stochastic Optimization" | Same title on arxiv.org/abs/1412.6980 | agree |
+| Adam — first author Diederik P. Kingma | Author list: Diederik P. Kingma, Jimmy Ba | agree |
+| Adam — year 2014 (v1, 22 Dec 2014) | Submission history: v1 Mon, 22 Dec 2014 | agree |
+| Adam — arXiv id 1412.6980 | Page identifier arXiv:1412.6980 | agree |
+| Adam — note: conference publication 2015 | Page comments: ICLR, San Diego, 2015 | agree |
+| AdamW — title "Decoupled Weight Decay Regularization" | Same current title on arxiv.org/abs/1711.05101 | agree |
+| AdamW — first author Ilya Loshchilov | Author list: Ilya Loshchilov, Frank Hutter | agree |
+| AdamW — year 2017 (v1, 14 Nov 2017) | Submission history: v1 Tue, 14 Nov 2017 | agree |
+| AdamW — arXiv id 1711.05101 | Page identifier arXiv:1711.05101 | agree |
+| AdamW — note: v1 title "Fixing Weight Decay Regularization in Adam" | Same title on the v1 page arxiv.org/abs/1711.05101v1 | agree |
+| Lion — title "Symbolic Discovery of Optimization Algorithms" | Same title on arxiv.org/abs/2302.06675 | agree |
+| Lion — first author Xiangning Chen | Author list starts with Xiangning Chen | agree |
+| Lion — year 2023 (v1, 13 Feb 2023) | Submission history: v1 Mon, 13 Feb 2023 | agree |
+| Lion — arXiv id 2302.06675 | Page identifier arXiv:2302.06675 | agree |
+| Lion — note: introduced by this paper; abstract states it "discovers ... Lion (EvoLved Sign Momentum)" | Same statement in the abstract on the page | agree |
+
+## Checks against the objective's requirements
+
+- Covers all three optimizers (Adam, AdamW, Lion) with the four requested facts each: yes.
+- One page: yes (single short table plus notes).
+- Every fact looked up on the web during this task, not from memory: documented per entry — `records/adam.md` (experiment-repo), `adamw-lookup.md` (paper-repo), `lion-lookup.md` (internal-review-repo) each record the lookup date, tool, and opened pages; the reviewer's own Lion lookup was done the same way.
+- Web search first, then the found page opened: search queries recorded for all three (`Adam optimizer original paper arXiv`, `Decoupled Weight Decay Regularization AdamW paper arXiv`, `Lion optimizer "EvoLved Sign Momentum" paper arXiv`); each record states the opened page came from the search.
+- Each fact cites the URL of the page it was read from: every row carries its source URL; the URLs resolve and show the stated facts (opened by the reviewer, see above).
+- Year is first appearance (v1 submission), not a later revision or conference year: consistent on all three rows, matching each page's submission history.
+
+No disagreements to report. The delivery meets the objective; approval follows with `ht-role approve`.

@@ -1,0 +1,15 @@
+# Brief
+
+Objective (quoted): "How big are the files of the smallest faster-whisper model, and what are their checksums? Download the Hugging Face model repository `Systran/faster-whisper-tiny` with the `huggingface_hub` Python package as it installs by default (keep its Xet transfer on: do not set `HF_HUB_DISABLE_XET`). Record, for every file in the repository, its size in bytes and its SHA-256, and check each SHA-256 against the one the Hugging Face API reports for that file. Record the installed versions of `huggingface_hub` and `hf_xet`, and whether the download went through Xet."
+
+Deliverable: `report/report.md`, one page: table of files, sizes and checksums; whether every checksum matched; package versions (huggingface_hub, hf_xet); whether Xet was used.
+
+Requirements:
+1. Install huggingface_hub with default deps (brings hf_xet); no HF_HUB_DISABLE_XET.
+2. snapshot_download of Systran/faster-whisper-tiny; every file in the repo (including .gitattributes/README etc.).
+3. Per file: size (bytes), local SHA-256, SHA-256 per HF API; match flag.
+4. Evidence that Xet was used (not just installed).
+
+Caveats: the HF API reports a SHA-256 only for LFS/Xet files (lfs.sha256); for small non-LFS files only a git blob SHA-1 is given, so an API SHA-256 may be unavailable for them. Report this honestly, and check them against the git blob SHA-1 as a secondary check.
+
+Split: experiment-repo produces measurements (results/); paper-repo writes report/report.md from them; internal-review-repo reviews.

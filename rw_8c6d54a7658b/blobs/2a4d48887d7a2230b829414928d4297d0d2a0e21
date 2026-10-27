@@ -1,0 +1,30 @@
+# Venue requirements (verbatim from the objective unless marked)
+
+Audience: readers of a short NeurIPS-style paper (the objective's delivery is the reviewed research delivery, not a submission).
+
+| # | Requirement | Source | How checked |
+|---|---|---|---|
+| V1 | `report/report.pdf`, compiled from LaTeX | objective | file exists, nonempty |
+| V2 | At most two pages in total | objective | `tools/check_venue.py` page count |
+| V3 | NeurIPS 2026 submission template, unmodified (`report/neurips_2026.sty`, downloaded from media.neurips.cc, zip sha256 82473931e3ef710fcd3f4a8cd4119b9de32e56825f90f9e5a6d55f2d01b817d9) | objective + official instructions | sty unchanged; no geometry/font/vspace hacks |
+| V4 | Exactly one figure and one table | objective | environments counted |
+| V5 | LaTeX source (`report/report.tex`, plus any included figure/table files) next to the PDF | objective | files exist |
+| V6 | Code that produced every number, delivered next to the PDF | objective | `report/code/` (experiment-repo), `report/results/`, plus figure/table scripts in `report/figures/`, `report/tables/` (assignment.json); declared in `venue-artifacts.json` |
+| V7 | Data from OpenML dataset id 61, downloaded from OpenML itself | objective | provenance in code/results |
+| V8 | Report: mean accuracy + 95% interval per method, paired difference + 95% interval, Ibex node name, whether Ibex and local runs are identical | objective | content check by review |
+
+Default option `\usepackage{neurips_2026}` (anonymous submission) is used; no author names. `preprint`/`final` options are not required by the objective.
+
+## Known conflict, resolved in favour of the objective
+Official NeurIPS rules require the paper checklist (it does not count toward the 9 content pages). The objective caps the whole PDF at two pages, so the checklist (`tools/neurips_checklist_template.tex`, 3+ pages) cannot be included; it is omitted and the report should say nothing implying it was filed. Whether a reduced checklist statement is wanted is not specified by the objective; not established.
+
+## Not established
+- Whether the 2-page cap is intended to include references: taken as yes (whole PDF).
+- Official 2026 text for a page limit of the "submission template" is 9 content pages; the 2-page cap is the objective's own.
+
+## Format rules from the official sample (neurips_2026.tex)
+- Default `\usepackage{neurips_2026}` = Main Track, anonymous submission. No author names/affiliations; do not add `final` or `preprint`.
+- 10 pt Times, text block 5.5 in x 9 in (set by the style file); do not change margins, font sizes or spacing.
+- Figure caption below the figure; table caption above the table; sentence-case captions; booktabs, no vertical rules; captions should state a take-away.
+- References: any consistent style; `\small` (9 pt) allowed in the reference list.
+- Official rule excludes references/checklist from the 9-page limit; the objective's 2-page cap on the whole PDF is stricter and applies.

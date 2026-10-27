@@ -1,0 +1,5 @@
+# Brief
+Objective (quoted): "Download NOAA GML's annual mean CO2 for Mauna Loa (https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_annmean_mlo.csv) during the work; do not type the numbers in. Keep the file as downloaded."
+Deliverable: `report/report.md`, one paragraph: URL, fetch time, SHA-256, last year in file and its annual mean, average growth in ppm/yr over the last ten years in the file ((last - value ten years earlier)/10). No figure.
+Plan: paper-repo downloads the file (kept byte-identical, at data/co2_annmean_mlo.csv), computes from it, writes the report. Comment lines (#) in the CSV must be skipped when parsing, not edited out. Fetch time recorded in UTC at download.
+Unknown: file contents/format until downloaded; whether last year is provisional.

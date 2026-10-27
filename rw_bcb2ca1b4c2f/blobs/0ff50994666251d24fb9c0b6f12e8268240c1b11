@@ -1,0 +1,25 @@
+"""Is the smoke disagreement (e4_a4 truth 6 vs flow 7, seed 799) the Gaussian-init overlap or the truth's fixed
+Monte Carlo sample (M_TRUTH = 4096 draws of x2)? Re-run e4_a4.truth on the smoke config (same init) with other
+sample seeds, and with larger M_TRUTH. Usage: python3 sample_sensitivity.py OUT_JSON"""
+import sys, json, os
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, "/tmp/a4code/code")
+import e4_a4 as A
+
+
+def one(job):
+    M, ss = job
+    A.M_TRUTH = M
+    cfg = A.configs("smoke")[0]
+    tr = A.truth(cfg, sample_seed=ss)
+    return dict(M=M, sample_seed=ss, rank=tr["rank"], ranks=tr["ranks"], sv=tr["sv"][:8])
+
+
+jobs = [(4096, None)] + [(4096, 880000 + k) for k in range(7)] + [(32768, None), (32768, 881000), (32768, 881001), (32768, 881002)]
+with Pool(8) as pool:
+    res = pool.map(one, jobs, chunksize=1)
+json.dump(res, open(sys.argv[1], "w"), indent=1)
+for r in res:
+    print(r["M"], r["sample_seed"], "rank", r["rank"], "sv7", round(r["sv"][6], 3), "ranks", r["ranks"])

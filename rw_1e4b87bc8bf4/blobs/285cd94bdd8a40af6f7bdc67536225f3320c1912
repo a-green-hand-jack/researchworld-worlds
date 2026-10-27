@@ -1,0 +1,23 @@
+#!/bin/bash
+# The documented command sequence that regenerates every number in report/results/.
+# Run from report/:  bash code/make_all.sh
+# Needs Python 3.11 with code/requirements.lock installed; step 1 needs network (openml.org).
+# The Ibex run (step 3) is submitted separately; its outputs are copied to results/run_ibex/.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+[ -f results/data/iris.arff ] || python3 code/fetch_data.py            # 1  A0 data + provenance
+bash code/run_local.sh                                                # 2  A1 full CV, local
+# 3  A2 on Ibex (login node, from a directory with code/, results/data/iris.arff, venv/):
+#      sbatch --job-name "$HT_RESOURCE_TAG-cv" code/ibex_job.sbatch
+#    then copy its results/run_ibex/ and ibex-<jobid>.out into results/run_ibex/
+python3 code/summarize.py results/run_local/folds.csv --out results/summary.json \
+    --long results/folds_long.csv                                     # 4  A3 intervals (primary run)
+python3 code/summarize.py results/run_ibex/folds.csv --out results/summary_ibex.json
+python3 code/compare_runs.py results/run_local results/run_ibex \
+    results/summary.json results/summary_ibex.json --out results/identity.json   # 5  A4
+# 5b (record only) the earlier replicate on another Ibex node, results/ibex_other_node/:
+python3 code/summarize.py results/ibex_other_node/folds.csv --out results/ibex_other_node/summary.json
+python3 code/compare_runs.py results/run_local results/ibex_other_node results/summary.json \
+    results/ibex_other_node/summary.json --out results/ibex_other_node/identity.json
+python3 code/sensitivity.py --main results/run_local/folds.csv --out results     # 6  robustness
+python3 code/make_numbers.py > /dev/null                              # 7  A5 numbers.tex

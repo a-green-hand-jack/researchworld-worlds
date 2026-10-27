@@ -1,0 +1,79 @@
+{
+  "slope": -0.5011584081803624,
+  "intercept": 0.3281259480421346,
+  "log_base": "natural",
+  "fit_method": "Unweighted ordinary least squares of log(mean absolute error) on log(N)",
+  "slope_ci95": [
+    -0.516159397954737,
+    -0.4861054235114702
+  ],
+  "interval_method": "Percentile paired run-vector nonparametric bootstrap; numpy quantile default linear interpolation",
+  "bootstrap_replicates": 50000,
+  "bootstrap_seed": 20261018,
+  "bootstrap_slope_sd": 0.007670575402678508,
+  "expected_slope": -0.5,
+  "deviation_from_expected": -0.0011584081803623913,
+  "expected_slope_in_ci95": true,
+  "regression_t_ci95": [
+    -0.5191719876462288,
+    -0.48314482871449593
+  ],
+  "regression_slope_se": 0.005660293289460721,
+  "regression_df": 3,
+  "regression_t_critical": 3.1824463052837078,
+  "expected_slope_in_t_ci95": true,
+  "r_squared": 0.9996174546625595,
+  "log_residuals": [
+    -0.0390249975304191,
+    0.047623477049540064,
+    -0.005131609819056138,
+    0.023492778611175602,
+    -0.026959648311236428
+  ],
+  "leave_one_size_out": [
+    {
+      "omitted_N": 1000,
+      "slope": -0.5096325787222376
+    },
+    {
+      "omitted_N": 10000,
+      "slope": -0.49820374913869686
+    },
+    {
+      "omitted_N": 100000,
+      "slope": -0.5011584081803624
+    },
+    {
+      "omitted_N": 1000000,
+      "slope": -0.5026159487682782
+    },
+    {
+      "omitted_N": 10000000,
+      "slope": -0.495304194932551
+    }
+  ],
+  "bootstrap_stability": {
+    "replicates": 10000,
+    "seed": 20261019,
+    "ci95": [
+      -0.5159562264196628,
+      -0.485763014224323
+    ]
+  },
+  "asymptotic_mae_coefficient": 1.3102727551240672,
+  "limitations": [
+    "Bootstrap captures finite-run sampling uncertainty conditional on the five sizes, not general power-law model discrepancy.",
+    "Conventional t interval assumes independent homoscedastic normal log residuals; shared prefixes violate independence, so it is only a descriptive sensitivity check.",
+    "Five sizes and 200 runs per size support consistency, not proof of the exact asymptotic exponent."
+  ],
+  "provenance": {
+    "input": "results/runs.csv",
+    "input_sha256": "ce5133a1399da84082df90271203e45f15e6bcc306afa9989ccbe4818bfa9887",
+    "script": "code/analyze.py",
+    "code_revision": "2ef4f976265091fe0499ee67231c9c0c0f8f0236",
+    "simulation_script": "code/simulate.py",
+    "numpy": "2.4.6",
+    "scipy": "1.17.1",
+    "pandas": "3.0.6"
+  }
+}

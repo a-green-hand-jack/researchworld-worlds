@@ -1,0 +1,35 @@
+"""Post hoc relabelling of results/e7/e7g.json (no rerun, no rescore).
+
+toggles_v100.<toggle>.hypothesis / hypothesis_rule / sd_ref_headroom_error come from e7_score.toggles run with the three V100 seeds 20-22 as
+the reference, so their threshold is 2 x the three-seed sd (1.0 -> 2.0). Amendment 6 registered toggles_v100 read
+with the registered threshold 3.16 (2 x the five-seed sd of the reference row, seeds 20-24), which is
+hypothesis_registered_threshold. This renames the three three-seed fields to *_3seed(_sd)_posthoc and adds a note, so
+that no table or sentence reads the unregistered field as the registered one. Every value is unchanged.
+
+To reproduce e7g.json from raw runs: `code/e7g.py score ...` (writes the unprefixed fields), then this script.
+Usage: python3 code/checks/e7g_label.py results/e7/e7g.json
+"""
+import hashlib, json, sys
+
+RENAME = {"hypothesis": "hypothesis_3seed_sd_posthoc", "hypothesis_rule": "hypothesis_rule_3seed_sd_posthoc",
+          "sd_ref_headroom_error": "sd_ref_headroom_error_3seed_posthoc"}
+NOTE = ("post hoc relabel (code/checks/e7g_label.py): *_3seed_posthoc fields use the sd of the three V100 reference seeds "
+        "(sd_ref_headroom_error_3seed_posthoc 1.0, threshold 2 sd = 2.0) and are not the registered reading; the registered reading (amendment 6) is "
+        "hypothesis_registered_threshold (threshold 3.16 = 2 x the five-seed sd of the reference row, seeds 20-24). "
+        "The two thresholds differ by seed count, not GPU family (P100 and V100 give identical values on seeds 20-22).")
+
+path = sys.argv[1]
+raw = open(path, "rb").read()
+d = json.loads(raw)
+# idempotent: keys already renamed are left alone; the md5 recorded is that of the scorer's output (first pass)
+first = d.get("relabel", {}).get("scorer_output_md5", hashlib.md5(raw).hexdigest())
+for name, t in d["toggles_v100"].items():
+    if not isinstance(t, dict):
+        continue
+    for a, b in RENAME.items():
+        if a in t:
+            t[b] = t.pop(a)
+d["toggles_v100_note"] = NOTE
+d["relabel"] = dict(script="code/checks/e7g_label.py", scorer_output_md5=first, renamed=RENAME)
+json.dump(d, open(path, "w"), indent=1)
+print("relabelled", sorted(k for k, t in d["toggles_v100"].items() if isinstance(t, dict)))

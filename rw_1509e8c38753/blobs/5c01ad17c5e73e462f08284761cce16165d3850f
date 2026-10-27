@@ -1,0 +1,78 @@
+# Review 001: assembled delivery, verdict APPROVE
+
+Judged against objective #1, the brief (idea-repo 528dbec874aed52ece641a45ff982a88e826a02c),
+venue requirements (venue-repo 5b6664e02837e3d8bf091e837e920838a4a9af16) and `review/standard.md`.
+
+## Revisions inspected (assembled with `ht-role delivery`, assignment story-repo 8f78c8d250714a833fbc9f7a0e5e8b59e3dd03b0)
+
+| path | position | revision |
+|---|---|---|
+| `report/` (pdf, tex, bib, sty, README) | paper-repo | bcd8fe825b9cc89ba6a7e8542ff496f1d522ac9e |
+| `report/code/`, `report/results/` | experiment-repo | 277d7dcc7b88c7934a192415bdb7e6bb1af7cc56 |
+| `report/figures/`, `report/tables/` | figtab-repo | a473f10ae69687d2760ca34696220de768912432 |
+
+## What I checked, and how
+
+- **PDF** (`report/report.pdf`): 2 pages, US letter, pdfTeX. Rendered both pages and read them in full. The
+  default anonymous submission mode is used (line numbers, "Anonymous Author(s)", the template's submission footer).
+  Exactly one figure and one table. Fonts are embedded (Type 1 for the text, TrueType from the figure, no Type 3).
+- **Template**: `report/neurips_2026.sty` is byte-identical (md5 f447d3302c8719cb27619a074c876b44) to the style file
+  in the official https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip,
+  downloaded independently.
+- **Build**: `latexmk -pdf` (TeX Live 2026) on a copy of the assembled `report/` rebuilds a 2-page PDF whose text is
+  identical to the delivered PDF. No undefined references or citations, no overfull boxes.
+- **Data (A1/D1)**: `fetch_data.py` re-run here. It fetched OpenML 61 v1 from openml.org, and its md5
+  ad484452702105cbf3d30f8deaba39a9 matches OpenML's checksum and the delivered `code/data/iris.arff` (cmp identical).
+  The 3 duplicate rows match the brief.
+- **Methods/protocol (B1-B3, S1-S3)**: read `cv_compare.py`.
+  - LR: lbfgs with C=1 inside a StandardScaler pipeline, which is multinomial for 3 classes in sklearn 1.5.2.
+  - kNN: StandardScaler and kNN inside GridSearchCV, k in 1..30, inner stratified 5-fold on the outer training set
+    only; ties go to the smallest k.
+  - Outer splits: RepeatedStratifiedKFold(5, 10, seed 20261017), giving 50 splits shared by both methods (paired).
+- **Independent re-run**: full CV in a fresh Python 3.11.17 env with the pinned `requirements.txt`. My `folds.csv`
+  (md5 d5f5a84454df539df6e51082b9c727c2) and `predictions.csv` (md5 83320bcb576b3bb595c596cdddc3cd03) are
+  byte-identical to both delivered runs, so a third environment gives the same results. Re-running `compare_runs.py`
+  and `summarize.py` reproduces `numbers.tex`, `table.csv`, `folds_long.csv` and `summary.json`; the only
+  differences are my own host name and Python version.
+- **Statistics (C1-C3, S4-S5)**: corrected resampled t (Nadeau-Bengio, ratio 30/120, df 49), applied to each method
+  and to the paired per-fold differences. Checked by hand:
+  - difference SD 3.30 pp gives a half-width of 2.010 x sqrt(0.27) x 3.30 = 3.45, so 0.93 [-2.51, 4.38];
+    corrected-t p = 0.59.
+  - per-method intervals: LR 95.4 [91.6, 99.2], kNN 94.5 [89.5, 99.5].
+  - folds: 16 better / 25 tied / 9 worse, matching the bubble counts (1+4+11 / 25 / 9).
+  - selected k: median 8, mode 9.
+
+  The naive interval is shown only as a labelled contrast. Claims stay within the intervals: "no detectable
+  difference", explicitly not equivalence.
+- **Ibex vs local (D1-D2, S6-S8)**: confirmed with SLURM's own accounting on Ibex
+  (`sacct -j 53912439`): JobName rw-1509e8c38753-iris-cv, partition batch, NodeList cn113-35-l, COMPLETED,
+  AllocTRES cpu=1,mem=2G,node=1 (no GPU), end 2026-10-17T16:26:10 local, which is 13:26:10Z and matches `run.json`.
+  The node name in the paper (cn113-35-l) matches the job log (SLURMD_NODENAME) and the accounting. The paper states
+  the identity criterion (byte identity of per-fold and per-case files plus exact equality of every value); 0/50
+  folds and 0/6000 predictions differ (1500 test cases x 4 prediction columns). Software versions are given for
+  both environments.
+- **Table**: `tables/make_table.py` re-run regenerates `table_results.tex` identically and asserts agreement with
+  `results/table.csv`.
+- **Figure**: `figures/make_figure.py` re-run succeeds. I inspected the figure at 250 dpi in the PDF. Both panels
+  are labelled (axis titles with units, method tick labels, panel titles), with distinct markers as well as colour,
+  and they show what the text and caption say: per-fold accuracies with mean and corrected interval, and the
+  paired-difference distribution with the mean, interval and zero line.
+- **Numbers in text**: every number is a macro from `results/numbers.tex`, produced by `code/summarize.py`; no number
+  is typed by hand. References checked: Fisher 1936, Vanschoren et al. 2013, Nadeau & Bengio 2003,
+  Bouckaert & Frank 2004; bibliographic details are correct.
+- **Venue (V1-V9)**: all met. The NeurIPS checklist is omitted under the objective's 2-page cap, as venue-repo
+  decided, and the paper discloses this.
+
+## Non-blocking observations (no action required)
+
+1. The figure caption describes the panels but has no take-away sentence, which venue.md suggests. The take-away
+   is carried by the text, so this is a style point.
+2. The limitation that the duplicate rows "slightly favour nearest-neighbour methods" is qualitative and was not
+   measured. It is hedged and placed among the limitations, as the brief recommends.
+3. venue.md V3 says "footer absent", but the unmodified official style prints the "Submitted to ... NeurIPS 2026"
+   footer in submission mode. The delivered PDF follows the official template, so the footer is correct.
+
+## Conclusion
+
+The delivery meets every requirement of objective #1 and every item of `review/standard.md`, and every reported
+number reproduces independently. Approved for release.

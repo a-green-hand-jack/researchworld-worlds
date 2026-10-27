@@ -1,0 +1,36 @@
+{
+ "note": "All three sampler scripts run unmodified from /initial-state/inputs/0/ as background jobs on local-compute, started together at the start of the work (within 1 s of each other).",
+ "started_utc": "2026-10-18T21:18:39Z",
+ "jobs": [
+  {
+   "ref": "job-ab82a2b391",
+   "command": "python3 -u /initial-state/inputs/0/pilot.py /hutian/runs/pilot.json",
+   "nominal_duration": "about 9 minutes (540 s sampling)",
+   "part_of_delivery": true,
+   "ended": "exit 0 (succeeded), about 21:28 UTC",
+   "sampling_seconds": 540.0,
+   "samples": 1719800000,
+   "stdout": [
+    "HUTIAN_WAKE: pilot interim estimate 3.141581 after 194300000 samples",
+    "pilot final estimate 3.141550 +/- 0.000078 after 1719800000 samples"
+   ],
+   "output": "results/pilot.json (copied unchanged from /hutian/runs/pilot.json)"
+  },
+  {
+   "ref": "job-a8fcfc7b1e",
+   "command": "python3 -u /initial-state/inputs/0/extended.py 55 /hutian/runs/extended_55.json",
+   "nominal_duration": "55 minutes",
+   "part_of_delivery": false
+  },
+  {
+   "ref": "job-afde743abb",
+   "command": "python3 -u /initial-state/inputs/0/extended.py 120 /hutian/runs/extended_120.json",
+   "nominal_duration": "120 minutes",
+   "part_of_delivery": false
+  }
+ ],
+ "input_sha256": {
+  "pilot.py": "2ed342ee633210f3af18e00b237fb7ffd5ad6d2e6a7320008e51c67c7262a444",
+  "extended.py": "95f77f136e5c23f85d53e524f994584b00a3c73c4fa4a9853ee414c6ec3af19d"
+ }
+}

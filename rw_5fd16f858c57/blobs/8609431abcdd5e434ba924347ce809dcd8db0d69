@@ -1,0 +1,23 @@
+# Compact report-scale log-log figures (3.5 x 2.7 in) from experiment-repo results/errors.csv and fits.csv (19ef54b077c7 snapshot copied in data/).
+import csv,math,matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+plt.rcParams.update({'font.size':8,'axes.titlesize':8.5})
+E=list(csv.DictReader(open('report/compact/data/errors.csv')));F={(r['function'],r['rule']):r for r in csv.DictReader(open('report/compact/data/fits.csv'))}
+names={'trapezoid':('C0','o','trapezoid'),'simpson':('C1','s','Simpson'),'gauss4':('C2','^','Gauss 4'),'romberg':('C3','D','Romberg')}
+for fn,out,title in [('exp(-x^2)','exp_neg_x2','exp(-x$^2$) on [0,1]'),('x^(1/3)','x_cube_root','x$^{1/3}$ on [0,1]')]:
+    fig,ax=plt.subplots(figsize=(3.5,2.7))
+    for rule,(c,m,lab) in names.items():
+        rows=[r for r in E if r['function']==fn and r['rule']==rule]
+        n=[int(r['n']) for r in rows];e=[max(float(r['abs_error']),1e-17) for r in rows]
+        used=[float(r['abs_error'])>1e-14 for r in rows]
+        o=float(F[(fn,rule)]['order'])
+        ax.plot(n,e,color=c,lw=1,label=f'{lab}: {o:.4g}')
+        ax.plot([a for a,u in zip(n,used) if u],[b for b,u in zip(e,used) if u],m,color=c,ms=3.5)
+        ax.plot([a for a,u in zip(n,used) if not u],[b for b,u in zip(e,used) if not u],m,color=c,ms=3.5,mfc='none')
+    ax.axhline(1e-14,color='gray',ls='--',lw=.8);ax.text(2,1.6e-14,'fit cutoff 1e-14',color='gray',fontsize=7.5)
+    ax.set_xscale('log',base=2);ax.set_yscale('log');ax.set_xticks([2,8,32,128,512]);ax.set_xticklabels([2,8,32,128,512])
+    ax.set_xlabel('panels n');ax.set_ylabel('|error|');ax.set_title(title)
+    ax.legend(title='fitted order',fontsize=7.5,title_fontsize=7.5,ncol=2 if fn=='exp(-x^2)' else 1,loc='upper right' if fn=='exp(-x^2)' else 'lower left',framealpha=.9)
+    ax.set_ylim(1e-17,1e6) if fn=='exp(-x^2)' else None
+    ax.grid(ls=':',lw=.4);fig.savefig(f'report/compact/{out}.png',dpi=300,bbox_inches='tight')

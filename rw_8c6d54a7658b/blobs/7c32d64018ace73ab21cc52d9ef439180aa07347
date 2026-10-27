@@ -1,0 +1,198 @@
+"""Multinomial logistic regression vs k-nearest neighbours on Iris (OpenML 61).
+
+Outer loop: 10 repetitions of stratified 5-fold CV (RepeatedStratifiedKFold,
+fixed seed), identical splits for both methods, so per-fold differences are
+paired.  k-NN chooses k on each outer training fold by an inner stratified
+5-fold CV (GridSearchCV, accuracy); standardisation is fitted inside every
+training fold.  Everything runs single-threaded with fixed seeds so that two
+runs with the same package versions should give identical numbers.
+
+Usage: python cv_study.py OUTDIR
+Writes OUTDIR/folds.csv (one row per outer fold), OUTDIR/inner_cv.csv (inner
+CV accuracy for every k on every outer fold), OUTDIR/predictions.csv
+(out-of-fold predictions of each repetition) and OUTDIR/run.json (summary
+statistics, environment, node name, input checksum).
+"""
+import os
+
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
+import datetime
+import hashlib
+import json
+import pathlib
+import platform
+import socket
+import sys
+import time
+
+import arff  # liac-arff
+import numpy as np
+import pandas as pd
+import scipy
+import sklearn
+from scipy import stats
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
+HERE = pathlib.Path(__file__).resolve().parent
+DATA_FILE = HERE / "data" / "iris.arff"
+DATA_MD5 = "ad484452702105cbf3d30f8deaba39a9"  # md5_checksum published by OpenML for dataset 61
+
+SEED = 20261017
+N_SPLITS, N_REPEATS = 5, 10
+INNER_SPLITS = 5
+K_GRID = list(range(1, 31))  # candidate k for k-NN, chosen by inner CV
+ALPHA = 0.05
+N_BOOT = 10000
+
+
+def load_iris_arff():
+    raw = DATA_FILE.read_bytes()
+    md5 = hashlib.md5(raw).hexdigest()
+    assert md5 == DATA_MD5, f"unexpected data file md5 {md5}"
+    d = arff.loads(raw.decode())
+    cols = [a[0] for a in d["attributes"]]
+    df = pd.DataFrame(d["data"], columns=cols)
+    X = df.drop(columns="class").to_numpy(dtype=float)
+    classes = sorted(df["class"].unique())
+    y = df["class"].map({c: i for i, c in enumerate(classes)}).to_numpy()
+    assert X.shape == (150, 4) and np.bincount(y).tolist() == [50, 50, 50]
+    return X, y, classes, cols[:-1], md5
+
+
+def make_lr():
+    # lbfgs with a multiclass target fits the multinomial (softmax) model.
+    return Pipeline([("scale", StandardScaler()),
+                     ("lr", LogisticRegression(C=1.0, solver="lbfgs", max_iter=10000))])
+
+
+def make_knn(inner_seed):
+    pipe = Pipeline([("scale", StandardScaler()), ("knn", KNeighborsClassifier())])
+    inner = StratifiedKFold(n_splits=INNER_SPLITS, shuffle=True, random_state=inner_seed)
+    # Ties in mean inner accuracy go to the smallest k (GridSearchCV takes the first best).
+    return GridSearchCV(pipe, {"knn__n_neighbors": K_GRID}, cv=inner, scoring="accuracy", n_jobs=1)
+
+
+def intervals(x, n_train, n_test, rng, test_zero=False):
+    """Mean of per-fold values x with 95% intervals.
+
+    corrected_t: Nadeau & Bengio (2003) corrected repeated-CV t-interval,
+      variance factor (1/J + n_test/n_train), df = J - 1 (primary interval).
+    naive_t: ordinary t-interval treating the J folds as independent.
+    bootstrap: percentile bootstrap over the J folds.
+    """
+    x = np.asarray(x, dtype=float)
+    J = len(x)
+    m, s2 = x.mean(), x.var(ddof=1)
+    tq = stats.t.ppf(1 - ALPHA / 2, J - 1)
+    se_c = np.sqrt((1 / J + n_test / n_train) * s2)
+    se_n = np.sqrt(s2 / J)
+    boot = rng.choice(x, size=(N_BOOT, J), replace=True).mean(axis=1)
+    out = {
+        "mean": m, "sd": float(np.sqrt(s2)), "n_folds": J,
+        "corrected_t": [m - tq * se_c, m + tq * se_c],
+        "naive_t": [m - tq * se_n, m + tq * se_n],
+        "bootstrap": np.quantile(boot, [ALPHA / 2, 1 - ALPHA / 2]).tolist(),
+    }
+    if test_zero and s2 > 0:  # corrected resampled t-test of mean 0
+        tstat = m / se_c
+        out["corrected_t_p_two_sided_vs_0"] = float(2 * stats.t.sf(abs(tstat), J - 1))
+    return out
+
+
+def main(outdir):
+    out = pathlib.Path(outdir)
+    out.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+    started = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    X, y, classes, features, md5 = load_iris_arff()
+
+    outer = RepeatedStratifiedKFold(n_splits=N_SPLITS, n_repeats=N_REPEATS, random_state=SEED)
+    folds, inner_rows, preds = [], [], []
+    for i, (tr, te) in enumerate(outer.split(X, y)):
+        rep, fold = divmod(i, N_SPLITS)
+        lr = make_lr().fit(X[tr], y[tr])
+        p_lr = lr.predict(X[te])
+        knn = make_knn(inner_seed=SEED + 1000 + i).fit(X[tr], y[tr])
+        p_knn = knn.predict(X[te])
+        acc_lr, acc_knn = float(np.mean(p_lr == y[te])), float(np.mean(p_knn == y[te]))
+        k = int(knn.best_params_["knn__n_neighbors"])
+        folds.append({"repeat": rep, "fold": fold, "n_train": len(tr), "n_test": len(te),
+                      "acc_lr": acc_lr, "acc_knn": acc_knn, "diff_lr_minus_knn": acc_lr - acc_knn,
+                      "k_chosen": k, "inner_cv_acc_best": float(knn.best_score_),
+                      "test_idx_sha1": hashlib.sha1(np.sort(te).tobytes()).hexdigest()[:12]})
+        cvr = knn.cv_results_
+        for kk, ms, ss in zip(cvr["param_knn__n_neighbors"], cvr["mean_test_score"], cvr["std_test_score"]):
+            inner_rows.append({"repeat": rep, "fold": fold, "k": int(kk),
+                               "inner_mean_acc": float(ms), "inner_sd_acc": float(ss)})
+        for j, idx in enumerate(te):
+            preds.append({"repeat": rep, "fold": fold, "index": int(idx), "y": classes[y[idx]],
+                          "pred_lr": classes[p_lr[j]], "pred_knn": classes[p_knn[j]]})
+
+    fdf = pd.DataFrame(folds)
+    fdf.to_csv(out / "folds.csv", index=False, float_format="%.17g")
+    pd.DataFrame(inner_rows).to_csv(out / "inner_cv.csv", index=False, float_format="%.17g")
+    pdf = pd.DataFrame(preds)
+    pdf.to_csv(out / "predictions.csv", index=False)
+
+    n_tr, n_te = int(fdf.n_train.iloc[0]), int(fdf.n_test.iloc[0])
+    assert (fdf.n_train == n_tr).all() and (fdf.n_test == n_te).all()
+    rng = np.random.default_rng(SEED)
+    d = fdf.diff_lr_minus_knn
+    rep_acc = fdf.groupby("repeat")[["acc_lr", "acc_knn"]].mean()
+    # Exact McNemar test per repetition on the out-of-fold predictions (each sample predicted once).
+    mcnemar = []
+    for rep, g in pdf.groupby("repeat"):
+        c_lr, c_knn = g.pred_lr == g.y, g.pred_knn == g.y
+        b, c = int((c_lr & ~c_knn).sum()), int((~c_lr & c_knn).sum())
+        p = float(stats.binomtest(b, b + c, 0.5).pvalue) if b + c else 1.0
+        mcnemar.append({"repeat": int(rep), "lr_only_correct": b, "knn_only_correct": c, "exact_p": p})
+
+    summary = {
+        "acc_lr": intervals(fdf.acc_lr, n_tr, n_te, rng),
+        "acc_knn": intervals(fdf.acc_knn, n_tr, n_te, rng),
+        "diff_lr_minus_knn": intervals(d, n_tr, n_te, rng, test_zero=True),
+        "folds_lr_better": int((d > 0).sum()), "folds_knn_better": int((d < 0).sum()),
+        "folds_tied": int((d == 0).sum()),
+        "per_repeat_accuracy": rep_acc.reset_index().to_dict(orient="records"),
+        "mcnemar_per_repeat": mcnemar,
+        "k_chosen_counts": {int(k): int(v) for k, v in fdf.k_chosen.value_counts().sort_index().items()},
+        "errors_per_repeat_mean": {"lr": float(150 * (1 - rep_acc.acc_lr.mean())),
+                                   "knn": float(150 * (1 - rep_acc.acc_knn.mean()))},
+    }
+    run = {
+        "design": {"outer": f"RepeatedStratifiedKFold(n_splits={N_SPLITS}, n_repeats={N_REPEATS}, random_state={SEED})",
+                   "inner": f"StratifiedKFold(n_splits={INNER_SPLITS}, shuffle=True, random_state={SEED}+1000+outer_index)",
+                   "k_grid": K_GRID, "lr": "StandardScaler + LogisticRegression(C=1.0, lbfgs, multinomial, max_iter=10000)",
+                   "knn": "StandardScaler + KNeighborsClassifier(uniform weights, Euclidean), k by inner CV accuracy, ties to smallest k",
+                   "intervals": "95%; primary = Nadeau-Bengio corrected t over 50 folds (df=49, factor 1/50 + 30/120); naive t and percentile bootstrap (10000 resamples) as checks",
+                   "n_train": n_tr, "n_test": n_te},
+        "data": {"file": "data/iris.arff", "md5": md5, "source": "https://openml.org/data/v1/download/61/iris.arff",
+                 "openml_id": 61, "n": int(len(y)), "features": features, "classes": classes},
+        "summary": summary,
+        "outputs_sha256": {f: hashlib.sha256((out / f).read_bytes()).hexdigest()
+                           for f in ("folds.csv", "inner_cv.csv", "predictions.csv")},
+        "environment": {"hostname": socket.gethostname(), "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+                        "slurm_job_nodelist": os.environ.get("SLURM_JOB_NODELIST"),
+                        "slurmd_nodename": os.environ.get("SLURMD_NODENAME"),
+                        "python": platform.python_version(), "platform": platform.platform(),
+                        "processor": platform.processor(), "cpu_count": os.cpu_count(),
+                        "numpy": np.__version__, "scipy": scipy.__version__, "sklearn": sklearn.__version__,
+                        "pandas": pd.__version__},
+        "started_utc": started, "wall_seconds": round(time.time() - t0, 2),
+    }
+    (out / "run.json").write_text(json.dumps(run, indent=2, default=float) + "\n")
+    s = summary
+    print(f"LR  {s['acc_lr']['mean']:.4f} CI {s['acc_lr']['corrected_t']}")
+    print(f"kNN {s['acc_knn']['mean']:.4f} CI {s['acc_knn']['corrected_t']}")
+    print(f"diff {s['diff_lr_minus_knn']['mean']:.4f} CI {s['diff_lr_minus_knn']['corrected_t']}")
+    print(f"host {run['environment']['hostname']} {run['wall_seconds']} s", flush=True)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1] if len(sys.argv) > 1 else "results/local")

@@ -1,0 +1,73 @@
+"""Accuracy and paired-difference intervals from a run's per_fold.csv.
+
+Usage: python summarize.py RUNDIR OUT.json
+
+Primary interval (ci_low, ci_high): the corrected resampled t interval of
+Nadeau & Bengio (2003), which inflates the fold-to-fold variance by
+(1/n + n_test/n_train) because the r*K outer folds share training data:
+    mean +- t_{0.975, n-1} * sqrt((1/n + n_test/n_train) * s^2),  n = r*K = 50.
+Robustness: the naive t interval over the 50 folds (treats folds as
+independent; too narrow) and a t interval over the 10 repetition means (9 df).
+"""
+import csv
+import json
+import sys
+
+import numpy as np
+from scipy import stats
+
+INTERVAL_METHOD = ("corrected repeated-CV t interval (Nadeau & Bengio 2003): mean +- t_{0.975,49} * "
+                   "sqrt((1/50 + 30/120) * s^2), s^2 = sample variance of the 50 outer-fold values")
+
+
+def intervals(v, n_test, n_train, rep_means):
+    v = np.asarray(v, float)
+    n, m, s2 = len(v), float(v.mean()), float(v.var(ddof=1))
+    t = stats.t.ppf(0.975, n - 1)
+    se_c = np.sqrt((1 / n + n_test / n_train) * s2)
+    half_n = t * np.sqrt(s2 / n)
+    r = np.asarray(rep_means, float)
+    half_r = stats.t.ppf(0.975, len(r) - 1) * r.std(ddof=1) / np.sqrt(len(r))
+    return {"mean": m, "ci_low": float(m - t * se_c), "ci_high": float(m + t * se_c),
+            "se_corrected": float(se_c), "sd_folds": float(np.sqrt(s2)), "n_folds": n,
+            "ci_naive_t": [float(m - half_n), float(m + half_n)],
+            "ci_repetition_means_t": [float(r.mean() - half_r), float(r.mean() + half_r)],
+            "sd_repetition_means": float(r.std(ddof=1)),
+            "repetition_means": [float(x) for x in r]}
+
+
+def summarize(rundir):
+    rows = list(csv.DictReader(open(f"{rundir}/per_fold.csv")))
+    n_test = float(np.mean([int(r["n_test"]) for r in rows]))
+    n_train = float(np.mean([int(r["n_train"]) for r in rows]))
+    reps = sorted({int(r["repetition"]) for r in rows})
+    res = {"source": f"{rundir}/per_fold.csv", "interval_method": INTERVAL_METHOD,
+           "n_folds": len(rows), "n_repetitions": len(reps), "n_test": n_test, "n_train": n_train}
+    for key, col in (("lr", "acc_lr"), ("knn", "acc_knn"), ("diff", "diff_lr_minus_knn")):
+        v = [float(r[col]) for r in rows]
+        rm = [np.mean([float(r[col]) for r in rows if int(r["repetition"]) == k]) for k in reps]
+        res[key] = intervals(v, n_test, n_train, rm)
+    d = res["diff"]
+    tstat = d["mean"] / d["se_corrected"] if d["se_corrected"] > 0 else float("nan")
+    dv = np.array([float(r["diff_lr_minus_knn"]) for r in rows])
+    d.update({"definition": "accuracy(LR) - accuracy(kNN), paired by outer fold",
+              "corrected_t": float(tstat), "corrected_p_two_sided": float(2 * stats.t.sf(abs(tstat), len(rows) - 1)),
+              "ci_excludes_zero": bool(d["ci_low"] > 0 or d["ci_high"] < 0),
+              "wins_lr": int((dv > 0).sum()), "ties": int((dv == 0).sum()), "wins_knn": int((dv < 0).sum())})
+    ks = [int(r["k_knn"]) for r in rows]
+    vals, cnt = np.unique(ks, return_counts=True)
+    res["k_knn"] = {"median": float(np.median(ks)), "min": int(min(ks)), "max": int(max(ks)),
+                    "q25": float(np.percentile(ks, 25)), "q75": float(np.percentile(ks, 75)),
+                    "mode": int(vals[np.argmax(cnt)]), "counts": {str(int(a)): int(b) for a, b in zip(vals, cnt)}}
+    res["pooled_correct"] = {"lr": sum(int(r["correct_lr"]) for r in rows),
+                             "knn": sum(int(r["correct_knn"]) for r in rows),
+                             "n_predictions": sum(int(r["n_test"]) for r in rows)}
+    return res
+
+
+if __name__ == "__main__":
+    s = summarize(sys.argv[1])
+    if len(sys.argv) > 3:   # attach the run's provenance (run_info.json) to the summary
+        s["run_info"] = json.load(open(sys.argv[3]))
+    open(sys.argv[2], "w").write(json.dumps(s, indent=1) + "\n")
+    print(json.dumps({k: s[k] for k in ("lr", "knn", "diff")}, indent=1)[:1500])

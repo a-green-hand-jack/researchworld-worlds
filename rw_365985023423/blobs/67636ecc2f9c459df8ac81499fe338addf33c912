@@ -1,0 +1,4 @@
+**Figure 1.** Mean absolute error (MAE) of the Monte Carlo estimate of $\pi$ against the sample count $N$ (log-log axes). Points: mean of $|\hat{\pi}-\pi|$ over 200 independent runs at each $N$ (seeds `default_rng(2026 + run_index)`); error bars: ±1 standard error of the mean.
+Solid line: least-squares fit of ln(MAE) on ln(N), slope $b = -0.5012$; headline 95% interval (OLS Student-t, 3 df): [-0.5192, -0.4831]; dependence-aware check (paired bootstrap over the 200 run vectors): [-0.5161, -0.4860].
+Dashed line: asymptotic (large-$N$) expectation $\sqrt{2(4-\pi)}\,N^{-1/2}$, the normal approximation of the exact binomial MAE (analytic, not fitted). 
+Monte Carlo methods predict $b=-1/2$; both intervals contain $-1/2$, so the measured scaling is consistent with $N^{-1/2}$.

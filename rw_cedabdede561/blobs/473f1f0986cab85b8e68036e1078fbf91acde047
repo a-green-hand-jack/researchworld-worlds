@@ -1,0 +1,26 @@
+# World-command verification report
+
+Worlds involved: noteworld `nw_c87334e98392` (step 2); researchworld `rw_5566eec23f74` (step 3, continued from the read-only `rw_399c28e983a7`, checkpoint g1).
+
+## Step 1 — install the definition
+`researchworld definition install /initial-state/inputs/0/note` → exit 0. Output: definition `note`, command `noteworld`, prefix `nw`, digest `0fb880b3…`, system and worker images built. `noteworld` became available.
+
+## Step 2 — NoteWorld
+- `noteworld run --topic "A three-sentence note on why the sky is blue." --config note-config.json` → exit 0, world `nw_c87334e98392` (bootstrap `starting`).
+- `ht-resource run worlds -- noteworld execute nw_c87334e98392 --loop` → tracked as `cmd-329dd852fd`, ended exit 0.
+- `noteworld monitor --summary`: `release_status=verified`, `delivery_complete=True`, `world_complete=True`, `accepted=True`, `scheduler=world-complete`, model_seconds=45/600, roles writer and editor both complete.
+- `noteworld artifacts` (release commit `7308e945021c4f01c62bffd29dfcaa1155ea3aff`): `note.md` = a three-sentence note: sunlight contains all colors; air molecules scatter short wavelengths far more strongly (Rayleigh scattering) so scattered blue reaches the eye from every direction; violet scatters more but the sun emits less, the upper atmosphere absorbs some and the eye is less sensitive, so we see blue.
+
+## Step 3 — continue the given world
+- `researchworld continue rw_399c28e983a7 --checkpoint g1 --config continue-config.json` → exit 0, new world **`rw_5566eec23f74`**. `researchworld status`: `container_status=running`, bootstrap `infrastructure-ready`, `world_status=waiting-for-execution`, topic "Write a one-paragraph report on why the sum of the first n odd numbers is n squared.", roles paper-repo and internal-review-repo; `scheduler: starting, HTTPError 503`.
+- `researchworld stop rw_399c28e983a7` → exit 1: `command refused (HTTP 422): rw_399c28e983a7 is given you to read: it takes status, checkpoints, monitor, graph, topic, artifacts, export, continue, instruction, config …, not stop`.
+- `researchworld capture rw_399c28e983a7` → exit 1: `HTTP 422: capture writes the record of a world into its own directory: a world given you to read stays as it is`.
+
+## Step 4 — drive through `capped`
+`ht-resource run capped -- researchworld execute rw_5566eec23f74 --loop` → tracked `cmd-9365c042cf`; it **failed, exit 1**: `{"error": "world control request failed at /claim: HTTP 503: configuration unavailable"}`. The world's scheduler had reported HTTP 503 since creation and still did at the end. `ht-resource status capped`: tracked 0, spend used 0.0, remaining 30.0 of max_spend 30. So the drive never started work; the cap was not reached.
+
+## Step 5 — one more world
+`noteworld run --topic "Another note." --config note-config.json` → exit 1: `HTTP 422: worlds holds its limit of 2 worlds that have not ended (nw_c87334e98392, rw_5566eec23f74): finish or end one first (stop --release)`. Not retried after freeing a slot, as the findings are the outcomes.
+
+## Summary
+Install, NoteWorld run/drive/release succeeded; continuing a read-only world worked but its drive failed with a 503 configuration error; stop/capture on the read-only world and a third world were refused by design (read-only rule, 2-world limit).

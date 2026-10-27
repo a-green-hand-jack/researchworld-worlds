@@ -1,0 +1,59 @@
+"""Line + quadratic figure: run from the assembled delivery; reads ../../results/{data.csv,fit.json,fit_quadratic.json} (experiment-repo), writes ../../report/figures/fit.png."""
+import json
+from pathlib import Path
+import numpy as np
+from scipy import stats
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+root = Path(__file__).resolve().parents[2]
+d = np.loadtxt(root / "results/data.csv", delimiter=",", skiprows=1)
+x, y = d[:, 0], d[:, 1]
+fit = json.load(open(root / "results/fit.json"))
+q = json.load(open(root / "results/fit_quadratic.json"))
+b, a, t = fit["slope"], fit["intercept"], fit["t_crit_95"]
+s = fit["residual_sd"]
+n = x.size
+xg = np.linspace(x.min(), x.max(), 200)
+yhat = a + b * xg
+half = t * s * np.sqrt(1 / n + (xg - x.mean()) ** 2 / np.sum((x - x.mean()) ** 2))
+
+# quadratic band of the mean: sqrt(g' V g), V = cov_abc from fit_quadratic.json
+qa, qb, qc = (q["quadratic"][k]["estimate"] for k in "abc")
+V = np.array(q["cov_abc"])
+G = np.vstack([np.ones_like(xg), xg, xg ** 2]).T
+qhat = G @ np.array([qa, qb, qc])
+qhalf = q["t_crit_95"] * np.sqrt(np.einsum("ij,jk,ik->i", G, V, G))
+
+LINE, QUAD = "#4C78A8", "#F58518"
+fig, ax = plt.subplots(figsize=(7.0, 5.0), dpi=200)
+ax.fill_between(xg, yhat - half, yhat + half, color=LINE, alpha=0.22, lw=0,
+                label="line: 95% confidence band")
+ax.plot(xg, yhat, color=LINE, lw=2, label="straight line (OLS)")
+ax.plot(xg, qhat - qhalf, color=QUAD, lw=0.9, ls=":")
+ax.plot(xg, qhat + qhalf, color=QUAD, lw=0.9, ls=":", label="quadratic: 95% confidence band")
+ax.plot(xg, qhat, color=QUAD, lw=2, label="quadratic (OLS)")
+ax.plot(xg, fit["true_intercept"] + fit["true_slope"] * xg, color="#444444", lw=1.2, ls="--",
+        label="generating line (2.5 + 0.8x)")
+ax.scatter(x, y, s=22, color="#E45756", edgecolor="white", linewidth=0.5, zorder=3, label="data (n = 40)")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+ax.spines[["top", "right"]].set_visible(False)
+ci = lambda k: q["quadratic"][k]["ci95"]
+txt = (f"Straight line (AIC = {q['aic_line']['aic']:.2f})\n"
+       f"  slope = {b:.3f}  (95% CI {fit['slope_ci95'][0]:.3f}, {fit['slope_ci95'][1]:.3f})\n"
+       f"  intercept = {a:.2f}  (95% CI {fit['intercept_ci95'][0]:.2f}, {fit['intercept_ci95'][1]:.2f})\n"
+       f"Quadratic (AIC = {q['aic_quadratic']['aic']:.2f})\n"
+       f"  a = {qa:.2f}  (95% CI {ci('a')[0]:.2f}, {ci('a')[1]:.2f})\n"
+       f"  b = {qb:.3f}  (95% CI {ci('b')[0]:.3f}, {ci('b')[1]:.3f})\n"
+       f"  c = {qc:.4f}  (95% CI {ci('c')[0]:.4f}, {ci('c')[1]:.4f})\n"
+       f"AIC(quadratic) $-$ AIC(line) = {-q['delta_aic_line_minus_quadratic']:+.2f}  (line preferred)")
+ax.text(0.98, 0.03, txt, transform=ax.transAxes, ha="right", va="bottom", fontsize=7.2,
+        family="monospace", multialignment="left", bbox=dict(boxstyle="round", fc="white", ec="#BBBBBB"))
+ax.legend(loc="upper left", fontsize=8, frameon=False)
+fig.tight_layout()
+out = root / "report/figures/fit.png"
+out.parent.mkdir(parents=True, exist_ok=True)
+fig.savefig(out)
+print(out)

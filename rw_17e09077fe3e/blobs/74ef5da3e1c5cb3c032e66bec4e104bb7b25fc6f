@@ -1,0 +1,23 @@
+# Review record
+
+## Pass 1: numerical evidence (experiment-repo 818ecf5d8b93fb1bcabe99c68d8492b196e39fb1)
+
+Inspected: `analysis/monte_carlo.py`, `results/pi_mc.json`, `results/validation.md`.
+
+- The method matches the objective. Each stream draws 1,000,000 uniform pairs in [0,1)², counts a point as inside when x²+y² ≤ 1, and takes 4·inside/N. There are 20 streams from `SeedSequence(20261019).spawn(20)`, each with PCG64. All 20 spawn keys are distinct.
+- I reran `analysis/monte_carlo.py`. I also ran a separate reimplementation, `review/check_evidence.py` (numpy 2.4.6, scipy 1.17.1). All 20 inside counts from both runs equal the delivered ones exactly.
+- Recomputed with `statistics`: mean 3.1417146, sample SD 0.00170412, t(0.975,19) = 2.09302, 95% CI [3.140917046, 3.142512154], signed error +0.000121946 (equal to the absolute error). Total points 20,000,000, of which 15,708,573 were inside. Every value matches the delivered results.
+- Plausibility: the observed per-seed SD is 0.001704 against the binomial value 0.001642 (ratio 1.04), as expected for 20 draws. math.pi lies inside the CI.
+
+Conclusion: the numerical evidence is correct and supports the required claims. No findings.
+
+## Pass 2: report/report.md (paper-repo)
+
+Inspected: the assembled delivery (`ht-role delivery`). It contains `README.md` and `report/report.md` from paper-repo 9cc6d7536cccafafd659925218b8ae7ac35489e0, the only delivered path in assignment.json (experiment-repo 818ecf5d8b93fb1bcabe99c68d8492b196e39fb1). There were no assembly errors.
+
+- The report is 241 words, about half a page. It contains no figures, and the objective asks for none. The results table renders and every row is labelled.
+- It states everything the objective asks for. Estimate: 3.1417146. 95% CI: [3.140917, 3.142512]. Error: +0.000122, labelled as signed (estimate − π), with the absolute value given too. Points drawn: 20,000,000. Each value matches the numbers I verified in Pass 1.
+- Derived figures I checked: half-width 2.0930 × 0.000381 = 0.000798; relative error 0.000122/π = 0.0039%; error/SE = 0.32; SD ratio 1.04. All are correct.
+- Method and seed scheme are stated accurately. The report says the interval measures simulation uncertainty only, which is correctly limited. Provenance cites the exact experiment-repo commit and the files it used.
+
+Conclusion: the delivery meets the objective and its claims are supported. Approved.

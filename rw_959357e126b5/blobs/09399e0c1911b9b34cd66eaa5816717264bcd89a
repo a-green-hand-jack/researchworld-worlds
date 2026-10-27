@@ -1,0 +1,41 @@
+runs 576 finite 576
+rotations [('both', 0.0), ('both', 0.25), ('both', 0.5), ('both', 1.0), ('in', 1.0), ('out', 1.0)]
+
+== stats dev2: rank_tavg mean over seeds (static bound in brackets)
+lam 0.005 a0 0.0001 p0 0.5 sb 24 | both0: 24.0 both0.25: 20.5 both0.5: 19.5 both1: 19.2 in1: 19.1 out1: 19.2
+lam 0.005 a0 0.0001 p0 2.0 sb 24 | both0: 24.0 both0.25: 20.5 both0.5: 19.7 both1: 19.3 in1: 19.4 out1: 19.0
+lam 0.005 a0 0.01   p0 0.5 sb 24 | both0: 24.0 both0.25: 20.5 both0.5: 19.6 both1: 19.1 in1: 19.3 out1: 19.2
+lam 0.005 a0 0.01   p0 2.0 sb 24 | both0: 24.0 both0.25: 20.5 both0.5: 19.7 both1: 19.1 in1: 19.3 out1: 19.2
+lam 0.02  a0 0.0001 p0 0.5 sb 19 | both0: 24.0 both0.25: 22.5 both0.5: 22.1 both1: 21.9 in1: 21.7 out1: 21.9
+lam 0.02  a0 0.0001 p0 2.0 sb 19 | both0: 24.0 both0.25: 22.4 both0.5: 22.0 both1: 21.6 in1: 21.5 out1: 22.2
+lam 0.02  a0 0.01   p0 0.5 sb 19 | both0: 24.0 both0.25: 22.5 both0.5: 21.8 both1: 21.8 in1: 21.6 out1: 21.9
+lam 0.02  a0 0.01   p0 2.0 sb 19 | both0: 24.0 both0.25: 22.5 both0.5: 22.0 both1: 21.7 in1: 21.5 out1: 22.0
+lam 0.05  a0 0.0001 p0 0.5 sb 14 | both0: 24.0 both0.25: 23.6 both0.5: 23.4 both1: 23.3 in1: 23.4 out1: 23.4
+lam 0.05  a0 0.0001 p0 2.0 sb 14 | both0: 24.0 both0.25: 23.4 both0.5: 23.4 both1: 23.3 in1: 23.4 out1: 23.5
+lam 0.05  a0 0.01   p0 0.5 sb 14 | both0: 24.0 both0.25: 23.6 both0.5: 23.3 both1: 23.3 in1: 23.3 out1: 23.5
+lam 0.05  a0 0.01   p0 2.0 sb 14 | both0: 24.0 both0.25: 23.6 both0.5: 23.5 both1: 23.3 in1: 23.3 out1: 23.5
+
+== stats e1b: rank_tavg mean over seeds (static bound in brackets)
+lam 0.005 a0 0.0001 p0 0.5 sb 21 | both0: 24.0 both0.25: 19.1 both0.5: 18.1 both1: 17.4 in1: 17.4 out1: 17.4
+lam 0.005 a0 0.0001 p0 2.0 sb 21 | both0: 24.0 both0.25: 19.5 both0.5: 18.2 both1: 17.5 in1: 17.3 out1: 17.3
+lam 0.005 a0 0.01   p0 0.5 sb 21 | both0: 24.0 both0.25: 19.1 both0.5: 18.3 both1: 17.4 in1: 17.4 out1: 17.3
+lam 0.005 a0 0.01   p0 2.0 sb 21 | both0: 24.0 both0.25: 19.2 both0.5: 18.1 both1: 17.5 in1: 17.6 out1: 17.5
+lam 0.02  a0 0.0001 p0 0.5 sb 15 | both0: 24.0 both0.25: 20.7 both0.5: 20.1 both1: 19.5 in1: 19.6 out1: 19.9
+lam 0.02  a0 0.0001 p0 2.0 sb 15 | both0: 24.0 both0.25: 20.6 both0.5: 19.9 both1: 19.5 in1: 19.4 out1: 19.6
+lam 0.02  a0 0.01   p0 0.5 sb 15 | both0: 24.0 both0.25: 20.9 both0.5: 19.8 both1: 19.6 in1: 19.5 out1: 19.3
+lam 0.02  a0 0.01   p0 2.0 sb 15 | both0: 24.0 both0.25: 20.9 both0.5: 20.0 both1: 19.5 in1: 19.6 out1: 20.0
+lam 0.05  a0 0.0001 p0 0.5 sb 11 | both0: 24.0 both0.25: 22.7 both0.5: 22.3 both1: 22.3 in1: 22.2 out1: 22.6
+lam 0.05  a0 0.0001 p0 2.0 sb 11 | both0: 24.0 both0.25: 22.8 both0.5: 22.3 both1: 22.1 in1: 22.2 out1: 22.6
+lam 0.05  a0 0.01   p0 0.5 sb 11 | both0: 24.0 both0.25: 22.8 both0.5: 22.3 both1: 22.1 in1: 21.9 out1: 22.7
+lam 0.05  a0 0.01   p0 2.0 sb 11 | both0: 24.0 both0.25: 22.7 both0.5: 22.2 both1: 22.2 in1: 22.0 out1: 22.6
+
+== paired theta effect (rotated - aligned, same stats/lam/a0/p0/seed)
+both theta 0.25: n 96 mean -2.46 median -2.31 share>0 0.00 share<0 0.89
+both theta 0.5: n 96 mean -3.10 median -2.95 share>0 0.00 share<0 0.97
+both theta 1.0: n 96 mean -3.44 median -3.44 share>0 0.00 share<0 0.98
+in theta 1.0: n 96 mean -3.46 median -3.54 share>0 0.00 share<0 0.98
+out theta 1.0: n 96 mean -3.29 median -3.07 share>0 0.00 share<0 0.96
+
+== lam effect (paired over lam, same stats/rotation/a0/p0/seed)
+lam 0.005 -> 0.02: mean +1.81 share>0 0.83 share<0 0.00
+lam 0.02 -> 0.05: mean +1.65 share>0 0.83 share<0 0.00

@@ -1,0 +1,217 @@
+"""Stage 2 analysis: Binder-cumulant crossing of L = 32, 64, 128, its bootstrap interval over seeds, and the
+integrated autocorrelation time of |m| at every (L, T, seed) point.
+
+Input : data/stage2/series/L{L}-T{T:.4f}-s{seed}.npz (per-sweep |m| and e from code/stage2.sh, compacted losslessly by code/compact_series.py)
+        data/stage2/summary-L{L}.json (the program's own per-run summaries; checked against the series)
+Output: results/stage2_binder.csv     U (seeds pooled), its seed and block errors, per-seed U, chi, |m|
+        results/stage2_tau.csv        tau_int of |m| (and e) per run, window, N_eff, N/tau, burn/tau,
+                                      first-half vs second-half drift of |m| and U
+        results/stage2_crossing.json  T_c (combined and pairwise crossings), U at the crossing, seed-bootstrap
+                                      95% percentile interval, robustness variants, comparison with exact T_c,
+                                      the autocorrelation verdict and the stage-3 grid
+
+Estimator. At each (L, T) the moments <m^2>, <m^4> are averaged over the seeds (equal run lengths) and
+U = 1 - <m^4>/(3<m^2>^2). For each pair of sizes the crossing is the first sign change (- to +) of
+U_small - U_large with increasing T; inside the bracketing grid interval each curve is represented by a cubic
+through the four surrounding grid points (common.pair_crossing, method 'cubic4'). T_c is the mean of the
+three pairwise crossings. Linear interpolation and PCHIP are reported as variants. (A first version that fitted
+one cubic to all 9 temperatures and minimised the spread of the three curves was discarded: the sigmoid
+curves are not cubic over 0.24 in T and the spread has a trivial minimum at low T where every U -> 2/3.)
+Seed bootstrap: for each L draw 3 seeds with replacement (the same draw at every T of that L, because the
+program reuses each seed's random stream at every T), pool, refit, recross; 95% percentile interval.
+"""
+import csv
+import json
+import sys
+from itertools import combinations
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import TC_EXACT, U_STAR_LIT, binder, crossings, load_series, tau_int  # noqa: E402
+
+import os
+ROOT = Path(os.environ.get('ISING_ROOT', Path(__file__).resolve().parents[1]))
+SIZES = [32, 64, 128]
+B = 4000
+BLOCK = 1000      # sweeps per block for the within-run block bootstrap (20 blocks of 20,000)
+rng = np.random.default_rng(20261017)
+
+
+def load():
+    rows = {L: json.loads((ROOT / f'data/stage2/summary-L{L}.json').read_text()) for L in SIZES}
+    temps = sorted({r['T'] for r in rows[SIZES[0]]})
+    seeds = sorted({r['seed'] for r in rows[SIZES[0]]})
+    ms = {}
+    for L in SIZES:
+        assert sorted({r['T'] for r in rows[L]}) == temps
+        for r in rows[L]:
+            m, e = load_series(ROOT / 'data/stage2/series', L, r['T'], r['seed'])
+            assert np.isclose((m ** 4).mean(), r['m4'], rtol=1e-10) and np.isclose(e.mean(), r['e'], rtol=1e-10)
+            ms[L, r['T'], r['seed']] = (m, e, r)
+    return temps, seeds, ms
+
+
+def curves_U(m2, m4):
+    """m2, m4: arrays [L][T] of pooled moments -> U array [L][T]."""
+    return binder(np.asarray(m2), np.asarray(m4))
+
+
+PRIMARY = 'cubic4'
+
+
+def estimate(temps, U, method=PRIMARY):
+    return crossings(temps, U, method)
+
+
+def main():
+    temps, seeds, ms = load()
+    nT, nS = len(temps), len(seeds)
+    N = len(next(iter(ms.values()))[0])
+    burn = next(iter(ms.values()))[2]['burn']
+    # per-run moments [L, T, seed]
+    M2 = np.array([[[(ms[L, T, s][0] ** 2).mean() for s in seeds] for T in temps] for L in SIZES])
+    M4 = np.array([[[(ms[L, T, s][0] ** 4).mean() for s in seeds] for T in temps] for L in SIZES])
+    U = curves_U(M2.mean(2), M4.mean(2))
+    U_seed = binder(M2, M4)
+
+    # ---- block moments for the within-run (time-series) bootstrap: [L, T, seed, block]
+    nb = N // BLOCK
+    BM2 = np.array([[[(ms[L, T, s][0][:nb * BLOCK] ** 2).reshape(nb, BLOCK).mean(1) for s in seeds]
+                     for T in temps] for L in SIZES])
+    BM4 = np.array([[[(ms[L, T, s][0][:nb * BLOCK] ** 4).reshape(nb, BLOCK).mean(1) for s in seeds]
+                     for T in temps] for L in SIZES])
+
+    # ---- point estimate and variants
+    pairs, comb = estimate(temps, U)
+    variants = {}
+    for meth in ('linear', 'pchip'):
+        p, c = estimate(temps, U, meth)
+        variants[meth] = {'Tc': c[0], 'U': c[1],
+                          'pairwise': {f'{SIZES[i]}/{SIZES[j]}': p[i, j][0] for i, j in combinations(range(3), 2)}}
+    # ---- seed bootstrap
+    boot = []
+    boot_pairs = []
+    bootv = []
+    for _ in range(B):
+        m2 = np.empty((3, nT)); m4 = np.empty((3, nT))
+        for li in range(3):
+            pick = rng.integers(0, nS, nS)
+            m2[li] = M2[li][:, pick].mean(1); m4[li] = M4[li][:, pick].mean(1)
+        p, c = estimate(temps, curves_U(m2, m4))
+        boot.append(c[:2]); boot_pairs.append([p[q][0] for q in combinations(range(3), 2)])
+        bootv.append([estimate(temps, curves_U(m2, m4), meth)[1][0] for meth in ('linear', 'pchip')])
+    boot = np.array(boot); boot_pairs = np.array(boot_pairs)
+    ci_seed = np.percentile(boot[:, 0], [2.5, 97.5])
+    bootv = np.array(bootv)
+    for q, meth in enumerate(('linear', 'pchip')):
+        variants[meth]['seed_bootstrap_ci95'] = np.nanpercentile(bootv[:, q], [2.5, 97.5]).tolist()
+    n_distinct = len({tuple(np.round(b, 10)) for b in boot})
+
+    # ---- block bootstrap within runs (all seeds kept, same block draw at every T of a given (L, seed))
+    bootb = []
+    for _ in range(B):
+        m2 = np.empty((3, nT)); m4 = np.empty((3, nT))
+        for li in range(3):
+            pick = rng.integers(0, nb, (nS, nb))
+            sel2 = np.take_along_axis(BM2[li], pick[None], axis=2).mean(2)  # [T, seed]
+            sel4 = np.take_along_axis(BM4[li], pick[None], axis=2).mean(2)
+            m2[li] = sel2.mean(1); m4[li] = sel4.mean(1)
+        p, c = estimate(temps, curves_U(m2, m4))
+        bootb.append(c[:2])
+    bootb = np.array(bootb)
+    ci_block = np.percentile(bootb[:, 0], [2.5, 97.5])
+    # per-point U errors from the block bootstrap (for figures and stage 3 comparison)
+    U_err_block = np.empty_like(U)
+    for li in range(3):
+        draws = []
+        for _ in range(500):
+            pick = rng.integers(0, nb, (nS, nb))
+            sel2 = np.take_along_axis(BM2[li], pick[None], axis=2).mean(2).mean(1)
+            sel4 = np.take_along_axis(BM4[li], pick[None], axis=2).mean(2).mean(1)
+            draws.append(binder(sel2, sel4))
+        U_err_block[li] = np.std(draws, axis=0, ddof=1)
+    U_err_seed = U_seed.std(2, ddof=1) / np.sqrt(nS)
+
+    # ---- tables
+    out = ROOT / 'results'
+    out.mkdir(exist_ok=True)
+    with open(out / 'stage2_binder.csv', 'w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['L', 'T', 'U', 'U_err_seed', 'U_err_block', *[f'U_s{s}' for s in seeds], 'chi', 'abs_m'])
+        for li, L in enumerate(SIZES):
+            for ti, T in enumerate(temps):
+                r = [ms[L, T, s][2] for s in seeds]
+                w.writerow([L, f'{T:.4f}', f'{U[li, ti]:.6f}', f'{U_err_seed[li, ti]:.6f}', f'{U_err_block[li, ti]:.6f}',
+                            *[f'{U_seed[li, ti, si]:.6f}' for si in range(nS)],
+                            f'{np.mean([x["chi"] for x in r]):.5g}', f'{np.mean([x["abs_m"] for x in r]):.6f}'])
+    taus = []
+    with open(out / 'stage2_tau.csv', 'w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['L', 'T', 'seed', 'tau_abs_m', 'tau_abs_m_err', 'window', 'N', 'N_eff', 'N_over_tau',
+                    'burn_over_tau', 'tau_e', 'drift_abs_m_sigma', 'U_first_half', 'U_second_half'])
+        for L in SIZES:
+            for T in temps:
+                for s in seeds:
+                    m, e, _ = ms[L, T, s]
+                    t, W, terr = tau_int(m)
+                    te, _, _ = tau_int(e)
+                    h = N // 2
+                    a, b = m[:h], m[h:]
+                    sig = np.sqrt(2 * t / h * (a.var() + b.var()))
+                    drift = (b.mean() - a.mean()) / sig
+                    taus.append((L, T, s, t, W))
+                    w.writerow([L, f'{T:.4f}', s, f'{t:.2f}', f'{terr:.2f}', W, N, f'{N / (2 * t):.0f}', f'{N / t:.0f}',
+                                f'{burn / t:.1f}', f'{te:.2f}', f'{drift:.2f}',
+                                f'{binder((a ** 2).mean(), (a ** 4).mean()):.4f}',
+                                f'{binder((b ** 2).mean(), (b ** 4).mean()):.4f}'])
+    tau_arr = np.array([x[3] for x in taus])
+    worst = taus[int(np.argmax(tau_arr))]
+    near = [x for x in taus if abs(x[1] - comb[0]) <= 0.03 + 1e-9]
+    tau_max_by_L = {L: max(x[3] for x in taus if x[0] == L) for L in SIZES}
+    tau_near_by_L = {L: float(np.mean([x[3] for x in near if x[0] == L])) for L in SIZES}
+
+    names = [f'{a}/{b}' for a, b in combinations(SIZES, 2)]
+    res = {
+        'inputs': [f'data/stage2/summary-L{L}.json' for L in SIZES] + ['data/stage2/series/*.npz'],
+        'sizes': SIZES, 'temps': temps, 'seeds': seeds, 'sweeps': N, 'burn': burn,
+        'estimator': ('seed-pooled U(T) per L; pairwise crossing = first -/+ sign change of U_small - U_large, '
+                      'located with a cubic through the 4 grid points around the bracketing interval (cubic4); '
+                      'T_c = mean of the 3 pairwise crossings; variants: linear interpolation, PCHIP'),
+        'Tc': comb[0], 'U_at_crossing': comb[1],
+        'pairwise': {n: {'T': pairs[q][0], 'U': pairs[q][1]} for n, q in zip(names, combinations(range(3), 2))},
+        'bootstrap_seeds': {
+            'B': B, 'ci95': ci_seed.tolist(), 'median': float(np.median(boot[:, 0])), 'sd': float(boot[:, 0].std(ddof=1)),
+            'distinct_resamples': n_distinct,
+            'U_ci95': np.percentile(boot[:, 1], [2.5, 97.5]).tolist(),
+            'pairwise_ci95': {n: np.nanpercentile(boot_pairs[:, q], [2.5, 97.5]).tolist() for q, n in enumerate(names)},
+            'note': 'percentile interval; with 3 seeds per L only 10 distinct seed multisets exist per size',
+        },
+        'bootstrap_blocks_robustness': {
+            'B': B, 'block_sweeps': BLOCK, 'blocks_per_run': nb, 'ci95': ci_block.tolist(),
+            'sd': float(bootb[:, 0].std(ddof=1)), 'U_ci95': np.percentile(bootb[:, 1], [2.5, 97.5]).tolist(),
+        },
+        'variants_robustness': variants,
+        'tc_exact': TC_EXACT,
+        'deviation_from_exact': comb[0] - TC_EXACT,
+        'exact_inside_seed_ci': bool(ci_seed[0] <= TC_EXACT <= ci_seed[1]),
+        'exact_inside_block_ci': bool(ci_block[0] <= TC_EXACT <= ci_block[1]),
+        'U_star_literature': U_STAR_LIT,
+        'autocorrelation': {
+            'tau_abs_m_max': {'L': worst[0], 'T': worst[1], 'seed': worst[2], 'tau': worst[3]},
+            'tau_abs_m_max_by_L': tau_max_by_L,
+            'tau_abs_m_mean_within_0.03_of_Tc_by_L': tau_near_by_L,
+            'min_N_over_tau': float(N / tau_arr.max()), 'min_N_eff': float(N / (2 * tau_arr.max())),
+            'min_burn_over_tau': float(burn / tau_arr.max()),
+            'windows_not_converged': int(sum(1 for x in taus if x[4] < 0)),
+        },
+        'stage3_temps': [round(comb[0] + 0.015 * k, 4) for k in range(-2, 3)],
+        'stage3_rule': 'T* - 0.03 ... T* + 0.03, 5 equally spaced (step 0.015), T* rounded to 4 decimals',
+    }
+    (out / 'stage2_crossing.json').write_text(json.dumps(res, indent=1))
+    print(json.dumps(res, indent=1))
+
+
+if __name__ == '__main__':
+    main()

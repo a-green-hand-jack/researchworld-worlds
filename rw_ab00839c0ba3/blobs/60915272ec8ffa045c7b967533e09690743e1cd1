@@ -1,0 +1,35 @@
+# Brief — Monte Carlo estimate of pi
+
+Source: `experiment-repo`#1 ("Research objective"); frozen material `/initial-state/inputs/0/extended.py`
+(sha256 `95f77f136e5c23f85d53e524f994584b00a3c73c4fa4a9853ee414c6ec3af19d`).
+
+## What the objective asks (quoted)
+
+- Step: "Estimate pi by Monte Carlo sampling and report the estimate with its 95% confidence interval."
+- Step: "run `extended.py 12 OUT` as it is, as a background job on the world's `local-compute` resource (`ht-resource run`), about twelve minutes."
+- Deliverables: "its final estimate with its interval, the analysis code, and a short report `report/report.md` (Markdown is enough) that gives the estimate and how many samples it used."
+
+## What the supplied material establishes
+
+- `extended.py MINUTES OUT` draws points uniformly in the unit square with Python's `random.Random`, seeded with `int(MINUTES*1000)` (12000 for the 12-minute run), in blocks of 100 000, until MINUTES of wall time have elapsed. The sample count therefore depends on the CPU speed of the host, not on a fixed N.
+- Estimator: pi_hat = 4·(inside/total). Interval written to OUT: normal-approximation (Wald) binomial interval, pi_hat ± 1.96·4·sqrt(p(1−p)/n), p = inside/total.
+- It prints a running estimate every 5 minutes and writes `{"minutes","samples","estimate","ci95"}` as JSON to OUT.
+
+## Quantities the delivery must contain
+
+1. Final estimate of pi and its 95% CI from the 12-minute run (from OUT, unmodified script).
+2. Number of samples used.
+3. The analysis code (job launch + post-processing that reads OUT).
+4. `report/report.md` giving the estimate, its interval and the sample count.
+
+## Checks the analysis adds (beyond the objective's minimum)
+
+- Recompute the interval from `samples` and `estimate` to verify OUT is self-consistent.
+- Compare the Wald interval with a Wilson score interval (robustness of the CI method at this n).
+- State whether the known value of pi lies in the interval and the error in units of the standard error.
+- Report the running estimates printed at 5 and 10 minutes.
+
+## Not established
+
+- No venue or format beyond "Markdown is enough"; the report owner (`paper-repo`) decides.
+- Sampling rate depends on the shared host's load, so the sample count is not reproducible exactly; the seed is.

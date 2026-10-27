@@ -1,0 +1,96 @@
+# The standard I-JEPA recipe, and how it scales to 32x32 (answers idea-repo#2, item 2)
+
+**Sources.**
+- Assran et al., CVPR 2023, arXiv 2301.08243, v1 2023-01-19.
+- Official code: facebookresearch/ijepa, last commit 52c1ae95d05f743e000e8f10a1f3a79b10cff048 (2023-06-13), licence CC BY-NC 4.0.
+
+I read the config and code myself on 2026-10-17 at that commit. The paper's numbers are taken from `refs/lit_practice.md`.
+
+## A. Official recipe
+
+### Code: `configs/in1k_vith14_ep300.yaml`, `src/train.py`, `src/helper.py`, `src/models/vision_transformer.py`
+
+| item | value |
+|---|---|
+| input | 224x224; patch 14 (ViT-H/14), i.e. a 16x16 token grid; RandomResizedCrop scale (0.3, 1.0); no colour jitter, blur or flip |
+| context mask | 1 block (`num_enc_masks: 1`), scale (0.85, 1.0) of the image; target blocks are removed from it (`allow_overlap: false`); `min_keep: 10` |
+| target masks | 4 blocks (`num_pred_masks: 4`), each with scale (0.15, 0.2) and aspect ratio (0.75, 1.5) |
+| predictor | narrow ViT: `predictor_embed` Linear(enc dim → 384), depth 12 for ViT-H (the paper uses 6 for ViT-B and 16 for ViT-G), then `predictor_norm` LayerNorm and `predictor_proj` Linear(384 → enc dim); mask tokens carry positional embeddings |
+| target | target-encoder output on the full image, then `F.layer_norm` over features (no affine), masked at the **output** |
+| loss | `F.smooth_l1_loss(z, h)` (the paper says L2; the code uses smooth-L1) |
+| optimiser | AdamW; lr warms up from 2e-4 to 1e-3 over 40 epochs (the paper says 15 epochs from 1e-4), then cosine decay to 1e-6; effective batch 2048 (128 per GPU) |
+| weight decay | cosine 0.04 → 0.4 (`wd_scheduler`); **no weight decay on biases or 1-D params (LayerNorm)** |
+| EMA | momentum rises **linearly** 0.996 → 1.0 over all iterations (`momentum_scheduler`) |
+| epochs | 300 (ViT-H/14) |
+
+### Paper ablations relevant to collapse and rank
+
+All are IN-1% linear probe numbers (see `lit_practice.md`):
+
+- **Multi-block masking vs other strategies:** multi-block 54.2; random 17.6, block 20.2, rasterized 15.5.
+- **Target block scale:** best at (0.15, 0.2). Smaller blocks give 19–42; larger blocks give 34–39.
+- **Number of target blocks:** 1 gives 9.0; 4 gives 54.2.
+- **Context scale:** 0.85 gives 54.2; 0.40 gives 31.2.
+- **Predictor depth (ViT-L):** depth 6 gives 64.0; depth 12 gives 66.9.
+- **Predictor width (ViT-L):** 384 gives 70.7; 1024 gives 68.4.
+- **Weight decay:** ramp vs fixed 0.05 is mixed.
+- **No EMA, stop-gradient or rank ablation.**
+
+## B. Published small-scale settings (verified)
+
+### C-JEPA (Mo & Tong, 2410.19560)
+
+- **Configs (Table 5):** ViT-T has predictor depth 6 and width 192; batch 2048.
+- **I-JEPA baselines, 100 epochs on IN-1K (Table 9):**
+
+  | model | k-NN | linear |
+  |---|---|---|
+  | ViT-T | 15.16 | 22.13 |
+  | ViT-S | 24.36 | 29.61 |
+
+### simple-ijepa (filipbasara0, MIT; commit c0aacb7fae, 2024-08-16)
+
+Trained on STL-10 unlabeled data at 96x96.
+
+- **Encoder:** ViT, embedding dim 512 (README), depth 6, 6 heads, patch 8 (a 12x12 grid).
+- **Masking:** 4 targets.
+- **Predictor:** ViT of the same width, depth 6.
+- **Optimisation:** lr 3e-4, weight decay 1e-5, EMA gamma 0.996, batch 256, 100 epochs.
+- **Normalisation:** LayerNorm on both target and predictor outputs; MSE loss.
+- **Result:** linear probe of 77.07% using sklearn logistic regression on frozen features (5k train / 8k test).
+
+### Other works
+
+- **EB-JEPA (2602.03604):** a single-GPU CIFAR-10 JEPA with a ResNet-18, but **no predictor** in the image example, plus VICReg/SIGReg terms. It reports collapse to 10.0% / 27.2% under bad hyperparameters.
+- **T-JEPA (2410.05016):** official I-JEPA rerun at smaller batch. The loss collapses near 0 early and then recovers.
+- **LeJEPA (2511.08544):** ResNet-18, CIFAR-10 92.51 with SIGReg (not an I-JEPA recipe).
+- **No verified official I-JEPA config at 32x32.** Unverified, unlicensed, 0–1-star CIFAR repos exist; the CIFAR repos that were created after 2026-09-01 must not be used.
+
+## C. Suggested scaling of the recipe to CIFAR-10, 32x32
+
+This is my suggestion, not a published recipe; label it as such.
+
+### Masking
+
+- **Token grid:** patch 4 gives an 8x8 grid of 64 tokens, the same order as I-JEPA's 16x16 = 256 grid.
+- **Target blocks:** keep the scale fractions, (0.15, 0.2) × 64 ≈ 10–13 tokens per block (about 3x4), with 4 target blocks and aspect ratio (0.75, 1.5).
+- **Context block:** scale (0.85, 1.0) minus the targets. The fraction of tokens left visible is then roughly 0.3–0.5, so the effective mask ratio is about 0.5–0.7.
+- **min_keep:** keep 10 tokens, or lower it to about 4 for 64 tokens.
+
+### Predictor
+
+- I-JEPA uses a bottleneck width of 384 for encoders of width 768 and above, and a depth of 6–12 for encoder depth 12–32.
+- For a width-128, depth-4–6 encoder, the analogue is predictor width 64–128 and depth 3–6. C-JEPA's ViT-T uses width 192 = encoder width with depth 6.
+
+### Optimisation, target and loss
+
+- **Optimiser:** AdamW, warmup then cosine lr, peak 1e-3 × (batch/2048) scaled linearly, or 3e-4 at batch 256 as in simple-ijepa.
+- **Weight decay:** 0.04 → 0.4, excluding biases and norms.
+- **EMA:** 0.996 → 1.0, linear over the run.
+- **EMA when changing batch or schedule:** rescale per-step momentum as rho → rho^kappa for a κ× batch change (Busbridge et al. 2023).
+- **Target and loss:** target LayerNorm on; loss smooth-L1 (code) or MSE (paper and simple-ijepa). The theory is for squared loss, so MSE is the natural choice; state the choice.
+- **Augmentation:** RandomResizedCrop (0.3, 1.0) only. I-JEPA uses no flips or colour augmentation.
+
+### What to expect
+
+Absolute accuracy will be low at short schedules; compare C-JEPA's ViT-T at 100 epochs, 22% on IN-1K.

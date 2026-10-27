@@ -1,0 +1,60 @@
+"""Check of experiment-repo aab772d, B3 held-out (results/e5/b3_heldout/): the delivered score re-derived from the
+delivered runs with the delivered scorer (identical JSON), then the registered S2/S4 quantities split by p0 and lam,
+with the round-off regrowth (amendment 1's roundoff_regrowth, ROUND = 1e-13 x top) and the minimum of the top singular
+value per run, to see which cells carry S2's eta = 0.02 failure and S4's p0 = 1.5 effect.
+Usage: python3 e5_b3_heldout_split.py EXP_TREE OUT.json"""
+import sys, os, json, gzip
+import numpy as np
+EXP, OUT = sys.argv[1:3]
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e5_b3 as E
+rows = [json.loads(l) for l in gzip.open(os.path.join(EXP, "results/e5/b3_heldout/b3_heldout_runs.jsonl.gz"), "rt")]
+ok = [r for r in rows if r["truth"]["counts"] is not None]
+pop = {(r["cfg"]["lam"], r["cfg"]["p0"], r["cfg"]["eta"], r["cfg"]["seed"]): r for r in ok if r["cfg"]["B"] == 0}
+G = E.GRIDS["heldout"]
+out = dict(what=__doc__, cells={})
+for p0 in G["p0"]:
+    for lam in G["lam"] + [None]:
+        for eta in G["eta"]:
+            for B in G["B"]:
+                rs = [r for r in ok if r["cfg"]["p0"] == p0 and (lam is None or r["cfg"]["lam"] == lam)
+                      and r["cfg"]["eta"] == eta and r["cfg"]["B"] == B]
+                lv = [E.dead_level(r) for r in rs if E.dead_level(r) is not None]
+                d = [r["truth"]["counts"][-1] - pop[(r["cfg"]["lam"], p0, eta, r["cfg"]["seed"])]["truth"]["counts"][-1]
+                     for r in rs if (r["cfg"]["lam"], p0, eta, r["cfg"]["seed"]) in pop]
+                top_min = [min(sv[0] for sv in r["truth"]["sv"]) for r in rs]
+                out["cells"][f"p0{p0}_lam{lam}_eta{eta}_B{B}"] = dict(
+                    runs=len(rs), level_median=float(np.median(lv)) if lv else None, runs_in_level=len(lv),
+                    delta_vs_pop_mean=float(np.mean(d)) if d else None,
+                    roundoff_regrowth=int(sum(E.roundoff_regrowth(r) for r in rs)),
+                    runs_with_regrowth=int(sum(E.roundoff_regrowth(r) > 0 for r in rs)),
+                    top_sv_min_median=float(np.median(top_min)) if top_min else None,
+                    rank_mean=float(np.mean([r["truth"]["counts"][-1] for r in rs])) if rs else None,
+                    det_mean=float(np.mean([r["pred"]["det"] for r in rs])) if rs else None)
+# S2 pairs per p0 (registered order B2 < B32 < pop, round-off rule), primary scoring
+L0 = np.log10(E.ROUND)
+def s2(sel):
+    rec = {}
+    for b in (2, 32, 0):
+        rs = [r for r in ok if sel(r) and r["cfg"]["B"] == b]
+        lv = [E.dead_level(r) for r in rs if E.dead_level(r) is not None]
+        sl = [r["truth"]["dead_slope_median"] for r in rs if r["truth"]["dead_slope_median"] is not None]
+        rec[b] = (float(np.median(lv)) if lv else None, float(np.median(sl)) if sl else None)
+    def pair(a, b):
+        (la, sa), (lb, sb) = rec[a], rec[b]
+        if la is None or lb is None: return None
+        if la <= L0 and lb <= L0: return None if sa is None or sb is None else sa < sb
+        if lb <= L0: return False
+        if la <= L0: return True
+        return la < lb
+    return dict(levels={f"B{b}": v[0] for b, v in rec.items()}, slopes={f"B{b}": v[1] for b, v in rec.items()},
+                pairs=[pair(2, 32), pair(32, 0)])
+out["S2_by_p0"] = {f"p0{p0}_eta{eta}": s2(lambda r, p0=p0, eta=eta: r["cfg"]["p0"] == p0 and r["cfg"]["eta"] == eta)
+                   for p0 in G["p0"] for eta in G["eta"]}
+out["S2_by_lam"] = {f"lam{l}_eta{eta}": s2(lambda r, l=l, eta=eta: r["cfg"]["lam"] == l and r["cfg"]["eta"] == eta)
+                    for l in G["lam"] for eta in G["eta"]}
+json.dump(out, open(OUT, "w"), indent=1)
+for k, v in out["cells"].items():
+    if "_lamNone_" in k: print(k, v)
+for k in ("S2_by_p0", "S2_by_lam"):
+    for kk, v in out[k].items(): print(kk, v)

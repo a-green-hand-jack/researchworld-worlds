@@ -1,0 +1,10 @@
+#!/bin/sh
+# Robustness check beyond the objective (not one of its three stages): are the 20,000-sweep stage-2 Binder values
+# biased near T_c by too few sweeps / too short burn-in? L = 32, 64, 128 at the four stage-2 grid temperatures
+# that the cubic4 crossing uses (2.21 2.24 2.27 2.30), independent seeds 11 12 13, 100,000 measured sweeps after
+# 20,000 burn-in, series kept. Usage: sh code/extra_long.sh "128"   or   sh code/extra_long.sh "64 32"
+set -e
+cd "$(dirname "$0")/.."
+for L in $1; do
+  python3 -u code/run_points.py --L $L --temps 2.21 2.24 2.27 2.3 --seeds 11 12 13 --sweeps 100000 --burn 20000 --out data/extra_long --series --jobs 2
+done

@@ -1,0 +1,42 @@
+# Child worlds report
+
+30 child research worlds were made with `researchworld run` (topic "Child N: ...", the supplied child-config.json). `world_status` is taken from `researchworld status <world>` at report time (for Child 1 the top-level field; for the others, which carry no top-level field, `bootstrap.world_status`, shown with the scheduler status).
+
+- **Driven** (`execute <world> --loop`, all three ended): Child 1 `rw_8cb26d5357f8`, Child 2 `rw_bb2bb710fde3`, Child 3 `rw_729502c68fc1`.
+- **Finished** (`researchworld finish`, after all three drives ended): Child 1 `rw_8cb26d5357f8` only.
+- The other 27 were left untouched.
+- Disclosure: `run` prints its JSON to stderr; ids were lost in a first batch and I re-ran Child 2 once, creating an extra duplicate world `rw_d427cac4346b`. It is not one of the 30, was not driven or finished, and is listed last.
+
+| # | world id | world_status | scheduler_status | role |
+|---|---|---|---|---|
+| 1 | rw_8cb26d5357f8 | complete | - | driven, finished |
+| 2 | rw_bb2bb710fde3 | waiting-for-execution | world-complete | driven |
+| 3 | rw_729502c68fc1 | waiting-for-execution | world-complete | driven |
+| 4 | rw_27bada03d641 | waiting-for-execution | waiting-for-execution | untouched |
+| 5 | rw_f8a0b0e077f5 | waiting-for-execution | waiting-for-execution | untouched |
+| 6 | rw_306c7bc2305d | waiting-for-execution | waiting-for-execution | untouched |
+| 7 | rw_a3ca5ca9e106 | waiting-for-execution | waiting-for-execution | untouched |
+| 8 | rw_e687eaab6ef3 | waiting-for-execution | waiting-for-execution | untouched |
+| 9 | rw_4ac091eb940b | waiting-for-execution | waiting-for-execution | untouched |
+| 10 | rw_0bd7530e1487 | waiting-for-execution | waiting-for-execution | untouched |
+| 11 | rw_356e92b37cb3 | waiting-for-execution | waiting-for-execution | untouched |
+| 12 | rw_0bf0571b5312 | waiting-for-execution | waiting-for-execution | untouched |
+| 13 | rw_282740bb9cb7 | waiting-for-execution | waiting-for-execution | untouched |
+| 14 | rw_8d1a144b6b4c | waiting-for-execution | waiting-for-execution | untouched |
+| 15 | rw_ea82f0b5b136 | waiting-for-execution | waiting-for-execution | untouched |
+| 16 | rw_ab8c27a7041b | waiting-for-execution | waiting-for-execution | untouched |
+| 17 | rw_08cfd36efa5b | waiting-for-execution | waiting-for-execution | untouched |
+| 18 | rw_41269408cdb4 | waiting-for-execution | waiting-for-execution | untouched |
+| 19 | rw_32f3c61b04b7 | waiting-for-execution | waiting-for-execution | untouched |
+| 20 | rw_d3fc0d0cb74c | waiting-for-execution | waiting-for-execution | untouched |
+| 21 | rw_5dbf0a082e34 | waiting-for-execution | waiting-for-execution | untouched |
+| 22 | rw_85259949c96d | waiting-for-execution | waiting-for-execution | untouched |
+| 23 | rw_07e1618d3e05 | waiting-for-execution | waiting-for-execution | untouched |
+| 24 | rw_46850776c8c5 | waiting-for-execution | waiting-for-execution | untouched |
+| 25 | rw_8224bcbf013d | waiting-for-execution | waiting-for-execution | untouched |
+| 26 | rw_c7e46d2ee010 | waiting-for-execution | waiting-for-execution | untouched |
+| 27 | rw_05f3569ecfaa | waiting-for-execution | waiting-for-execution | untouched |
+| 28 | rw_9a6f04ef1097 | waiting-for-execution | waiting-for-execution | untouched |
+| 29 | rw_ee82c84fcc63 | waiting-for-execution | waiting-for-execution | untouched |
+| 30 | rw_3c9c21195591 | waiting-for-execution | waiting-for-execution | untouched |
+| extra | rw_d427cac4346b | waiting-for-execution | waiting-for-execution | duplicate Child 2, untouched |

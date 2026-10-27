@@ -1,0 +1,82 @@
+{
+ "hostname": "cn504-20",
+ "slurm_job_id": "53905964",
+ "slurmd_nodename": "cn504-20",
+ "slurm_job_nodelist": "cn504-20",
+ "cpu_model": "AMD EPYC 9655 96-Core Processor",
+ "os_cpu_count": 192,
+ "affinity_cpus": 1,
+ "platform": "Linux-5.14.0-427.20.1.el9_4.0.1.x86_64-x86_64-with-glibc2.34",
+ "python": "3.11.17",
+ "numpy": "2.4.6",
+ "scipy": "1.17.1",
+ "sklearn": "1.9.1",
+ "pandas": "3.0.6",
+ "joblib": "1.6.0",
+ "threadpoolctl": "3.7.0",
+ "blas": [
+  {
+   "internal_api": "openblas",
+   "version": "0.3.31.188.0",
+   "num_threads": 1,
+   "architecture": "SkylakeX",
+   "filepath": "/ibex/user/wuj0c/rw/rw-1e4b87bc8bf4/venv/lib/python3.11/site-packages/numpy.libs/libscipy_openblas64_-32a4b2a6.so"
+  },
+  {
+   "internal_api": "openblas",
+   "version": "0.3.30",
+   "num_threads": 1,
+   "architecture": "SkylakeX",
+   "filepath": "/ibex/user/wuj0c/rw/rw-1e4b87bc8bf4/venv/lib/python3.11/site-packages/scipy.libs/libscipy_openblas-6cdc3b4a.so"
+  },
+  {
+   "internal_api": "openmp",
+   "version": null,
+   "num_threads": 1,
+   "architecture": null,
+   "filepath": "/ibex/user/wuj0c/rw/rw-1e4b87bc8bf4/venv/lib/python3.11/site-packages/scikit_learn.libs/libgomp-e985bcbb.so.1.0.0"
+  }
+ ],
+ "thread_env": {
+  "OMP_NUM_THREADS": "1",
+  "OPENBLAS_NUM_THREADS": "1",
+  "MKL_NUM_THREADS": "1"
+ },
+ "data_file": "/ibex/user/wuj0c/rw/rw-1e4b87bc8bf4/v2/results/data/iris.arff",
+ "data_sha256": "38110f3fd3cef003ca4909038a4d6b235f36a85d036dc7eedeff67c5925e826c",
+ "classes": [
+  "Iris-setosa",
+  "Iris-versicolor",
+  "Iris-virginica"
+ ],
+ "code_sha256": {
+  "run_cv.py": "1d52a9ab59f2258b497491e5eac1161b63c1e99666fb60c461dc716d2fc4a21b",
+  "requirements.lock": "fcffe79e09fb3d71f894290d84834dbae3021d90a2a98c4bea7e91ced3f764ec",
+  "run_local.sh": "f19b147be9a5f6c7881cc795c2aa36d267458030e80c32a31f958176467258f8",
+  "ibex_job.sbatch": "693a17ef0bc780ae7f525c24e5b3aa6fae4fe0cda5506cae8153f50dc8922bb0"
+ },
+ "outer_seed": 20261017,
+ "inner_seed_base": 1000,
+ "n_splits": 5,
+ "n_repeats": 10,
+ "k_grid": [
+  1,
+  3,
+  5,
+  7,
+  9,
+  11,
+  13,
+  15,
+  17,
+  19,
+  21,
+  23,
+  25,
+  27,
+  29,
+  31
+ ],
+ "wall_seconds": 7.5,
+ "started_utc": "2026-10-17T09:01:47Z"
+}

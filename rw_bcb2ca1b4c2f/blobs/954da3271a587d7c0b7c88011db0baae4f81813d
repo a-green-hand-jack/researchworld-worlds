@@ -1,0 +1,103 @@
+"""Early check of the A1 development grid (experiment-repo 3e1e6d9 code/e4_dev.py) before it is used: does the
+'exact' ground truth (float64 scalar AdamW maps of code/e4_theory.py) stay representable through the collapse phase?
+
+During collapse |a| decays by sqrt(b1) per step (theory/ext_A_adamw.md A-ii'), i.e. e^{-0.0527 t} for b1 = 0.9, so
+from |a_K| ~ 1e-2 float64 reaches the subnormal range (< 2.2e-308) after ~13,400 steps and 0 after ~14,100. A direction
+whose stability loss comes later than that is not simulated exactly: in subnormals it loses mantissa bits, at 0 it
+never returns. This script re-implements the same update (identical to e4_theory.scalar_adamw) with a running
+min |a| per direction over K < t <= T, in float64 and, for the configs that reach the subnormal range, in
+np.longdouble (x86-64 80-bit extended, smallest normal 3.4e-4932), and compares the burst and alive steps.
+
+Usage: python3 checks/e4_dev_underflow.py /path/to/experiment-repo/code [NPROC] > checks/e4_dev_underflow.json
+"""
+import sys, os, json, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+
+sys.path.insert(0, sys.argv[1])
+import e4_dev  # noqa: E402  (configs and statistics exactly as committed)
+
+K, T, EVERY, THR, BURST = e4_dev.K, e4_dev.T, e4_dev.EVERY, e4_dev.THR, e4_dev.BURST
+TINY64 = np.finfo(np.float64).tiny
+
+
+def sim(cfg, dtype):
+    c, s = e4_dev.stats(cfg["stats"])
+    c = c.astype(dtype); s = s.astype(dtype)
+    one = dtype(1)
+    b1, b2, eta, lam, eps = dtype(cfg["b1"]), dtype(cfg["b2"]), dtype(cfg["eta"]), dtype(cfg["lam"]), dtype(1e-8)
+    a = np.full(c.shape, cfg["a0"], dtype); p = np.full(c.shape, cfg["p0"], dtype)
+    ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c)
+    amin = np.full(c.shape, np.inf, dtype)
+    burst = np.full(c.shape, -1); alive = np.full(c.shape, -1)
+    zero_hit = np.zeros(c.shape, bool)
+    for t in range(1, T + 1):
+        r = c - p * s
+        ga = -a * p * r; gp = -a * a * r
+        ma = b1 * ma + (one - b1) * ga; va = b2 * va + (one - b2) * ga * ga
+        mp = b1 * mp + (one - b1) * gp; vp = b2 * vp + (one - b2) * gp * gp
+        bc1, bc2 = one - b1 ** t, one - b2 ** t
+        a = a * (one - eta * lam) - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps)
+        p = p * (one - eta * lam) - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+        if t > K:
+            aa = np.abs(a)
+            amin = np.minimum(amin, aa)
+            zero_hit |= (aa == 0)
+            if t % EVERY == 0:
+                burst = np.where((burst < 0) & (aa > BURST), t, burst)
+                alive = np.where((alive < 0) & (aa > THR), t, alive)
+    return amin, burst, alive, zero_hit, bool(np.isfinite(a).all() and np.isfinite(p).all())
+
+
+def run64(cfg):
+    amin, burst, alive, zero_hit, fin = sim(cfg, np.float64)
+    return dict(id=cfg["id"], cfg=cfg, finite=fin, log10_amin=[float(np.log10(x)) if x > 0 else None for x in amin],
+                sub=[bool(x < TINY64) for x in amin], zero=zero_hit.tolist(), burst=burst.tolist(), alive=alive.tolist())
+
+
+def runld(cfg):
+    amin, burst, alive, zero_hit, fin = sim(cfg, np.longdouble)
+    return dict(id=cfg["id"], log10_amin=[float(np.log10(x)) if x > 0 else None for x in amin],
+                burst=burst.tolist(), alive=alive.tolist())
+
+
+if __name__ == "__main__":
+    nproc = int(sys.argv[2]) if len(sys.argv) > 2 else 8
+    cfgs = e4_dev.configs()
+    t0 = time.time()
+    with Pool(nproc) as pool:
+        r64 = pool.map(run64, cfgs)
+    t64 = time.time() - t0
+    flagged = [r for r in r64 if any(r["sub"])]
+    with Pool(nproc) as pool:
+        rld = {r["id"]: r for r in pool.map(runld, [r["cfg"] for r in flagged])}
+    rows = []
+    n_dir_sub = n_dir_zero = n_burst_diff = n_alive_diff = n_burst_never64 = 0
+    for r in flagged:
+        ld = rld[r["id"]]
+        for k, sub in enumerate(r["sub"]):
+            if not sub:
+                continue
+            n_dir_sub += 1; n_dir_zero += r["zero"][k]
+            db = r["burst"][k] != ld["burst"][k]; da = r["alive"][k] != ld["alive"][k]
+            n_burst_diff += db; n_alive_diff += da
+            n_burst_never64 += (r["burst"][k] < 0 and ld["burst"][k] > 0)
+            rows.append(dict(id=r["id"], k=k, stats=r["cfg"]["stats"], p0=r["cfg"]["p0"], lam=r["cfg"]["lam"],
+                             a0=r["cfg"]["a0"], eta=r["cfg"]["eta"], b2=r["cfg"]["b2"],
+                             log10_amin_f64=r["log10_amin"][k], log10_amin_ld=ld["log10_amin"][k],
+                             zero_f64=r["zero"][k], burst_f64=r["burst"][k], burst_ld=ld["burst"][k],
+                             alive_f64=r["alive"][k], alive_ld=ld["alive"][k]))
+    out = dict(source="experiment-repo 3e1e6d9 code/e4_dev.py configs() and stats(); update identical to "
+                      "code/e4_theory.py scalar_adamw (eps 1e-8)",
+               numpy=np.__version__, longdouble=str(np.finfo(np.longdouble).dtype), seconds_f64=round(t64, 1),
+               runs=len(cfgs), directions=len(cfgs) * 24,
+               runs_with_subnormal_direction=len(flagged), directions_subnormal=n_dir_sub,
+               directions_exact_zero=n_dir_zero,
+               directions_burst_step_differs_f64_vs_ld=n_burst_diff,
+               directions_alive_step_differs_f64_vs_ld=n_alive_diff,
+               directions_no_burst_f64_but_burst_ld=n_burst_never64,
+               by_b2={str(b): sum(1 for x in rows if x["b2"] == b) for b in (0.999, 0.99)},
+               by_eta={str(e): sum(1 for x in rows if x["eta"] == e) for e in (0.01, 0.02, 0.05)},
+               rows=rows)
+    json.dump(out, sys.stdout, indent=1)

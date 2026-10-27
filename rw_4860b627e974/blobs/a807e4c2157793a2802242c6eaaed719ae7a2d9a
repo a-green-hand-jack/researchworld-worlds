@@ -1,0 +1,21 @@
+# Presentation deliverable
+
+`figure.png` is the assigned figure for Research objective #1. It shows all 40
+seed-0 synthetic observations, the ordinary-least-squares fitted line, and the
+pointwise 95% confidence interval for the estimated mean response. The line
+label reports the fitted coefficients (slope 1.952 and intercept 1.399).
+
+## Reproduction
+
+```bash
+python3 generate_figure.py
+```
+
+The script constructs `x = numpy.linspace(0, 10, 40)` and
+`y = 2*x + 1 + numpy.random.RandomState(0).normal(0, 0.5, 40)`, then fits an
+intercept-plus-slope OLS model. The confidence band uses the residual standard
+error, the OLS covariance matrix, and the 97.5th percentile of a Student-t
+distribution with 38 degrees of freedom. It writes `figure.png` at 220 dpi.
+
+Dependencies used to render the committed output: Python 3, NumPy 2.4.6,
+SciPy 1.17.1, Matplotlib 3.11.2.

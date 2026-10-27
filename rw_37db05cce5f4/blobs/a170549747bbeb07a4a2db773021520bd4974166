@@ -1,0 +1,26 @@
+{
+  "source": "OpenAlex",
+  "url": "https://api.openalex.org/works?search=transformer&per-page=1",
+  "start_utc": "2026-10-19T21:30:14.803234+00:00",
+  "end_utc": "2026-10-19T21:30:15.587864+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/openalex.headers",
+    "-o",
+    "/tmp/tmp4dfxgr40/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://api.openalex.org/works?search=transformer&per-page=1"
+  ],
+  "exit": 0,
+  "curl_output": "200\napplication/json\n",
+  "stderr": "",
+  "first200": "{\"meta\": {\"notice\": \"No API key, so this request shares one free daily budget ($0.10) with everyone on your network's IP address. Get a free key with its own $1/day at https://openalex.org/settings/ap",
+  "body_bytes": 24872
+}

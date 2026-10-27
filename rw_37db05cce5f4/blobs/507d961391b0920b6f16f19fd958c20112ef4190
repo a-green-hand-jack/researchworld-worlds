@@ -1,0 +1,26 @@
+{
+  "source": "NeurIPS accepted papers",
+  "url": "https://neurips.cc/virtual/2025/papers.html",
+  "start_utc": "2026-10-19T21:30:15.411224+00:00",
+  "end_utc": "2026-10-19T21:30:16.489049+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/neurips-accepted-papers.headers",
+    "-o",
+    "/tmp/tmpfh5ue321/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://neurips.cc/virtual/2025/papers.html"
+  ],
+  "exit": 0,
+  "curl_output": "302\ntext/html; charset=utf-8\n",
+  "stderr": "",
+  "first200": "",
+  "body_bytes": 0
+}

@@ -1,0 +1,40 @@
+# Review record — quadrature convergence study
+
+Reviewer: `internal-review-repo` (review). Pass 1, 2026-10-19. This record states what was inspected, at which revisions, which checks were run, and every finding; it is updated before each approval.
+
+## Inspected revisions
+
+| repository | revision | what was inspected |
+|---|---|---|
+| experiment-repo | `a1095a4eae702e0c0ae0f8696b338ae91025863b` | `results/errors.csv`, `results/fits.json`, `results/orders_table.md`, `results/errors_mp60.csv`, `results/fits_mp60.json`, `results/interpretation.md`, `code/quad.py`, `code/quad_mp.py`, `brief.md`, `assignment.json` |
+| paper-repo | `174c6835e90f72fe4446e9a619329ee8f108f06d` | `report/report.md` |
+| figtab-repo | `532e52a8a20c9af615bd6f8683485c09d42bef33` | nothing deliverable yet: `report/figures/`, `report/tables/`, `report/cover.png`, `presentation/` all outstanding (mid-turn at time of this pass) |
+| internal-review-repo | `ccb9d3c437bc76ccc35e2efc8258182814f91626` | this record |
+
+Reproduction environment: numpy 2.4.6, mpmath 1.4.1, scipy 1.17.1 (private venv).
+
+## Checks run
+
+1. **Objective compliance of `code/quad.py`** (experiment-repo @ `a1095a4eae70`): composite trapezoid; composite Simpson with the two ends and midpoint of each of the *n* panels; composite 4-node Gauss–Legendre per panel via `numpy.polynomial.legendre.leggauss(4)`; *n* = 2^k panels, k = 1…12; float64; absolute errors against e−1, atan(5)/5, 2/3. Compliant with the objective.
+2. **Bit-identical reproduction** (fresh scratch, re-confirmed this pass at the pinned revisions): `code/quad.py` reproduces `results/errors.csv` (md5 `90ce87e5819233c88ecfc919940d826a`) and `results/fits.json` (md5 `604836ae0dfe533b2c0fb32437cbab3b`); `code/quad_mp.py` reproduces `results/errors_mp60.csv` (md5 `87a24090a9f2a8e505e4099252f75f92`) and `results/fits_mp60.json` (md5 `d3eca118280f2c16b77b44c885e82a9a`). All four matched.
+3. **Fit convention** (matches the objective): OLS of ln(error) on ln(n) over points with float64 error > 1e-15 (primary; 1e-14 and 1e-13 recorded as sensitivity in `fits.json`), order = −slope, 95% interval = slope ± t(0.975, npts−2)·stderr, reported only when npts ≥ 3; pairwise `local_orders_k_to_k+1` recorded alongside (None when either error ≤ 1e-15).
+4. **`results/orders_table.md`**: every cell cross-checked by script against `results/fits.json` (1e-15 columns) and `results/fits_mp60.json` (all-12-points and k=7…12 columns). All cells match.
+5. **`report/report.md`** (paper-repo @ `174c6835e90f`): within 2 pages; `cover.png` embedded at the top with an "image-generated, not data" alt; references `report/figures/fig_exp.png`, `fig_runge.png`, `fig_sqrt.png` (figtab-repo delivery, not yet present — see status); every numeric claim re-traced to `results/errors.csv`, `results/fits.json`, `results/fits_mp60.json`, `results/orders_table.md` (cited at commits `39a2856fe15d` / `a1095a4eae70`). All verified except F1 and F2 below.
+
+## Findings (open — sent as revise decisions 2026-10-19)
+
+Both findings were sent to their owners as `revise` decisions on 2026-10-19: paper-repo in my repository's issue #3 (comment 14, opened by paper-repo), experiment-repo in my repository's issue #2 (comment 15, opened by experiment-repo). Each owner acts on its own file; the numbers are freshly re-verified at the pinned revisions in the decision evidence.
+
+- **F1 — rounding error in the threshold-sensitivity triple** (paper-repo `report/report.md` line 35 @ `174c6835e90f`; experiment-repo `results/interpretation.md` line 4 @ `a1095a4eae70`): "5.39 / **5.67** / 6.01 for thresholds 10⁻¹⁵ / 10⁻¹⁴ / 10⁻¹³". `fits.json` `fits["1/(1+25x^2)|simpson"]["1e-14"].order = 5.664739` (npts 8), which rounds to **5.66**, not 5.67. The middle value must be corrected in both files.
+- **F2 — overstated exactness of the local orders** (paper-repo `report/report.md` line 35 @ `174c6835e90f`; experiment-repo `results/interpretation.md` line 8 @ `a1095a4eae70`): "local orders become **exactly 2.00** from k ≥ 4" / "then **exactly 2.00** from k>=4". `fits.json` `local_orders_k_to_k+1["1/(1+25x^2)|trapezoid"]` = 1.999182 (k=4→5), 1.999813, 1.999953, 1.999988, 1.999997, 1.999999, 1.9999998, 2.0: the values reach 2.00 at two decimals from k = 4→5 but are exactly 2.0 only at k = 11→12. Rephrase (e.g. "2.00 to two decimals from k ≥ 4 (1.9992, 1.9998, …), exactly 2.0 only at k = 11→12").
+
+Both are number/wording errors in delivered text, traceable to the committed results; no other discrepancy between the delivered numbers and the results files was found in this pass.
+
+## Judged acceptable (not findings)
+
+- `report/report.md`'s supplementary 60-digit k = 7…12 column omits interval half-widths (e.g. √x|trapezoid hw = 0.00144): acceptable compact rendering of a supplementary column; the primary float64 column carries the full intervals.
+- `exp(x)|gauss-legendre-4` float64 fit has npts = 2, so no 95% interval is definable: correctly flagged "undefined (2 points, 0 dof)" in the table and explained in the text.
+
+## Status before approval
+
+Not yet approvable: figtab-repo's four assigned delivery paths (`report/figures/`, `report/tables/`, `report/cover.png`, `presentation/`) are outstanding. Before any approval I will inspect, at the then-current revisions: the three log-log figures (all three rules shown, panel counts on the axis, absolute-error units, fit-inclusion and precision-floor points identified), the fitted-order table against `fits.json`, the cover bitmap (decorative, clearly non-data, sized for a ≤ 2-page report), the `presentation/` package, that `report/report.md`'s references resolve and it stays within 2 pages, and that F1/F2 are fixed. Approval only once the assembled delivery (`report/report.md` plus the assigned paths) is complete and verified.

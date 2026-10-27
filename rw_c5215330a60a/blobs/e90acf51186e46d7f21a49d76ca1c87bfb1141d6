@@ -1,0 +1,13 @@
+| Integrand | Rule | Order | 95% interval | Fit points |
+|---|---|---:|---:|---:|
+| `exp(x)` | Trapezoid | 1.9997 | [1.9994, 2.0000] | 12 |
+| `exp(x)` | Simpson | 3.9969 | [3.9941, 3.9997] | 9 |
+| `exp(x)` | GL4 | 7.9961 | Unavailable (2 points) | 2 |
+| `1/(1+25x^2)` | Trapezoid | 2.2890 | [2.0244, 2.5536] | 12 |
+| `1/(1+25x^2)` | Simpson | 5.3906 | [4.5721, 6.2090] | 9 |
+| `1/(1+25x^2)` | GL4 | 8.7629 | [2.9281, 14.5977] | 4 |
+| `sqrt(x)` | Trapezoid | 1.4833 | [1.4772, 1.4894] | 12 |
+| `sqrt(x)` | Simpson | 1.5000 | [1.4999, 1.5000] | 12 |
+| `sqrt(x)` | GL4 | 1.49999998 | [1.49999996, 1.50000000] | 12 |
+
+Order is minus the OLS slope of ln(absolute error) against ln(n), using only errors >10⁻¹⁵. Intervals use the Student t critical value with N−2 degrees of freedom; they describe regression residuals, not stochastic quadrature uncertainty. Extra decimal places resolve the narrow GL4 interval for sqrt(x); exact endpoints are preserved in presentation/inputs/fits.json.

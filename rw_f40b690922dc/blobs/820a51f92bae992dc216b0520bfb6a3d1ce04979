@@ -1,0 +1,36 @@
+\section{Extended related work}
+\label{app:related}
+
+\paragraph{Joint-embedding and predictive self-supervised learning.}
+JEPAs were proposed as a route to predictive world models that operate in representation space~\citep{lecun2022path}; I-JEPA~\citep{assran2023ijepa} and V-JEPA~\citep{bardes2024vjepa} instantiate them for images and video with a ViT context encoder, an EMA target encoder and a narrow transformer predictor, and report that the predictor depth and the masking strategy matter for downstream quality.
+They belong to the wider family of non-contrastive joint-embedding methods that avoid collapse without negatives, either architecturally---BYOL~\citep{grill2020byol}, SimSiam~\citep{chen2021simsiam}, DINO~\citep{caron2021dino}, data2vec~\citep{baevski2022data2vec}---or through explicit regularisers on the embedding statistics such as Barlow Twins~\citep{zbontar2021barlow}, VICReg~\citep{bardes2022vicreg} and, for JEPAs, LeJEPA's isotropic-Gaussian regulariser, proposed as a replacement for the heuristics~\citep{balestriero2025lejepa}.
+
+\paragraph{Theory of non-contrastive learning dynamics.}
+\citet{tian2021understanding} analysed the gradient dynamics of linear BYOL/SimSiam with eigen-aligned modes.
+On an invariant manifold that ties the predictor to the encoder, each predictor eigenvalue $p_j$ obeys $\dot p_j=p_j\big(\tau p_j-(1+s^2)p_j^2-\eta\big)$ in their notation, with $\tau$ the target-to-online ratio set by the EMA, $s^2$ the augmentation variance and $\eta$ the weight decay.
+The drive $\tau p_j^2$ is quadratic in the mode at the origin, so for $\eta>0$ the collapsed point is linearly stable.
+A mode survives only if it starts outside a basin, and all modes collapse once $\eta>\tau^2/(4(1+s^2))$.
+The same analysis covers the predictor learning-rate ratio and shows that EMA is not strictly necessary; DirectPred follows from it.
+\citet{wang2021directset} derive the analogous rule for DirectSet/DirectCopy: a feature is discarded if and only if its augmentation variance exceeds $1/(4\eta)-1$.
+With an optimal ridge predictor and a norm penalty $\lambda$, \citet{ponce2025dual} and \citet{arbel2026peira} show that a canonical correlation $c$ between the views survives if and only if $c^2\ge4\lambda$, that total collapse is a stable equilibrium, and that the same equilibria hold with an EMA target, whose stability they leave open.
+\citet{halvagal2023implicit} show that the predictor's eigenvalues act as per-mode rate multipliers $\lambda_m(1-\lambda_m)$ and that without the stop-gradient every mode collapses.
+\citet{tang2023selfpredictive} show that an optimal or fast predictor conserves the representation's second moment.
+\citet{bao2023feature} show that feature normalisation changes the balance of the dynamics.
+\citet{richemond2023edge} relate BYOL's behaviour to the orthogonality of the predictor, and \citet{zhuo2023rank} explain non-contrastive methods through a rank-differential mechanism.
+\citet{wen2022mechanism} show how the prediction head rescues weak features in a non-linear model.
+For contrastive and decorrelation objectives, \citet{ziyin2023loss} show that the stability of the origin, per subspace, decides collapse; their losses have no predictor, stop-gradient or EMA.
+Closest to the JEPA setting, \citet{littwin2024jepa} solve deep linear self-distillation with a stop-gradient.
+In their model features are learned greedily in their regression coefficient (influential features first) rather than in their variance, and without weight decay, EMA or masking nothing collapses.
+
+\paragraph{Small-initialisation dynamics and weight decay.}
+From small initialisation, linear networks learn eigenmodes one at a time, at a rate set by the mode's signal and after a delay that grows like $\log(1/\text{init})$ divided by that rate~\citep{saxe2014exact,simon2023stepwise}.
+Near zero, gradient descent on a factorised model acts as power iteration, and with weight decay a mode grows only if its signal exceeds the decay~\citep{li2021greedy}; depth lengthens the escape time~\citep{jacot2021saddle}.
+Weight decay on a factorised map soft-thresholds the singular values of the product~\citep{ziyin2022exact,kobayashi2024weight}.
+The EMA target makes training a two-time-scale system, and the EMA scaling rule of \citet{busbridge2023ema} is a statement about its time scale.
+For masking, moment identities for masked covariances~\citep{bisulco2025masked,dong2025mask} and the missing-data threshold of spectral partial least squares~\citep{gjolbye2026pls} give the statistics a mask leaves to predict, but they say nothing about collapse dynamics.
+
+\paragraph{Measuring collapse.}
+Dimensional collapse was characterised for contrastive learning by \citet{jing2022dimensional}; the effective rank of the embeddings is a label-free predictor of downstream performance~\citep{garrido2023rankme}.
+In I-JEPA the effective rank rises early and then falls, and the best probe accuracy is not at the maximal rank~\citep{thilak2024lidar}.
+We use the effective rank and the embedding spectrum to measure collapse throughout.
+

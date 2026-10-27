@@ -1,0 +1,84 @@
+"""Summarise E1 runs: agreement of theory predictions with measured rank, per sub-experiment.
+Usage: python3 code/e1_analyze.py results/e1
+Writes summary.json (agreement metrics with bootstrap 95% CIs over runs) and e1_runs.csv (one row per run)."""
+import sys, os, json, csv
+import numpy as np
+
+d = sys.argv[1]
+R = [json.loads(l) for l in open(os.path.join(d, "e1_runs.jsonl"))]
+rng = np.random.default_rng(0)
+
+
+def boot(x, B=2000):
+    x = np.asarray(x, float)
+    if x.size == 0:
+        return [float("nan")] * 3
+    m = rng.integers(0, x.size, (B, x.size))
+    bs = x[m].mean(1)
+    return [float(x.mean()), float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))]
+
+
+fields = ["exp", "init", "d", "lam", "p0", "alpha", "w0", "kappa", "depth", "seed", "t_end", "t_race",
+          "race_finished", "rank_meas", "rank_pred", "rank_reduced", "rank_window", "rank_bound", "mode_acc",
+          "mode_acc_reduced", "rankme", "p_final"]
+with open(os.path.join(d, "e1_runs.csv"), "w", newline="") as f:
+    w = csv.DictWriter(f, fieldnames=fields)
+    w.writeheader()
+    for r in R:
+        w.writerow({k: r.get(k) for k in fields})
+
+summary = {}
+for key in sorted(set((r["exp"], r["init"], r["d"]) for r in R)):
+    rr = [r for r in R if (r["exp"], r["init"], r["d"]) == key]
+    surv = np.concatenate([r["surv"] for r in rr]); pred = np.concatenate([r["pred"] for r in rr])
+    ent = dict(runs=len(rr), modes=int(surv.size))
+    ent["mode_acc_race"] = boot(pred == surv)
+    ent["mode_false_pos_race"] = int(((pred == 1) & (surv == 0)).sum())
+    ent["mode_false_neg_race"] = int(((pred == 0) & (surv == 1)).sum())
+    red = [r["mode_acc_reduced"] for r in rr if r["mode_acc_reduced"] is not None]
+    if red:
+        ent["mode_acc_reduced"] = boot(red)
+    for p in ["rank_pred", "rank_reduced", "rank_window", "rank_bound"]:
+        err = np.array([r["rank_meas"] - r[p] for r in rr if r[p] is not None])
+        if err.size == 0:
+            continue
+        ent[p] = dict(exact=boot(err == 0), mae=boot(np.abs(err)), bias=float(err.mean()))
+    ent["collapsed_runs"] = int(sum(r["rank_meas"] == 0 for r in rr))
+    ent["collapse_pred_acc"] = boot([(r["rank_meas"] == 0) == (r["rank_pred"] == 0) for r in rr])
+    summary["/".join(map(str, key))] = ent
+
+# knob trends (orthogonal init): mean measured vs predicted rank
+def trend(exp, knob, fixed):
+    out = []
+    rr = [r for r in R if r["exp"] == exp and r["init"] == "orthogonal" and all(r[k] == v for k, v in fixed.items())]
+    for v in sorted(set(r[knob] for r in rr), key=lambda z: (z is None, z if z is not None else 0)):
+        sel = [r for r in rr if r[knob] == v]
+        out.append(dict(value=v, n=len(sel), rank_meas_mean=float(np.mean([r["rank_meas"] for r in sel])),
+                        rank_meas_sd=float(np.std([r["rank_meas"] for r in sel])),
+                        rank_pred_mean=float(np.mean([r["rank_pred"] for r in sel])),
+                        rank_bound=float(np.mean([r["rank_bound"] for r in sel]))))
+    return out
+
+summary["trends"] = {
+    "lam(p0=1,alpha=1,w0=1e-4)": trend("race", "lam", dict(p0=1.0, alpha=1.0, w0=1e-4)),
+    "p0(lam=0.01,alpha=1,w0=1e-4)": trend("race", "p0", dict(lam=0.01, alpha=1.0, w0=1e-4)),
+    "p0(lam=0,alpha=1,w0=1e-4)": trend("race", "p0", dict(lam=0.0, alpha=1.0, w0=1e-4)),
+    "alpha(lam=0.01,p0=1,w0=1e-4)": trend("race", "alpha", dict(lam=0.01, p0=1.0, w0=1e-4)),
+    "w0(lam=0.01,p0=1,alpha=1)": trend("race", "w0", dict(lam=0.01, p0=1.0, alpha=1.0)),
+    "kappa(lam=0.01,p0=1)": trend("ema", "kappa", dict(lam=0.01, p0=1.0)),
+    "kappa(lam=0,p0=0.5)": trend("ema", "kappa", dict(lam=0.0, p0=0.5)),
+    "depth(lam=0.01,p0=1)": trend("depth", "depth", dict(lam=0.01, p0=1.0)),
+}
+json.dump(summary, open(os.path.join(d, "summary.json"), "w"), indent=1)
+for k, v in summary.items():
+    if k == "trends":
+        continue
+    print(k, "runs", v["runs"], "mode_acc race %.3f [%.3f,%.3f]" % tuple(v["mode_acc_race"]),
+          "| reduced", ("%.3f" % v["mode_acc_reduced"][0]) if "mode_acc_reduced" in v else "-",
+          "| rank exact race %.2f MAE %.2f | window MAE %.2f | bound MAE %.2f | collapse-acc %.2f" % (
+              v["rank_pred"]["exact"][0], v["rank_pred"]["mae"][0], v["rank_window"]["mae"][0],
+              v["rank_bound"]["mae"][0], v["collapse_pred_acc"][0]))
+for k, v in summary["trends"].items():
+    print(k)
+    for e in v:
+        print("   %-6s meas %.1f±%.1f pred %.1f bound %.0f" % (e["value"], e["rank_meas_mean"], e["rank_meas_sd"], e["rank_pred_mean"], e["rank_bound"]))

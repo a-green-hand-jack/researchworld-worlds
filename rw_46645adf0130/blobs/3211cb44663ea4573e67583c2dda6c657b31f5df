@@ -1,0 +1,74 @@
+"""Supplement to stage 3: compare the equilibrated L = 256 Binder values (50000 + 50000 sweeps) with
+the stage-2 crossing.
+
+The generic linear fit of stage3_analysis.py does not apply to these data (U_256 sits on the 2/3
+plateau at 2.246 and 2.261 and drops steeply above), so the comparison here uses the stage-2 scaling
+function f(x) = sum_k a_k x^k, x = (T - T_c) L, fitted on L = 32-128 (data/stage2/crossing.json):
+  A. point-by-point z-scores of U_256 against f with T_c = stage-2 estimate and with T_c = exact;
+  B. a one-parameter fit of T_c to the L = 256 points with the stage-2 shape held fixed (points with
+     x inside the stage-2 fit range only, an error floor of 0.005 for the shape's own uncertainty),
+     interval from delta chi2 = 3.84;
+  C. the bracket of the 128/256 crossing from the sign of U_256 - U_128 (U_128 from f) at the grid.
+Inputs : data/stage3_long/check.json, data/stage2/crossing.json, data/stage2/points.csv
+Output : data/stage3_long/compare.json
+"""
+import csv
+import json
+from pathlib import Path
+
+import numpy as np
+
+s2 = json.loads(Path('data/stage2/crossing.json').read_text())
+c3 = json.loads(Path('data/stage3_long/check.json').read_text())
+a, TC2 = np.array(s2['fss_primary_params']['a']), s2['fss_primary_params']['Tc']
+EXACT = 2 / np.log(1 + np.sqrt(2))
+T, U, sig = np.array(c3['temps']), np.array(c3['U256']), np.array(c3['U256_err'])
+FLOOR = 0.005
+
+
+def f(x):
+    return np.polyval(a[::-1], x)
+
+
+# stage-2 fit range in x (T in 2.22-2.31, L = 32..128, T_c = TC2)
+xs = [(t - TC2) * L for L in (32, 64, 128) for t in (2.22, 2.25, 2.28, 2.31)]
+XMIN, XMAX = min(xs), max(xs)
+err = np.sqrt(sig ** 2 + FLOOR ** 2)
+
+
+def compare(tc):
+    x = (T - tc) * 256
+    inside = (x >= XMIN) & (x <= XMAX)
+    pred = f(x)
+    z = (U - pred) / err
+    return {'Tc': tc, 'x': x.tolist(), 'inside_fit_range': inside.tolist(), 'predicted': pred.tolist(),
+            'z': z.tolist(), 'chi2_inside': float((z[inside] ** 2).sum()), 'n_inside': int(inside.sum())}
+
+
+A = {'stage2_Tc': compare(TC2), 'exact_Tc': compare(EXACT)}
+grid = np.linspace(2.255, 2.290, 3501)
+chi2 = np.array([compare(t)['chi2_inside'] if compare(t)['n_inside'] >= 3 else np.nan for t in grid])
+k = int(np.nanargmin(chi2))
+ok = grid[np.isfinite(chi2) & (chi2 <= chi2[k] + 3.84)]
+B = {'Tc': float(grid[k]), 'chi2_min': float(chi2[k]), 'n_inside_at_min': compare(grid[k])['n_inside'],
+     'ci95_delta_chi2': [float(ok.min()), float(ok.max())], 'error_floor': FLOOR}
+rob = []
+for name, sel in (('2.261,2.276', [1, 2]), ('2.261,2.276,2.291', [1, 2, 3]), ('2.246-2.291', [0, 1, 2, 3])):
+    for fl in (0.002, 0.005, 0.01):
+        e = np.sqrt(sig ** 2 + fl ** 2)
+        c = np.array([(((U[sel] - f((T[sel] - t) * 256)) / e[sel]) ** 2).sum() for t in grid])
+        j = int(c.argmin())
+        okj = grid[c <= c[j] + 3.84]
+        rob.append({'points': name, 'floor': fl, 'Tc': float(grid[j]), 'chi2_min': float(c[j]),
+                    'ci95': [float(okj.min()), float(okj.max())]})
+B['robustness_fixed_point_sets'] = rob
+U128 = f((T - TC2) * 128)
+d = U - U128
+br = [(float(T[j]), float(T[j + 1])) for j in range(len(T) - 1) if d[j] > 0 >= d[j + 1]]
+C = {'U128_from_stage2_fit': U128.tolist(), 'U256_minus_U128': d.tolist(), 'crossing_bracket': br}
+out = {'inputs': ['data/stage3_long/check.json', 'data/stage2/crossing.json'], 'temps': T.tolist(),
+       'U256': U.tolist(), 'U256_err': sig.tolist(), 'stage2_fit_x_range': [XMIN, XMAX],
+       'A_pointwise': A, 'B_one_parameter_Tc_fit_L256': B, 'C_crossing_128_256': C,
+       'note': 'linear-fit results in check.json (test1, test3) do not apply to these data; see the docstring'}
+Path('data/stage3_long/compare.json').write_text(json.dumps(out, indent=1))
+print(json.dumps(out, indent=1))

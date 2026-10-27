@@ -1,0 +1,26 @@
+{
+  "source": "Springer",
+  "url": "https://link.springer.com/",
+  "start_utc": "2026-10-19T21:30:15.888031+00:00",
+  "end_utc": "2026-10-19T21:30:16.388563+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/springer.headers",
+    "-o",
+    "/tmp/tmpcukkkzo0/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://link.springer.com/"
+  ],
+  "exit": 0,
+  "curl_output": "303\n\n",
+  "stderr": "",
+  "first200": "",
+  "body_bytes": 0
+}

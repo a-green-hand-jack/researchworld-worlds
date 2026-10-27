@@ -1,0 +1,127 @@
+# Brief: logistic regression vs. k-nearest neighbours on Iris
+
+Owner: `idea-repo` (context). Source: `idea-repo`#1 "Research objective". This brief quotes the
+objective, lists what it requires, and records what the supplied material establishes and what
+it leaves open. Where this brief and the objective disagree, the objective wins.
+
+## 1. The objective, quoted
+
+> Logistic regression against k-nearest neighbours on the Iris data: a small comparison written up as a short paper.
+>
+> Data. Use the Iris dataset from OpenML (dataset id 61), downloaded from OpenML itself.
+>
+> Study. Compare multinomial logistic regression with k-nearest neighbours (choose k by inner cross-validation) by 10 repetitions of stratified 5-fold cross-validation. Report each method's mean accuracy with a 95% interval and the paired difference with its 95% interval. Run the full cross-validation once as a CPU job on the Ibex cluster and once locally, and report the node name of the Ibex job and whether the two runs give identical numbers.
+>
+> Paper. `report/report.pdf`, at most two pages in the NeurIPS 2026 submission template, compiled from LaTeX, with one figure, one table and the code that produced every number. Deliver the LaTeX source and the code next to the PDF.
+
+## 2. The question
+
+On the OpenML Iris data (id 61), does multinomial logistic regression differ in accuracy from
+k-NN with k tuned by inner cross-validation, as estimated by 10 x stratified 5-fold CV, and by
+how much (paired difference with a 95% interval)? Secondary, required: is the computation
+reproducible across machines (Ibex CPU node vs. local run, identical numbers or not)?
+
+## 3. Requirements checklist (each must end with an owning position)
+
+| # | Requirement (from the objective) | Notes |
+|---|---|---|
+| R1 | Data: OpenML dataset id 61, downloaded from OpenML itself | Not a bundled copy (e.g. not `sklearn.datasets.load_iris`). `fetch_openml(data_id=61)` or the ARFF/Parquet URL below are fine. Record the checksum. |
+| R2 | Method A: multinomial logistic regression | Must be genuinely multinomial (softmax), not one-vs-rest. |
+| R3 | Method B: k-NN with k chosen by inner cross-validation | Nested: k is selected inside each outer training fold only, never on the outer test fold. |
+| R4 | Protocol: 10 repetitions of stratified 5-fold CV (50 outer folds) | Both methods evaluated on the same 50 splits, so the comparison is paired. |
+| R5 | Each method's mean accuracy with a 95% interval | Interval method must be stated (see 5.2). |
+| R6 | Paired difference (LR - kNN) with a 95% interval | Paired over the shared splits; method stated. |
+| R7 | Full CV run once as a CPU job on Ibex | Keep the job script, job id and log. |
+| R8 | Full CV run once locally | Same code, same seeds. |
+| R9 | Report the Ibex job's node name | From the job itself (e.g. `$SLURMD_NODENAME` / `hostname` in the job log). |
+| R10 | Report whether the two runs give identical numbers | Compare fold-level accuracies and chosen k, not only the summary; say exactly identical or give the largest discrepancy. |
+| R11 | `report/report.pdf`, compiled from LaTeX | |
+| R12 | At most two pages | Strict reading: the whole PDF is <= 2 pages (references included) unless the venue owner establishes otherwise; meeting the strict reading satisfies both. |
+| R13 | NeurIPS 2026 submission template | Official style from neurips.cc; submission (anonymous) mode is the default of "submission template". Venue owner to confirm. |
+| R14 | Exactly one figure and one table | |
+| R15 | The code that produced every number | Every number in the paper traceable to code + result files. |
+| R16 | LaTeX source and code delivered next to the PDF | i.e. under `report/`. |
+
+## 4. The data (verified this turn, 2026-10-17)
+
+- OpenML id 61, name `iris`, version 1, status active, default target `class`, licence "Public",
+  source UCI (Fisher 1936, donated by M. Marshall).
+- ARFF: https://openml.org/data/v1/download/61/iris.arff, md5 `ad484452702105cbf3d30f8deaba39a9`
+  (matches OpenML's `md5_checksum`). Parquet: https://data.openml.org/datasets/0000/0061/dataset_61.pq
+- 150 instances, 4 numeric features (sepallength, sepalwidth, petallength, petalwidth, cm),
+  3 classes of 50 each (Iris-setosa, Iris-versicolor, Iris-virginica), no missing values.
+- This is the UCI version, which differs from Fisher's published table in two rows (35 and 38 in
+  file order; Bezdek et al. 1999). Use it as supplied; at most a one-line note in the paper.
+- Exact duplicate rows exist: `4.9,3.1,1.5,0.1,Iris-setosa` x3 and `5.8,2.7,5.1,1.9,Iris-virginica` x2.
+  Copies can land in train and test of the same fold; harmless for the comparison, leave as is.
+- Balanced classes: majority-class baseline accuracy is 1/3.
+
+## 5. Conventions from prior work the study should follow
+
+### 5.1 Nested selection of k
+Choosing k on the same data used to score it biases accuracy upward (Varma & Simon 2006). The
+objective's "inner cross-validation" means a grid search over k inside each outer training fold
+(e.g. `GridSearchCV` nested in the outer loop). The grid, the inner fold count and the tie rule
+are not given by the objective: the analysis owner chooses and states them (a reasonable default:
+odd k in 1..~31, stratified 5-fold inner CV, lowest k on ties), and reports the distribution of
+chosen k over the 50 outer folds.
+
+### 5.2 Intervals for repeated-CV estimates
+The objective asks for "a 95% interval" without naming the method. The 50 fold scores are not
+independent (overlapping training sets, repeated use of the same 150 points), so a naive
+t-interval over 50 folds is too narrow and its tests have inflated type-I error (Dietterich 1998;
+Nadeau & Bengio 2003; Bouckaert & Frank 2004). The established fix for repeated k-fold CV is the
+corrected resampled t interval (Nadeau & Bengio 2003; applied to r x k-fold by Bouckaert & Frank
+2004): variance multiplied by (1/n + n_test/n_train) = (1/50 + 1/4) with n = 50, t with 49 df.
+Recommendation: use it for both the per-method means and the paired difference, and say so in
+the table caption. Alternatives (naive t, percentile bootstrap over repetitions) may be shown
+only if labelled. Note also that CV estimates average prediction error over training sets rather
+than the error of the one fitted model (Bates, Hastie & Tibshirani 2024), which is the right
+framing for "which method is more accurate on this data".
+
+### 5.3 Preprocessing and settings to state
+- k-NN is distance-based: standardising features (fit on the training fold only, in a pipeline)
+  is the usual convention; whether to scale is the analysis owner's choice, but it must be stated
+  and applied identically in inner and outer loops. Same for LR.
+- LR: state solver, penalty and C (scikit-learn default is L2 with C=1.0, lbfgs, multinomial).
+- Fix all seeds (outer split seeds per repetition, inner CV seed), record library versions, so
+  the Ibex/local comparison (R10) is meaningful; identical numbers are expected with identical
+  versions, small differences possible with different BLAS/library versions — report which.
+
+### 5.4 Expected scale of results (planning expectation, not a measurement or a citation)
+Both methods are expected to score in the mid-to-high 90s percent on Iris, with a difference of
+about a percentage point or less; an interval for the difference that includes zero is a likely
+and legitimate outcome and should be reported as such, not tuned away.
+
+### 5.5 Figure and table (what they must show)
+- The single table: per method, mean accuracy and 95% interval; the paired difference and its
+  interval; the interval method; plus (compactly) the Ibex node name and identical-or-not result,
+  unless those go in the text.
+- The single figure: per-fold (or per-repetition) accuracies of both methods and/or the paired
+  differences, with means and intervals marked, so the reader can see the spread the interval
+  summarises. Optional inside the same figure: distribution of chosen k.
+
+## 6. References (bibliographic data checked against Crossref, 2026-10-17)
+
+- Fisher, R. A. (1936). The use of multiple measurements in taxonomic problems. Annals of Eugenics 7(2), 179-188. doi:10.1111/j.1469-1809.1936.tb02137.x
+- Bezdek, J. C., Keller, J. M., Krishnapuram, R., Kuncheva, L. I., Pal, N. R. (1999). Will the real iris data please stand up? IEEE Trans. Fuzzy Systems 7(3), 368-369. doi:10.1109/91.771092
+- Vanschoren, J., van Rijn, J. N., Bischl, B., Torgo, L. (2014). OpenML: networked science in machine learning. SIGKDD Explorations 15(2), 49-60. doi:10.1145/2641190.2641198
+- Cover, T., Hart, P. (1967). Nearest neighbor pattern classification. IEEE Trans. Information Theory 13(1), 21-27. doi:10.1109/TIT.1967.1053964
+- Dietterich, T. G. (1998). Approximate statistical tests for comparing supervised classification learning algorithms. Neural Computation 10(7), 1895-1923. doi:10.1162/089976698300017197
+- Nadeau, C., Bengio, Y. (2003). Inference for the generalization error. Machine Learning 52, 239-281. doi:10.1023/A:1024068626366
+- Bouckaert, R. R., Frank, E. (2004). Evaluating the replicability of significance tests for comparing learning algorithms. PAKDD 2004, LNCS 3056, 3-12. doi:10.1007/978-3-540-24775-3_3
+- Varma, S., Simon, R. (2006). Bias in error estimation when using cross-validation for model selection. BMC Bioinformatics 7, 91. doi:10.1186/1471-2105-7-91
+- Bates, S., Hastie, T., Tibshirani, R. (2024). Cross-validation: what does it estimate and how well does it do it? JASA 119(546), 1434-1445. doi:10.1080/01621459.2023.2197686
+- Pedregosa, F. et al. (2011). Scikit-learn: machine learning in Python. JMLR 12, 2825-2830 (if scikit-learn is used).
+
+BibTeX for these is in `references.bib` in this repository, for the report owner to use.
+
+## 7. Not established by the objective (decisions for the owners named)
+
+- Interval method (analysis): recommendation in 5.2.
+- k grid, inner fold count, scaling, LR regularisation, seeds (analysis): state them.
+- Whether references count toward the two pages, and the exact NeurIPS 2026 style file and
+  options (venue): until settled, keep the whole PDF within two pages.
+- Paths of the code and LaTeX source under `report/` (plan/report): the objective only requires
+  they sit next to `report/report.pdf`.
+- No baseline beyond the two methods is required; none should displace the required items.

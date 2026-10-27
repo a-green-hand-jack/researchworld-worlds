@@ -1,0 +1,188 @@
+\documentclass{article}
+\usepackage{draftwatermark}
+\SetWatermarkText{AI-Generated}
+\SetWatermarkScale{0.5}
+\SetWatermarkColor[gray]{0.6}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{subfigure}
+\usepackage{booktabs} \usepackage{colortbl}
+\usepackage{hyperref}
+\newcommand{\theHalgorithm}{\arabic{algorithm}}
+\usepackage[accepted]{icml2025}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{amsthm}
+\usepackage[capitalize,noabbrev]{cleveref}
+\usepackage[textsize=tiny]{todonotes}
+\usepackage{multirow}
+\icmltitlerunning{A Unified Understanding and Prediction Model for Embodied Agent}
+
+\begin{document}
+\twocolumn[
+\icmltitle{UP-VLA: A Unified Understanding and Prediction Model for Embodied Agent}
+\begin{icmlauthorlist}
+\icmlauthor{Anonymous Author}{yyy}
+\end{icmlauthorlist}
+\vskip 0.3in
+]
+
+\begin{abstract}
+Vision-Language-Action (VLA) models built on large vision-language models (VLMs) generalize well semantically, but VLMs are pre-trained on high-level understanding tasks and under-emphasize the low-level spatial cues and physical dynamics that precise manipulation needs. Prediction-oriented pre-training, in contrast, improves spatial grounding but lacks semantic robustness. We propose UP-VLA, a unified autoregressive VLA that jointly trains multi-modal understanding (MMU) on image-text data and future visual prediction (PRE) on robot data in a single Phi-1.5 backbone, using unified prompting and attention masks, and then conditions action generation on both a generated scene description and predicted future image tokens. On CALVIN ABC$\rightarrow$D, UP-VLA reaches an average length of 4.08 tasks versus 3.06 for GR-1 (about 33\% higher), and 4.42 on ABCD$\rightarrow$D. On a real Franka Panda it improves both unseen-object grasping and precision tasks. Ablations show that prediction is crucial for spatial and dynamics grounding while MMU drives generalization to unseen objects.
+\end{abstract}
+
+\section{Introduction}
+Large vision-language models (VLMs) provide strong semantic grounding and reasoning, and recent Vision-Language-Action (VLA) models initialize from them to improve open-world generalization in robotics \citep{brohan2023rt,kim24openvla}. However, VLMs are predominantly pre-trained on high-level understanding tasks such as visual question answering, and therefore tend to under-emphasize low-level visual and spatial information (depth, size, relative pose) and physical dynamics. These cues are critical for precise manipulation, long-horizon control and adaptation to new scenes.
+
+Prior work shows a dichotomy (\cref{fig:intro,fig:compare}). VLM-initialized VLAs excel at semantic generalization but struggle with fine-grained control; prediction-based policies pre-trained with future frame or video generation gain spatial grounding and physical consistency but lack semantic robustness \citep{wu2023unleashing,black2023zero}. This motivates a unified paradigm that keeps the strengths of both.
+
+We present UP-VLA, which trains a single autoregressive VLA with two complementary objectives: multi-modal understanding (MMU) from large-scale image-text data and future visual prediction (PRE) from robot video/action data. A unified prompting and attention-masking scheme fuses them so that action generation can condition on both semantic scene descriptions and predicted visual futures. Our contributions are:
+\begin{itemize}
+\item UP-VLA, a unified VLA that jointly trains multi-modal understanding and future prediction in an autoregressive framework.
+\item A unified prompting and attention masking strategy that mixes continuous MMU tokens and discrete predictive tokens in one LLM.
+\item A joint prediction-and-understanding action mechanism conditioning actions on scene descriptions and predicted futures.
+\item State-of-the-art results on CALVIN (ABC$\rightarrow$D average length 4.08, about +33\% over GR-1) and real-world gains in both semantic generalization and precision tasks.
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/fig1_v2.png}
+\caption{UP-VLA is pre-trained with both a multi-modal understanding objective and a future prediction objective to capture both high-level semantic information and low-level spatial details, enhancing embodied decision-making.}
+\label{fig:intro}
+\end{figure}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.8\linewidth]{figures/fig2_v2.png}
+\caption{Comparison between UP-VLA, VLM-based VLA models and prediction-based models.}
+\label{fig:compare}
+\end{figure*}
+
+\section{Related Works}
+\textbf{VLM-based VLAs.} Large VLMs have been adapted for robot control by treating actions as tokens, as in RT-2 \citep{brohan2023rt} and OpenVLA \citep{kim24openvla}, and by imitation-learning heads on VLMs, as in Robo-Flamingo \citep{li2023vision}. 3D-VLA \citep{zhen20243d} adds 3D-aware generative modeling. These models inherit semantic generalization from web-scale pre-training but, as noted above, receive little supervision on low-level spatial and dynamics information.
+
+\textbf{Prediction-based policies.} Another line pre-trains on future frame or video prediction and uses the predicted futures or latent features for control: GR-1 \citep{wu2023unleashing}, SuSIE \citep{black2023zero}, and Uni-Pi \citep{du2023video}; related approaches use joint denoising of vision and action \citep{guo2024prediction}. 3D Diffuser Actor \citep{ke20243d} and Diffusion Policy \citep{chi2023diffusionpolicy} are strong policies without a language-model backbone. Such models improve spatial grounding but lack the semantic robustness of VLMs.
+
+\textbf{Why unify them?} The two families have complementary failure modes. Models initialized from VLMs retain concept-level grounding from image-text data, yet that data rarely emphasizes depth, object size, relative pose or how scenes evolve under actions. Prediction-based models are trained on exactly this physical information through future frame or video generation, but without large-scale language-grounded data they generalize less well to novel objects and instructions. Prior work therefore trades one capability against the other; UP-VLA's goal is to train both in one model rather than choosing.
+
+\textbf{Embodied reasoning with language models.} Language models and VLMs have also been used for planning and embodied reasoning \citep{driess2023palm,mu2024embodiedgpt}, which exploits their semantics but does not by itself supervise low-level dynamics. UP-VLA instead trains the policy backbone with both kinds of signal.
+
+\textbf{Unified understanding and generation.} Recent multi-modal models unify image understanding and generation in a single model \citep{xie2024show,dong2023dreamllm}. UP-VLA brings this idea to embodied agents, unifying understanding and future prediction together with action generation.
+
+\section{Preliminaries}
+A VLA policy receives the current observation $O_t$ and a language instruction $L$ and outputs a chunk of low-level actions $a_{t:t+\Delta t}$. We use CLIP-ViT \citep{radford2021learning} as the continuous image encoder, a VQ-GAN tokenizer \citep{esser2021taming} for discrete image tokens, and the Phi-1.5 language model \citep{li2023textbooks} as backbone. All encoders are frozen and the LLM is fully fine-tuned.
+
+\textbf{Problem setting.} Training data consist of image-text pairs for understanding and of robot demonstrations $(O_t, L, a_{t:t+\Delta t}, O_{t+\Delta t})$ for prediction and action. The two data sources differ in what they emphasize: the former in semantics, the latter in low-level spatial detail and physical dynamics. The question we study is how to use both within one policy so that actions benefit from semantic scene comprehension and from explicit modeling of how the scene will change.
+
+\section{Methodology}
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/fig3_v3.png}
+\caption{Overview of UP-VLA.}
+\label{fig:overview}
+\end{figure*}
+
+UP-VLA is an autoregressive VLA with a single LLM backbone that performs three functions: multi-modal understanding, future image token prediction, and action generation. It is trained in two stages, pre-training on MMU and PRE data, followed by action finetuning with joint prompts. The design principle is that images enter through two complementary pathways, a continuous one for semantics and a discrete one for prediction, which are fused by prompting and attention masking.
+
+\textbf{Tokenization.} Images are encoded by two pathways (\cref{fig:overview}). For MMU, CLIP-ViT with an MLP projection $E_1$ maps an image into continuous tokens $u$ in the language embedding space. For prediction, the VQ-GAN encoder $E_2$ yields discrete codebook tokens $v$; future prediction operates on token indices and a VQ decoder reconstructs images.
+
+\textbf{Unified prompting and attention masks.} For MMU the input is $\{[\mathrm{MMU}], u, l\}$: image tokens precede text so they can attend to each other, and the LLM predicts next language tokens, $\hat{L}=\pi_\theta^{\mathrm{MMU}}(I,L)$. For PRE the input is $\{[\mathrm{PRE}], l, v_t\}$: image tokens follow the text so they attend to all preceding tokens, and future image tokens are predicted at aligned positions rather than as next-token over the sequence, $\hat{O}_{t+\Delta t}=\pi_\theta^{\mathrm{PRE}}(O_t,L)$ (\cref{fig:attn}). For action learning, both streams are concatenated so actions attend to semantic (MMU) and predictive visual tokens.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/fig4.png}
+\caption{Illustration of the unified prompting and attention mechanism.}
+\label{fig:attn}
+\end{figure}
+
+\textbf{Joint prediction-and-understanding for action.} Given $(O_t, L)$, we first generate a scene description $s=\pi_\theta^{\mathrm{MMU}}(O_t, L_{\mathrm{prompt}})$ (e.g.\ ``describe this image''), embed additional visual information $E_1(O'_t)$, and form the extended instruction $L'=[E_1(O'_t), s, L]$. The model then jointly predicts future image tokens and actions, $(\hat{O}_{t+\Delta t},\hat{H}^A_{t:t+\Delta t})=\pi_\theta^{\mathrm{PRE}}(O_t, L')$. A lightweight policy head (single-layer attention pooling, MAP, followed by an MLP) maps action tokens to continuous actions: $\hat{a}_{t:t+\Delta t}=\mathrm{MLP}(\mathrm{MAP}(\hat{H}^A_{t:t+\Delta t}))$.
+
+\textbf{Objectives.} $\mathcal{L}_{\mathrm{MMU}}$ is cross-entropy over next text tokens given image tokens; $\mathcal{L}_{\mathrm{PRE}}$ is cross-entropy over future image tokens, $P(O_{t+\Delta t}|O_t,L)=\prod_{j=1}^{M}p_\theta(v'_j|l,v_{1:M})$; and
+$\mathcal{L}_{\mathrm{ACT}}=\|\hat a_{\mathrm{pos}}-a_{\mathrm{pos}}\|_2^2+\mathrm{BCE}(\hat a_{\mathrm{end}},a_{\mathrm{end}})$. The total loss is
+\begin{equation}
+\mathcal{L}=\lambda_1\mathcal{L}_{\mathrm{MMU}}+\lambda_2\mathcal{L}_{\mathrm{PRE}}+\lambda_3\mathcal{L}_{\mathrm{ACT}}.
+\end{equation}
+
+\textbf{Design rationale.} Placing image tokens before text in MMU lets image tokens attend to one another before language is generated, matching the usual understanding setup. In PRE the image tokens come after the text so each can attend to the instruction and all preceding tokens, and the output at each aligned position is the corresponding future token. Because the action tokens can attend to both the MMU-derived description and the visual tokens, low-level control is conditioned on high-level understanding and on predicted dynamics. Keeping encoders frozen and fully finetuning only the LLM keeps the training recipe simple.
+
+\textbf{Training and inference.} Stage 1 pre-trains on a mixture of MMU data (LLaVA-tuning-665k, \citealp{liu2024visual}) and PRE data (25k Bridge demonstrations, \citealp{walke2023bridgedata}) with task-specific prompts and masks. Stage 2 finetunes for action on downstream robot data with joint prediction-and-understanding prompting, continuing MMU co-training to retain semantic capability. At test time the model generates $s$, forms $L'$, runs the PRE pathway to obtain future tokens and action tokens, decodes actions with MAP+MLP, and repeats autoregressively.
+
+\section{Experiments}
+\textbf{Setup.} In simulation we use CALVIN \citep{mees2022calvin} in the ABC$\rightarrow$D and ABCD$\rightarrow$D settings (scenes A--D), reporting the success rate of completing $1$--$5$ chained tasks and the average length. Real-world experiments use a Franka Emika Panda arm with more than 2k demonstrations over 6 skills, evaluating seen tasks, unseen-object grasping, and precise operations (e.g.\ cable routing, small-object grasping), with 20 trials per task (\cref{fig:env}). Baselines are VLA-based (Robo-Flamingo, 3D-VLA, UP-VLA-RT-2, an RT-2-style variant, RT-1) and prediction-based (GR-1, SuSIE, Uni-Pi, 3D Diffuser Actor, Diffusion Policy); UP-VLA-phi-w/o-mmu is a GR-1-like model with our backbone.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.8\linewidth]{figures/fig5.png}
+\caption{Visualization of our evaluation environments.}
+\label{fig:env}
+\end{figure*}
+
+\input{tables/table_qo.tex}
+
+\textbf{Evaluation protocol and baselines.} CALVIN asks the agent to complete five language-specified tasks chained in sequence in a zero-shot fashion on the evaluation scene; we report the fraction of rollouts completing at least $k$ tasks in a row and the average number completed (Avg.\ Len). In ABC$\rightarrow$D training uses scenes A, B and C and evaluation uses the unseen scene D, testing generalization; in ABCD$\rightarrow$D all four scenes are seen in training. Baselines span VLA-based models (Robo-Flamingo, 3D-VLA, UP-VLA-RT-2, RT-1) and prediction-based ones (GR-1, SuSIE, Uni-Pi), together with 3D Diffuser Actor and Diffusion Policy. Entries marked with an asterisk (Diffusion Policy, UP-VLA-RT-2, UP-VLA-phi-w/o-mmu) were reproduced by us; the rest are copied from the original papers. UP-VLA-RT-2 follows the RT-2 recipe of adapting a VLM to emit actions directly using our backbone, while UP-VLA-phi-w/o-mmu mirrors GR-1 with our backbone and no understanding data.
+
+\textbf{CALVIN.} On ABC$\rightarrow$D (\cref{table1}), UP-VLA attains an average length of 4.08, versus 3.06 for GR-1, 3.35 for 3D Diffuser Actor, 2.47 for Robo-Flamingo and 1.44 for UP-VLA-RT-2, i.e.\ about 33\% over GR-1. On ABCD$\rightarrow$D (\cref{table2}) it reaches 4.42 versus 4.21 (GR-1) and 4.09 (Robo-Flamingo). Baseline numbers marked without an asterisk are copied from the original papers.
+
+\input{tables/table_jj.tex}
+
+\textbf{Real-world protocol.} The real-world setup (\cref{fig:env}) uses a Franka Emika Panda arm and more than 2k demonstrations over six skills. We test three kinds of tasks with 20 trials each: seen tasks, grasping of unseen objects which stresses semantic generalization, and precise operations such as cable routing and small-object grasping which stress spatial detail.
+
+\textbf{Real world.} In \cref{fig:real}, LLM-backbone methods outperform RT-1 and Diffusion Policy on seen tasks, with UP-VLA competitive or best. On unseen-object grasping UP-VLA-RT-2 outperforms UP-VLA-phi-w/o-mmu, and UP-VLA is best overall, indicating semantic gains from MMU and its alignment with actions. On precision tasks UP-VLA-phi-w/o-mmu outperforms UP-VLA-RT-2 and UP-VLA is best, highlighting the benefit of future prediction for spatial detail.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.8\linewidth]{figures/fig6.png}
+\caption{Results on real-world manipulation tasks.}
+\label{fig:real}
+\end{figure*}
+
+\textbf{Summary of findings.} Three observations follow. First, on CALVIN ABC$\rightarrow$D, which tests generalization to an unseen scene, the gain over prior work is largest: UP-VLA also exceeds the strong 3D Diffuser Actor (3.35) and our own GR-1-like variant with the same backbone, UP-VLA-phi-w/o-mmu (3.13), isolating the contribution of understanding. Second, under the easier ABCD$\rightarrow$D setting where all scenes are seen in training, differences are smaller (4.42 vs.\ 4.21 and 4.09), but UP-VLA still leads in the longer chains, e.g.\ 0.812 success at five consecutive tasks versus 0.731 for GR-1 and 0.660 for Robo-Flamingo. Third, the real-world comparisons mirror the ablations: variants lacking MMU struggle with unseen objects, and variants lacking prediction struggle with precise operations. The RT-2-style variant, which predicts actions without our unified design, reaches only 1.44 on ABC$\rightarrow$D, indicating that merely initializing from a VLM is insufficient.
+
+\textbf{Ablations.} \cref{table:ablate} reports CALVIN ABC$\rightarrow$D average length and real-world seen/unseen success. Removing prediction is most damaging (4.08$\rightarrow$1.44 on CALVIN), and removing Bridge pre-training lowers it to 2.74, so predictive pre-training matters for spatial and dynamics grounding. Removing MMU leaves seen performance (0.85 vs.\ 0.80) and CALVIN (3.89) nearly unchanged but drops unseen success from 0.58 to 0.20; removing the MMU condition on actions gives 0.50 unseen and 3.99 on CALVIN, so conditioning actions on MMU-derived scene descriptions further helps. Interestingly, removing MMU slightly raises seen real-world success (0.85 vs.\ 0.80), so the benefit of MMU lies in generalization rather than in-distribution performance. Prediction and Bridge pre-training, in contrast, help on seen and unseen tasks alike in the real world (seen 0.65 without either vs.\ 0.80 with both).
+
+\begin{table}[t]
+\centering
+\begin{tabular}{c|c|cc}
+\toprule
+\multirow{2}{*}{\textbf{Method}}&\textbf{ABC$\rightarrow$D}&\multicolumn{2}{c}{\textbf{Real World}} \\\cline{2-4}
+ &\textbf{Avg.Len$\uparrow$} & \textbf{Seen$\uparrow$} & \textbf{Unseen$\uparrow$} \\ \hline
+w/o MMU & 3.89 & 0.85 & 0.20 \\
+w/o Bridge-Pretrain & 2.74 & 0.65 & 0.30 \\
+w/o Prediction& 1.44 & 0.65 & 0.35\\
+w/o MMU-Condition& 3.99 & 0.80 & 0.50\\
+Full& 4.08 & 0.80 & 0.58\\
+\bottomrule
+\end{tabular}
+\caption{Ablating components of UP-VLA.}
+\label{table:ablate}
+\end{table}
+
+\textbf{Discussion of the ablation design.} Each ablation removes one ingredient while holding the rest fixed. ``w/o Prediction'' removes future prediction, leaving a VLM-style action model; ``w/o Bridge-Pretrain'' keeps prediction but drops predictive pre-training on Bridge; ``w/o MMU'' removes understanding data and corresponds to a GR-1-like model on our backbone; and ``w/o MMU-Condition'' keeps MMU co-training but does not feed the generated scene description into the action prompt. Reading the table by column, CALVIN ABC$\rightarrow$D is most sensitive to prediction and its pre-training (1.44 and 2.74 against 4.08), whereas unseen-object success is most sensitive to MMU (0.20 against 0.58), and the intermediate value for removing only the condition (0.50) shows that part, but not all, of the MMU benefit comes from explicitly conditioning actions on the description. Because real-world results use 20 trials per task, small differences (e.g.\ 0.80 vs.\ 0.85 on seen tasks) should not be over-interpreted.
+
+\textbf{Visualization.} \cref{fig:vis} shows that UP-VLA identifies objects and approximate relative positions, which assists action grounding, with occasional misidentification. Predicted futures show robot and object motion consistent with the instruction, but background color artifacts appear in unseen scenes (D versus ABC).
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.8\linewidth]{figures/fig7.png}
+\caption{Visualization of VQA results and predicted future images.}
+\label{fig:vis}
+\end{figure*}
+
+\section{Limitations and Future Work}
+Generative artifacts such as background color shifts indicate insufficient visual generation pre-training; better tokenizers or diffusion-based modules may help. MMU occasionally misclassifies objects, reflecting backbone and data scale; larger VLMs and richer data could reduce errors. Joint tasks add sequence length and training cost, which parameter-efficient finetuning or structured memory might reduce. Extending to 3D inputs (depth, point clouds), multiple views, or explicit physics modeling is future work.
+
+\textbf{Generation quality.} The background color shifts in predicted images, most visible when moving from the ABC training scenes to the unseen scene D, show that our generative generalization is limited. We attribute this to insufficient visual generation pre-training: the prediction pathway is pre-trained on only 25k Bridge demonstrations, and the discrete tokenizer limits fidelity. Improved tokenizers or diffusion-based modules are natural next steps.
+
+\textbf{Understanding quality.} MMU errors, such as occasional object misidentification in the VQA visualizations (\cref{fig:vis}), are tied to the small Phi-1.5 backbone and the scale of the data. Larger VLMs and richer curated data could reduce them, and would likely strengthen the semantic generalization we observe on unseen objects.
+
+\textbf{Efficiency.} Producing a scene description and future image tokens before actions lengthens sequences and increases training cost relative to a plain VLA. Parameter-efficient finetuning and structured memory are promising ways to improve scalability.
+
+\textbf{Richer inputs.} We use RGB observations only. Extending to 3D inputs such as depth or point clouds, to multiple views, or to explicit physics modeling could further strengthen spatial and dynamics understanding.
+
+\section{Conclusion}
+UP-VLA unifies multi-modal understanding and future visual prediction in one autoregressive VLA, and conditions action generation on scene descriptions and predicted futures. It achieves state-of-the-art CALVIN results (4.08 on ABC$\rightarrow$D, 4.42 on ABCD$\rightarrow$D) and improves real-world semantic generalization and precision manipulation, a practical path toward generalist robot policies with balanced high-level and low-level capabilities.
+
+\bibliographystyle{icml2025}
+\bibliography{references}
+\end{document}

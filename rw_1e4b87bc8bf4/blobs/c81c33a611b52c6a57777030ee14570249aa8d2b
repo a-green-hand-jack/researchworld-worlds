@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Robustness checks around the main design, on the same 10x5 outer folds.
+
+Variants (each compared with the main kNN and main LR of cv_compare.py):
+  lr_raw        LR without standardisation (C = 1)
+  lr_tunedC     LR with C chosen by inner 5-fold CV over 10^[-2..3] (13 values)
+  knn_raw       kNN (inner-CV k) without standardisation
+  knn_odd       kNN (inner-CV k) with odd k only, 1..29
+  knn_fixed5    kNN with k = 5 fixed (no tuning)
+Outputs sensitivity_folds.csv (per-fold accuracies) and sensitivity.json (corrected-t
+intervals of each variant and of its difference to the main LR / main kNN, plus the
+matched unstandardised pair LR_raw - kNN_raw and tuned-C LR - main kNN).
+"""
+import argparse
+import json
+import os
+import sys
+
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+sys.path.insert(0, os.path.dirname(__file__))
+from cv_compare import N_REPEATS, N_SPLITS, SEED, K_GRID, load_iris_arff  # noqa: E402
+from summarize import corrected_t  # noqa: E402
+
+
+def inner(i):
+    return StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED + 1 + i)
+
+
+def variants(i):
+    knn = "kneighborsclassifier__n_neighbors"
+    return {
+        "lr_raw": LogisticRegression(C=1.0, max_iter=10000),
+        "lr_tunedC": GridSearchCV(make_pipeline(StandardScaler(), LogisticRegression(max_iter=10000)),
+                                  {"logisticregression__C": list(np.logspace(-2, 3, 13))}, cv=inner(i)),
+        "knn_raw": GridSearchCV(make_pipeline(KNeighborsClassifier()), {knn: K_GRID}, cv=inner(i)),
+        "knn_odd": GridSearchCV(make_pipeline(StandardScaler(), KNeighborsClassifier()),
+                                {knn: list(range(1, 30, 2))}, cv=inner(i)),
+        "knn_fixed5": make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=5)),
+    }
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data", default=os.path.join(os.path.dirname(__file__), "..", "data", "iris.arff"))
+    ap.add_argument("--main", required=True, help="folds.csv of the main run")
+    ap.add_argument("--out", required=True)
+    args = ap.parse_args()
+    X, y, *_ = load_iris_arff(args.data)
+    main_df = pd.read_csv(args.main)
+    outer = RepeatedStratifiedKFold(n_splits=N_SPLITS, n_repeats=N_REPEATS, random_state=SEED)
+    rows = []
+    for i, (tr, te) in enumerate(outer.split(X, y)):
+        r = dict(repetition=i // N_SPLITS, fold=i % N_SPLITS)
+        for name, est in variants(i).items():
+            est.fit(X[tr], y[tr])
+            r[name] = float(np.mean(est.predict(X[te]) == y[te]))
+        rows.append(r)
+        print(i, r, flush=True)
+    df = pd.DataFrame(rows)
+    df = df.merge(main_df[["repetition", "fold", "acc_lr", "acc_knn"]], on=["repetition", "fold"])
+    os.makedirs(args.out, exist_ok=True)
+    df.to_csv(os.path.join(args.out, "sensitivity_folds.csv"), index=False, float_format="%.17g")
+    n_tr, n_te = int(main_df.n_train.iloc[0]), int(main_df.n_test.iloc[0])
+    res = {}
+    for name in variants(0):
+        res[name] = dict(acc=corrected_t(df[name], n_tr, n_te),
+                         minus_main_knn=corrected_t(df[name] - df.acc_knn, n_tr, n_te),
+                         main_lr_minus=corrected_t(df.acc_lr - df[name], n_tr, n_te))
+    # matched-preprocessing comparison without standardisation
+    res["pair_lr_raw_minus_knn_raw"] = corrected_t(df.lr_raw - df.knn_raw, n_tr, n_te)
+    res["pair_lr_tunedC_minus_knn"] = corrected_t(df.lr_tunedC - df.acc_knn, n_tr, n_te)
+    with open(os.path.join(args.out, "sensitivity.json"), "w") as f:
+        json.dump(res, f, indent=1, default=float)
+    for name, q in res.items():
+        if name.startswith("pair_"):
+            print(f"{name}: {q['mean']:+.4f} [{q['lo']:+.4f},{q['hi']:+.4f}] p={q['p_two_sided_vs_0']:.3f}")
+            continue
+        a = q["acc"]
+        print(f"{name:11s} acc {a['mean']:.4f} [{a['lo']:.4f},{a['hi']:.4f}]  "
+              f"(variant - main kNN) {q['minus_main_knn']['mean']:+.4f}  "
+              f"(main LR - variant) {q['main_lr_minus']['mean']:+.4f}")
+
+
+if __name__ == "__main__":
+    main()

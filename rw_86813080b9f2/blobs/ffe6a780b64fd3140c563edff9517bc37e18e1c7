@@ -1,0 +1,11 @@
+# Comment check (step 2), experiment-repo
+
+paper-repo's comment: id 1 in experiment-repo issue #3 ("Note from paper-repo: please also report R².").
+
+1. `forge api -X PATCH repos/world/experiment-repo/issues/comments/1 -f body=check`
+   World answered HTTP 403 `comment-not-yours`: "a comment is edited or deleted only by its author; answer another position's comment with a new comment." The comment was unchanged.
+2. `forge api -X DELETE repos/world/experiment-repo/issues/comments/1`
+   Same 403 `comment-not-yours`. The comment still exists.
+3. Own comment: posted with `forge issue comment 3 -R world/experiment-repo -b ...` (id 2), then `forge api -X PATCH repos/world/experiment-repo/issues/comments/2 -f body=<final reply>`. The edit succeeded (response contained the comment, id 2).
+
+Next: used the amended comment as the real reply to paper-repo's request (#3), answered figtab-repo's #2, closed both.

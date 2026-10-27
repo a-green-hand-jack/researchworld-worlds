@@ -1,0 +1,76 @@
+"""Turn the pilot's own output into the reported estimate, interval and checks.
+
+usage: python3 analysis/analyze.py [PILOT_JSON]   (default results/pilot.json)
+
+Writes results/estimate.json (final estimate, the pilot's 95% Wald CI, checks)
+and results/trace.csv (running estimate with a pointwise 95% CI for the figure).
+Standard library only.
+"""
+import csv
+import hashlib
+import json
+import math
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+src = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'results' / 'pilot.json'
+pilot = json.loads(src.read_text())
+Z = 1.959963984540054  # two-sided 95% normal quantile; the pilot uses 1.96
+
+
+def wald(p, n, z=1.96):
+    h = z * math.sqrt(p * (1 - p) / n)
+    return p - h, p + h
+
+
+def wilson(p, n, z=Z):
+    d = 1 + z * z / n
+    c = (p + z * z / (2 * n)) / d
+    h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return c - h, c + h
+
+
+n = pilot['samples']
+est = pilot['estimate']
+inside = round(est * n / 4)
+assert abs(4 * inside / n - est) < 1e-12, 'estimate is not 4*inside/n for an integer inside'
+p = inside / n
+se = 4 * math.sqrt(p * (1 - p) / n)
+lo, hi = (4 * x for x in wald(p, n))
+assert abs(lo - pilot['ci95'][0]) < 1e-12 and abs(hi - pilot['ci95'][1]) < 1e-12, 'CI does not match pilot output'
+wl, wh = (4 * x for x in wilson(p, n))
+err = est - math.pi
+out = {
+    'source': str(src.relative_to(ROOT)) if src.is_relative_to(ROOT) else str(src),
+    'source_sha256': hashlib.sha256(src.read_bytes()).hexdigest(),
+    'samples': n,
+    'inside': inside,
+    'seconds': pilot['seconds'],
+    'samples_per_second': n / pilot['seconds'],
+    'estimate': est,
+    'standard_error': se,
+    'ci95': [lo, hi],
+    'ci95_half_width': (hi - lo) / 2,
+    'ci95_method': "pilot.py's normal-approximation (Wald) interval: 4p +/- 1.96*4*sqrt(p(1-p)/n)",
+    'robustness': {
+        'wilson_ci95': [wl, wh],
+        'max_endpoint_difference_wald_vs_wilson': max(abs(wl - lo), abs(wh - hi)),
+    },
+    'true_pi': math.pi,
+    'error': err,
+    'relative_error': err / math.pi,
+    'z_vs_true_pi': err / se,
+    'ci_covers_true_pi': lo <= math.pi <= hi,
+    'trace_points': len(pilot['trace']),
+}
+(ROOT / 'results' / 'estimate.json').write_text(json.dumps(out, indent=1) + '\n')
+
+with open(ROOT / 'results' / 'trace.csv', 'w', newline='') as f:
+    w = csv.writer(f)
+    w.writerow(['elapsed_s', 'samples', 'estimate', 'ci95_low', 'ci95_high'])
+    for t, m, e in pilot['trace']:
+        q = e / 4
+        a, b = wald(q, m)
+        w.writerow([t, m, repr(e), repr(4 * a), repr(4 * b)])
+print(json.dumps({k: out[k] for k in ('samples', 'estimate', 'ci95', 'z_vs_true_pi', 'ci_covers_true_pi')}))

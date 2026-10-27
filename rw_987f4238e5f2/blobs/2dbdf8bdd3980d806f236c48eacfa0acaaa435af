@@ -1,0 +1,29 @@
+"""burst.mp4: H.264 animation of the 1 s histogram filling as time advances (~8 s at 30 fps).
+Usage: make_mp4.py photons.f32 burst.mp4"""
+import sys, numpy as np, matplotlib; matplotlib.use("Agg")
+import matplotlib.pyplot as plt, imageio_ffmpeg
+from common import load, counts
+t = load(sys.argv[1]); edges, c = counts(t, 1.0)
+cum = np.concatenate([[0], np.cumsum(c)])
+fps, nframes = 30, 240
+fig, ax = plt.subplots(figsize=(8, 544 / 120), dpi=120)  # 960x544, divisible by 16
+ax.set_xlim(0, 1200); ax.set_ylim(0, c.max() * 1.08)
+ax.set_xlabel("Arrival time (s)"); ax.set_ylabel("Photons per 1 s bin (photons s$^{-1}$)")
+ax.spines[["top", "right"]].set_visible(False)
+st = ax.stairs(np.zeros_like(c), edges, color="#2a5d9f", lw=0.8)
+cursor = ax.axvline(0, color="#c0392b", lw=1)
+title = ax.set_title("t = 0000.0 s   photons arrived: 00,000,000", fontsize=10)
+fig.tight_layout(); fig.canvas.draw()
+w, h = fig.canvas.get_width_height()
+wr = imageio_ffmpeg.write_frames(sys.argv[2], (w, h), fps=fps, codec="libx264",
+                                 pix_fmt_out="yuv420p", macro_block_size=8)
+wr.send(None)
+for i in range(nframes + fps):  # last second holds the final frame
+    now = min(1200.0, 1200.0 * (i + 1) / nframes)
+    k = int(np.floor(now))
+    shown = c.copy(); shown[k:] = 0
+    st.set_data(shown); cursor.set_xdata([now, now])
+    title.set_text(f"t = {now:6.1f} s   photons arrived: {int(cum[k]):,}")
+    fig.canvas.draw()
+    wr.send(np.asarray(fig.canvas.buffer_rgba())[..., :3].tobytes())
+wr.close()

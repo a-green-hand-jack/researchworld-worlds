@@ -1,0 +1,74 @@
+"""Render report/tables/tab_main.tex from per-fold results (and the Ibex/local comparison)."""
+import json
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "figures"))
+from figtab_common import OUT_TAB, check_against_summary, load_runs, results_dir, summarize, tex_num
+
+
+def tex_escape(s):
+    return str(s).replace("\\", r"\textbackslash{}").replace("_", r"\_").replace("&", r"\&").replace("%", r"\%")
+
+
+def f3(x):
+    return tex_num(x)
+
+
+def ci(st, signed=False):
+    return f"[{tex_num(st['ci_low'], signed)}, {tex_num(st['ci_high'], signed)}]"
+
+
+def main():
+    res = results_dir()
+    local, ibex, repro, identical, max_abs = load_runs(res)
+    s = summarize(local)
+    check_against_summary(s, res)
+    n, nrep = s["n_folds"], s["n_rep"]
+    k_txt = f"median {s['k_median']:g} (range {s['k_min']}--{s['k_max']})"
+    wtl = f"{s['wins']}/{s['ties']}/{s['losses']}"
+
+    rows = [
+        ("Logistic regression", f3(s["lr"]["mean"]), ci(s["lr"]), "--"),
+        (r"$k$-NN", f3(s["knn"]["mean"]), ci(s["knn"]), k_txt),
+        (r"Difference (LR $-$ $k$-NN)", tex_num(s["diff"]["mean"], signed=True), ci(s["diff"], True), wtl),
+    ]
+    body = "\n".join(" & ".join(r) + r" \\" for r in rows)
+
+    if ibex is not None:
+        node = tex_escape(repro["ibex_node"]) if repro and "ibex_node" in repro else "not recorded"
+        job = tex_escape(repro["ibex_job_id"]) if repro and "ibex_job_id" in repro else "?"
+        verdict = ("identical" if identical else f"not identical (max $|\\Delta|={max_abs:.2g}$)")
+        run_row = (r"\midrule" "\n" rf"\multicolumn{{4}}{{l}}{{Ibex CPU job {job} on node \texttt{{{node}}} vs.\ local run: "
+                   rf"{verdict}}} \\")
+        run_cap = " Bottom row: Ibex vs.\\ local run."
+    else:
+        run_row, run_cap = "", ""
+
+    cap = (f"{nrep}$\\times$5 stratified CV ({n} folds), 95\\% corrected repeated-CV $t$ intervals ($\\mathrm{{df}}={n-1}$). "
+           f"Last column: chosen $k$ ($k$-NN); folds won/tied/lost by LR." + run_cap)
+    tex = "\n".join([
+        r"\begin{table}[t]",
+        r"\caption{" + cap + r"}",
+        r"\label{tab:main}",
+        r"\centering\small",
+        r"\begin{tabular}{@{}llll@{}}",
+        r"\toprule",
+        r"Quantity & Mean & 95\% interval & $k$ / W/T/L \\",
+        r"\midrule",
+        body,
+        run_row,
+        r"\bottomrule",
+        r"\end{tabular}",
+        r"\end{table}",
+        "",
+    ])
+    tex = tex.replace("\n\n", "\n")
+    OUT_TAB.mkdir(parents=True, exist_ok=True)
+    (OUT_TAB / "tab_main.tex").write_text(tex)
+    print("wrote", OUT_TAB / "tab_main.tex")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,98 @@
+# Brief: logistic regression vs k-nearest neighbours on Iris
+
+Owner: `idea-repo` (context). Source: `idea-repo`#1 "Research objective". The objective wins
+wherever this brief, a plan or a delivery disagree with it.
+
+## 1. The objective, quoted
+
+> Logistic regression against k-nearest neighbours on the Iris data: a small comparison written up as a short paper.
+>
+> Data. Use the Iris dataset from OpenML (dataset id 61), downloaded from OpenML itself.
+>
+> Study. Compare multinomial logistic regression with k-nearest neighbours (choose k by inner cross-validation) by 10 repetitions of stratified 5-fold cross-validation. Report each method's mean accuracy with a 95% interval and the paired difference with its 95% interval. Run the full cross-validation once as a CPU job on the Ibex cluster and once locally, and report the node name of the Ibex job and whether the two runs give identical numbers.
+>
+> Paper. `report/report.pdf`, at most two pages in the NeurIPS 2026 submission template, compiled from LaTeX, with one figure, one table and the code that produced every number. Deliver the LaTeX source and the code next to the PDF.
+
+## 2. Requirements (each must end with an owning position in `assignment.json`)
+
+| id | requirement (from the objective) | check |
+|----|----------------------------------|-------|
+| D1 | Data = OpenML dataset 61, downloaded from OpenML itself by the code (not sklearn's bundled `load_iris`, not UCI) | code fetches from openml.org / data.openml.org; checksum recorded |
+| S1 | Multinomial logistic regression (one softmax model, not one-vs-rest) | estimator settings in code and paper |
+| S2 | k-NN with k chosen by inner cross-validation, inside each outer training fold (nested; no peeking at the outer test fold) | code |
+| S3 | Outer protocol: 10 repetitions x stratified 5-fold CV = 50 outer folds; both methods on the **same** splits (paired) | code; per-fold results file |
+| S4 | Each method's mean accuracy with a 95% interval | table |
+| S5 | Paired difference (LR - kNN, or stated direction) with a 95% interval | table/text |
+| S6 | Full CV run once as a **CPU** job on Ibex (SLURM) and once locally | job script, SLURM log |
+| S7 | Report the Ibex job's node name | paper + raw log |
+| S8 | Report whether the Ibex and local runs give identical numbers (state the comparison criterion: bitwise/per-fold equality) | paper + comparison output |
+| P1 | `report/report.pdf`, compiled from LaTeX | file present, builds |
+| P2 | At most two pages, NeurIPS 2026 submission template | page count of the PDF |
+| P3 | Exactly one figure and one table | PDF |
+| P4 | Code that produced every number in the paper, plus the LaTeX source, delivered next to the PDF (under `report/`) | every number traceable to a code output |
+
+## 3. The data (verified by idea-repo on 2026-10-17 from OpenML itself)
+
+- OpenML id 61, name `iris`, version 1, format ARFF, status active, default target `class`.
+- ARFF: `https://openml.org/data/v1/download/61/iris.arff` (md5 `ad484452702105cbf3d30f8deaba39a9`, matches OpenML's `md5_checksum`);
+  Parquet: `https://data.openml.org/datasets/0000/0061/dataset_61.pq`.
+- 150 instances, 4 real features (`sepallength`, `sepalwidth`, `petallength`, `petalwidth`, in cm), 3 classes x 50
+  (`Iris-setosa`, `Iris-versicolor`, `Iris-virginica`), no missing values.
+- Exact duplicate rows exist: `4.9,3.1,1.5,0.1,Iris-setosa` (3 copies) and `5.8,2.7,5.1,1.9,Iris-virginica` (2 copies).
+  Use the data as downloaded (no de-duplication or correction); duplicates can fall in train and test of one fold,
+  which slightly favours 1-NN-like models. Worth one sentence in the paper, not a change of protocol.
+- Citation: Fisher (1936), "The use of multiple measurements in taxonomic problems", Annals of Eugenics 7(2):179-188,
+  doi:10.1111/j.1469-1809.1936.tb02137.x; OpenML: Vanschoren et al. (2013), SIGKDD Explorations 15(2):49-60,
+  doi:10.1145/2641190.2641198.
+
+## 4. Conventions and prior work the study should follow or compare against
+
+**Intervals for repeated k-fold CV (S4, S5).** The 50 outer fold scores are not independent (training sets overlap),
+so a plain t-interval over 50 folds is too narrow. The standard correction is the corrected resampled t
+(Nadeau & Bengio 2003, "Inference for the generalization error", Machine Learning 52:239-281,
+doi:10.1023/A:1024068626366), applied to repeated k-fold by Bouckaert & Frank (2004, PAKDD, LNCS 3056:3-12,
+doi:10.1007/978-3-540-24775-3_3): with J = 50 fold scores of mean m and sample variance s^2,
+`m ± t_{0.975, J-1} * sqrt((1/J + n_test/n_train) * s^2)`, here n_test/n_train = 30/120 = 0.25.
+Recommendation from context: use this for both per-method means and the paired difference (difference computed
+fold by fold on identical splits), and say so in the paper. Which interval is used is the analysis owner's decision
+(`experiment-repo`); whatever is chosen must be named and justified in the paper. A naive interval may be shown only
+alongside, labelled as such. Dietterich (1998, Neural Computation 10(7):1895-1923, doi:10.1162/089976698300017197)
+is the classic reference on paired tests for comparing classifiers.
+
+**Nested CV for k (S2).** Inner stratified CV on each outer training set (e.g. 5-fold), grid of k (e.g. 1..30 or odd
+1..29), selection by inner mean accuracy with a stated tie rule (scikit-learn `GridSearchCV` keeps the first best,
+i.e. smallest k). Any preprocessing (e.g. standardization, which matters for kNN distances) must be fitted inside
+the training fold (pipeline). The distribution of selected k over the 50 outer folds is a natural by-product to report.
+
+**Logistic regression (S1).** scikit-learn `LogisticRegression` with `lbfgs` fits a multinomial (softmax) model for
+multiclass targets; the `multi_class` argument is deprecated in recent versions. The objective does not ask to tune
+its regularization; a fixed, stated setting (default L2, C=1, with or without standardization, stated) is faithful.
+Tuning C would be an addition, not a requirement.
+
+**Expected magnitudes (planning estimates, not results).** Both methods are widely reported at roughly 95-97% CV
+accuracy on Iris; the difference is expected to be within about one percentage point and its interval to include 0.
+Each outer test fold has 30 samples, so fold accuracies move in steps of 1/30 (3.3 points). A "no detectable
+difference" result is a legitimate finding and should be reported as such.
+
+**Reproducibility (S6-S8).** Fix all seeds (outer `RepeatedStratifiedKFold` random_state, inner splits), pin
+package versions identically on Ibex and locally, and save per-fold results from both runs; compare per-fold
+accuracies and selected k exactly (bitwise), not only the summaries. Record the node name from the job itself
+(`$SLURMD_NODENAME` / `hostname`) and the job id; the job must run on a CPU partition. Differences, if any,
+most plausibly come from library/BLAS versions; report the outcome as measured either way.
+
+**Paper conventions.** One table (per-method mean accuracy and 95% interval, paired difference and its interval,
+interval method named, run comparison) and one figure (e.g. per-fold accuracies or paired differences across the
+50 folds, or the selected-k distribution) must carry all claims. Every number in the text comes from code output in
+`report/`.
+
+## 5. What context could not establish / open interpretation points
+
+- **NeurIPS 2026 template.** `https://media.neurips.cc/Conferences/NeurIPS2026/Styles.zip` returned 404 on 2026-10-17;
+  the 2026 call for papers page exists. Locating the official 2026 style, and deciding whether "submission" means the
+  anonymous default mode, is `venue-repo`'s call.
+- **Two-page limit vs. NeurIPS checklist/references.** NeurIPS normally excludes references and the checklist from its
+  page limit; the objective says the PDF is "at most two pages". The conservative reading is the whole
+  `report/report.pdf` is at most 2 pages; if the checklist is required by the template, `venue-repo` should say how to
+  reconcile it.
+- **"one figure, one table"**: read as exactly one of each.
+- **Ibex access/partition and software environment** are for `experiment-repo` to establish.

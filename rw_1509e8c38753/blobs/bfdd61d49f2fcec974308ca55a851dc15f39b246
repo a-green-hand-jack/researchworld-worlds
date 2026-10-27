@@ -1,0 +1,48 @@
+"""Table: means with 95% intervals, paired difference, and Ibex-vs-local comparison.
+
+usage (from report/tables): python make_table.py [PER_FOLD_CSV] [REPRO_JSON]
+defaults read ../results/folds_long.csv and ../results/reproducibility.json
+Writes table_results.tex (tabular fragment) and table_results.csv, and checks the
+numbers against experiment-repo's ../results/table.csv.
+"""
+import sys, json, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "figures"))
+import pandas as pd
+from common_stats import load, wide, interval
+
+here = pathlib.Path(__file__).resolve().parent
+csv = sys.argv[1] if len(sys.argv) > 1 else here.parent / "results" / "folds_long.csv"
+repro = sys.argv[2] if len(sys.argv) > 2 else here.parent / "results" / "reproducibility.json"
+out = str(here / "table_results")
+df = load(csv)
+J = json.load(open(repro))
+R = {"ibex_node": J["run_b"]["slurmd_nodename"], "job": J["run_b"]["slurm_job_id"], "identical": J["all_numbers_identical"]}
+rows = []
+for run in ["ibex", "local"]:
+    w = wide(df, run)
+    lr, knn = w["logreg"].to_numpy(), w["knn"].to_numpy()
+    for name, x in [("Logistic regression", lr), ("$k$-NN", knn), ("Difference (LR $-$ $k$-NN)", lr - knn)]:
+        m, lo, hi = interval(x)
+        rows.append(dict(run=run, quantity=name, mean_pct=100 * m, lo_pct=100 * lo, hi_pct=100 * hi))
+res = pd.DataFrame(rows)
+res.to_csv(out + ".csv", index=False)
+ref = pd.read_csv(here.parent / "results" / "table.csv")
+loc_ = res[res.run == "local"].reset_index(drop=True)
+for i in range(3):
+    got = [loc_.mean_pct[i], loc_.lo_pct[i], loc_.hi_pct[i]]
+    exp = [100 * ref.mean_accuracy[i], 100 * ref.ci95_low_corrected[i], 100 * ref.ci95_high_corrected[i]]
+    assert max(abs(a - b) for a, b in zip(got, exp)) < 1e-4, (i, got, exp)
+loc = res[res.run == "local"]
+def f(v):
+    return f"{v:.1f}".replace("-", "$-$")
+
+
+L = [r"\begin{tabular}{lcc}", r"\toprule", r"& Mean (\%) & 95\% interval \\", r"\midrule"]
+for i, r in enumerate(loc.itertuples()):
+    if i == 2: L.append(r"\midrule")
+    L.append(f"{r.quantity} & {f(r.mean_pct)} & [{f(r.lo_pct)}, {f(r.hi_pct)}] \\\\")
+same = "byte-identical" if R["identical"] else "not identical"
+L += [r"\midrule", rf"Ibex (node \texttt{{{R['ibex_node']}}}) vs.\ local run & \multicolumn{{2}}{{c}}{{{same}}} \\",
+      r"\bottomrule", r"\end{tabular}"]
+open(out + ".tex", "w").write("\n".join(L) + "\n")
+print("\n".join(L))

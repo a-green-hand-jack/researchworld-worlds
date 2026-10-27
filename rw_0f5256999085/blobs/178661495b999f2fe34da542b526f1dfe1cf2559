@@ -1,0 +1,35 @@
+"""Pilot running estimate of pi vs samples. usage: make_figure.py pilot_trace.csv OUT.png
+CSV columns: elapsed_s, samples, estimate (header tolerated)."""
+import csv, math, sys
+import numpy as np
+import matplotlib; matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+rows = []
+for r in csv.reader(open(sys.argv[1])):
+    try: rows.append([float(v) for v in r[:3]])
+    except ValueError: pass
+_, n, est = (np.array(c) for c in zip(*rows))
+p = est / 4
+half = 1.96 * 4 * np.sqrt(p * (1 - p) / n)
+env = 1.96 * 4 * math.sqrt(math.pi / 4 * (1 - math.pi / 4)) / np.sqrt(n)
+
+fig, (ax, ax2) = plt.subplots(2, 1, figsize=(7, 7), dpi=150, sharex=True, height_ratios=[1, 1])
+ax.fill_between(n, math.pi - env, math.pi + env, color='#9ecae1', alpha=.5,
+                label=r'$\pi \pm 1.96\,\sigma(n)$ (expected sampling spread)')
+ax.plot(n, est, color='#08519c', lw=1.5, marker='o', ms=3, label='pilot running estimate')
+ax.errorbar(n[-1], est[-1], yerr=half[-1], color='#d94801', capsize=4, zorder=5,
+            label=f'final {est[-1]:.6f} ± {half[-1]:.6f} (95% CI)')
+ax.axhline(math.pi, color='k', ls='--', lw=1, label=r'true $\pi$ = 3.141593')
+ax.set_xscale('log')
+ax.set_ylabel(r'estimate of $\pi$ = 4·inside/n')
+ax.set_title('Pilot: running Monte Carlo estimate of pi')
+ax.legend(fontsize=7.5, loc='upper right'); ax.grid(alpha=.3)
+ax2.fill_between(n, -env, env, color='#9ecae1', alpha=.5, label=r'$\pm 1.96\,\sigma(n)$')
+ax2.plot(n, est - math.pi, color='#08519c', lw=1.5, marker='o', ms=3, label='running estimate − true π')
+ax2.errorbar(n[-1], est[-1] - math.pi, yerr=half[-1], color='#d94801', capsize=4, zorder=5, label='final, 95% CI')
+ax2.axhline(0, color='k', ls='--', lw=1)
+m = n >= 1e8
+ax2.set_ylim(-4 * env[m][0], 4 * env[m][0]); ax2.set_xlabel('number of samples n (cumulative)')
+ax2.set_ylabel('estimate − π (zoomed to n ≥ 1e8 scale)'); ax2.legend(fontsize=7.5, loc='upper right'); ax2.grid(alpha=.3)
+fig.tight_layout(); fig.savefig(sys.argv[2])

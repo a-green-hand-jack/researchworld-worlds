@@ -1,0 +1,74 @@
+\section{Experiments}
+\label{sec:experiments}
+
+We test the theory as a set of predictions fixed before the final runs (\cref{sec:predictions}), in three tiers of increasing distance from its assumptions; in the linear tier \cref{prop:decouple} is exact up to the initialization and only the asymptotics of \cref{prop:survival} are approximate.
+Code and per-seed results are in \texttt{code/} and \texttt{results/} of the supplementary material; \cref{app:details} gives every configuration.
+
+\paragraph{Tiers.}
+\emph{Tier A (linear):} full-matrix linear JEPAs \eqref{eq:loss} on synthetic data, compared with integration of \eqref{eq:wdot}--\eqref{eq:pdot}, with dense scans, controls and the matched limits of \cref{app:prior}.
+\emph{Tier B (controlled nonlinear):} a ViT encoder (width 192, 6 blocks, 64 patches of $4\times4$) with a transformer predictor (width 64, 2 blocks; 2.82M parameters) on generated images, AdamW, batch 256, $6{,}000$ steps; 17 configurations (a reference, two levels each of predictor scale, depth, mask ratio and EMA rate, and the scale and mask levels at encoder AdamW decay $0$ and $5\times10^{-4}$, reference $10^{-4}$), 3 seeds each.
+\emph{Tier C (real images):} the same model on CIFAR-10 \citep{krizhevsky2009cifar}, 6 configurations, 3 seeds, 50 epochs, with a frozen-backbone linear probe.
+In Tiers B and C each patch is hidden independently with probability $m$, the expected masked fraction; contiguous block masks are not tested (\cref{app:details} records how this protocol and the reduced grid were settled after the first runs).
+
+\paragraph{Measurements.}
+At fixed steps we record the eigen-decomposition of the embedding covariance of the online encoder, aligning eigenvectors across checkpoints by subspace overlap rather than by sorted eigenvalue.
+The \emph{effective rank} is $\exp(-\sum_ip_i\log p_i)$ with $p_i=\mu_i/\sum_k\mu_k$ for covariance eigenvalues $\mu_i$; the \emph{numerical rank} is the number of eigenvalues above a relative threshold fixed before the comparison (in Tier~A on calibration configurations, then held fixed on the held-out ones), and its \emph{collapse-aware} version counts only those that also exceed their initial value.
+The early per-direction growth rate is the slope of $\log\mu_i$ over a fixed early window; the theory's drive, decay and net rate are computed from the measured context and cross-view covariances, $p_0$, $\alpha$, $\lambda$ and $\lambda_P$ of the same configuration.
+For the ViT (\cref{app:details}) the threshold is $10^{-3}$ and, as \cref{prop:survival} has no closed form there, the early statistic of P2, fixed before the final runs, is the number of aligned directions whose $\log\mu_i$ grows over steps 25--250.
+All quantities are reported per seed and as means with 95\% intervals.
+
+\subsection{Predictions}
+\label{sec:predictions}
+
+\begin{enumerate}
+\item[\textbf{P1}] (Local dynamics, \cref{prop:decouple,prop:window}.) In the early window the measured slope of $\log\mu_j$ for each direction has the sign of $r_j(p)$ and follows $2r_j(p)$ (\cref{fig:rates}a); directions without drive decay at $2(p_j^2c_j-p_js_j+\lambda)$.
+\item[\textbf{P2}] (Rank, \cref{prop:survival}.) $\hat R$ computed from early-window quantities predicts the late numerical rank better than the fixed-point count $\#\{j:\rho_js_j>4\lambda\}$, which over-predicts it.
+\item[\textbf{P3}] (Predictor, \cref{prop:survival,cor:depth}.) Rank is non-monotone in the predictor's initial gain $p_0$; it decreases with the predictor's weight decay and, at fixed end-to-end gain, with predictor depth; it is at most the predictor width. It decreases with the predictor learning-rate ratio $\alpha$ when the predictor's decay coefficient is held fixed, and increases with $\alpha$ when its absolute decay rate $\alpha\lambda_P$ is held fixed.
+\item[\textbf{P4}] (Masking, \cref{prop:masking}.) Directions with below-average power are never driven; the drive vanishes at mask ratio $0$ and $1$, so rank is low at both ends and peaks at an intermediate-to-high mask ratio.
+\item[\textbf{P5}] (Target update, \cref{prop:stopgrad}, \cref{app:ema}.) Without stop-gradient every direction decays; an EMA target keeps the windows and lowers the growth rate inside them, so a slower target can only lower rank.
+\item[\textbf{P6}] (Transfer.) The early-window statistic of P2 retains predictive value for the late rank of a small vision JEPA; where it does not, we report the regime. The theory predicts rank, not accuracy; a frozen-backbone linear probe is a sanity check, and configurations predicted to collapse should probe no better than at initialization.
+\item[\textbf{P7}] (Weight-decay calibration, \cref{sec:heuristics}.) Over $\lambda\in\{0,\lambda_{\mathrm{ref}},\lambda_{\mathrm{strong}}\}$ the early decay rate of $\log\mu_j$ along undriven directions changes by $2\Delta\lambda$; rank decreases with $\lambda$, and the directions that survive satisfy $\rho_js_j>4\lambda$. ($\lambda$: direct L2 decay.)
+\item[\textbf{P8}] (Prior accounts, \cref{tab:prior}.) The matched limits of \cref{app:prior} reproduce the prior statements \citep{tian2021understanding,wang2021demystify}, and the fixed-point count over-predicts the rank reached from small initialization.
+\end{enumerate}
+P1--P5, P7 and P8 are tested in Tier~A, the direction of P3--P5 in Tier~B, and P6 in Tiers B and C.
+Tier~B's small AdamW decay (a direct shrinkage of $0.09\%$ over a run) is not the $\lambda$ of \eqref{eq:wdot} and does not test P7, a scope we set after seeing its first contrast (\cref{app:details}).
+
+\subsection{Results}
+\paragraph{Tier A: linear JEPAs.}
+Tier~A uses 16-dimensional linear JEPAs trained by expected gradients ($30{,}000$ steps, 8 seeds per configuration) on inputs that follow the model of \cref{prop:masking}, a stationary signal with Fourier powers geometrically spaced from $3$ to $0.05$; the reference is $m=0.65$, $p_0=0.5$, $\alpha=1$, $\lambda=\lambda_P=0.005$ (\cref{app:details}).
+Ranks are means over seeds, with zero seed-to-seed spread except at $p_0=0.1$; every value, with 95\% intervals, is in \cref{app:tierA} and \texttt{results/}.
+
+\emph{Reduction.} Integrating \eqref{eq:wdot}--\eqref{eq:pdot} per direction reproduces the full-matrix trajectories to a relative error of $2.2\times10^{-16}$ over 40 runs, with identical final rank: \cref{prop:decouple} is exact in this tier.
+
+\emph{P1, P7 (rates).} Over 5{,}376 directions of 336 runs, the early slope of $\log\mu_j$ has correlation $0.9997$ with $2r_j(p)$ evaluated at initialization, with no fitted constant (median absolute difference $0.0040$; \cref{fig:rates}a), and the predicted sign in every direction except at mask ratio $1$, where the context is empty, $\mu_j=c_jw_j^2\equiv0$ and only $w_j$ is defined; there $w_j$ decays at the predicted rate $\lambda$ (\cref{app:tierA}).
+Without cross-view signal, the decay slope moves by $\Delta\lambda$ to within $10^{-5}$ across $\lambda\in\{0,0.005,0.02\}$.
+
+\emph{P2 (rank).} Counting only directions that grew above their initial size and $10^{-2}$ of the largest eigenvalue (a \emph{collapse-aware} rank fixed before the comparison, since a relative threshold counts the directions of a vanishing representation), $\hat R$ is exact on all 11 calibration configurations, where the fixed-point count is one too high.
+On 31 held-out configurations (248 runs) its mean absolute error is $0.42$ against $1.62$; it is exact in 68\% of runs against 19\%, closer in 200, tied in 48 and never worse, and neither count is ever below the observed rank (\cref{fig:rates}b).
+Its largest error is the no-stop-gradient run, outside \cref{prop:survival}; the rest are over-predictions by one direction for deep predictors, the slowest EMA target and two mask ratios.
+
+\emph{P4 (masking).} For $m=0,0.15,\dots,1$ rank is 0, 0, 1, 2, 3, 3, 1, 0: nothing is learned at either end, and rank peaks at $m=0.65$--$0.8$ (\cref{fig:phase} in \cref{app:tierA}). None of the 784 below-average-power directions grows.
+
+\emph{P3, P5, P7 (heuristics).} Rank is non-monotone in $p_0$ (1.1, 3, 3, 2, 1, 0 for $p_0=0.1,\dots,2$), falls with predictor depth (3, 2, 2), with $\alpha$ at a fixed decay coefficient (3, 3, 2 for $\alpha=0.25,1,4$), with predictor decay from the reference to strong decay, and with encoder weight decay (3, 3, 2), and never exceeds a bottleneck predictor's width. Without stop-gradient every run collapses; the slowest EMA target ($\tau=0.9999$) lowers rank from 3 to 2.
+Two slices do not confirm: at a fixed decay rate $\alpha\lambda_P$, rank is 3 for all $\alpha$ (as is $\hat R$: no discrimination), and $\lambda_P=0$, outside \cref{prop:survival}, is not the maximum.
+
+\emph{P8 (prior accounts).} The matched limits of \citet{tian2021understanding} and \citet{wang2021demystify} are identities; the fixed-point count over-predicts rank from small initialization; directions are learned one at a time in order of $s_j$ \citep{simon2023stepwise}; without cross-view signal rank falls from 3 to 0 (\cref{app:tierA}).
+
+\paragraph{Tiers B and C (interim: 46 of 51 and 7 of 18 runs; seeds 0--2).}
+In the ViT, rank falls to a few directions by step 1{,}000, after the early window, then grows (reference: $98\pm9$ at step 6{,}000).
+P6 fails: the early statistic of P2 over-predicts the late rank in every reference seed (by $73.5\pm8.4$) and orders the EMA targets opposite to their late rank (1--2 against late rank 89--113 at $\tau=0.9$; 189--191 against 33--39 at $\tau=0.999$).
+Paired by seed, the slow target lowers rank in all three seeds ($-63$, 95\% interval $-83$ to $-42$), as P5 states; scale 2 and mask ratio $0.75$ lower it in every seed, with intervals including zero; the other one-factor cells change it in both directions, and AdamW decay $5\times10^{-4}$ moves it by at most 10 from zero decay (\cref{app:nonlinear}).
+On CIFAR-10 no run collapses: rank is 126--156 and every trained probe beats the same seed's initialization (reference: $+3.1$ points, 0.7--5.5; \cref{fig:realdata}).
+
+\begin{figure}[t]
+\centering
+\begin{minipage}[b]{0.49\linewidth}\centering
+\IfFileExists{figures/fig_rates.pdf}{\includegraphics[width=\linewidth]{figures/fig_rates.pdf}}{\todo{figures/fig\_rates.pdf from figtab-repo}}\\[-2pt]{\small(a)}
+\end{minipage}\hfill
+\begin{minipage}[b]{0.49\linewidth}\centering
+\IfFileExists{figures/fig_rank.pdf}{\includegraphics[width=\linewidth]{figures/fig_rank.pdf}}{\todo{figures/fig\_rank.pdf from figtab-repo}}\\[-2pt]{\small(b)}
+\end{minipage}
+\caption{\textbf{Tier~A: predicted versus measured early rates (P1) and rank (P2).} \textbf{(a)} One point per direction and seed (8 seeds per configuration): slope of $\log\mu_j$ at steps 10--500 against $2r_j(p)$ from the configuration's $s_j$, $c_j$, $p_0$ and $\lambda$, with no fitted constant; axes linear for $|\text{rate}|<0.1$, logarithmic beyond; grey: sign disagreement; mask ratio $1$ (empty context, $\mu_j\equiv0$) marked separately. \textbf{(b)} One count per run: collapse-aware late rank against $\hat R$ (left) or the fixed-point count $\#\{j:\rho_js_j>4\lambda\}$ (right). Disc area: held-out runs per cell; rings: 88 calibration runs; dashed: identity (no point below it); cross, arrow: no stop-gradient and $\lambda_P=0$, outside \cref{prop:survival}.}
+\label{fig:rates}
+\end{figure}
+

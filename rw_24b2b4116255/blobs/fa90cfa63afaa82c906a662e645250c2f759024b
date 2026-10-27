@@ -1,0 +1,31 @@
+# Monte Carlo estimate of pi
+
+## Result
+
+Pilot (`pilot.py`, seed 20261019, 540 s of sampling, unmodified, run as local-compute job `job-ab82a2b391`):
+
+| Quantity | Value |
+|---|---|
+| Samples | 1,719,800,000 |
+| Points inside quarter circle | 1,350,709,559 |
+| **Estimate of pi** | **3.141550** (3.1415503) |
+| Standard error | 3.96e-5 |
+| **95% CI** | **[3.141473, 3.141628]** (half-width 7.76e-5) |
+| True pi | 3.141593 |
+| Error (estimate - pi) | -4.2e-5 (z = -1.07) |
+
+The CI covers the true value of pi. Method: normal (Wald) interval for the binomial proportion p = inside/n, scaled by 4: estimate 4p, half-width 1.96*4*sqrt(p(1-p)/n), as computed by `pilot.py`. A Wilson interval cross-check ([3.141473, 3.141628]) agrees to about 4e-9, as expected for n of order 1e9.
+
+## Figure
+
+`figures/running_estimate.png`: the pilot's running estimate against number of samples (log x-axis), with the true value of pi marked and a 95% envelope around pi. All 55 trace points lie inside the envelope. The trace is a single seeded run, so consecutive points are strongly correlated: the figure shows convergence of one realisation, not independent replicates.
+
+## Extended runs
+
+Two extended runs, `extended.py 55` (job `job-a8fcfc7b1e`, 55 minutes) and `extended.py 120` (job `job-afde743abb`, 120 minutes), were started unmodified together with the pilot at 2026-10-18T21:18:39Z for a later study. They are not part of this delivery; no results from them are reported.
+
+## Provenance and reproduction
+
+- Raw pilot output: `results/pilot.json` (sha256 9e5fefd1...cd6), unchanged copy of the job output; job record in `results/runs.json`.
+- `analysis/analyze_pilot.py` regenerates every number above into `results/pilot_summary.json` and `results/pilot_trace.csv`; the figure is made by `figures/make_figure.py`.
+- Input scripts' SHA-256 are in `results/runs.json`. The sample count depends on host CPU speed, so a rerun gives a different realisation.

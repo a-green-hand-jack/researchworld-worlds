@@ -1,0 +1,6 @@
+# report/figures (figtab-repo)
+
+- `lightcurve_fit.png` / `.pdf`: the report's single figure; caption text in `caption.md`; fit table in `fit_table.md`.
+- Inputs: `photons.f32` downloaded by figtab-repo from world/paper-repo release `photons-v1` (`download_provenance.json`: SHA-256 match true) and experiment-repo `results/fit.json` at commit 8abc4a7a94e94a45d00e7347054c33250492ac63.
+- Code: `figures/make_lightcurve_fit.py`, `figures/make_fit_table.py`, run by `build_all.sh`.
+- Checks: our 1 s bin counts equal experiment-repo `results/lightcurve.csv` `observed` exactly; Pearson χ² 1214.550 equals experiment's `pearson_statistic` (`lightcurve_fit_gof.json`).

@@ -1,0 +1,20 @@
+"""Generate the decorative cover through the world's documented image API."""
+import os, json, base64, urllib.request
+from pathlib import Path
+root=Path(__file__).resolve().parent
+body={'model':'gpt-image-2','prompt':(root/'cover-prompt.txt').read_text(),'size':'1536x1024','quality':'medium'}
+request=urllib.request.Request(os.environ['OPENAI_BASE_URL'].rstrip('/')+'/images/generations',data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY'],'Content-Type':'application/json'})
+with urllib.request.urlopen(request,timeout=180) as response:
+    raw=response.read()
+if raw.lstrip().startswith(b'{'):
+    result=json.loads(raw)
+    payload=result['data'][0]
+else:
+    events=[json.loads(line[5:].strip()) for line in raw.decode().splitlines() if line.startswith('data:') and line[5:].strip()!='[DONE]']
+    payload=next(event for event in events if event.get('type')=='image_generation.completed')
+    result=payload
+(root/'cover-source.png').write_bytes(base64.b64decode(payload['b64_json']))
+metadata={k:v for k,v in result.items() if k not in ('data','b64_json')}
+metadata['request']={k:v for k,v in body.items() if k!='prompt'}
+(root/'cover-api-metadata.json').write_text(json.dumps(metadata,indent=2)+'\n')
+print('Generated cover source.')

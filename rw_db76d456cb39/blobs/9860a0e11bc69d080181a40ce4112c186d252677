@@ -1,0 +1,10 @@
+import pandas as pd, statsmodels.api as sm, hashlib, statsmodels
+raw = open("data/co2_annmean_mlo.csv","rb").read()
+print("sha256", hashlib.sha256(raw).hexdigest())
+df = pd.read_csv("data/co2_annmean_mlo.csv", comment="#")
+last = df["year"].max()
+d = df[df["year"] > last - 20]  # 20 years: last-19 .. last
+print("last year", last, "years", d.year.min(), d.year.max(), "n", len(d))
+r = sm.OLS(d["mean"], sm.add_constant(d["year"])).fit()
+print(r.summary())
+print("slope", r.params["year"], r.conf_int().loc["year"].tolist(), "statsmodels", statsmodels.__version__)

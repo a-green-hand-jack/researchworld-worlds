@@ -1,0 +1,65 @@
+{
+  "revision": "108a49046f192f4a2af69a0932fd18e7e5e3fff8",
+  "rows": 80,
+  "unchanged_original_rows": 60,
+  "max_independent_romberg_value_delta": 2.220446049250313e-16,
+  "max_error_relative_rounding": 3.960193079733033e-07,
+  "fits": [
+    {
+      "function": "exp(-x^2)",
+      "rule": "trapezoid",
+      "points": 10,
+      "order": 2.000795276588112,
+      "r2": 0.9999997847987818
+    },
+    {
+      "function": "exp(-x^2)",
+      "rule": "simpson",
+      "points": 8,
+      "order": 3.996965168742105,
+      "r2": 0.9999993360145294
+    },
+    {
+      "function": "exp(-x^2)",
+      "rule": "gauss4",
+      "points": 2,
+      "order": 8.2358408174966,
+      "r2": null
+    },
+    {
+      "function": "exp(-x^2)",
+      "rule": "romberg",
+      "points": 5,
+      "order": 7.676008453144071,
+      "r2": 0.9797279002875282
+    },
+    {
+      "function": "x^(1/3)",
+      "rule": "trapezoid",
+      "points": 10,
+      "order": 1.3245765884750103,
+      "r2": 0.9999868303378633
+    },
+    {
+      "function": "x^(1/3)",
+      "rule": "simpson",
+      "points": 10,
+      "order": 1.3333018543966932,
+      "r2": 0.9999999990219269
+    },
+    {
+      "function": "x^(1/3)",
+      "rule": "gauss4",
+      "points": 10,
+      "order": 1.33333334868679,
+      "r2": 0.9999999999999967
+    },
+    {
+      "function": "x^(1/3)",
+      "rule": "romberg",
+      "points": 10,
+      "order": 1.3465172812063635,
+      "r2": 0.9998633263740113
+    }
+  ]
+}

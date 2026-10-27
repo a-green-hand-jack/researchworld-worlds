@@ -1,0 +1,44 @@
+"""Builds report/figures/accuracy_fig.pdf from report/results/local/folds.csv and summary.json."""
+import sys
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).parent))
+from stats import summary  # noqa: E402
+
+OUT = Path(__file__).parent / "accuracy_fig.pdf"
+C = {"logreg": "#1b6ca8", "knn": "#c25e00"}
+plt.rcParams.update({"font.size": 8, "axes.labelsize": 8, "xtick.labelsize": 8, "ytick.labelsize": 8,
+                     "pdf.fonttype": 42, "axes.spines.top": False, "axes.spines.right": False})
+
+s, (lr, knn, _) = summary()
+rng = np.random.default_rng(0)
+fig, (a, b) = plt.subplots(1, 2, figsize=(5.5, 2.1), gridspec_kw={"width_ratios": [1.5, 1]}, constrained_layout=True)
+
+for i, (m, y) in enumerate([("logreg", lr), ("knn", knn)]):
+    a.scatter(i + rng.uniform(-0.18, 0.18, len(y)), y * 100, s=7, color=C[m], alpha=0.35, lw=0, zorder=2)
+    mean, lo, hi = s[m]
+    a.errorbar(i, mean * 100, yerr=[[(mean - lo) * 100], [(hi - mean) * 100]], color="k", marker="D", ms=4,
+               capsize=3, lw=1.2, zorder=3)
+a.set_xticks([0, 1], ["Logistic regression", "kNN (k by inner CV)"])
+a.set_xlim(-0.6, 1.6)
+a.set_ylabel("outer-fold accuracy (%)")
+a.set_title("(a)", loc="left", fontsize=8)
+
+d = (lr - knn) * 100
+b.scatter(rng.uniform(-0.18, 0.18, len(d)), d, s=7, color="0.45", alpha=0.35, lw=0, zorder=2)
+mean, lo, hi = s["diff"]
+b.errorbar(0, mean * 100, yerr=[[(mean - lo) * 100], [(hi - mean) * 100]], color="k", marker="D", ms=4,
+           capsize=3, lw=1.2, zorder=3)
+b.axhline(0, color="k", lw=0.6, ls="--", zorder=1)
+b.set_xticks([0], ["LR $-$ kNN"])
+b.set_xlim(-0.6, 0.6)
+b.set_ylabel("paired difference (pp)")
+b.set_title("(b)", loc="left", fontsize=8)
+fig.savefig(OUT)
+print("wrote", OUT)

@@ -1,0 +1,34 @@
+"""Same rules evaluated in 60-digit arithmetic: truncation error only (no float64 roundoff floor).
+Supplementary robustness check to the float64 results of quad.py."""
+import json, sys
+sys.path.insert(0, "code")
+import numpy as np
+from mpmath import mp, mpf, sqrt, exp, atan
+from quad import fit
+mp.dps = 60
+F = {"exp(x)": (lambda x: exp(x), exp(1) - 1),
+     "1/(1+25x^2)": (lambda x: 1 / (1 + 25 * x**2), atan(5) / 5),
+     "sqrt(x)": (lambda x: sqrt(x), mpf(2) / 3)}
+a = sqrt(mpf(3)/7 - mpf(2)/7*sqrt(mpf(6)/5)); b = sqrt(mpf(3)/7 + mpf(2)/7*sqrt(mpf(6)/5))
+GX = [-b, -a, a, b]; GW = [(18 - sqrt(30))/36, (18 + sqrt(30))/36]*1
+GW = [GW[0], GW[1], GW[1], GW[0]]
+def trap(f, n):
+    h = mpf(1)/n; return h*(sum(f(i*h) for i in range(1, n)) + (f(mpf(0)) + f(mpf(1)))/2)
+def simp(f, n):
+    h = mpf(1)/n; return h/6*sum(f(i*h) + 4*f((i+mpf(1)/2)*h) + f((i+1)*h) for i in range(n))
+def gl(f, n):
+    h = mpf(1)/n; return h/2*sum(w*f(i*h + h*(x+1)/2) for i in range(n) for x, w in zip(GX, GW))
+R = {"trapezoid": trap, "simpson": simp, "gauss-legendre-4": gl}
+ks = np.arange(1, 13); n = 2**ks
+rows, out = [], {}
+for fn, (f, I) in F.items():
+    for rn, r in R.items():
+        e = np.array([float(abs(r(f, int(v)) - I)) for v in n])
+        rows += [f"{fn},{rn},{k},{v},{x!r}" for k, v, x in zip(ks, n, e)]
+        # fit over all 12 points, and over the last 6 (asymptotic)
+        out[f"{fn}|{rn}"] = {"all12": fit(n.astype(float), e, 0.0),
+                             "last6": fit(n[6:].astype(float), e[6:], 0.0)}
+open("results/errors_mp60.csv", "w").write("function,rule,k,n,abs_error\n" + "\n".join(rows) + "\n")
+json.dump(out, open("results/fits_mp60.json", "w"), indent=1, default=float)
+for k, d in out.items():
+    print(k, {w: (round(float(p["order"]),3), round(float(p.get("hw", float('nan'))),3)) for w, p in d.items()})

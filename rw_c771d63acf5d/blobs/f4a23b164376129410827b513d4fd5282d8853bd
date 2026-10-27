@@ -1,0 +1,45 @@
+import hashlib, json, os, sys, logging, io, csv
+from importlib.metadata import version
+import huggingface_hub as hh
+from huggingface_hub import snapshot_download, HfApi
+
+assert "HF_HUB_DISABLE_XET" not in os.environ
+REPO = "Systran/faster-whisper-tiny"
+dest = sys.argv[1]
+# capture logs / xet evidence
+buf = io.StringIO()
+h = logging.StreamHandler(buf); h.setLevel(logging.DEBUG)
+logging.getLogger().addHandler(h); logging.getLogger().setLevel(logging.DEBUG)
+for n in ("huggingface_hub", "hf_xet"):
+    logging.getLogger(n).setLevel(logging.DEBUG)
+
+api = HfApi()
+info = api.model_info(REPO, files_metadata=True)
+path = snapshot_download(REPO, local_dir=dest)
+from huggingface_hub import get_hf_file_metadata, hf_hub_url
+xet_head = {}
+for s_ in info.siblings:
+    m = get_hf_file_metadata(hf_hub_url(REPO, s_.rfilename, revision=info.sha))
+    xet_head[s_.rfilename] = m.xet_file_data.file_hash if getattr(m, "xet_file_data", None) else None
+rows = []
+for s in sorted(info.siblings, key=lambda s: s.rfilename):
+    p = os.path.join(dest, s.rfilename)
+    data = open(p, "rb").read()
+    sha = hashlib.sha256(data).hexdigest()
+    gitsha = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+    api_sha = s.lfs.sha256 if s.lfs else None
+    rows.append(dict(file=s.rfilename, size_bytes=len(data), api_size=s.size,
+        sha256=sha, api_lfs_sha256=api_sha, lfs=bool(s.lfs),
+        sha256_match=(sha == api_sha) if api_sha else None,
+        git_blob_sha1=gitsha, api_blob_id=s.blob_id, blob_sha1_match=(gitsha == s.blob_id) if not s.lfs else None, via_xet=xet_head[s.rfilename] is not None, xet_hash=xet_head[s.rfilename]))
+local = sorted(os.path.relpath(os.path.join(r, f), dest) for r, _, fs in os.walk(dest) for f in fs if ".cache" not in r)
+summ = dict(repo=REPO, revision=info.sha, huggingface_hub=version("huggingface_hub"), hf_xet=version("hf_xet"),
+    HF_HUB_DISABLE_XET_effective=getattr(hh.constants, "HF_HUB_DISABLE_XET", None),
+    local_files=local, n_api_files=len(rows),
+    files_not_in_api=sorted(set(local) - {r["file"] for r in rows}),
+    xet_hash_from_head={r["file"]: xet_head[r["file"]] for r in rows},
+    log_xet_lines=[l[:200] for l in buf.getvalue().splitlines() if "xet" in l.lower() and "receive_response_headers" not in l][:40])
+json.dump(summ, open("results/summary.json", "w"), indent=1)
+w = csv.DictWriter(open("results/files.csv", "w", newline=""), fieldnames=list(rows[0]))
+w.writeheader(); w.writerows(rows)
+print(json.dumps(summ, indent=1)); [print(r) for r in rows]

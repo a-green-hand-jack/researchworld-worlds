@@ -1,0 +1,39 @@
+![Cover illustration](cover.png)
+
+# Convergence orders of trapezoid, Simpson and 4-node Gauss–Legendre quadrature
+
+**Question.** How fast do three composite rules converge on three integrands on [0, 1], and does the observed order match theory (2, 4, 8)? **Setup.** Integrands exp(x), 1/(1+25x²), √x with exact integrals e−1, atan(5)/5, 2/3. Rules: composite trapezoid on n panels; composite Simpson (one Simpson rule per panel); composite Gauss–Legendre with 4 nodes per panel (`numpy.polynomial.legendre.leggauss`). n = 2^k, k = 1…12, float64, absolute error. **Fit.** Least squares of ln(error) on ln(n) over points with error > 10⁻¹⁴ (≈45 ε; smaller errors are round-off noise); order = −slope, 95% interval = slope ± t₀.₉₇₅(m−2)·SE, m = points used. Data, code and fit masks: `experiment-repo` `results/errors.csv`, `results/orders.csv`, `code/run.py` (commit 6b32d84). Because the errors are deterministic, the interval measures departure from a straight line, not sampling noise, and says nothing about agreement with the integer theory.
+
+## Fitted orders (float64, cutoff 10⁻¹⁴; order [95% interval], m points)
+
+| function | trapezoid (theory 2) | Simpson (theory 4) | Gauss-4 (theory 8) |
+|---|---|---|---|
+| exp(x) | 1.9997 [1.9994, 2.0000], 12 | 3.9986 [3.9977, 3.9996], 8 | 7.996, 2 points — no interval |
+| 1/(1+25x²) | 2.289 [2.024, 2.554], 12 | 5.665 [4.692, 6.637], 8 | 8.76 [2.93, 14.60], 4 |
+| √x | 1.4833 [1.4772, 1.4894], 12 | 1.5000 [1.4999, 1.5000], 12 | 1.5000 [1.5000, 1.5000], 12 |
+
+Moving the cutoff to 10⁻¹³ or 10⁻¹⁵ changes only Simpson on exp (3.9992 at 10⁻¹⁵) and on 1/(1+25x²) (5.39 to 6.01); the other entries do not move (`orders.csv`).
+
+<table><tr>
+<td><img src="figures/exp.png" width="100%" alt="exp(x) error vs n"></td>
+<td><img src="figures/runge.png" width="100%" alt="1/(1+25x^2) error vs n"></td>
+<td><img src="figures/sqrt.png" width="100%" alt="sqrt(x) error vs n"></td>
+</tr></table>
+
+*Figure 1. Absolute error against n (log–log) for the three rules, with the theoretical slopes; left to right: exp(x), 1/(1+25x²), √x. Points at or below the cutoff are marked as excluded from the fit.*
+
+## Where and why the observed order departs from 2, 4, 8
+
+- **exp(x): theory holds; the float64 data cannot show it for Gauss.** Trapezoid and Simpson reproduce 2 and 4 (Simpson's 3.9986 is pulled down by the first octave, local slope 3.99; it is 4.0000 for k ≥ 5 in the diagnostic below). Gauss-4 reaches round-off (error 0 to ~2·10⁻¹⁶) from k = 3, so only k = 1, 2 are fitted: 7.996 is a one-octave slope with no interval. This is saturation, not a failure of the rule.
+- **1/(1+25x²): the fits over k = 1…12 exceed theory and are not asymptotic orders.** The function is analytic but has poles at ±i/5, so the asymptotic regime begins only when the panel width 1/n is well below ≈0.2. For small n the error contains cancellations, giving local slopes far above theory (Simpson up to 11, Gauss up to 21). Hence 2.29, 5.7 and 8.8 (the trapezoid and Simpson intervals exclude 2 and 4; the straight-line model fits poorly, r² ≈ 0.95–0.97, so these intervals are indicative only). Gauss-4 hits the floor from k = 5.
+- **√x: all three rules converge at order 1.5** (next section).
+
+**Diagnostic (not part of the float64 experiment).** The same rules in 60-digit arithmetic (`results/orders_highprec.csv`) remove the round-off floor. For k ≥ 5 the orders are exp: 2.0000, 4.0000, 8.0000; 1/(1+25x²): 2.0000, 3.9999, 8.0003 [7.9997, 8.0009]; over all k = 1…12 exp(x) Gauss-4 is 7.9994 [7.9988, 8.0000]. So the theoretical orders 2, 4, 8 are attained for the smooth integrands once n is past the pre-asymptotic range and above the float64 floor.
+
+## √x
+
+√x is not C¹ at 0 (unbounded derivative), so the smoothness assumed by the Euler–Maclaurin and Gauss error expansions fails. Only the panel touching 0 matters: ∫₀^h √x dx scales as h^{3/2}, so the error is ∝ n^{−3/2} for every rule, whatever its nominal order. Simpson and Gauss-4 give 1.5000 [1.4999, 1.5000]; the trapezoid fit, 1.4833 [1.4772, 1.4894], excludes 1.5 only through a pre-asymptotic drift from the next term (h^{5/2}): it is 1.4936 for k ≥ 5 and 1.4966 for k ≥ 8 (diagnostic run). No round-off floor is reached (smallest error ~10⁻⁷–10⁻⁸), so all 12 points are used. Higher order buys only a smaller constant, not a faster rate: at n = 4096 Gauss-4 is far more accurate than the trapezoid rule (7.9·10⁻⁷), at the same rate. A graded mesh or the substitution x = t² would restore the nominal order (suggested, not run).
+
+## Conclusion and limits
+
+Observed orders match theory for exp(x) with trapezoid and Simpson, and for Gauss-4 once round-off is removed; they exceed theory in the whole-range fits for 1/(1+25x²) because of the pole-limited pre-asymptotic regime; they are 1.5 for √x for all rules. The cutoff 10⁻¹⁴ is a choice, and fits with 2–4 points (Gauss-4 on exp and on 1/(1+25x²)) carry little or no information. The cover image is decorative and carries no result.

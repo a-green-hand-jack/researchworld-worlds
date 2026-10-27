@@ -1,0 +1,273 @@
+"""Summary statistics, local-vs-Ibex comparison, the figure and the table.
+
+Usage: python analyze.py   (reads ../results/local and ../results/ibex, writes
+../results/summary.json, ../results/numbers.tex, ../figures/accuracy.pdf, ../tables/results.tex,
+and ../results/sensitivity_k1-30/summary.json if that run exists)
+
+Intervals. The 50 outer-fold accuracies of repeated CV share training data, so they are
+not independent and the plain t interval is too narrow. The primary 95% interval is the
+corrected resampled t of Nadeau & Bengio (2003): var = (1/J + n_test/n_train) * s^2,
+t quantile with J-1 df, J = 50 folds. The plain t over the 50 folds and the t over the
+10 repetition means are reported alongside as sensitivity checks.
+"""
+import csv
+import hashlib
+import json
+import pathlib
+
+import numpy as np
+from scipy import stats
+
+HERE = pathlib.Path(__file__).resolve().parent
+RES = HERE.parent / "results"
+FIG = HERE.parent / "figures"
+TAB = HERE.parent / "tables"
+
+
+def read_folds(run):
+    with open(RES / run / "folds.csv") as fh:
+        rows = list(csv.DictReader(fh))
+    return {
+        "repeat": np.array([int(r["repeat"]) for r in rows]),
+        "n_train": np.array([int(r["n_train"]) for r in rows]),
+        "n_test": np.array([int(r["n_test"]) for r in rows]),
+        "lr": np.array([int(r["correct_lr"]) / int(r["n_test"]) for r in rows]),
+        "knn": np.array([int(r["correct_knn"]) / int(r["n_test"]) for r in rows]),
+        "k": np.array([int(r["k_knn"]) for r in rows]),
+    }
+
+
+def intervals(x, n_train, n_test, repeat):
+    J = len(x)
+    m, s2 = float(x.mean()), float(x.var(ddof=1))
+    tq = stats.t.ppf(0.975, J - 1)
+    rho = float(np.mean(n_test / n_train))
+    se_c, se_n = np.sqrt((1 / J + rho) * s2), np.sqrt(s2 / J)
+    rep = np.array([x[repeat == r].mean() for r in np.unique(repeat)])
+    R = len(rep)
+    se_r = rep.std(ddof=1) / np.sqrt(R)
+    tr = stats.t.ppf(0.975, R - 1)
+    return {
+        "mean": m, "sd_folds": float(np.sqrt(s2)), "n_folds": J,
+        "ci95_corrected_t": [m - tq * se_c, m + tq * se_c],
+        "ci95_naive_t": [m - tq * se_n, m + tq * se_n],
+        "ci95_repetition_t": [float(rep.mean() - tr * se_r), float(rep.mean() + tr * se_r)],
+        "repetition_means": rep.tolist(),
+    }
+
+
+def sha256(p):
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def compare_runs():
+    out = {}
+    for name in ("folds.csv", "predictions.csv"):
+        a, b = RES / "local" / name, RES / "ibex" / name
+        out[name] = {"sha256_local": sha256(a), "sha256_ibex": sha256(b),
+                     "byte_identical": a.read_bytes() == b.read_bytes()}
+    L, I = read_folds("local"), read_folds("ibex")
+    out["max_abs_diff_acc"] = float(max(np.abs(L["lr"] - I["lr"]).max(), np.abs(L["knn"] - I["knn"]).max()))
+    out["chosen_k_identical"] = bool((L["k"] == I["k"]).all())
+    out["identical"] = all(out[n]["byte_identical"] for n in ("folds.csv", "predictions.csv"))
+    infos = {r: json.loads((RES / r / "run_info.json").read_text()) for r in ("local", "ibex")}
+    out["ibex_node"] = infos["ibex"]["slurmd_nodename"] or infos["ibex"]["hostname"]
+    out["ibex_job_id"] = infos["ibex"]["slurm_job_id"]
+    keys = ["hostname", "cpu_model", "threads", "platform", "python", "numpy", "scipy", "scikit-learn", "wall_seconds", "finished_utc"]
+    out["runs"] = {r: {k: infos[r][k] for k in keys} for r in infos}
+    return out
+
+
+def figure(F, s):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({"font.family": "serif", "font.serif": ["Nimbus Roman", "Times New Roman", "DejaVu Serif"],
+                         "font.size": 8, "axes.titlesize": 8, "axes.labelsize": 8, "pdf.fonttype": 42,
+                         "axes.spines.top": False, "axes.spines.right": False})
+    C = {"lr": "#2a78d6", "knn": "#eb6834"}
+    INK, MUTED = "#1f1f1e", "#8a8984"
+    fig, (a, b) = plt.subplots(1, 2, figsize=(5.5, 2.05), gridspec_kw={"width_ratios": [1, 1.25]})
+
+    # (a) per-repetition mean accuracy, paired by repetition, with mean and 95% intervals
+    lr_rep, kn_rep = np.array(s["logreg"]["repetition_means"]), np.array(s["knn"]["repetition_means"])
+    jit = np.linspace(-0.08, 0.08, len(lr_rep))  # spread repetitions so equal values stay visible
+    for j, u, v in zip(jit, lr_rep, kn_rep):
+        a.plot([j, 1 + j], [100 * u, 100 * v], color=MUTED, lw=0.7, alpha=0.6, zorder=1)
+    a.scatter(jit, 100 * lr_rep, s=13, color=C["lr"], edgecolor="white", lw=0.5, zorder=2)
+    a.scatter(1 + jit, 100 * kn_rep, s=13, color=C["knn"], edgecolor="white", lw=0.5, zorder=2)
+    for x, key, col in ((-0.22, "logreg", C["lr"]), (1.22, "knn", C["knn"])):
+        m, (lo, hi) = s[key]["mean"], s[key]["ci95_corrected_t"]
+        a.errorbar(x, 100 * m, yerr=[[100 * (m - lo)], [100 * (hi - m)]], fmt="o", ms=4, color=col,
+                   ecolor=col, elinewidth=1.6, capsize=0, zorder=3)
+    a.set_xticks([0, 1], ["Logistic\nregression", "$k$-NN\n(inner-CV $k$)"])
+    a.set_xlim(-0.5, 1.5)
+    a.set_ylabel("Accuracy (%)")
+    a.set_title("(a) Mean accuracy per repetition", loc="left", color=INK)
+    a.grid(axis="y", color="#e6e5e0", lw=0.6)
+    a.set_axisbelow(True)
+
+    # (b) the 50 paired per-fold differences, stacked as dots, with mean and intervals
+    d = 100 * (F["lr"] - F["knn"])
+    vals, counts = np.unique(np.round(d, 6), return_counts=True)
+    for v, c in zip(vals, counts):
+        b.scatter(np.full(c, v), np.arange(1, c + 1), s=12, color=MUTED, edgecolor="white", lw=0.5, zorder=2)
+    ytop = counts.max() + 4
+    dd = s["difference_logreg_minus_knn"]
+    for y, key, lab, col in ((ytop, "ci95_naive_t", "naive $t$", MUTED),
+                             (ytop + 3.5, "ci95_corrected_t", "corrected $t$", INK)):
+        lo, hi = dd[key]
+        b.plot([100 * lo, 100 * hi], [y, y], color=col, lw=1.6, solid_capstyle="round")
+        b.plot(100 * dd["mean"], y, "o", ms=4, color=col)
+        b.text(100 * hi + 0.5, y, lab + " 95% CI", va="center", ha="left", fontsize=7, color=col)
+    b.axvline(0, color=INK, lw=0.6, ls=(0, (3, 2)), zorder=1)
+    b.set_xlabel("LR $-$ $k$-NN accuracy (percentage points)")
+    b.set_ylabel("Number of outer folds")
+    b.set_ylim(0, ytop + 5.5)
+    ticks = 100 * np.arange(-4, 5, 2) / 30  # a fold has 30 test cases: steps of 3.33 pp
+    b.set_xticks(ticks, [f"{t:+.1f}".replace("-", "\u2212") if abs(t) > 1e-9 else "0" for t in ticks])
+    b.set_xlim(-15, 16)
+    b.set_title("(b) Paired difference per outer fold ($n=50$)", loc="left", color=INK)
+    fig.tight_layout(pad=0.3, w_pad=1.2)
+    FIG.mkdir(exist_ok=True)
+    fig.savefig(FIG / "accuracy.pdf", metadata={"CreationDate": None})  # reproducible bytes
+    fig.savefig(FIG / "accuracy.png", dpi=200)
+
+
+def table(s):
+    def row(name, d, signed=False):
+        f = (lambda v: f"${100*v:+.2f}$".replace("-", "-")) if signed else (lambda v: f"{100*v:.2f}")
+        c, n = d["ci95_corrected_t"], d["ci95_naive_t"]
+        return f"{name} & {f(d['mean'])} & [{f(c[0])}, {f(c[1])}] & [{f(n[0])}, {f(n[1])}] \\\\"
+    lines = [
+        "% generated by report/code/analyze.py from report/results/local/folds.csv",
+        r"\begin{tabular}{lccc}",
+        r"\toprule",
+        r" & Mean accuracy (\%) & 95\% CI, corrected $t$ & 95\% CI, naive $t$ \\",
+        r"\midrule",
+        row("Logistic regression", s["logreg"]),
+        row(r"$k$-NN (inner-CV $k$)", s["knn"]),
+        r"\midrule",
+        row(r"Difference (LR $-$ $k$-NN), pp", s["difference_logreg_minus_knn"], signed=True),
+        r"\bottomrule",
+        r"\end{tabular}",
+    ]
+    TAB.mkdir(exist_ok=True)
+    (TAB / "results.tex").write_text("\n".join(lines) + "\n")
+
+
+def numbers(s, info):
+    """LaTeX macros for every number the text prints (accuracies in percent, 2 decimals)."""
+    pc = lambda v: f"{100 * v:.2f}"
+    sg = lambda v: f"{100 * v:+.2f}".replace("-", "$-$").replace("+", "$+$")
+    L, K, D = s["logreg"], s["knn"], s["difference_logreg_minus_knn"]
+    kc = s["chosen_k_counts"]
+    rep = s.get("reproducibility")
+    m = {
+        "LRmean": pc(L["mean"]), "LRlo": pc(L["ci95_corrected_t"][0]), "LRhi": pc(L["ci95_corrected_t"][1]),
+        "KNNmean": pc(K["mean"]), "KNNlo": pc(K["ci95_corrected_t"][0]), "KNNhi": pc(K["ci95_corrected_t"][1]),
+        "DIFFmean": sg(D["mean"]), "DIFFlo": sg(D["ci95_corrected_t"][0]), "DIFFhi": sg(D["ci95_corrected_t"][1]),
+        "LRloNaive": pc(L["ci95_naive_t"][0]), "LRhiNaive": pc(L["ci95_naive_t"][1]),
+        "KNNloNaive": pc(K["ci95_naive_t"][0]), "KNNhiNaive": pc(K["ci95_naive_t"][1]),
+        "DIFFloNaive": sg(D["ci95_naive_t"][0]), "DIFFhiNaive": sg(D["ci95_naive_t"][1]),
+        "DIFFp": f"{s['difference_p_two_sided_corrected_t']:.2f}",
+        "FoldsLRbetter": str(s["folds_lr_better"]), "FoldsTied": str(s["folds_tied"]),
+        "FoldsKNNbetter": str(s["folds_knn_better"]),
+        "Nsamples": str(info["n_samples"]), "Nreps": str(info["n_repeats"]), "Nfolds": str(info["n_splits"]),
+        "Nouter": str(info["n_repeats"] * info["n_splits"]), "Ninner": str(info["inner_splits"]),
+        "Ntest": str(s["n_test"]), "Ntrain": str(s["n_train"]),
+        "Kgrid": f"$\\{{{info['k_grid'][0]}, {info['k_grid'][1]}, \\dots, {info['k_grid'][-1]}\\}}$",
+        "Kmode": str(max(kc, key=lambda k: (kc[k], -k))), "Kmin": str(min(kc)), "Kmax": str(max(kc)),
+        "Kmedian": f"{s['chosen_k_median']:g}",
+        "Seed": str(info["seed"]), "DataMD": info["data_md5"],
+        "IntervalMethod": "corrected resampled $t$ (Nadeau--Bengio)",
+        "LRconvWarnings": str(info["lr_convergence_warnings"]),
+        "LocalSeconds": f"{info['wall_seconds']:.0f}",
+        "IbexNode": rep["ibex_node"] if rep else "PENDING",
+        "IbexJob": str(rep["ibex_job_id"]) if rep else "PENDING",
+        "IbexCPU": rep["runs"]["ibex"]["cpu_model"] if rep else "PENDING",
+        "LocalCPU": info["cpu_model"],
+        "IbexSeconds": f"{rep['runs']['ibex']['wall_seconds']:.0f}" if rep else "PENDING",
+        "RunsIdentical": ("yes" if rep["identical"] else "no") if rep else "PENDING",
+        "Nevals": str(info["n_repeats"] * info["n_splits"]), "NtestFold": str(s["n_test"]),
+        "KNNinnerFolds": str(info["inner_splits"]),
+        "Seeds": f"{info['seed']} (outer splits), {info['seed'] + 1}--{info['seed'] + info['n_repeats'] * info['n_splits']} (inner splits)",
+        "IdenticalCheck": "byte-for-byte equality of the per-fold results (correct counts, accuracies, chosen $k$) "
+                          "and of all test-case predictions",
+        "LRdetails": "multinomial softmax, L2 penalty, $C=1$, lbfgs, max\\_iter $=10^4$",
+        "KNNdetails": "Euclidean distance, uniform weights",
+        "DataChecksum": info["data_md5"],
+        "IbexJobId": str(rep["ibex_job_id"]) if rep else "PENDING",
+        "PythonVersion": (info["python"] if not rep or rep["runs"]["ibex"]["python"] == info["python"]
+                          else f"{info['python']} (local), {rep['runs']['ibex']['python']} (Ibex)"),
+        "PyVersion": info["python"], "SklearnVersion": info["scikit-learn"], "NumpyVersion": info["numpy"],
+        "ScipyVersion": info["scipy"],
+    }
+    lines = ["% generated by report/code/analyze.py from report/results/{local,ibex}; accuracies in percent"]
+    lines += [f"\\newcommand{{\\{k}}}{{{v}}}" for k, v in m.items()]
+    (RES / "numbers.tex").write_text("\n".join(lines) + "\n")
+
+
+def sensitivity(run="sensitivity_k1-30"):
+    """Summary of the k-grid sensitivity run (cv.py --k-grid all), next to its per-fold results."""
+    F = read_folds(run)
+    args = (F["n_train"], F["n_test"], F["repeat"])
+    d = F["lr"] - F["knn"]
+    ks, kc = np.unique(F["k"], return_counts=True)
+    info = json.loads((RES / run / "run_info.json").read_text())
+    out = {
+        "source": f"results/{run}/folds.csv", "source_sha256": sha256(RES / run / "folds.csv"),
+        "k_grid": info["k_grid"],
+        "logreg": intervals(F["lr"], *args), "knn": intervals(F["knn"], *args),
+        "difference_logreg_minus_knn": intervals(d, *args),
+        "folds_lr_better": int((d > 0).sum()), "folds_tied": int((d == 0).sum()),
+        "folds_knn_better": int((d < 0).sum()),
+        "chosen_k_counts": {int(k): int(c) for k, c in zip(ks, kc)},
+        "logreg_folds_identical_to_main_run": bool((F["lr"] == read_folds("local")["lr"]).all()),
+    }
+    (RES / run / "summary.json").write_text(json.dumps(out, indent=2) + "\n")
+    D = out["difference_logreg_minus_knn"]
+    print(f"sensitivity {info['k_grid'][0]}..{info['k_grid'][-1]}: LR {100*out['logreg']['mean']:.2f} "
+          f"kNN {100*out['knn']['mean']:.2f} diff {100*D['mean']:+.2f} corrected "
+          f"[{100*D['ci95_corrected_t'][0]:+.2f}, {100*D['ci95_corrected_t'][1]:+.2f}] naive "
+          f"[{100*D['ci95_naive_t'][0]:+.2f}, {100*D['ci95_naive_t'][1]:+.2f}]")
+
+
+def main():
+    F = read_folds("local")
+    args = (F["n_train"], F["n_test"], F["repeat"])
+    d = F["lr"] - F["knn"]
+    ks, kc = np.unique(F["k"], return_counts=True)
+    s = {
+        "source": "results/local/folds.csv",
+        "source_sha256": sha256(RES / "local" / "folds.csv"),
+        "design": (lambda i: f"{i['n_repeats']} x stratified {i['n_splits']}-fold CV (n_train={F['n_train'][0]}, "
+                   f"n_test={F['n_test'][0]}); k-NN k in {i['k_grid']} by inner stratified {i['inner_splits']}-fold CV")(
+            json.loads((RES / "local" / "run_info.json").read_text())),
+        "logreg": intervals(F["lr"], *args),
+        "knn": intervals(F["knn"], *args),
+        "difference_logreg_minus_knn": intervals(d, *args),
+        "difference_p_two_sided_corrected_t": float(2 * stats.t.sf(
+            abs(d.mean()) / np.sqrt((1 / len(d) + np.mean(F["n_test"] / F["n_train"])) * d.var(ddof=1)), len(d) - 1)),
+        "folds_lr_better": int((d > 0).sum()), "folds_tied": int((d == 0).sum()),
+        "folds_knn_better": int((d < 0).sum()),
+        "chosen_k_counts": {int(k): int(c) for k, c in zip(ks, kc)},
+        "chosen_k_median": float(np.median(F["k"])),
+    }
+    w = stats.wilcoxon(d, zero_method="zsplit") if np.any(d != 0) else None
+    s["wilcoxon_signed_rank_p_naive"] = float(w.pvalue) if w is not None else None
+    if (RES / "ibex" / "folds.csv").exists():
+        s["reproducibility"] = compare_runs()
+    s["n_test"], s["n_train"] = int(F["n_test"][0]), int(F["n_train"][0])
+    (RES / "summary.json").write_text(json.dumps(s, indent=2) + "\n")
+    figure(F, s)
+    table(s)
+    numbers(s, json.loads((RES / "local" / "run_info.json").read_text()))
+    if (RES / "sensitivity_k1-30" / "folds.csv").exists():
+        sensitivity()
+    print(json.dumps({k: s[k] for k in ("logreg", "knn", "difference_logreg_minus_knn")}, indent=1,
+                     default=lambda o: o)[:3000])
+
+
+if __name__ == "__main__":
+    main()

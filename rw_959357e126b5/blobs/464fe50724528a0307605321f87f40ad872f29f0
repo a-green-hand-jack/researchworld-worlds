@@ -1,0 +1,101 @@
+"""Early check of direction B (experiment 7ede826) on a seeded sample of the B1 dev grid, before its score.
+Uses the registered driver's own truth (code/e5_b1.py truth, 80-bit maps) and stage model (code/e5_theory.py).
+Adds what the registration does not compute:
+  * per-direction (time-resolved) baselines for B1a: the stage model with the schedule frozen at lam(0), lam(T),
+    mean lam; and 'capture+static': alive iff captured by the stage model's own t_c and lam_W(t) <= c^2/(4s)
+    (no post-capture dynamics: losses and regains exactly at the crossings);
+  * agreement restricted to (direction, checkpoint) pairs after the first knot whose true state differs from the
+    true state at the first knot (the schedule-induced changes B's claims are about);
+  * the predictor after a true loss: truth p against the stage model's slaved p = w sqrt(lam_W/lam_P) and against
+    the race predictor p_r = p0 exp(-alpha Lam_P), at checkpoints where the direction is dead after a loss;
+  * regains: directions that are lost and later alive again, in truth and in the stage model.
+Usage: python3 checks/e5_b1_early.py EXPERIMENT_CHECKOUT NPER > checks/e5_b1_early.json"""
+import sys, os, json, math
+import numpy as np
+from multiprocessing import Pool
+EXP = sys.argv[1]; NPER = int(sys.argv[2]) if len(sys.argv) > 2 else 2
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e5_b1 as B, e5_theory as th
+
+THR = B.THR
+
+
+def one(cfg):
+    G = B.GRIDS[cfg["grid"]]; c, s = B.stats(G); n = c.size
+    tr = B.truth(cfg); t = np.array(tr["t"])
+    w0 = np.linalg.norm(B.init_amp(cfg, n), axis=0)
+    st = th.stage_model(c, s, w0, cfg["p0"], cfg["kW"], cfg["kP"], cfg["alpha"], cfg["kappa"], cfg["T"], dt=B.ETA, t_out=t)
+    A = np.array(tr["a"]); P = np.array(tr["p"]); am = A > THR
+    preds = {"stage": st["W"] > THR}
+    T = cfg["T"]; tt = np.linspace(0, T, 4001)
+    for name, (vw, vp) in {"race_frozen0": (th.lam_of(cfg["kW"], [0.0])[0], th.lam_of(cfg["kP"], [0.0])[0]),
+                           "race_frozenT": (th.lam_of(cfg["kW"], [T])[0], th.lam_of(cfg["kP"], [T])[0]),
+                           "race_mean": (float(np.mean(th.lam_of(cfg["kW"], tt))), float(np.mean(th.lam_of(cfg["kP"], tt))))}.items():
+        r = th.stage_model(c, s, w0, cfg["p0"], [(0.0, vw)], [(0.0, vp)], cfg["alpha"], cfg["kappa"], T, dt=B.ETA, t_out=t)
+        preds[name] = r["W"] > THR
+    lW = th.lam_of(cfg["kW"], t); lP = th.lam_of(cfg["kP"], t)
+    tc = np.where(np.isnan(st["tc"]), np.inf, st["tc"])
+    preds["capture_static"] = (t[:, None] >= tc[None, :]) & (th.static_threshold(c, s)[None, :] >= lW[:, None])
+    out = dict(id=cfg["id"], kind=cfg["kind"], variant=cfg["variant"], p0=cfg["p0"], lo=cfg["lo"], hi=cfg["hi"],
+               ts=cfg["ts"], seed=cfg["seed"], T=T, pairs=int(am.size))
+    out["agree"] = {k: int((v == am).sum()) for k, v in preds.items()}
+    # schedule-induced pairs: after the first knot, true state differs from the true state at the first knot
+    if cfg["ts"] is not None:
+        i0 = int(np.argmin(np.abs(t - cfg["ts"])))
+        mask = np.zeros_like(am); mask[i0 + 1:] = am[i0 + 1:] != am[i0][None, :]
+        out["changed_pairs"] = int(mask.sum())
+        out["agree_changed"] = {k: int(((v == am) & mask).sum()) for k, v in preds.items()}
+    # predictor after a true loss
+    LamP = np.array([np.trapz(th.lam_of(cfg["kP"], np.linspace(0, x, 2001)), np.linspace(0, x, 2001)) for x in t])
+    pr = cfg["p0"] * np.exp(-cfg["alpha"] * LamP)
+    rr = np.sqrt(lW / np.maximum(lP, 1e-300))
+    was = np.maximum.accumulate(am, axis=0)
+    dead_after = was & ~am
+    if dead_after.any():
+        pt = P[dead_after]; ps = (rr[:, None] * st["W"])[dead_after]; prr = np.broadcast_to(pr[:, None], am.shape)[dead_after]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out["post_loss"] = dict(n=int(dead_after.sum()),
+                                    med_abs_log_p_vs_slaved=float(np.nanmedian(np.abs(np.log(np.abs(pt) / np.maximum(ps, 1e-300))))),
+                                    med_abs_log_p_vs_race=float(np.nanmedian(np.abs(np.log(np.abs(pt) / prr)))),
+                                    med_p_truth=float(np.median(np.abs(pt))), med_p_slaved=float(np.median(ps)), med_p_race=float(np.median(prr)))
+    def regains(alive):
+        lost = np.zeros(n, bool); reg = np.zeros(n, bool)
+        for j in range(1, alive.shape[0]):
+            lost |= alive[j - 1] & ~alive[j]
+            reg |= lost & alive[j]
+        return reg
+    out["regain_truth"] = int(regains(am).sum()); out["regain_stage"] = int(regains(preds["stage"]).sum())
+    out["regain_both"] = int((regains(am) & regains(preds["stage"])).sum())
+    out["final"] = dict(truth=int(am[-1].sum()), **{k: int(v[-1].sum()) for k, v in preds.items()})
+    return out
+
+
+if __name__ == "__main__":
+    cfgs = B.configs("dev")
+    rng = np.random.default_rng(20261018)
+    cells = {}
+    for cfg in cfgs:
+        cells.setdefault((cfg["kind"], cfg["variant"]), []).append(cfg)
+    pick = []
+    for key in sorted(cells):
+        L = cells[key]; idx = rng.choice(len(L), size=min(NPER, len(L)), replace=False)
+        pick += [L[i] for i in sorted(idx)]
+    with Pool(8) as pool:
+        rows = pool.map(one, pick, chunksize=1)
+    def summ(R):
+        P = sum(r["pairs"] for r in R); res = dict(runs=len(R), state_agree={k: sum(r["agree"][k] for r in R) / P for k in R[0]["agree"]})
+        C = [r for r in R if "changed_pairs" in r]; cp = sum(r["changed_pairs"] for r in C)
+        if cp:
+            res["changed_pairs"] = cp; res["changed_share_of_pairs"] = cp / sum(r["pairs"] for r in C)
+            res["agree_on_changed"] = {k: sum(r["agree_changed"][k] for r in C) / cp for k in C[0]["agree_changed"]}
+        res["regain"] = dict(truth=sum(r["regain_truth"] for r in R), stage=sum(r["regain_stage"] for r in R), both=sum(r["regain_both"] for r in R))
+        res["final_mae"] = {k: float(np.mean([abs(r["final"][k] - r["final"]["truth"]) for r in R])) for k in R[0]["final"] if k != "truth"}
+        return res
+    res = dict(experiment_commit_files=dict(e5_b1=B.md5(os.path.join(EXP, "code/e5_b1.py")), e5_theory=B.md5(os.path.join(EXP, "code/e5_theory.py"))),
+               sample=dict(rule=f"{NPER} configs per (kind, variant) cell, numpy default_rng(20261018)", ids=[c["id"] for c in pick]),
+               all=summ(rows), schedules=summ([r for r in rows if not r["kind"].startswith("const")]),
+               by_kind={k: summ([r for r in rows if r["kind"] == k]) for k in B.KINDS},
+               by_variant={v: summ([r for r in rows if r["variant"] == v]) for v in B.VARIANTS},
+               post_loss=[dict(id=r["id"], kind=r["kind"], variant=r["variant"], p0=r["p0"], lo=r["lo"], hi=r["hi"], ts=r["ts"], **r["post_loss"]) for r in rows if "post_loss" in r],
+               rows=rows)
+    print(json.dumps(res, indent=1))

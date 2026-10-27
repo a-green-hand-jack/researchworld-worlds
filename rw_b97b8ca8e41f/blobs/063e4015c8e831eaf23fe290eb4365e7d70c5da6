@@ -1,0 +1,47 @@
+{
+  "analysis_code": [
+    "code/run_experiments.py",
+    "code/derive_auxiliary.py",
+    "code/run_vit_experiments.py",
+    "code/merge_vit_results.py",
+    "code/annotate_vit_protocol.py",
+    "code/add_init_probe.py",
+    "code/validate_results.py"
+  ],
+  "cutoff": "No cited paper, code release, or dataset description first published on or after 2026-09-01 is used.",
+  "data": {
+    "tier_a": "Synthetic diagonal Gaussian view covariance generated in code; no external data.",
+    "tier_b": "Synthetic controlled Fourier-pattern images generated in code; no external data.",
+    "tier_c": "CIFAR-10 from the pinned uoft-cs/cifar10 Hugging Face parquet revision; file hashes are recorded by run_vit_experiments.py."
+  },
+  "dependency_lock": "code/requirements-cutoff.txt",
+  "initial_probe": {
+    "generator": "code/add_init_probe.py",
+    "protocol": "RidgeClassifier(alpha=1.0), frozen mean-pooled untrained online encoder on full images, all train/test rows",
+    "tier_b": "not_applicable",
+    "tier_c": "one row per config and seed; same seed and architecture initialization as the corresponding run"
+  },
+  "limitations": [
+    "Prior comparison rows are matched-limit controls and scope checks where an executable external formula was not supplied; they are not claims of full reproduction.",
+    "The masking model is the stationary random-masking covariance formula used by the theory, not an image-patch implementation.",
+    "Tier-B/C mask fractions are expected independent-patch masking amounts; they do not establish transfer to contiguous block masking."
+  ],
+  "masking_protocol": {
+    "deviation_disclosure": "Plan revision 6 settled Bernoulli patch sampling after the earlier block-mask wording was discovered during final-run audit; existing and future runs are not block-mask tests.",
+    "fraction_semantics": "expected_masked_fraction; per-example masked count is Binomial(64, mask_fraction)",
+    "geometry": "independent_per_patch_no_contiguous_blocks",
+    "plan_revision": "6",
+    "rank_evaluation_policy": "one fixed seeded Bernoulli context mask reused at every checkpoint",
+    "rank_evaluation_sampler": "independent_patch_bernoulli",
+    "sampler": "independent_patch_bernoulli",
+    "training_policy": "independent Bernoulli patch visibility resampled for every training batch"
+  },
+  "prior_accounts": [
+    "tian2021understanding",
+    "wang2021demystify",
+    "littwin2024jepa",
+    "ziyin2023shapes",
+    "simon2023stepwise",
+    "zhuo2023rank"
+  ]
+}

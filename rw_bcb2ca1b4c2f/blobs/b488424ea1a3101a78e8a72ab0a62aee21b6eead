@@ -1,0 +1,50 @@
+"""Diff a re-run of e10_retro.py against the delivered outputs. Usage: python diff_outputs.py <delivered dir> <rerun dir>"""
+import sys, json, csv, math
+
+A, B = sys.argv[1], sys.argv[2]
+JOUT = sys.argv[3] if len(sys.argv) > 3 else None
+
+
+def leaves(x, p=""):
+    if isinstance(x, dict):
+        for k, v in x.items(): yield from leaves(v, f"{p}/{k}")
+    elif isinstance(x, list):
+        for i, v in enumerate(x): yield from leaves(v, f"{p}[{i}]")
+    else:
+        yield p, x
+
+
+def same(a, b, rtol=1e-9):
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)) and not isinstance(a, bool) and not isinstance(b, bool):
+        if a is None or b is None: return a is b
+        if math.isnan(a) and math.isnan(b): return True
+        return abs(a - b) <= rtol * max(abs(a), abs(b)) or a == b
+    return a == b
+
+
+ja, jb = json.load(open(f"{A}/retro.json")), json.load(open(f"{B}/retro.json"))
+la, lb = dict(leaves(ja)), dict(leaves(jb))
+diff = [k for k in la.keys() | lb.keys() if k not in la or k not in lb or not same(la[k], lb[k])]
+print(f"retro.json: {len(la)} delivered leaves, {len(lb)} rerun leaves, {len(diff)} differ (rtol 1e-9)")
+for k in sorted(diff):
+    print("  ", k, "|", str(la.get(k, "<missing>"))[:90], "|", str(lb.get(k, "<missing>"))[:90])
+
+ra, rb = list(csv.DictReader(open(f"{A}/retro_rows.csv"))), list(csv.DictReader(open(f"{B}/retro_rows.csv")))
+n, nd = 0, []
+print(f"retro_rows.csv: {len(ra)} vs {len(rb)} rows; columns equal: {list(ra[0]) == list(rb[0])}")
+for i, (x, y) in enumerate(zip(ra, rb)):
+    for k in x.keys() | y.keys():
+        n += 1
+        u, v = x.get(k), y.get(k)
+        try:
+            ok = same(float(u), float(v)) if u not in ("", None) and v not in ("", None) else u == v
+        except ValueError:
+            ok = u == v
+        if not ok: nd.append((i, k, u, v))
+print(f"retro_rows.csv: {n} fields compared, {len(nd)} differ")
+for t in nd[:20]: print("  ", t)
+if JOUT:
+    json.dump(dict(json_leaves_delivered=len(la), json_leaves_rerun=len(lb), json_differing=len(diff),
+                   json_differing_fields={k: [la.get(k, "<missing>"), lb.get(k, "<missing>")] for k in sorted(diff)},
+                   rows_delivered=len(ra), rows_rerun=len(rb), row_fields_compared=n, row_fields_differing=len(nd),
+                   row_differences=[list(t) for t in nd[:200]]), open(JOUT, "w"), indent=1, default=str)

@@ -1,0 +1,28 @@
+"""OLS straight-line fit to 40 noisy points; writes results/fit.json and results/data.csv."""
+import json
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(217)
+x = np.arange(40, dtype=float)
+y = 2.5 + 0.8 * x + rng.normal(0.0, 3.0, size=x.size)
+
+res = stats.linregress(x, y)
+n = x.size
+t = stats.t.ppf(0.975, n - 2)
+ci = lambda est, se: [est - t * se, est + t * se]
+resid = y - (res.intercept + res.slope * x)
+out = {
+    "n": n, "seed": 217, "noise_sd_true": 3.0, "true_slope": 0.8, "true_intercept": 2.5,
+    "slope": res.slope, "slope_se": res.stderr, "slope_ci95": ci(res.slope, res.stderr),
+    "intercept": res.intercept, "intercept_se": res.intercept_stderr,
+    "intercept_ci95": ci(res.intercept, res.intercept_stderr),
+    "r": res.rvalue, "r_squared": res.rvalue ** 2,
+    "residual_sd": float(np.sqrt(np.sum(resid ** 2) / (n - 2))),
+    "t_crit_df38": t, "method": "OLS, t-based 95% CI with n-2 = 38 df",
+}
+out["slope_ci_covers_truth"] = bool(out["slope_ci95"][0] <= 0.8 <= out["slope_ci95"][1])
+out["intercept_ci_covers_truth"] = bool(out["intercept_ci95"][0] <= 2.5 <= out["intercept_ci95"][1])
+json.dump(out, open("results/fit.json", "w"), indent=2)
+np.savetxt("results/data.csv", np.c_[x, y], delimiter=",", header="x,y", comments="", fmt="%.10g")
+print(json.dumps(out, indent=2))

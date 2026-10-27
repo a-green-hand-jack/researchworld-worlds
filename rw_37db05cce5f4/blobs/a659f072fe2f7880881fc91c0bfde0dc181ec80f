@@ -1,0 +1,52 @@
+{
+  "available": true,
+  "capabilities": [
+    "code:github",
+    "data:ebi",
+    "data:huggingface",
+    "data:ncbi",
+    "data:zenodo",
+    "literature:arxiv",
+    "literature:metadata",
+    "literature:openreview",
+    "literature:proceedings",
+    "package:bioconductor",
+    "package:conda-forge",
+    "package:cran",
+    "package:npm",
+    "package:pypi",
+    "package:pytorch"
+  ],
+  "check": {
+    "reason": "the entry reaches any public host and names none to try (check)",
+    "usable": null
+  },
+  "deny": [
+    {
+      "host": "example.org",
+      "reason": "a synthetic check of the deny list (#280)"
+    }
+  ],
+  "description": "The internet, for research: any public host over HTTPS and plain HTTP through the world's proxy. `ht-resource describe research-network` lists sources that answer scripts and how to read them: packages (PyPI, PyTorch's CPU builds at download.pytorch.org/whl/cpu, conda-forge, CRAN, Bioconductor, npm), code (GitHub), data (Hugging Face, Zenodo, NCBI, EBI) and literature (arXiv, OpenReview, OpenAlex, Crossref, Semantic Scholar, proceedings of the main venues).",
+  "hosts": [
+    "*"
+  ],
+  "id": "research-network",
+  "instructions": "Install what the work needs into your private workspace through the injected proxy, with TLS verification on: Python packages with pip; command-line tools and libraries with micromamba from conda-forge (for example `micromamba install -y -n base -c conda-forge poppler` provides pdftotext; it installs under /hutian/.mamba, already on your PATH); code and releases from GitHub. A missing tool or package is something to install, not a reason to skip work: install it and check that it runs before calling it unavailable. Any public host is reachable on ports 443 and 80; this host, local networks and cloud metadata are not, nor is a host the world denies, and a refusal says why. Every connection is recorded. Many sites check for bots and answer a script with a challenge page, 403 or 429; the sources below answered scripts from a role sandbox (2026-10-20). Do not print proxy settings. Record what you installed and where each source came from.\n\nLiterature and venues:\n- arXiv: search with `https://export.arxiv.org/api/query?search_query=...&max_results=N` (Atom; one request every 3 s, faster gets 429); a paper at `https://arxiv.org/abs/<id>`, `/pdf/<id>`, `/html/<id>` (recent papers) and its LaTeX source at `/e-print/<id>`; older papers as HTML at `https://ar5iv.labs.arxiv.org/html/<id>`.\n- OpenReview: `https://api2.openreview.net/notes/search?term=<title, keywords or forum id>&limit=N` returns submissions, reviews and decisions with their text; its forum pages, PDFs and other API routes ask for a browser challenge, so take a paper's PDF from arXiv.\n- Metadata and open copies: OpenAlex `https://api.openalex.org/works?search=...`; Crossref `https://api.crossref.org/works?query=...`; a DOI's BibTeX with `curl -LH 'Accept: application/x-bibtex' https://doi.org/<doi>`; open-access PDFs from Unpaywall `https://api.unpaywall.org/v2/<doi>?email=<an address>`; Semantic Scholar `https://api.semanticscholar.org/graph/v1/paper/arXiv:<id>?fields=...` (a rate limit shared by all callers: after 429, wait and retry); Hugging Face `https://huggingface.co/api/papers/<arXiv id>`.\n- Proceedings, static pages and PDFs: PMLR `https://proceedings.mlr.press/v<volume>/`; NeurIPS `https://proceedings.neurips.cc/paper_files/paper/<year>`; ACL Anthology `https://aclanthology.org/<id>.pdf` and `.bib`; CVF `https://openaccess.thecvf.com/<CONF><year>?day=all`; accepted papers at `https://iclr.cc/virtual/<year>/papers.html`, and the same path on icml.cc and neurips.cc.\n- Life sciences: PubMed through `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term=...` (then `efetch.fcgi`); Europe PMC `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=...&format=json`; bioRxiv `https://api.biorxiv.org/details/biorxiv/<doi>`; records and files on Zenodo `https://zenodo.org/api/records?q=...`.\n- Answering scripts with a bot check (2026-10-20): DBLP (all of it), Springer, IEEE Xplore, ACM Digital Library, ScienceDirect and SSRN; Google Scholar answers some queries, then a CAPTCHA. Find the same paper through OpenAlex, Crossref or Semantic Scholar, and its open copy through arXiv or Unpaywall.",
+  "kind": "https",
+  "limits": {},
+  "policy": {
+    "on_finish": "keep",
+    "on_stop": "keep"
+  },
+  "ports": [
+    80,
+    443
+  ],
+  "private": false,
+  "tracking": {
+    "checked": false,
+    "metered": false,
+    "reclaimed": false
+  }
+}

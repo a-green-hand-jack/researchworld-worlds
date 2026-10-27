@@ -1,0 +1,24 @@
+# Source of the NeurIPS 2026 template files in this directory
+
+All three files were downloaded 2026-10-11 (venue-repo turn 1) through the
+`neurips-and-ctan` resource from the official NeurIPS 2026 formatting instructions archive:
+
+- URL: https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip
+- The ZIP contains exactly: `neurips_2026.tex` (19118 bytes), `checklist.tex` (26167 bytes),
+  `neurips_2026.sty` (13704 bytes).
+- These files are byte-identical copies; no modification of any kind.
+
+SHA-256:
+
+    3fc2894e83d2517ca18b66741d6c595986d97957dc08ec08bb2125a7ec4555a  neurips_2026.sty
+    cf4cee7991665306d1daaa3985be4feec7f8889d6d072ffa12f99a8e1537d797  neurips_2026.tex
+    780ba13c480f652dcc42e69ed61a752ce0ea270f15d332d4a45b059dabad84f6  checklist.tex
+
+Usage: `neurips_2026.tex` is the venue's formatting-instructions shell; build the paper's
+`paper.tex` from it (author, title, abstract, text replaced; `\input{checklist.tex}` kept
+at the end). Compile with `pdflatex` (TeX Live 2026 is provided at
+/opt/texlive/2026/bin/x86_64-linux); the unmodified shell compiles cleanly to a 12-page
+PDF. The delivered `neurips_2026.sty` must remain byte-identical to the copy here; the
+delivered `checklist.tex` must keep the questions and macros, with the instruction block
+removed and every `\answerTODO` replaced by `\answerYes`/`\answerNo`/`\answerNA` plus a
+justification.

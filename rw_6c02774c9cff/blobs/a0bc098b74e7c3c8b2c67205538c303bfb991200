@@ -1,0 +1,73 @@
+"""Robustness checks for the main comparison (run locally only).
+
+Variants, each on 10x stratified 5-fold CV with the same summaries as the main run:
+  unscaled      - no standardisation for either model
+  lr_tuned_C    - LR's C also chosen by inner CV (C in 10^-3..10^3), as kNN's k is
+  knn_all_k     - kNN grid k = 1..30 (even k allowed) instead of odd k = 1..31
+  seed_<s>      - main configuration with a different outer-split seed
+Usage (from report/): python code/sensitivity.py OUTDIR [N_PROCESSES]
+"""
+import csv
+import json
+import pathlib
+import sys
+from multiprocessing import Pool
+
+import numpy as np
+from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold
+
+import common
+import summarize
+
+C_GRID = [10.0 ** e for e in range(-3, 4)]
+VARIANTS = {"unscaled": {"scale": False}, "lr_tuned_C": {"tune_C": True},
+            "knn_all_k": {"grid": list(range(1, 31))}}
+VARIANTS.update({f"seed_{s}": {"seed": s} for s in (1, 2, 3, 4, 5)})
+
+
+def run(args):
+    name, cfg, outdir = args
+    X, y, _ = common.load_iris()
+    cv = RepeatedStratifiedKFold(n_splits=common.N_SPLITS, n_repeats=common.N_REPEATS,
+                                 random_state=cfg.get("seed", common.SEED))
+    scale = cfg.get("scale", True)
+    rows = []
+    for i, (tr, te) in enumerate(cv.split(X, y)):
+        rep, fold = divmod(i, common.N_SPLITS)
+        lr = common.make_lr(scale=scale)
+        if cfg.get("tune_C"):
+            lr = GridSearchCV(lr, {"lr__C": C_GRID}, cv=common.inner_cv(rep, fold), n_jobs=1)
+        lr.fit(X[tr], y[tr])
+        knn = common.make_knn(rep, fold, scale=scale, grid=cfg.get("grid", common.K_GRID)).fit(X[tr], y[tr])
+        a = int((lr.predict(X[te]) == y[te]).sum())
+        b = int((knn.predict(X[te]) == y[te]).sum())
+        rows.append({"repetition": rep, "fold": fold, "n_train": len(tr), "n_test": len(te),
+                     "correct_lr": a, "correct_knn": b, "acc_lr": repr(a / len(te)),
+                     "acc_knn": repr(b / len(te)), "diff_lr_minus_knn": repr(a / len(te) - b / len(te)),
+                     "k_knn": knn.best_params_["knn__n_neighbors"],
+                     "C_chosen": lr.best_params_["lr__C"] if cfg.get("tune_C") else 1.0})
+    d = pathlib.Path(outdir) / name
+    d.mkdir(parents=True, exist_ok=True)
+    with open(d / "per_fold.csv", "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]), lineterminator="\n")
+        w.writeheader()
+        w.writerows(rows)
+    s = summarize.summarize(str(d))
+    s["variant"], s["config"] = name, cfg
+    if cfg.get("tune_C"):
+        c, n = np.unique([r["C_chosen"] for r in rows], return_counts=True)
+        s["C_chosen_counts"] = {repr(float(a)): int(b) for a, b in zip(c, n)}
+    print(f"HUTIAN_PROGRESS: {name} done", flush=True)
+    return name, s
+
+
+if __name__ == "__main__":
+    outdir = sys.argv[1]
+    nproc = int(sys.argv[2]) if len(sys.argv) > 2 else 4
+    with Pool(nproc) as p:
+        res = dict(p.map(run, [(k, v, outdir) for k, v in VARIANTS.items()]))
+    pathlib.Path(outdir, "sensitivity_summary.json").write_text(json.dumps(res, indent=1) + "\n")
+    for k, s in res.items():
+        d = s["diff"]
+        print(f"{k:12s} LR {s['lr']['mean']:.4f} kNN {s['knn']['mean']:.4f} diff {d['mean']:+.4f} "
+              f"CI [{d['ci_low']:+.4f}, {d['ci_high']:+.4f}]", flush=True)

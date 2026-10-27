@@ -1,0 +1,90 @@
+"""Independent check of A-iv' (experiment 36be9c9, theory/ext_A_adamw.md) and of the A3 development summary
+(experiment 3e21b7b, results/e4/a3dev/summary.txt). Own AdamW implementation, not experiment-repo's code.
+1. A3 statistics: is c/s > thr for every direction (the aligned prediction 24/24)?
+2. A3 dev grid: time-averaged rank on the delivered definition (singular values of W > 0.05, every 4th checkpoint)
+   against the per-direction count used in summary.txt; the theta and lam effects; lam effect on rotated pairs only;
+   whether the rotated rank has settled over [T/2, T] (rank at T/2 vs T).
+3. A-iv' settled state: scalar AdamW maps (float64, eps 1e-8) on dev3 configurations, |a_T| and |p_T| vs c/s;
+   lam scan past the grid's range to locate where the law stops holding (normalised-update limit lam*c/s ~ 1).
+Usage: python3 checks/e4_aiv_settled.py /path/to/experiment-repo-checkout > checks/e4_aiv_settled.json"""
+import sys, os, json, gzip, itertools
+import numpy as np
+from multiprocessing import Pool
+EXP = sys.argv[1]; sys.path.insert(0, os.path.join(EXP, 'code'))
+import e4_dev as dev
+THR = 0.05; out = {}
+
+# 1. A3 statistics
+out['a3_stats'] = {}
+for st in sorted(dev.STATS):
+    c, s = dev.stats(st)
+    out['a3_stats'][st] = dict(n=int(c.size), min_c_over_s=float((c / s).min()), n_above_thr=int((c / s > THR).sum()))
+
+# 2. A3 dev grid on the delivered rank
+runs = [json.loads(l) for l in gzip.open(os.path.join(EXP, 'results/e4/a3dev/a3dev_runs.jsonl.gz'), 'rt')]
+L4 = np.log10(THR)
+for r in runs:
+    t4 = np.array(r['t_every4']); sv = np.array(r['log10_sv_every4'])
+    if sv.shape[0] != t4.size: sv = sv.T
+    rk = (sv > L4).sum(1); half = t4 >= r['T'] / 2
+    r['sv_tavg'] = float(rk[half].mean()); r['sv_half'] = int(rk[half][0]); r['sv_T'] = int(rk[-1])
+    r['sv_q1'] = float(rk[(t4 >= r['T'] / 2) & (t4 < 3 * r['T'] / 4)].mean()); r['sv_q2'] = float(rk[t4 >= 3 * r['T'] / 4].mean())
+key = lambda r: (r['stats'], r['lam'], r['a0'], r['p0'], r['seed'])
+rot = sorted({(r['side'], r['theta']) for r in runs}, key=str)
+res = {}
+for q in ('rank_tavg', 'sv_tavg'):
+    base = {key(r): r[q] for r in runs if r['theta'] == 0}; d = {}
+    for sd, th in rot:
+        if th == 0: continue
+        x = np.array([r[q] - base[key(r)] for r in runs if (r['side'], r['theta']) == (sd, th)])
+        d[f'{sd} {th}'] = dict(mean=round(float(x.mean()), 2), share_lower=round(float((x < -0.5).mean()), 3))
+    k2 = lambda r: (r['stats'], r['side'], r['theta'], r['a0'], r['p0'], r['seed']); lams = sorted({r['lam'] for r in runs}); dl = {}
+    for l0, l1 in zip(lams, lams[1:]):
+        A = {k2(r): r[q] for r in runs if r['lam'] == l0}
+        for sel, f in (('all', lambda r: True), ('rotated', lambda r: r['theta'] > 0), ('aligned', lambda r: r['theta'] == 0)):
+            x = np.array([r[q] - A[k2(r)] for r in runs if r['lam'] == l1 and f(r)])
+            dl[f'{l0}->{l1} {sel}'] = dict(n=int(x.size), mean=round(float(x.mean()), 2), share_higher=round(float((x > 0.5).mean()), 3), share_lower=round(float((x < -0.5).mean()), 3))
+    res[q] = dict(theta_effect=d, lam_effect=dl)
+rotd = [r for r in runs if r['theta'] > 0]
+res['rotated_settling_sv'] = dict(
+    rank_T_minus_rank_halfT=dict(mean=round(float(np.mean([r['sv_T'] - r['sv_half'] for r in rotd])), 2),
+                                 share_rising=round(float(np.mean([r['sv_T'] - r['sv_half'] > 0 for r in rotd])), 3)),
+    second_quarter_minus_first_quarter=dict(mean=round(float(np.mean([r['sv_q2'] - r['sv_q1'] for r in rotd])), 2)),
+    by_lam={str(l): round(float(np.mean([r['sv_T'] - r['sv_half'] for r in rotd if r['lam'] == l])), 2) for l in sorted({r['lam'] for r in rotd})})
+out['a3dev'] = res
+
+# 3. A-iv' settled state, own float64 scalar AdamW
+DEV3 = {"dev3a": (np.linspace(2.8, 0.6, 32), 0.89), "dev3b": (np.linspace(1.8, 0.4, 32), 0.91)}
+def adamw(st, p0, lam, a0, eta, b1, b2, T, seed=7):
+    s, q = DEV3[st]; c = s * q ** np.arange(s.size)
+    a = a0 * np.exp(0.1 * np.random.default_rng(seed).standard_normal(c.size)); p = np.full(c.size, p0)
+    ma = np.zeros(c.size); va = ma.copy(); mp = ma.copy(); vp = ma.copy(); eps = 1e-8; dec = 1 - eta * lam
+    rs = []; 
+    for t in range(1, T + 1):
+        r = c - p * s; ga = -a * p * r; gp = -a * a * r
+        ma = b1 * ma + (1 - b1) * ga; va = b2 * va + (1 - b2) * ga * ga; mp = b1 * mp + (1 - b1) * gp; vp = b2 * vp + (1 - b2) * gp * gp
+        a = a * dec - eta * (ma / (1 - b1 ** t)) / (np.sqrt(va / (1 - b2 ** t)) + eps)
+        p = p * dec - eta * (mp / (1 - b1 ** t)) / (np.sqrt(vp / (1 - b2 ** t)) + eps)
+        if t > T - 2000: rs.append(r.copy())
+    rs = np.array(rs)
+    return dict(st=st, lam=lam, eta=eta, b1=b1, b2=b2, p0=p0, a0=a0, cs=(c / s).tolist(), a=np.abs(a).tolist(), p=p.tolist(),
+                r_mean=rs.mean(0).tolist(), r_rms=rs.std(0).tolist())
+cfgs = [dict(st=st, p0=p0, lam=lam, a0=a0, eta=eta, b1=b1, b2=b2, T=60000)
+        for st, p0, lam, a0, eta, b1, b2 in itertools.product(DEV3, [1.0, 3.0], [0.005, 0.02, 0.05], [1e-2], [0.02, 0.05], [0.9], [0.999, 0.998])]
+scan = [dict(st='dev3b', p0=2.0, lam=lam, a0=1e-2, eta=0.02, b1=0.9, b2=0.999, T=60000) for lam in (0.05, 0.2, 0.5, 1.0, 2.0)]
+with Pool(8) as P:
+    o = P.starmap(adamw, [tuple(d.values()) for d in cfgs + scan])
+grid, sc = o[:len(cfgs)], o[len(cfgs):]
+cs = np.concatenate([g['cs'] for g in grid]); a = np.concatenate([g['a'] for g in grid]); p = np.concatenate([g['p'] for g in grid])
+cap = a > 1e-3; qs = [.01, .1, .5, .9, .99]
+out['aiv_dev3_float64'] = dict(runs=len(grid), directions=int(a.size), captured=int(cap.sum()),
+    a_over_cs_q=np.round(np.quantile(a[cap] / cs[cap], qs), 4).tolist(), p_over_cs_q=np.round(np.quantile(np.abs(p[cap]) / cs[cap], qs), 4).tolist(),
+    alive_eq_cs_gt_thr_among_captured=round(float(((a > THR) == (cs > THR))[cap].mean()), 4),
+    by_lam={str(l): np.round(np.median(np.concatenate([np.array(g['a'])[np.array(g['a']) > 1e-3] / np.array(g['cs'])[np.array(g['a']) > 1e-3] for g in grid if g['lam'] == l])), 4).tolist() for l in (0.005, 0.02, 0.05)})
+# predicted mean residual from the balance: kappa <r>/rho = lam c/s  ->  report <r>/rho / (lam c/s) (kappa^-1 if the law holds)
+ratio = np.concatenate([np.array(g['r_mean'])[np.array(g['a']) > 1e-3] / np.array(g['r_rms'])[np.array(g['a']) > 1e-3] / (g['lam'] * np.array(g['cs'])[np.array(g['a']) > 1e-3]) for g in grid])
+out['aiv_dev3_float64']['r_mean_over_rms_over_lam_cs_q'] = np.round(np.quantile(ratio[np.isfinite(ratio)], [.1, .5, .9]), 3).tolist()
+out['aiv_lam_scan_dev3b'] = [dict(lam=g['lam'], one_over_lam=round(1 / g['lam'], 3),
+    k=[0, 8, 16, 31], cs=np.round(np.array(g['cs'])[[0, 8, 16, 31]], 4).tolist(), a=np.round(np.array(g['a'])[[0, 8, 16, 31]], 4).tolist(),
+    a_over_min_cs_inv_lam_median=round(float(np.median(np.array(g['a']) / np.minimum(np.array(g['cs']), 1 / g['lam']))), 4)) for g in sc]
+print(json.dumps(out, indent=1))

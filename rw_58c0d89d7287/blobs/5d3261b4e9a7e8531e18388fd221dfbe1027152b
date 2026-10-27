@@ -1,0 +1,272 @@
+#!/usr/bin/env python3
+"""Render the two log-log convergence figures for the quadrature study.
+
+Inputs are the snapshot of experiment-repo results in ./data (errors.csv,
+fits.csv, reference.csv, PROVENANCE.md), taken at EXPERIMENT_REPO_SHA.
+Every plotted point is a row of errors.csv; every annotated order is the
+order column of fits.csv, re-verified here against a least-squares refit
+before rendering. The script exits nonzero if any check fails.
+"""
+import csv
+import math
+import sys
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.lines import Line2D
+from matplotlib.ticker import FixedLocator, NullLocator
+
+HERE = Path(__file__).resolve().parent
+DATA = HERE / "data"
+OUT = HERE
+
+EXPERIMENT_REPO_SHA = "a56ccf8919b86dee2bf361d25cef6215d7033384"
+SWEEP_JOB = "job-325ee65149"
+CUTOFF = 1e-14
+ORDER_TOL = 1e-3
+
+FUNCS = {
+    "exp(-x^2)": dict(
+        outfile="exp_neg_x2.png",
+        title=r"$e^{-x^2}$ on $[0,1]$: absolute error vs number of panels",
+        ylim=(2e-18, 6e-2),
+        yticks=[10.0 ** -i for i in range(2, 18)],
+        legend_loc="upper right",
+    ),
+    "x^(1/3)": dict(
+        outfile="x_cube_root.png",
+        title=r"$x^{1/3}$ on $[0,1]$: absolute error vs number of panels",
+        ylim=(3e-15, 4e-1),
+        yticks=[10.0 ** -i for i in range(1, 15)],
+        legend_loc="lower right",
+    ),
+}
+RULES = {
+    "trapezoid": dict(color="#0072B2", marker="o", label="composite trapezoid"),
+    "simpson": dict(color="#E69F00", marker="s", label="composite Simpson"),
+    "gauss4": dict(color="#009E73", marker="^", label="4-node Gauss-Legendre panels"),
+}
+K_VALUES = list(range(1, 11))
+FIGSIZE = (9.0, 5.5)
+DPI = 200
+
+checks = []
+any_failed = [False]
+
+
+def check(name, ok, detail=""):
+    checks.append((name, ok, detail))
+    if not ok:
+        any_failed[0] = True
+    print(("PASS " if ok else "FAIL ") + name + (("  " + detail) if detail else ""))
+
+
+def load_errors():
+    rows = []
+    with open(DATA / "errors.csv", newline="") as fh:
+        for r in csv.DictReader(fh):
+            rows.append(
+                dict(
+                    function=r["function"],
+                    rule=r["rule"],
+                    k=int(r["k"]),
+                    n=int(r["n"]),
+                    value=float(r["value"]),
+                    abs_error=float(r["abs_error"]),
+                )
+            )
+    return rows
+
+
+def load_fits():
+    fits = {}
+    with open(DATA / "fits.csv", newline="") as fh:
+        for r in csv.DictReader(fh):
+            fits[(r["function"], r["rule"])] = dict(
+                n_points=int(r["n_points_above_1e-14"]),
+                n_values_used=[int(x) for x in r["n_values_used"].split()],
+                order=float(r["order"]),
+                r_squared=float("nan") if r["r_squared"] == "nan" else float(r["r_squared"]),
+            )
+    return fits
+
+
+def verify(rows, fits):
+    keys = {(r["function"], r["rule"]) for r in rows}
+    ok_grid = len(keys) == 6 and all(
+        sorted(r["k"] for r in rows if (r["function"], r["rule"]) == key) == K_VALUES
+        for key in keys
+    )
+    check("errors.csv has 6 function-rule series with k = 1..10", ok_grid)
+    ok_pos = all(r["abs_error"] > 0 for r in rows)
+    check("all absolute errors positive", ok_pos)
+
+    all_ok = ok_grid and ok_pos
+    for key in sorted(keys):
+        fit = fits[key]
+        series = sorted(
+            (r for r in rows if (r["function"], r["rule"]) == key), key=lambda r: r["n"]
+        )
+        by_n = {r["n"]: r["abs_error"] for r in series}
+        from_threshold = sorted(n for n, e in by_n.items() if e > CUTOFF)
+        ok_sel = from_threshold == sorted(fit["n_values_used"])
+        check(
+            f"fit point selection matches error > 1e-14 for {key[0]}/{key[1]}",
+            ok_sel,
+            f"fits.csv n_values_used == {sorted(fit['n_values_used'])}",
+        )
+        xs = np.array([math.log(n) for n in fit["n_values_used"]])
+        ys = np.array([math.log(by_n[n]) for n in fit["n_values_used"]])
+        slope, intercept = np.polyfit(xs, ys, 1)
+        order_refit = -slope
+        delta = order_refit - fit["order"]
+        ok_fit = abs(delta) <= ORDER_TOL
+        check(
+            f"refitted order matches fits.csv for {key[0]}/{key[1]}",
+            ok_fit,
+            f"fits.csv {fit['order']:.4f} vs refit {order_refit:.4f} (delta {delta:+.5f})",
+        )
+        fits[key]["slope"] = slope
+        fits[key]["intercept"] = intercept
+        all_ok = all_ok and ok_sel and ok_fit
+    return all_ok
+
+
+def render(func_name, spec, rows, fits):
+    fig, ax = plt.subplots(figsize=FIGSIZE)
+    rule_handles = []
+    order_labels = []
+    for rule, style in RULES.items():
+        series = sorted(
+            (r for r in rows if r["function"] == func_name and r["rule"] == rule),
+            key=lambda r: r["n"],
+        )
+        fit = fits[(func_name, rule)]
+        used = set(fit["n_values_used"])
+        fx = [r["n"] for r in series if r["n"] in used]
+        fy = [r["abs_error"] for r in series if r["n"] in used]
+        ex = [r["n"] for r in series if r["n"] not in used]
+        ey = [r["abs_error"] for r in series if r["n"] not in used]
+
+        grid = np.geomspace(min(fx), max(fx), 64)
+        fitline = np.exp(fit["intercept"] + fit["slope"] * np.log(grid))
+        ax.plot(grid, fitline, color=style["color"], lw=3.2, alpha=0.25, zorder=2)
+
+        h, = ax.plot(
+            fx, fy,
+            color=style["color"], marker=style["marker"], ms=6.0, lw=1.3,
+            ls="-", zorder=3, label=style["label"],
+        )
+        rule_handles.append(h)
+        if ex:
+            ax.plot(
+                [fx[-1]] + ex, [fy[-1]] + ey,
+                color=style["color"], lw=1.1, ls=(0, (5, 3)), alpha=0.85,
+                zorder=3, marker=None,
+            )
+            ax.plot(
+                ex, ey,
+                color=style["color"], marker=style["marker"], ms=6.0,
+                ls="none", mfc="white", zorder=3,
+            )
+
+        label = f"order {fit['order']:.4f}"
+        if len(fx) == 2:
+            label += " (2 points)"
+        if max(fx) == 1024:
+            t = ax.text(1100, fy[-1], label, color=style["color"], fontsize=10.5,
+                        ha="left", va="center", zorder=4)
+        else:
+            t = ax.text(fx[-1] * 1.25, fy[-1], label, color=style["color"], fontsize=10.5,
+                        ha="left", va="center", zorder=4)
+        order_labels.append(t)
+
+    ax.axhline(CUTOFF, color="0.4", ls=(0, (6, 4)), lw=1.3, zorder=1.5)
+    cut_t = ax.text(2.1, 1.35e-14, r"fit cutoff $10^{-14}$", color="0.25", fontsize=10,
+                    ha="left", va="bottom", zorder=4)
+
+    h_in = Line2D([0], [0], marker="o", color="0.15", ls="none", ms=6,
+                  label=r"points in fit (error > $10^{-14}$)")
+    h_out = Line2D([0], [0], marker="o", color="0.15", ls="none", mfc="white", ms=6,
+                   label="points excluded from fit")
+    ax.legend(
+        handles=rule_handles + [h_in, h_out],
+        loc=spec["legend_loc"], fontsize=10.5, framealpha=0.95,
+        edgecolor="0.75", borderpad=0.8,
+    )
+
+    ax.set_xscale("log", base=2)
+    ax.set_xlim(1.7, 2600)
+    ax.set_xticks([2 ** k for k in K_VALUES])
+    ax.set_xticklabels([str(2 ** k) for k in K_VALUES])
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.set_yscale("log")
+    ax.set_ylim(*spec["ylim"])
+    ax.yaxis.set_major_locator(FixedLocator(spec["yticks"]))
+    ax.set_xlabel(r"number of panels $n = 2^k$", fontsize=12.5)
+    ax.set_ylabel(r"absolute error $|I_n - I_{\mathrm{ref}}|$", fontsize=12.5)
+    ax.tick_params(labelsize=10.5)
+    ax.grid(True, which="major", ls=":", lw=0.7, color="0.75", alpha=0.9)
+    for spine in ("top", "right"):
+        ax.spines[spine].set_visible(False)
+    ax.set_title(spec["title"], fontsize=13.5, pad=10)
+
+    fig.subplots_adjust(left=0.088, right=0.975, top=0.91, bottom=0.19)
+    footnote = fig.text(
+        0.012, 0.011,
+        "Data and fitted orders: experiment-repo results/errors.csv and results/fits.csv @ "
+        + EXPERIMENT_REPO_SHA[:12] + f" (sweep job {SWEEP_JOB}).\n"
+        + r"Fits use points with error > $10^{-14}$ (filled markers); open markers are excluded."
+        + " Errors are float64 vs 40-digit references.",
+        fontsize=8.2, color="0.30", va="bottom", linespacing=1.35,
+    )
+
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    boxes = [("order " + t.get_text(), t.get_window_extent(renderer)) for t in order_labels]
+    boxes.append(("cutoff label", cut_t.get_window_extent(renderer)))
+    boxes.append(("legend", ax.get_legend().get_window_extent(renderer)))
+    boxes.append(("x label", ax.xaxis.label.get_window_extent(renderer)))
+    boxes.append(("footnote", footnote.get_window_extent(renderer)))
+    canvas_w, canvas_h = fig.canvas.get_width_height()
+    outside = [name for name, b in boxes if b.x0 < 0 or b.y0 < 0 or b.x1 > canvas_w or b.y1 > canvas_h]
+    check(f"labels and legend inside canvas ({spec['outfile']})", not outside, "; ".join(outside))
+    clashes = []
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            if boxes[i][1].overlaps(boxes[j][1]):
+                clashes.append(boxes[i][0] + " x " + boxes[j][0])
+    check(f"no label/legend overlaps ({spec['outfile']})", not clashes, "; ".join(clashes))
+
+    out = OUT / spec["outfile"]
+    fig.savefig(out, dpi=DPI)
+    plt.close(fig)
+    return out
+
+
+def main():
+    rows = load_errors()
+    fits = load_fits()
+    verify(rows, fits)
+    outputs = []
+    for func_name, spec in FUNCS.items():
+        outputs.append(render(func_name, spec, rows, fits))
+    lines = ["render checks for make_figures.py", ""]
+    for name, ok_i, detail in checks:
+        lines.append(("PASS " if ok_i else "FAIL ") + name + (("\n      " + detail) if detail else ""))
+    lines.append("")
+    lines.append("ALL CHECKS PASSED" if not any_failed[0] else "CHECKS FAILED")
+    lines.append(f"figures written at {FIGSIZE[0]}x{FIGSIZE[1]} in, {DPI} dpi -> {int(FIGSIZE[0]*DPI)}x{int(FIGSIZE[1]*DPI)} px")
+    (OUT / "render_checks.txt").write_text("\n".join(lines) + "\n")
+    for out in outputs:
+        print("wrote", out)
+    if any_failed[0]:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

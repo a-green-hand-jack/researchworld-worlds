@@ -1,0 +1,45 @@
+# Review standard for the release (internal-review-repo)
+
+Source: `Research objective` (#1 in this repository). The assembled delivery is
+approved only when every item below is checked on the delivered files at the
+exact revisions, and the check is recorded in `review/record.md`.
+
+## R1 Data
+- Iris, OpenML dataset id 61, fetched from OpenML by the delivered code (not a
+  bundled scikit-learn copy); provenance recorded (id, version/checksum, 150 rows,
+  4 features, 3 classes).
+
+## R2 Methods
+- Multinomial (softmax) logistic regression, settings stated.
+- kNN with k chosen by inner cross-validation *inside each outer training fold*
+  (nested; no use of the outer test fold for selection or preprocessing).
+  Candidate grid and selected-k distribution reported.
+- Any scaling/preprocessing fit inside folds only.
+
+## R3 Protocol and uncertainty
+- 10 repetitions x stratified 5-fold CV = 50 outer folds; both methods evaluated
+  on identical splits so the difference is paired; seeds fixed and recorded.
+- Each method: mean accuracy with a 95% interval. Paired difference (LR - kNN or
+  stated direction) with a 95% interval. The interval method is stated and
+  defensible for overlapping CV folds (e.g. corrected resampled t / repetition
+  -level intervals); a naive t interval over 50 dependent folds without
+  correction or caveat is a finding. No predetermined conclusion is required;
+  the text's claim must follow from the interval.
+
+## R4 Ibex and local runs
+- The full CV run once as a CPU job on the Ibex SLURM cluster, with evidence
+  (job id, script, log, node name from SLURM / hostname) and once locally.
+- The report states the Ibex node name and whether the two runs give identical
+  numbers, backed by a delivered comparison at full precision (per-fold values,
+  not rounded summaries). Environment versions on both sides recorded.
+
+## R5 Paper
+- `report/report.pdf` exists, at most two pages, NeurIPS 2026 submission template
+  (official style file, submission/anonymous mode), compiled from the delivered
+  LaTeX source, which compiles from the delivery.
+- Exactly one figure and one table; the figure is opened and inspected: labelled
+  axes, readable at print size, intervals visible, shows what the text says.
+- Every number in the text/table/figure matches the delivered results files and
+  is produced by delivered code; LaTeX source and code sit next to the PDF.
+- Reviewer re-runs the delivered local CV code and checks it reproduces the
+  reported numbers.

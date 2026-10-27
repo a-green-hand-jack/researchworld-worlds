@@ -1,0 +1,50 @@
+"""Early check of the A3 tolerance (experiment-repo 7a04f53, results/e4/a3_tolerance.json): does A3's registered
+rank (number of data eigen-directions with ||W u_k|| > 0.05) equal the delivered paper's rank (number of singular
+values of W above 0.05, code/e1b.py 'rank') on the rotated problem under AdamW?  Under GD they coincide
+(W = V W_aligned U^T); under Adam with theta > 0 they need not.  Runs experiment-repo's own matrix_adamw
+(code/e4_a3.py at 7a04f53) on a subset of its development configurations and compares both time-averaged ranks
+over [T/2, T] at the checkpoints where the singular values are stored (every 4th).
+Usage: python3 checks/e4_a3_rank_definition.py /hutian/experiment-repo/code > checks/e4_a3_rank_definition.json"""
+import sys, os, json, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, sys.argv[1])
+import e4_a3 as A
+
+
+def one(cfg):
+    t0 = time.time()
+    r = A.matrix_adamw(cfg)
+    t4 = np.array(r["t_every4"]); sv = np.array(r["log10_sv_every4"]); amp = np.array(r["log10_amp"])
+    t = np.array(r["t"]); thr = np.log10(A.THR)
+    h4, h = t4 >= cfg["T"] / 2, t >= cfg["T"] / 2
+    dir4 = (amp[::4] > thr).sum(1)          # per-direction count at the same checkpoints as the singular values
+    svr = (sv > thr).sum(1)
+    return dict(cfg=cfg, finite=r["finite"], rank_tavg_registered=r["rank_tavg"],
+                dir_tavg_every4=float(dir4[h4].mean()), sv_tavg_every4=float(svr[h4].mean()),
+                dir_final=int((amp[-1] > thr).sum()), sv_final=int((sv[-1] > thr).sum()),
+                max_abs_dir_minus_sv=int(np.abs(dir4[h4] - svr[h4]).max()),
+                log10_sv_final=[round(float(x), 2) for x in sv[-1]], seconds=round(time.time() - t0, 1))
+
+
+if __name__ == "__main__":
+    base = [c for c in A.dev_configs() if c["stats"] == "e1b" and c["p0"] == 2.0 and c["seed"] == 1]
+    t0 = time.time()
+    with Pool(8) as p:
+        res = p.map(one, base)
+    summ = {}
+    for r in res:
+        c = r["cfg"]; k = f'{c["side"]}:{c["theta"]}'
+        d = summ.setdefault(k, dict(runs=0, diffs=[], final_differs=0))
+        d["runs"] += 1; d["diffs"].append(r["dir_tavg_every4"] - r["sv_tavg_every4"])
+        d["final_differs"] += int(r["dir_final"] != r["sv_final"])
+    for d in summ.values():
+        x = np.array(d.pop("diffs"))
+        d.update(mean_dir_minus_sv_tavg=float(x.mean()), min_dir_minus_sv_tavg=float(x.min()), max_dir_minus_sv_tavg=float(x.max()))
+    sub = np.abs([r["rank_tavg_registered"] - r["dir_tavg_every4"] for r in res if r["cfg"]["theta"] > 0])
+    json.dump(dict(source="experiment-repo 7a04f53 code/e4_a3.py matrix_adamw, dev_configs() subset stats=e1b, p0=2, seed=1 "
+                          "(6 rotations x 3 lam x 2 a0 = 36 runs, T = 100000)",
+                   numpy=np.__version__, seconds=round(time.time() - t0, 1), by_rotation=summ,
+                   every4_subsampling_abs_effect=dict(median=float(np.median(sub)), max=float(sub.max())), runs=res),
+              sys.stdout, indent=1)

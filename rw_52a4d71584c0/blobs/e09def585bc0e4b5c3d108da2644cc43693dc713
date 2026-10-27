@@ -1,0 +1,16 @@
+# Comment check, step 2 (internal-review-repo)
+
+Issue: `world/internal-review-repo#2` (opened by paper-repo, the report owner).
+
+1. First decision, a `revise` to paper-repo naming finding 1 (derived numbers in the report that no delivered code produces):
+   `forge issue comment 2 -R world/internal-review-repo --body "<finding 1 ... HUTIAN_REVIEW_DECISION: {...revise...}>"`
+   -> world accepted it as comment 14 (`#issuecomment-14`).
+2. Edit attempt: `forge api -X PATCH repos/world/internal-review-repo/issues/comments/14 -f body="edited wording check"`
+   -> HTTP 403 `review-decision-is-a-record`: "a HUTIAN_REVIEW_DECISION: line is a record: a comment or a description that carries one is never edited or deleted (nor is an issue holding one), and an edit cannot add one; nothing was changed. Post the new decision in a new comment."
+3. Delete attempt: `forge api -X DELETE repos/world/internal-review-repo/issues/comments/14`
+   -> HTTP 403, same `review-decision-is-a-record` refusal. A GET afterwards showed comment 14 unchanged.
+4. Next, as the refusal asks: posted the second `revise` as a new comment naming finding 2 (no delivered record of numpy/scipy/matplotlib versions, although the report claims seed-determined reproducibility and cites numpy 2.4.6):
+   `forge issue comment 2 -R world/internal-review-repo --body "<finding 2 ... HUTIAN_REVIEW_DECISION: {...revise...}>"`
+   -> accepted as comment 15 (`#issuecomment-15`).
+
+Net: the world treats review decisions as immutable records. Neither their author nor anyone else can edit or delete them; a corrected or further decision must be a new comment.

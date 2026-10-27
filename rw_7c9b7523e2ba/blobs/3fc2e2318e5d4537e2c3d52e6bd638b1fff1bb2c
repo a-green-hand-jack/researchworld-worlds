@@ -1,0 +1,22 @@
+### Table 1: Mean absolute error of the Monte Carlo π estimate
+
+| $N$ | Mean absolute error | SE of mean | MAE / benchmark |
+|---:|---:|---:|---:|
+| $10^{3}$ | 0.04189 | 0.00227 | 1.01 |
+| $10^{4}$ | 0.01441 | 0.000751 | 1.10 |
+| $10^{5}$ | 0.004310 | 0.000219 | 1.04 |
+| $10^{6}$ | 0.001399 | 0.0000733 | 1.07 |
+| $10^{7}$ | 0.0004195 | 0.0000223 | 1.01 |
+
+Fitted scaling (OLS of $\ln \mathrm{MAE}$ on $\ln N$ across the five
+sample sizes): exponent $\hat\beta = -0.5012$. 95% interval
+[-0.516, -0.486] (percentile paired-run
+bootstrap, 50,000 replicates, seed 602026; primary
+interval, preserving the five within-run errors together). Conventional
+OLS-$t$ interval with 3 residual degrees of freedom
+[-0.519, -0.483] (diagnostic; assumes independent
+log-scale errors). Monte Carlo benchmark: $-1/2$; both intervals contain the benchmark $-1/2$.
+
+**Figure 1.** Monte Carlo estimate of $\pi$: mean absolute error $|\hat{\pi}-\pi|$ against sample size $N$ on log-log axes. Points: mean absolute error over 200 independent estimates at each $N \in \{10^3,\dots,10^7\}$, each run using `numpy.random.default_rng` seeded with 2026 + zero-based run index (seeds 2026–2225) over a contiguous nested point stream, so each $N$ reuses the run's stream from the start. Shaded band: run-to-run dispersion — the 2.5–97.5 percentile range of the 200 individual run errors at each $N$; it is not a confidence interval for the mean (per-$N$ standard errors of the mean are given in the table). Solid line: OLS fit of $\ln \mathrm{MAE}$ on $\ln N$, exponent -0.501; 95% paired-run percentile bootstrap interval [-0.516, -0.486] (50,000 replicates, seed 602026); conventional OLS-$t$ interval with 3 residual degrees of freedom [-0.519, -0.483]. Dashed line: asymptotic Monte Carlo benchmark with exponent $-1/2$, $\sqrt{2/\pi}\,\sqrt{4\pi-\pi^2}\,N^{-1/2}$; both intervals contain the benchmark $-1/2$.
+
+![Figure 1: error scaling](error_scaling.svg)

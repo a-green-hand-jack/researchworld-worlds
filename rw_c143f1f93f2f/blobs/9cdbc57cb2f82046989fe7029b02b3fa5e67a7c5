@@ -1,0 +1,85 @@
+\documentclass{article}
+
+% NeurIPS 2026 template, default option = Main Track submission (anonymous, line numbers).
+\usepackage{neurips_2026}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+
+% All reported numbers are generated from the result files (see README.md).
+\input{numbers.tex}
+
+\title{Logistic regression versus $k$-nearest neighbours on Iris}
+
+\author{%
+  Anonymous Author(s) \\
+  Affiliation \\
+  Address \\
+  \texttt{email} \\
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We compare multinomial logistic regression (LR) with $k$-nearest neighbours (kNN, $k$ chosen by inner cross-validation) on Iris (OpenML dataset 61) by 10 repetitions of stratified 5-fold cross-validation.
+LR reaches a mean accuracy of \LRmean\% (95\% interval \LRlo--\LRhi\%), kNN \KNNmean\% (\KNNlo--\KNNhi\%); the paired difference of \Dmean{} percentage points (pp; \Dlo{} to \Dhi) does not resolve a difference.
+Runs on an Ibex CPU node (\texttt{\IbexNode}) and locally gave \Identical{} numbers.
+\end{abstract}
+
+\section{Introduction}
+Iris \citep{fisher1936} is small and nearly separable. We ask whether paired, repeated cross-validation shows multinomial LR and tuned kNN to differ on it, by how much, and whether the computation is reproducible.
+
+\section{Data and methods}
+\paragraph{Data.} The code downloads OpenML \citep{vanschoren2014openml} dataset 61 (version \DataVersion, MD5 checked) and asserts 150 instances, 4 features, 3 classes of 50.
+
+\paragraph{Classifiers.} Both standardise the features in a pipeline fitted on training data only (scikit-learn \citep{pedregosa2011}).
+LR uses the multinomial (softmax) loss with an L2 penalty, $C=1$, the L-BFGS solver and at most \MaxIter{} iterations (\ConvWarn{} convergence warnings); it is not tuned.
+kNN (Euclidean distance, uniform weights) chooses $k\in\Kgrid$ by stratified 5-fold cross-validation on each outer training set only, takes the smallest $k$ on ties, and is refit on the outer training set.
+
+\paragraph{Evaluation.} 10 repetitions of stratified 5-fold cross-validation (outer seed \OuterSeed) give 50 outer folds of 120 training and 30 test instances, the same for both methods, so each fold yields a paired accuracy difference.
+Because the folds share training data, a $t$-interval treating the 50 fold values as independent is too narrow, so we use the corrected resampled $t$ interval \citep{nadeau2003}, $\bar{x}\pm t_{0.975,49}\sqrt{(1/50+30/120)\,s^2}$, where $s^2$ is the sample variance of the 50 fold values, for each method and for the paired differences.
+
+\paragraph{Reproducibility.} The same script, data and seeds ran locally (\CPULocal{} CPU) and as SLURM job \IbexJob{} on Ibex node \texttt{\IbexNode} (\CPUIbex{} CPU), with the same software (\Versions) and single-threaded BLAS. The runs count as identical only if every fold accuracy, chosen $k$, prediction and summary value is exactly equal.
+
+\section{Results}
+Results are in Table~\ref{tab:results} and Figure~\ref{fig:acc}. LR is more accurate in \FoldsLR{} folds, kNN in \FoldsKNN, and they tie in \FoldsTied.
+The difference of \Dmean{} pp has interval \Dlo{} to \Dhi{} pp ($p=\Dp$), so no difference is resolved; a naive $t$-interval ignoring the dependence between folds would give \Dnaivelo{} to \Dnaivehi{} pp and wrongly suggest an advantage for LR.
+In \VariantsCoverZero{} sensitivity variants (other $k$ grids, no standardisation, tuned $C$ for LR, three other outer seeds) the interval also contains zero (mean differences \VariantDmin{} to \VariantDmax{} pp).
+Inner cross-validation chose $k$ from \Kmin{} to \Kmax{} (median \Kmedian), never at the grid edge.
+
+\begin{table}[t]
+  \caption{Mean accuracy over 50 outer folds with 95\% corrected resampled $t$ intervals \citep{nadeau2003}, not clipped at 100\%; last row: paired difference LR$-$kNN in pp.}
+  \label{tab:results}
+  \centering
+  \input{tables/results_table.tex}
+\end{table}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/accuracy_fig.pdf}
+  \caption{(a) Accuracy of LR and kNN in each of the 50 outer folds (jittered); diamond and bar: mean and 95\% corrected resampled $t$ interval \citep{nadeau2003}, not clipped at 100\%. (b) Paired difference LR$-$kNN per fold (pp), mean and the same interval; dashed line: zero.}
+  \label{fig:acc}
+\end{figure}
+By the criterion above, the local and Ibex runs are \Identical: all 50 fold results, all \NPred{} predictions of each method and every summary value agree, and the result files have equal SHA-256 hashes.
+
+\section{Discussion and limitations}
+On Iris, LR and tuned kNN cannot be told apart (difference \Dlo{} to \Dhi{} pp). This is one small, nearly separable dataset with accuracies near the ceiling, so it says nothing about which method is better in general; only $k$ is tuned while LR keeps $C=1$, as the design prescribes; the corrected interval is an approximation; and cross-validation estimates accuracy averaged over training sets, not that of one fitted model \citep{bates2024}.
+Fold accuracies move in steps of $1/30$, hence the many ties. Code and results are in \texttt{report/}.
+
+{\small
+\bibliographystyle{abbrvnat}
+\bibliography{references}
+}
+
+\end{document}

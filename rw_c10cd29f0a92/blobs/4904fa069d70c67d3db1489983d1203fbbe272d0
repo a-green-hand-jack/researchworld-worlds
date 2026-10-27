@@ -1,0 +1,75 @@
+{
+ "inputs": [
+  "data/extra_long/summary-L32.json",
+  "data/extra_long/summary-L64.json",
+  "data/extra_long/summary-L128.json",
+  "data/extra_long/series/*.npz",
+  "results/stage2_binder.csv",
+  "results/stage2_crossing.json"
+ ],
+ "sizes": [
+  32,
+  64,
+  128
+ ],
+ "temps": [
+  2.21,
+  2.24,
+  2.27,
+  2.3
+ ],
+ "seeds": [
+  11,
+  12,
+  13
+ ],
+ "sweeps": 100000,
+ "burn": 20000,
+ "estimator": "same as stage 2 (cubic4 pairwise crossings, mean of the three)",
+ "Tc_long": 2.2611380508961236,
+ "U_at_crossing_long": 0.6218164484585577,
+ "pairwise_long": {
+  "32/64": {
+   "T": 2.27193156420289,
+   "U": 0.6085455637176254
+  },
+  "32/128": {
+   "T": 2.260266566644153,
+   "U": 0.6193967634530902
+  },
+  "64/128": {
+   "T": 2.2512160218413286,
+   "U": 0.6375070182049574
+  }
+ },
+ "bootstrap_seeds_ci95": [
+  2.2581511236824796,
+  2.26991640329867
+ ],
+ "bootstrap_sd": 0.0028211317929758457,
+ "bootstrap_U_ci95": [
+  0.6128232426782635,
+  0.6251560634304762
+ ],
+ "bootstrap_failed_resamples": 0,
+ "stage2_Tc": 2.2592630568951466,
+ "stage2_ci95": [
+  2.2542888800379948,
+  2.2683747652572017
+ ],
+ "stage2_Tc_same_four_temps": 2.2542260398485627,
+ "tc_exact": 2.269185314213022,
+ "deviation_long_from_exact": -0.008047263316898423,
+ "exact_inside_long_ci": true,
+ "U_star_literature": 0.61069,
+ "tau_abs_m_max_by_L": {
+  "32": 50.903422543213786,
+  "64": 181.7852707081435,
+  "128": 619.0893788869804
+ },
+ "N_over_tau_min_by_L": {
+  "32": 1964.504447910282,
+  "64": 550.0995741318895,
+  "128": 161.5275651793338
+ }
+}

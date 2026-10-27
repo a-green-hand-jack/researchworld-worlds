@@ -1,0 +1,43 @@
+# Review record: assembled delivery of 2026-10-17
+
+Conclusion: **approve.** The delivery meets every requirement of the objective (brief items D1, S1–S3,
+R1–R2, C1–C4, P1–P5) and my standard `review/standard.md` (R1–R8). No findings are open.
+
+## Revisions inspected (`ht-role delivery`, assembly errors: none)
+- paper-repo 2daf514e4c0b100698a32c36d3ea4e99096a6ce6: `README.md`, `report/report.{tex,pdf}`, `references.bib`, `placeholders.tex`, `build.sh`
+- experiment-repo 7281a3cd4a50ed5b6f75b6512c51d5d252d2e52d: `report/code/`, `report/results/`
+- figtab-repo 7afb7ac979d5703230f070f13f9fddd51ae80439: `report/figures/`, `report/tables/`
+- venue-repo de6bc9ce3efbb74634269a6b0145b44ff9d9994b: `report/neurips_2026.sty`
+- Context: brief idea-repo ef3c571, assignment story-repo bdd8805.
+
+## What I checked, and how
+- **R1 Data.** `report/code/fetch_data.py` reads the OpenML API (`/api/v1/json/data/61`) and checks OpenML's md5. My own download of
+  https://openml.org/data/v1/download/61/iris.arff has md5 ad484452702105cbf3d30f8deaba39a9, the same as the delivered `iris.arff`.
+  The code asserts 150×4 and 50/50/50 classes, and nothing else loads Iris.
+- **R2 Methods.** LR's `predict_proba` equals the softmax of its coefficients (so the model is multinomial), with C=1 fixed. kNN uses GridSearchCV over k=1..30 with an
+  inner StratifiedKFold(5) on each outer training fold. Scaling sits inside both pipelines. The paper states all of this (§2).
+- **R3 Protocol.** RepeatedStratifiedKFold(5, 10, seed 20261017) gives 50 distinct test sets of 30 with 120 training points, shared by both methods.
+- **R4 Statistics.** Recomputed from `results/local/folds.csv`: LR 95.40 [91.56, 99.24], kNN 94.47 [89.46, 99.47],
+  LR−kNN +0.93 [−2.51, +4.38] pp, all Nadeau–Bengio corrected t with df 49 and factor 1/50+30/120. These equal `intervals.csv`, `numbers.tex`, the table
+  and the text. The naive t and fold-bootstrap intervals are labelled as contrast that ignores fold dependence. The conclusion
+  ("not distinguishable") follows from the primary interval. Sensitivity claim checked in `results/sensitivity.json`: the corrected
+  interval for the difference contains 0 for seeds 1–5, without scaling and with C tuned.
+- **R5 Ibex/local.** Job 53917056 on cn511-19 is shown by the job's own first log line, by `ibex/run.json` (SLURMD_NODENAME, SLURM_JOB_ID) and by
+  `sacct.txt` (COMPLETED, 1 CPU, batch). The delivered `cv_study.py` md5 is 33e68ab9…, as recorded. `comparison.json` shows the per-fold,
+  inner-CV and prediction files byte-identical. **My own local re-run** of the delivered `cv_study.py` (scikit-learn 1.5.2, numpy 1.26.4)
+  is byte-identical to `results/local/`. The paper reports the node name, the job id, both Python versions and "identical numbers".
+- **R6 Report.** `sh report/build.sh` (TeX Live 2026, latexmk/pdflatex/bibtex) on the assembled tree exits 0 with no warnings and no
+  overfull or undefined references. The compiled PDF has the same text on both pages as the delivered `report/report.pdf`. The PDF has 2 pages, US letter,
+  the anonymous NeurIPS 2026 submission footer, and `neurips_2026.sty` identical to venue-repo's. venue-repo's `tools/check_venue.py`
+  passes all 8 checks (2 pages, one figure environment, one table environment, no margin or font changes). LaTeX source, figure and table scripts and code
+  are next to the PDF.
+- **R7 Figure and table.** I opened both pages at 110 dpi and the figure at 220 dpi. The axes are labelled with units, both panels are titled, and the bubble counts
+  (LR 1/1/5/12/21/10, kNN 2/6/4/10/17/11, difference 9/25/11/4/1) match `folds.csv`. The diamonds and bars match the corrected intervals.
+  The figure is legible at print size. Re-running `tables/make_tab_results.py` and `figures/make_fig_accuracy.py` (matplotlib 3.9.2) reproduces
+  `tab_results.tex` and the caption exactly, and the provenance sha256 values match the delivered results files. The table caption sits above the table and the figure caption below the figure, and booktabs is used.
+- **R8 Traceability.** Every number in the text comes from the generated `results/numbers.tex`. No placeholder marker appears in the PDF text.
+  The six references are real (DOIs checked by idea-repo; titles and venues match).
+
+## Non-blocking remarks (no action required)
+- The figure is set in DejaVu Serif rather than Times. This is cosmetic and readable.
+- Varma & Simon (2006) on nested CV could be cited. The design is correct without the citation.

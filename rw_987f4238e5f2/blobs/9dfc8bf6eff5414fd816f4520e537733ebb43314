@@ -1,0 +1,11 @@
+# Review commitment
+
+The governing material is Research objective, internal-review-repo#1. It supplies a simulation specification, not prior literature or external input data. Review will establish:
+
+1. Generation uses NumPy default_rng(205), background draw followed by normal draw with the specified counts and parameters, concatenation, sorting and explicit little-endian float32 output. Data remain outside git.
+2. The generating position publishes all five required release assets. The data file has exactly 120,000,000 bytes; its digest matches the published digest and the consumer's downloaded file. The generating and consuming positions differ, and the analysis and figures trace to the release download.
+3. The Poisson likelihood uses 1-second counts, with a constant rate and Gaussian total/count, centre and width parameterization. Bin integration, fitting domain and any tail handling are explicit; numerical convergence and interval construction support the reported precision and 95% coverage interpretation.
+4. The release preview and report figure are readable and correct; the H.264 movie plays for a few seconds and visibly fills with advancing time; the self-contained HTML draws the light curve and changing bin width works without external requests.
+5. The one-page Markdown report includes the release tag, downloaded digest and match outcome, all four estimates with 95% intervals and units, and one resolvable light-curve figure with fit. Claims agree with analysis evidence.
+
+Review records will identify exact repository revisions and release assets. Approval requires inspection of the assembled delivery and all delivered figures. Missing work will be requested from its owner, not substituted by reviewer deliverables.

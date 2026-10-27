@@ -1,0 +1,26 @@
+{
+  "source": "Bioconductor",
+  "url": "https://bioconductor.org/",
+  "start_utc": "2026-10-19T21:30:14.306882+00:00",
+  "end_utc": "2026-10-19T21:30:14.802932+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/bioconductor.headers",
+    "-o",
+    "/tmp/tmpevntv4ip/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://bioconductor.org/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html\n",
+  "stderr": "",
+  "first200": "<!DOCTYPE html><html dir=\"ltr\" lang=\"en-US\"> <head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"all\"><meta name=\"description\" ",
+  "body_bytes": 36834
+}

@@ -1,0 +1,8 @@
+# Review record
+
+Inspected the assembled delivery: experiment-repo 274b9a4237ee3071459619fb516ad5ac20b38862 (code/, results/, figures/), paper-repo 5719e6d6d5ad5ce3ad25cf981b703033014bb73e (report/report.md, README.md).
+
+- Independent pure-Python OLS recompute from points.csv (sha256 5eec9bba... verified, n=40): a=1.48396 (CI half-width 0.29417), b=0.83031 (0.05193), s=0.46816 (RSS/38). Matches report and results/ols_results.json exactly (CIs [1.1898,1.7781], [0.7784,0.8822]).
+- Figure figures/fit.png opened: non-blank, labelled axes, legend, 40 points, fitted line, 95% band for the mean line; the report states it is a mean-line band, not a prediction band. Embedded path ../figures/fit.png resolves in the assembled delivery.
+- Report includes numbers, figure, full analysis code (identical to code/analysis.py), residual SD definition, t df; diagnostic claims (Shapiro p=0.40, DW=1.91) match results JSON and are not over-claimed.
+- All objective requirements (a, b with 95% CI, residual SD, one figure, report/report.md with code) are met. No findings open.

@@ -1,0 +1,68 @@
+"""Compare the local and the Ibex run of cv_compare.py; write results/reproducibility.json.
+
+Identity criterion (plan.md section 3, fixed before comparing): identical iff folds.csv
+(accuracies, chosen k, splits) and predictions.csv are equal element-wise and every number
+in summary.json is equal as a float. Otherwise the maximum absolute difference per
+quantity and the differing splits are reported.
+Run from report/: python code/compare_runs.py   (expects results/local and results/ibex)
+"""
+import csv, hashlib, json, pathlib, re
+
+R = pathlib.Path(__file__).resolve().parents[1] / "results"
+sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
+load = lambda p: list(csv.DictReader(open(p)))
+
+
+def flatten(d, pre=""):
+    if isinstance(d, dict):
+        out = {}
+        for k, v in d.items():
+            out.update(flatten(v, f"{pre}{k}."))
+        return out
+    if isinstance(d, list):
+        return {f"{pre}{i}": v for i, v in enumerate(d)}
+    return {pre.rstrip("."): d}
+
+
+def table_diff(a, b, keys):
+    assert len(a) == len(b)
+    maxd = {k: max(abs(float(x[k]) - float(y[k])) for x, y in zip(a, b)) for k in keys}
+    differ = sorted({(x["repeat"], x["fold"]) for x, y in zip(a, b) if any(x[k] != y[k] for k in keys)})
+    return maxd, [f"repeat {r} fold {f}" for r, f in differ]
+
+
+rep = {}
+fa, fb = load(R / "local" / "folds.csv"), load(R / "ibex" / "folds.csv")
+pa, pb = load(R / "local" / "predictions.csv"), load(R / "ibex" / "predictions.csv")
+num_f = [k for k in fa[0] if k != "test_index_sha1"]
+md_f, diff_f = table_diff(fa, fb, num_f)
+md_p, diff_p = table_diff(pa, pb, ["index", "y_true", "pred_lr", "pred_knn"])
+sa = flatten(json.loads((R / "local" / "summary.json").read_text()))
+sb = flatten(json.loads((R / "ibex" / "summary.json").read_text()))
+sum_diff = {k: (sa.get(k), sb.get(k)) for k in sorted(set(sa) | set(sb)) if sa.get(k) != sb.get(k)}
+ea, eb = json.loads((R / "local" / "env.json").read_text()), json.loads((R / "ibex" / "env.json").read_text())
+log = next((R / "ibex").glob("*.out"), None)
+log_node = re.search(r"SLURMD_NODENAME=(\S+)", log.read_text()).group(1) if log else None
+keep = ("hostname", "slurm", "cpu_model", "platform", "python", "numpy", "scipy", "scikit_learn",
+        "blas_threads_env", "threadpools", "wall_seconds", "data_md5", "code_sha256")
+rep = {
+    "ibex_node": eb["slurm"].get("SLURMD_NODENAME", eb["hostname"]),
+    "ibex_node_from_job_log": log_node,
+    "ibex_job_id": eb["slurm"].get("SLURM_JOB_ID"),
+    "ibex_partition": eb["slurm"].get("SLURM_JOB_PARTITION"),
+    "same_data_file": ea["data_sha256"] == eb["data_sha256"],
+    "same_code": ea["code_sha256"] == eb["code_sha256"],
+    "same_outer_splits": [x["test_index_sha1"] for x in fa] == [y["test_index_sha1"] for y in fb],
+    "folds_equal_elementwise": fa == fb,
+    "predictions_equal_elementwise": pa == pb,
+    "summary_equal_as_floats": not sum_diff,
+    "max_abs_difference_folds": md_f, "differing_splits_folds": diff_f,
+    "max_abs_difference_predictions": md_p, "differing_splits_predictions": diff_p,
+    "summary_differences": sum_diff,
+    "sha256": {n: {"local": sha(R / "local" / n), "ibex": sha(R / "ibex" / n)}
+               for n in ("folds.csv", "predictions.csv", "summary.json")},
+    "env": {"local": {k: ea.get(k) for k in keep}, "ibex": {k: eb.get(k) for k in keep}},
+}
+rep["identical"] = rep["folds_equal_elementwise"] and rep["predictions_equal_elementwise"] and rep["summary_equal_as_floats"]
+(R / "reproducibility.json").write_text(json.dumps(rep, indent=2) + "\n")
+print(json.dumps({k: rep[k] for k in ("ibex_node", "ibex_job_id", "identical", "same_code", "same_data_file")}))

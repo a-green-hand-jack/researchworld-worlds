@@ -1,0 +1,210 @@
+"""Render report/figures/error_scaling.png from experiment-repo's committed results.
+
+Inputs are pinned copies of experiment-repo (analysis owner) results at commit
+f537049ac52de0cbc289a9aa5e8c3f727b5ad833, kept at inputs/experiment/<sha>/ in
+this repository.  Every plotted value comes from results/errors.csv and every
+fit line, slope and interval from results/fits.json; nothing is recomputed.
+
+Run from this repository's root:  python3 report/figures/make_figure.py
+"""
+import hashlib
+import json
+import math
+import sys
+from decimal import Decimal
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.ticker import FuncFormatter, LogLocator, NullLocator
+
+REPO = Path(__file__).resolve().parents[2]
+INPUT_DIR = REPO / "inputs" / "experiment" / "f537049ac52de0cbc289a9aa5e8c3f727b5ad833"
+OUT_PNG = Path(__file__).resolve().parent / "error_scaling.png"
+
+# SHA256 of the pinned input files at the commit above.
+PIN = {
+    "errors.csv": "b3886e643944387d5602afb2e3b465ae55107823d822942783c18f27aa5fdb72",
+    "fits.json": "784c61706fd5596d577e5fa8055dc54db2551f6ff831978c9dbaa3ee2ee26a8b",
+}
+THRESHOLD = Decimal("1e-13")  # fits use strictly E > 1e-13 (experiment-repo fits.json)
+MINUS = "\u2212"
+
+# Okabe-Ito colorblind-safe palette.
+C_TRAP, C_SIMP, C_GUIDE = "#0072B2", "#D55E00", "#555555"
+
+
+def sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def read_errors():
+    rows = {}
+    with (INPUT_DIR / "errors.csv").open() as f:
+        header = f.readline().strip().split(",")
+        assert header == ["n", "trapezoid_error", "simpson_error",
+                          "trapezoid_integral", "simpson_integral"], header
+        for line in f:
+            parts = line.strip().split(",")
+            rows[int(parts[0])] = (Decimal(parts[1]), Decimal(parts[2]))
+    return rows
+
+
+GUIDE_SHIFT = 4.0
+
+
+def guide_points(f):
+    """End points of the expected-slope guide for one fit record (fits.json)."""
+    x0, x1 = min(f["n"]), max(f["n"])
+    xm = math.sqrt(x0 * x1)
+    ym = GUIDE_SHIFT * math.exp(float(f["intercept"]) + float(f["slope"]) * math.log(xm))
+    m = f["expected_slope"]
+    return [(x, ym * (x / xm) ** m) for x in (x0, x1)]
+
+
+def fmt_slope(x):
+    return f"{x:.6f}"
+
+
+def main():
+    for name, want in PIN.items():
+        got = sha256(INPUT_DIR / name)
+        if got != want:
+            sys.exit(f"input {name} changed: sha256 {got}, pinned {want}")
+    errors = read_errors()
+    fits = json.loads((INPUT_DIR / "fits.json").read_text())
+    assert fits["threshold"] == "strict absolute error > 1e-13", fits["threshold"]
+
+    ns = sorted(errors)
+    assert ns == [2 ** k for k in range(2, 13)], ns
+    err_t = [errors[n][0] for n in ns]
+    err_s = [errors[n][1] for n in ns]
+    fit_t, fit_s = fits["rules"]["trapezoid"], fits["rules"]["simpson"]
+
+    # Cross-check the committed fitted n-sets against the committed errors
+    # (verification of the pinned files against each other, not a refit).
+    for rule, idx in (("trapezoid", 0), ("simpson", 1)):
+        fitted_n = fits["rules"][rule]["n"]
+        assert sorted(fitted_n) == [n for n in ns if errors[n][idx] > THRESHOLD], rule
+        assert all(min(fitted_n) <= n <= max(fitted_n) for n in fitted_n), rule
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.1), dpi=200)
+    fig.subplots_adjust(left=0.093, right=0.985, top=0.97, bottom=0.105)
+
+    # Axes: x in powers of two at every measured n, y in decades.
+    ax.set_xscale("log", base=2)
+    ax.set_yscale("log")
+    ax.set_xlim(3.3, 5400)
+    ax.set_ylim(7e-16, 0.9)
+    ax.set_xticks(ns)
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: ("%g" % v)))
+    ax.xaxis.set_minor_locator(NullLocator())
+    majors = [10.0 ** -e for e in range(1, 16, 2)]  # 1e-1 .. 1e-15
+    ax.set_yticks(majors)
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: ("%g" % v)))
+    ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs=(2.0, 5.0), numticks=100))
+    ax.grid(True, which="major", color="#bbbbbb", lw=0.6, alpha=0.6, zorder=0.5)
+    ax.grid(True, which="minor", axis="y", color="#dddddd", lw=0.4, alpha=0.45, zorder=0.4)
+    ax.set_xlabel("n (number of intervals)", fontsize=12)
+    ax.set_ylabel("absolute error", fontsize=12)
+    ax.tick_params(labelsize=10.5)
+
+    # Region below the fit threshold, and the threshold line itself.
+    ax.axhspan(7e-16, float(THRESHOLD), color="#999999", alpha=0.07, zorder=0.2)
+    ax.axhline(float(THRESHOLD), color="black", lw=1.1, ls=":", zorder=4)
+    ax.text(260, 1.6e-13, "fit threshold E > 1e" + MINUS + "13",
+            fontsize=9, color="#333333", zorder=7, va="bottom")
+
+    # Expected-slope guides: parallel to the expected slope, drawn through the
+    # fitted line's value at the middle of its n-range raised by GUIDE_SHIFT so
+    # they stay visible beside the fits; only the slope is meaningful.
+    for rule in ("trapezoid", "simpson"):
+        (gx0, gy0), (gx1, gy1) = guide_points(fits["rules"][rule])
+        ax.plot([gx0, gx1], [gy0, gy1], color=C_GUIDE, ls=(0, (5, 3)), lw=1.3,
+                alpha=0.7, zorder=5)
+    ax.text(48, 0.08, "guide " + MINUS + "2", fontsize=9, color=C_GUIDE,
+            ha="left", va="bottom", zorder=7, rotation=0)
+    ax.text(2250, 2.2e-12, "guide " + MINUS + "4", fontsize=9, color=C_GUIDE,
+            ha="left", va="bottom", zorder=7)
+
+    # Measured errors: all eleven points per rule.
+    ax.plot(ns, [float(e) for e in err_t], "o", color=C_TRAP, ms=5.6, zorder=6,
+            label="trapezoidal error")
+    ax.plot(ns, [float(e) for e in err_s], "s", color=C_SIMP, ms=5.0, zorder=6,
+            label="Simpson error")
+    not_fitted = [n for n in ns if n not in fit_s["n"]]
+    assert not_fitted == [4096], not_fitted
+    ax.plot([float(n) for n in not_fitted], [float(errors[n][1]) for n in not_fitted],
+            "s", markerfacecolor="white", markeredgecolor=C_SIMP, ms=6.2, mew=1.5,
+            zorder=6.5, label="Simpson error, not fitted (E < 1e" + MINUS + "13)")
+
+    # Fitted power laws, drawn only over the n each fit used.
+    for rule, color in (("trapezoid", C_TRAP), ("simpson", C_SIMP)):
+        f = fits["rules"][rule]
+        x0, x1 = min(f["n"]), max(f["n"])
+        a, b = float(f["intercept"]), float(f["slope"])
+        ax.plot([x0, x1], [math.exp(a + b * math.log(x0)), math.exp(a + b * math.log(x1))],
+                color=color, lw=1.8, zorder=3,
+                label=f"{rule} fit over n = {x0}" + "\u2013" + f"{x1}")
+
+    # Annotate each fit with its committed slope and 95% interval.  The two
+    # blocks sit in regions free of every series, fit and guide; a short
+    # leader arrow ties each block to its fitted line.
+    stats = {}
+    for rule in ("trapezoid", "simpson"):
+        f = fits["rules"][rule]
+        lo, hi = f["ci95"]
+        stats[rule] = (f"{'trapezoidal' if rule == 'trapezoid' else 'Simpson'} fit "
+                       f"(n = {min(f['n'])}\u2013{max(f['n'])}):\n"
+                       f"slope {fmt_slope(f['slope'])},\n"
+                       f"95% interval [{fmt_slope(lo)}, {fmt_slope(hi)}]")
+    t_trap = fit_t["intercept"] + fit_t["slope"] * math.log(1000)
+    ax.annotate(stats["trapezoid"], xy=(1000, math.exp(t_trap)),
+                xytext=(1450, 1.1e-3), fontsize=9.3, color=C_TRAP,
+                ha="center", va="bottom", zorder=7,
+                arrowprops=dict(arrowstyle="-", color=C_TRAP, lw=0.9,
+                                shrinkA=3, shrinkB=2))
+    t_simp = fit_s["intercept"] + fit_s["slope"] * math.log(700)
+    ax.annotate(stats["simpson"], xy=(700, math.exp(t_simp)),
+                xytext=(1550, 1.5e-9), fontsize=9, color=C_SIMP,
+                ha="center", va="bottom", zorder=7,
+                arrowprops=dict(arrowstyle="-", color=C_SIMP, lw=0.9,
+                                shrinkA=3, shrinkB=2))
+
+    # Point at the shown-but-not-fitted Simpson point.
+    ax.annotate("not fitted (E < 1e" + MINUS + "13)",
+                xy=(4096, float(errors[4096][1])), xytext=(700, 1.1e-14),
+                fontsize=9, color=C_SIMP, ha="center", va="bottom", zorder=7,
+                arrowprops=dict(arrowstyle="-", color=C_SIMP, lw=0.9,
+                                shrinkA=3, shrinkB=4))
+
+    # Legend for the line styles (statistics live in the on-plot annotations).
+    handles, labels = ax.get_legend_handles_labels()
+    guides = Line2D([], [], color=C_GUIDE, ls=(0, (5, 3)), lw=1.3,
+                    label="expected slopes " + MINUS + "2, " + MINUS + "4 (guides, shifted up 4\u00d7)")
+    handles = [h for h, l in zip(handles, labels)
+               if not l.startswith(("trapezoid fit", "simpson fit"))] + [guides]
+    ax.legend(handles=handles, loc="lower left", bbox_to_anchor=(0.015, 0.02),
+              fontsize=9, framealpha=0.92, borderpad=0.7, labelspacing=0.42,
+              handlelength=1.7, handletextpad=0.7)
+
+    meta = ("inputs: experiment-repo commit f537049ac52de0cbc289a9aa5e8c3f727b5ad833 "
+            "results/errors.csv sha256:" + PIN["errors.csv"] +
+            " results/fits.json sha256:" + PIN["fits.json"] +
+            "; fits over strictly E > 1e-13 per fits.json")
+    fig.savefig(OUT_PNG, dpi=200, facecolor="white",
+                metadata={"Software": "report/figures/make_figure.py (figtab-repo)",
+                          "Comment": meta})
+    print("wrote", OUT_PNG)
+    for rule in ("trapezoid", "simpson"):
+        f = fits["rules"][rule]
+        print(f"{rule}: slope {f['slope']:.6f} ci95 [{f['ci95'][0]:.6f}, "
+              f"{f['ci95'][1]:.6f}] over n {min(f['n'])}..{max(f['n'])}")
+    return fig, ax
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,137 @@
+\section{Drive and decay near the collapsed solution}
+\label{sec:theory}
+
+We analyze the gradient flow of \eqref{eq:loss} for a linear encoder and predictor, which is exact for linear JEPAs and describes deep JEPAs to the extent that their early training is linear around initialization (\cref{sec:discussion}).
+Time $t$ is measured in units of the encoder learning rate times steps; the predictor learns $\alpha$ times faster; weight decay is $\lambda$ on the encoder and $\lambda_P$ on the predictor.
+Proofs are in \cref{app:proofs}.
+
+\subsection{Directions of representation space}
+
+\begin{assumption}[Shared directions]
+\label{ass:codiag}
+$\Ccc$ and $\Ctc$ are symmetric and share an orthonormal eigenbasis $\{u_j\}$: $\Ccc u_j=c_ju_j$, $\Ctc u_j=s_ju_j$.
+\end{assumption}
+$c_j$ is the context variance along direction $j$, $s_j$ the covariance between context and target along it, and $\rho_j=s_j/c_j$ the regression coefficient of the target on the context: how predictable direction $j$ of the target is.
+\Cref{ass:codiag} holds whenever the two views are exchangeable and the input is stationary under the masking, e.g.\ for random masking of a stationary signal (\cref{prop:masking}).
+
+\begin{proposition}[Decoupling; cf.\ \citealp{tian2021understanding}]
+\label{prop:decouple}
+Under \cref{ass:codiag}, if $W(0)=\sum_j \varepsilon_j v_ju_j^\top$ and $P(0)=\sum_j p_{0} v_jv_j^\top$ for orthonormal $\{v_j\}$, then $W(t)=\sum_j w_j(t)v_ju_j^\top$, $P(t)=\sum_jp_j(t)v_jv_j^\top$ for all $t$, where, with a stop-gradient target ($\Wt=W$),
+\begin{align}
+\dot w_j &= w_j\big(\underbrace{p_js_j}_{\text{drive } \drive_j}-\underbrace{(p_j^2c_j+\lambda)}_{\text{decay } \decay_j}\big), \label{eq:wdot}\\
+\dot p_j &= \alpha\big(w_j^2(s_j-p_jc_j)-\lambda_Pp_j\big). \label{eq:pdot}
+\end{align}
+\end{proposition}
+Each direction is a two-dimensional system, independent of all others.
+With $s_j=1$, $c_j=1+\sigma^2$, $\lambda=\alpha\lambda_P$ equal to the weight decay and $w_j^2$ in place of their $s_j$, \eqref{eq:wdot}--\eqref{eq:pdot} are the SimSiam eigenmode equations of \citet{tian2021understanding}; what changes for JEPAs is that $s_j$ and $c_j$ are the context--target covariances induced by the masking (\cref{prop:masking}), so they differ across directions and with the masking ratio.
+The amplitude $w_j$ grows at rate $r_j(p)=\drive_j(p)-\decay_j(p)$: the driving force $p s_j$ is the part of the gradient that pulls the prediction towards the predictable part of the target; the decay $p^2c_j$ is the predictor's amplification of context variance, to which weight decay adds $\lambda$.
+For general initializations the decoupling holds approximately while $W$ is small; we test its accuracy for full-matrix training in \cref{sec:experiments}.
+
+\subsection{Collapse is decided near the collapsed solution}
+
+At the collapsed solution $w_j=0$, the predictor receives no gradient signal: \eqref{eq:pdot} is $O(w_j^2)$, and $p_j$ only decays, $p_j(t)\approx p_0e^{-\alpha\lambda_Pt}$.
+Meanwhile direction $j$ grows if and only if $r_j(p_j)>0$.
+
+\begin{proposition}[Growth window and bistability; cf.\ \citealp{tian2021understanding}]
+\label{prop:window}
+$r_j(p)>0$ if and only if $p\in(p_j^-,p_j^+)$, the roots of $c_jp^2-s_jp+\lambda=0$; the window is nonempty if and only if
+\begin{equation}
+s_j^2/c_j=\rho_j s_j>4\lambda.
+\label{eq:fp}
+\end{equation}
+For $\lambda,\lambda_P>0$ the collapsed point $(w_j,p_j)=(0,0)$ is locally stable. A non-collapsed fixed point exists if and only if \eqref{eq:fp} holds, at $p_j^\ast=p_j^+$, $w_j^{\ast2}=\lambda_Pp_j^+/(s_j-p_j^+c_j)$, and it is locally stable.
+\end{proposition}
+Thus every direction is bistable: whether it ends at the collapsed point or at the non-collapsed one is decided by where the trajectory goes from its initial condition $(\varepsilon_j,p_0)$, i.e.\ early, while $w_j$ is still small.
+Condition \eqref{eq:fp} and the bistability are the per-direction form of the fixed-point analysis of \citet{tian2021understanding}; what is missing is which basin a trajectory from a small initialization ends in, which is what determines the rank.
+The number of directions satisfying \eqref{eq:fp} bounds the rank, but the bound is not tight: a direction can satisfy it and still collapse, because the predictor drifts out of the window before $w_j$ is large enough to hold it there.
+
+\begin{proposition}[Early-time survival criterion, leading order]
+\label{prop:survival}
+Assume $\varepsilon_j\ll1$, $\lambda_P\lesssim\lambda$ and $\alpha\lesssim1$ (the regime is discussed in \cref{app:survival}), and let $p_T=p_0e^{-\alpha\lambda_PT}$.
+To leading order in a two-phase (matched) approximation, direction $j$ survives a training time $T$ if and only if \eqref{eq:fp} holds and
+\begin{equation}
+\Phi_j=\max_{p_T<p<\min(p_0,\rho_j)}
+\Big[\log\varepsilon_j+G_j(p)-\tfrac12\log\frac{\lambda_Pp}{s_j-pc_j}\Big]>0,
+\label{eq:survival}
+\end{equation}
+where
+\begin{equation}
+G_j(p)=\frac{s_j(p_0-p)-\tfrac{c_j}{2}(p_0^2-p^2)-\lambda\log\frac{p_0}{p}}{\alpha\lambda_P}.
+\label{eq:G}
+\end{equation}
+The predicted rank is $\hat R=\#\{j:\Phi_j>0,\ \rho_js_j>4\lambda\}$.
+\end{proposition}
+$G_j(p)$ is the log-amplitude a direction gains while the predictor drifts down from $p_0$ to $p$ (the integral of drive minus decay); the last term is the log-amplitude it needs to cross the predictor's nullcline, above which the predictor starts learning from that direction and the trajectory is captured by the non-collapsed fixed point.
+\Cref{prop:survival} is an asymptotic statement, not a theorem; \cref{app:survival} derives it, lists where it fails, and checks it against the integrated mode dynamics (297 of 300 random settings, against 183 for \eqref{eq:fp} alone), which are checks of the derivation, not results about trained JEPAs.
+
+\Cref{fig:mechanism} illustrates the mechanism.
+The decisive fact is that near collapse the predictor learns nothing and only decays: the window $(p^-_j,p^+_j)$ is open for a finite time, and a direction survives only if it grows enough during that time.
+The threshold on predictability is therefore set by the early dynamics---by $\varepsilon_j$, $p_0$, $\alpha$, $\lambda_P$---and not only by the fixed-point condition.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/fig_mechanism.pdf}
+\caption{\textbf{Drive versus decay near the collapsed solution (illustration of the theory, not a measurement).}
+\textbf{(a)}~Drive $p\,s_j$ (solid) and decay $p^2c_j+\lambda$ (dashed) for two directions; direction $j$ can grow only where drive exceeds decay (shaded window $(p^-_j,p^+_j)$).
+\textbf{(b)}~Trajectories of 20 directions in the $(p_j,w_j)$ plane from the same near-collapsed initialization ($w_j=10^{-3}$, $p_j=0.5$), colored by the signal $s_j$: near collapse the predictor receives no signal and drifts down at rate $\lambda$; directions that grow before $p_j$ leaves their window reach the non-collapsed fixed point (solid), the others decay to zero (dotted).
+\textbf{(c)}~The same directions over time: survival is settled in the first $\sim\!10^2$ time units, and the direction with $s_j=0.11$ in (a) collapses although it has a growth window, because $p_j$ drifts out of it first.
+Integration of \eqref{eq:wdot}--\eqref{eq:pdot} with $\alpha=1$, $\lambda_P=\lambda=0.01$, $s_j$ log-spaced in $[10^{-2},1]$, $c_j=s_j+0.05$, Euler step $0.01$, $6\times10^4$ steps; 7 of 20 directions survive.}
+\label{fig:mechanism}
+\end{figure}
+
+\subsection{What the heuristics change}
+\label{sec:heuristics}
+
+Every heuristic acts on a term of \eqref{eq:survival}; \cref{tab:heuristics} summarizes the map.
+
+\begin{table}[t]
+\caption{\textbf{What the common heuristics change, according to the theory.} For each heuristic: the term of the per-direction rate $r_j=p_js_j-(p_j^2c_j+\lambda)$ that it changes, and the predicted effect on the rank of the learned representation. $\rho_j=s_j/c_j$ is the predictability of direction $j$; $c^t_j$ is the target variance. Derived from \cref{prop:window,prop:survival,prop:stopgrad,prop:masking,cor:depth}; the stop-gradient and weight-decay rows restate results of \citet{tian2021understanding} in our notation. The measured counterparts are in \cref{sec:experiments}.}
+\label{tab:heuristics}
+\centering
+\footnotesize
+\input{tables/tab_heuristics.tex}
+\end{table}
+
+\paragraph{Weight decay.}
+$\lambda$ enters only the decay: it lowers every rate by the same amount, narrows every window and closes it at $\rho_js_j=4\lambda$ (\cref{prop:window}), and lowers every $\Phi_j$; the predictor's weight decay sets how fast the window closes.
+A direction with no drive decays at the rate $p_j^2c_j-p_js_j+\lambda$, which is exactly $\lambda$ outside the predictor's range, so the decay term can be calibrated against the weight decay independently of the drive: the log-eigenvalue of the embedding covariance along such a direction falls at rate $2\lambda$ per unit time.
+At $\lambda=\lambda_P=0$ no window closes, every direction with $s_j>0$ and $p_0<\rho_j$ grows, and the predictor converges to $\rho_j$ along it (\cref{app:prior}).
+
+\paragraph{Stop-gradient.}
+\begin{proposition}[cf.\ Theorem~2 of \citealp{tian2021understanding}]
+\label{prop:stopgrad}
+Without the stop-gradient (gradients flow through the target branch, $\Wt=W$), $\dot w_j=-w_j\big(c_j(p_j-\rho_j)^2+c^t_j-\rho_js_j+\lambda\big)$, where $c^t_j=u_j^\top\Ctt u_j\ge\rho_js_j$ by Cauchy--Schwarz; every direction decays for every predictor.
+\end{proposition}
+The stop-gradient removes the target's own decay term $c^t_j$, which always dominates the drive.
+
+\paragraph{Predictor scale and learning rate.}
+$p_0$ enters through the window: a predictor initialized below $p_j^-$ never lets direction $j$ grow; one initialized far above $p_j^+$ loses $\tfrac{c_j}{2}p_0^2/(\alpha\lambda_P)$ of log-amplitude before entering the window. The predicted rank is therefore non-monotone in $p_0$.
+The predictor learning rate enters through two terms of \eqref{eq:survival} with opposite effects: the drift rate $\alpha\lambda_P$ in $G_j$, which closes the window faster, and the nullcline $\lambda_Pp/(s_j-pc_j)$, which a faster predictor reaches at a lower amplitude when its decay rate is held fixed.
+With a decay \emph{coefficient} $\lambda_P$ applied per unit of predictor learning rate, as in SGD or AdamW with a separate predictor learning rate, the drift rate $\alpha\lambda_P$ grows with $\alpha$ and $\hat R$ decreases with $\alpha$.
+With a fixed absolute decay \emph{rate} $\eta_P=\alpha\lambda_P$, $G_j$ does not depend on $\alpha$ and the nullcline term $\tfrac12\log\big(\eta_Pp/(\alpha(s_j-pc_j))\big)$ decreases with it, so $\hat R$ increases with $\alpha$; this recovers the observation of \citet{tian2021understanding} that a fast predictor helps avoid collapse.
+The sign of the learning-rate effect thus follows from the weight-decay convention; in both, a stronger predictor decay lowers $\hat R$.
+
+\begin{corollary}[Predictor depth]
+\label{cor:depth}
+Let the predictor be a product of $L$ linear layers with balanced initialization, so that along direction $j$ its gain is $p_j=a_j^L$ and each factor obeys $\dot a_j=\alpha\big(a_j^{L-1}w_j^2(s_j-p_jc_j)-\lambda_Pa_j\big)$.
+Near collapse $p_j(t)=p_0e^{-L\alpha\lambda_Pt}$, and \cref{prop:survival} holds with $\alpha\lambda_P$ replaced by $L\alpha\lambda_P$ in $G_j$ and $p_T$, and with nullcline term $\tfrac12\log\big(\lambda_Pp^{2/L-1}/(s_j-pc_j)\big)$.
+\end{corollary}
+At fixed end-to-end initial gain $p_0$, a deeper predictor closes every window $L$ times faster and so predicts lower rank; in the same numerical check the corollary agrees with integration in 149, 150 and 147 of 150 random settings for $L=1,2,3$ (\cref{app:survival}).
+
+\paragraph{Predictor width.}
+A predictor of rank $k$ (a bottleneck) has $p_j=0$ outside its range, where $r_j=-\lambda<0$: $\hat R\le k$.
+
+\paragraph{Masking ratio.}
+\begin{proposition}[Random masking of a stationary signal]
+\label{prop:masking}
+Let $x\in\R^D$ be zero-mean and stationary (circulant covariance with spectrum $\{S_k\}$ and variance $\sigma^2=\tfrac1D\sum_kS_k$), let each coordinate be visible in the context independently with probability $q=1-m$, and let the target be the masked coordinates. Then \cref{ass:codiag} holds in the Fourier basis with
+\begin{equation}
+s_k=q(1-q)(S_k-\sigma^2),\qquad c_k=q\big(qS_k+(1-q)\sigma^2\big).
+\end{equation}
+\end{proposition}
+Two consequences.
+First, only directions with above-average power, $S_k>\sigma^2$, can ever be driven ($s_k>0$): masked prediction discards the rest whatever the other hyperparameters.
+Second, the existence condition \eqref{eq:fp} reads $q(1-q)^2(S_k-\sigma^2)^2>4\lambda\,(qS_k+(1-q)\sigma^2)$: the drive vanishes both without masking ($q\to1$) and without context ($q\to0$), and for high-power directions it increases with the masking ratio up to large $m$, in line with the large masking ratios used in practice \citep{assran2023ijepa,he2022mae}.
+
+\paragraph{Target-encoder EMA.}
+With $\dot{\Wt}=\kappa(W-\Wt)$, the linearization at the collapsed point grows if and only if $r_j(p)>0$ (\cref{app:proofs}): the EMA does not move the window, but it lowers the growth rate inside it and the predictor's signal $w_j\bar w_js_j$, so in \eqref{eq:survival} it acts like a smaller gain.

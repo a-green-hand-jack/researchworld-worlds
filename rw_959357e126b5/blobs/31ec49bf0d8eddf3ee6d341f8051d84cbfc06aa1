@@ -1,0 +1,12 @@
+\section{Discussion, limitations and conclusion}
+\label{sec:discussion}
+
+\paragraph{What holds.}
+In a linear JEPA with weight decay, collapse is an attractor that a direction escapes only by outgrowing the decay of the predictor; for gradient descent this mechanism predicts the held-out rank, with and without masking, with errors more than ten times smaller than the static threshold's and the initial window's, and explains why predictor weight decay is necessary; modified forms hold under AdamW at a fixed horizon, with a normalised target and in a two-layer encoder.
+
+\paragraph{Where it fails, and limitations.}
+The theory treats linear models under population gradient flow, in closed form for aligned statistics (\cref{ass:aligned}).
+The depth correction is post hoc; one EMA sign, the predicted fall at high masking ratio, a tanh encoder under random masks and the schedule model fail, with generic deep factors the closed form is no better than an early measurement, and minibatch noise, which can make collapsed sets of parameters attractive~\citep{chen2023stochastic}, shifts a linear count by one to two directions with a $p_0$-dependent sign that replicated on held-out runs but that no account here derives (\cref{app:ext}).
+The ViT results come from one small ViT on CIFAR-10 with 3 to 5 seeds per row and hardware mixed across rows (one row rerun on another GPU family gave identical counts). We recommend no predictor design and no schedule: the theory's interventions in the ViT did not move the count in the predicted direction (\cref{app:details}), and on the tabular grid of \citet{demelocosta2026drive} their count orders the rank better (\cref{sec:related}).
+
+\paragraph{Conclusion.} Where collapse is decided early, as in the linear models we test under constant weight decay, it is a race against the decay of the predictor, predictable before training; in the ViT weight decay keeps acting late, so an early criterion must take the remaining schedule into account.

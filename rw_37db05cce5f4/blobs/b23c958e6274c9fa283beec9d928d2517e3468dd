@@ -1,0 +1,26 @@
+{
+  "source": "ar5iv",
+  "url": "https://ar5iv.labs.arxiv.org/",
+  "start_utc": "2026-10-19T21:30:14.680286+00:00",
+  "end_utc": "2026-10-19T21:30:15.277030+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/ar5iv.headers",
+    "-o",
+    "/tmp/tmpgdkiaq44/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://ar5iv.labs.arxiv.org/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html; charset=utf-8\n",
+  "stderr": "",
+  "first200": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n  <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">\n  <title>ar5iv \u2013 Articles from arXiv.org as responsive HTML5 web documents</title>\n  <me",
+  "body_bytes": 9086
+}

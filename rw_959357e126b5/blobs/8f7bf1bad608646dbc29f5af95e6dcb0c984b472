@@ -1,0 +1,64 @@
+"""Own GD implementation of the A4 loss (theory/ext_A_lntarget.md, experiment a972088) with the cross term from a
+fixed JOINT sample of (x1, x2) (no Gaussian regression identity, own LN), compared with e4_a4.truth (rank) and
+e4_a4.flow (N2 count) on: the smoke config (seed 799), the three orthogonal-init check configs of
+code/checks/e4_a4_theory.py, and eight configs at seeds 88xxx (outside every A4 grid) at the corners
+(lam 0.25 / p0 2.0 / w0 1e-3 for the 'rank >= 1' claim; lam 0.004 for the race regime).
+Usage: python3 own_truth.py OUT_JSON"""
+import sys, json, math, os
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, "/tmp/a4code/code")
+import e4_a4 as A
+
+EPS = 1e-5; N = 8; THR = 0.05; M = 8192
+
+
+def own_truth(cfg):
+    tau, c, s = A.spectra(cfg["fam"]); d, lam, eta, T = cfg["d"], cfg["lam"], cfg["eta"], cfg["T"]
+    _, W = A.init(cfg)                      # same initial W as the delivered truth
+    rng = np.random.default_rng(cfg["seed"] + 88)
+    rho = c / tau; sig = np.sqrt(s - rho ** 2 * tau)
+    x2 = rng.standard_normal((M, N)) * np.sqrt(tau); x1 = rho * x2 + sig * rng.standard_normal((M, N))
+    P = cfg["p0"] * np.eye(d); S11 = np.diag(s); Pi = np.eye(d) - 1.0 / d
+    for t in range(T):
+        Y = x2 @ W.T; Yc = Y - Y.mean(1, keepdims=True)
+        L = Yc / np.sqrt((Yc ** 2).sum(1, keepdims=True) / d + EPS)
+        C = L.T @ x1 / M
+        R = P @ W @ S11 - C
+        W, P = W - eta * (P.T @ R + lam * W), P - eta * (R @ W.T + lam * P)
+    sv = np.linalg.svd(Pi @ W, compute_uv=False)
+    return int((sv > THR).sum()), sv.tolist()
+
+
+def one(cfg):
+    _, W0 = A.init(cfg); Pi = np.eye(cfg["d"]) - 1.0 / cfg["d"]
+    a0 = np.linalg.norm(Pi @ W0, axis=0)
+    fl = A.flow(cfg, a0); tr = A.truth(cfg); r, sv = own_truth(cfg)
+    return dict(cfg=cfg, own_rank=r, delivered_truth_rank=tr["rank"], settled=tr["settled"], flow_n2=fl["count"],
+                own_sv=sv[:N], truth_sv=tr["sv"][:N], flow_a=fl["a_T"], ln_static=A.ln_static(cfg))
+
+
+def mk(fam, d, p0, lam, w0, seed, init=None):
+    c = dict(id=0, grid="review", fam=fam, d=d, p0=p0, lam=lam, w0=w0, eta=0.05,
+             T=max(4000, int(math.ceil(8 / (0.05 * lam)))), seed=seed)
+    if init: c["init"] = init
+    return c
+
+
+cfgs = [A.configs("smoke")[0]]
+for k, (fam, d, p0, lam) in enumerate((("flat", 12, 1.0, 0.05), ("decay", 32, 2.0, 0.015), ("flat", 32, 0.6, 0.25))):
+    cfgs.append(mk(fam, d, p0, lam, 1e-3, 79100 + k, "orth"))
+for k, (fam, d, p0, lam, w0) in enumerate((("flat", 12, 2.0, 0.25, 1e-3), ("decay", 12, 2.0, 0.25, 1e-3),
+                                           ("flat", 12, 0.6, 0.25, 1e-3), ("decay", 12, 0.6, 0.25, 3e-2),
+                                           ("flat", 12, 2.0, 0.004, 1e-3), ("decay", 32, 1.2, 0.004, 1e-3),
+                                           ("flat_h", 12, 2.0, 0.25, 1e-3), ("decay_h", 12, 0.6, 0.25, 1e-3))):
+    cfgs.append(mk(fam, d, p0, lam, w0, 88100 + k))
+with Pool(8) as pool:
+    res = pool.map(one, cfgs, chunksize=1)
+json.dump(res, open(sys.argv[1], "w"), indent=1)
+for r in res:
+    c = r["cfg"]
+    print(c["fam"], c["d"], c["p0"], c["lam"], c["w0"], c.get("init", "gauss"), c["seed"], "own", r["own_rank"],
+          "truth", r["delivered_truth_rank"], "settled", r["settled"], "n2", r["flow_n2"], "ln_static", r["ln_static"],
+          "own_sv", np.round(r["own_sv"], 3).tolist())

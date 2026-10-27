@@ -1,0 +1,86 @@
+"""Reproduce the prespecified 20-stream quarter-circle Monte Carlo study."""
+import argparse
+import csv
+import hashlib
+import json
+import math
+import platform
+import statistics
+import time
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+
+import numpy as np
+import scipy
+from scipy.stats import t
+
+ROOT_ENTROPY = 20261020
+N = 1_000_000
+K = 20
+
+
+def sample(index):
+    start = time.perf_counter()
+    seed = np.random.SeedSequence(ROOT_ENTROPY, spawn_key=(index,))
+    rng = np.random.Generator(np.random.PCG64(seed))
+    xy = rng.random((N, 2))
+    inside = int(np.count_nonzero(xy[:, 0] ** 2 + xy[:, 1] ** 2 <= 1.0))
+    assert 0 <= inside <= N
+    return dict(seed_index=index, root_entropy=ROOT_ENTROPY, spawn_key=str(index),
+                points=N, inside=inside, estimate=4 * inside / N,
+                elapsed_seconds=time.perf_counter() - start)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--pilot', action='store_true')
+    parser.add_argument('--output', default='results')
+    args = parser.parse_args()
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    if args.pilot:
+        row = sample(0)
+        (out / 'pilot.json').write_text(json.dumps(row, indent=2) + '\n')
+        print(json.dumps(row), flush=True)
+        return
+    start = time.perf_counter()
+    with ProcessPoolExecutor(max_workers=2) as pool:
+        rows = list(pool.map(sample, range(K)))
+    csv_path = out / 'per_seed.csv'
+    with csv_path.open('w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    values = np.array([row['estimate'] for row in rows])
+    mean = float(values.mean())
+    sd = float(values.std(ddof=1))
+    se = sd / math.sqrt(K)
+    critical = float(t.ppf(0.975, K - 1))
+    half = critical * se
+    pooled = 4 * sum(row['inside'] for row in rows) / (K * N)
+    assert math.isclose(mean, pooled, rel_tol=0, abs_tol=1e-15)
+    assert math.isclose(sd, statistics.stdev(values.tolist()), rel_tol=1e-13)
+    assert len({row['spawn_key'] for row in rows}) == K
+    result = dict(mean=mean, sample_sd=sd, standard_error=se, confidence_level=.95,
+                  ci_method='Student t interval across 20 seed estimates', df=K-1,
+                  t_critical=critical, ci_low=mean-half, ci_high=mean+half,
+                  ci_half_width=half, math_pi=math.pi, signed_error=mean-math.pi,
+                  absolute_error=abs(mean-math.pi), seeds=K, points_per_seed=N,
+                  total_points=K*N, total_inside=sum(row['inside'] for row in rows),
+                  theoretical_per_seed_sd=math.sqrt(math.pi*(4-math.pi)/N),
+                  theoretical_mean_se=math.sqrt(math.pi*(4-math.pi)/(K*N)),
+                  pooled_estimate_check=pooled, aggregation_checks_passed=True,
+                  root_entropy=ROOT_ENTROPY, spawn_keys=list(range(K)),
+                  rng='NumPy PCG64 with SeedSequence(root_entropy, spawn_key=(index,))',
+                  input='Generated independent U[0,1) coordinate pairs; no external data',
+                  inside_rule='x*x + y*y <= 1',
+                  python_version=platform.python_version(), numpy_version=np.__version__,
+                  scipy_version=scipy.__version__, elapsed_seconds=time.perf_counter()-start,
+                  per_seed_sha256=hashlib.sha256(csv_path.read_bytes()).hexdigest(),
+                  script_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+    (out / 'summary.json').write_text(json.dumps(result, indent=2) + '\n')
+    print(json.dumps(result, indent=2), flush=True)
+
+
+if __name__ == '__main__':
+    main()

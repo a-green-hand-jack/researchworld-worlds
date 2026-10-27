@@ -1,0 +1,23 @@
+"""Referee's independent closed form for the pilot's 'predictor-decay race' (lam > 0, alpha = 1):
+near collapse p(t) = p0 exp(-alpha lam t); integrated exponent of mode k up to the time p(t) = q is
+G_k(q) = [c_k (p0 - q) - s_k (p0^2 - q^2)/2 - lam ln(p0/q)] / (alpha lam), maximised at the smaller root
+q- of s q^2 - c q + lam = 0, where growth stops (if q- >= p0 the mode never grows). Survive iff G_k* >= ln(a*/a0)."""
+import numpy as np, json
+n = 32; k = np.arange(n); s = np.ones(n); c = 0.9 ** k
+def Gstar(lam, p0, alpha=1.0):
+    disc = c**2 - 4 * lam * s
+    G = np.full(n, -np.inf)
+    ok = disc >= 0
+    q = np.where(ok, (c - np.sqrt(np.clip(disc, 0, None))) / (2 * s), np.nan)
+    ok &= q < p0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        g = (c * (p0 - q) - s * (p0**2 - q**2) / 2 - lam * np.log(p0 / q)) / (alpha * lam)
+    G[ok] = g[ok]
+    return G
+meas = json.load(open("checks/pilot_rank_threshold.json"))
+for lam in [0.01, 0.03, 0.05]:
+    for p0 in [0.2, 0.5, 1.0, 2.0]:
+        G = Gstar(lam, p0)
+        pred = {thr: int((G >= np.log(thr / 1e-3)).sum()) for thr in (0.1, 1.0)}
+        m = [r["gt0.1_T32000"] for r in meas if r["lam"] == lam and r["p0"] == p0]
+        print(f"lam={lam} p0={p0}: predicted survivors (a*=0.1) {pred[0.1]}, (a*=1) {pred[1.0]}; measured T=32000 {m}")

@@ -1,0 +1,23 @@
+# Monte Carlo estimate of π: error scaling with N
+
+**Result.** The log–log exponent of mean absolute error (MAE) against N is **−0.501**. 95% intervals: paired-run bootstrap (primary) **[−0.516, −0.486]**; OLS t, 3 d.f. (diagnostic) **[−0.519, −0.483]**. Both contain the Monte Carlo value −1/2: the scaling is consistent with N^(−1/2) over N = 10³–10⁷.
+
+**Method.** For each N, 200 independent estimates; run *i* = 0…199 uses `numpy.random.default_rng(2026 + i)` (NumPy 2.4.6) and one nested stream of uniform points in [0,1)² (equivalent to restarting the seed at each N); π̂ = 4·(hits with x²+y² ≤ 1)/N; MAE = mean |π̂ − `math.pi`| over runs. ln MAE is fitted on ln N by unweighted least squares (5 points). Seeds are reused across N, so a run's errors are dependent: the primary interval resamples whole runs (50,000 replicates, seed 602026). The OLS t interval assumes independent homoscedastic Gaussian errors.
+
+| N | MAE | SE of MAE | Asymptotic MAE | Ratio |
+|---|---|---|---|---|
+| 10³ | 4.189 × 10⁻² | 2.27 × 10⁻³ | 4.143 × 10⁻² | 1.011 |
+| 10⁴ | 1.441 × 10⁻² | 7.51 × 10⁻⁴ | 1.310 × 10⁻² | 1.099 |
+| 10⁵ | 4.310 × 10⁻³ | 2.19 × 10⁻⁴ | 4.143 × 10⁻³ | 1.040 |
+| 10⁶ | 1.399 × 10⁻³ | 7.33 × 10⁻⁵ | 1.310 × 10⁻³ | 1.068 |
+| 10⁷ | 4.195 × 10⁻⁴ | 2.23 × 10⁻⁵ | 4.143 × 10⁻⁴ | 1.012 |
+
+Fit: slope −0.5012 (SE 0.0057), intercept 0.3281, R² = 0.9996. Asymptotic MAE = √(2/π)·√(4π−π²)/√N (theory, not a fit).
+
+<img src="figures/error_scaling.png" alt="Figure 1: log-log plot of MAE of the Monte Carlo pi estimate against N with least-squares fit, both exponent intervals and the -1/2 benchmark" width="60%" style="width:60%">
+
+**Figure 1.** MAE versus N (200 runs per N) with fit and −1/2 benchmark; the band is run-to-run dispersion (2.5–97.5% of run errors), not uncertainty of the mean.
+
+**Interpretation.** The exponent is within 0.002 of −1/2, inside both intervals: no evidence against the expected rate. MAEs are 1.01–1.10 times the asymptotic value (largest excess 1.7 SE, at N = 10⁴). Five points cannot establish an exact power law at every N.
+
+*Provenance:* experiment-repo `results/summary.json` at 7d7d6432f3aa; figure from figtab-repo at 598ab23.

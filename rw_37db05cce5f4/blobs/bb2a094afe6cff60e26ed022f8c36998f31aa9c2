@@ -1,0 +1,26 @@
+{
+  "source": "CVF",
+  "url": "https://openaccess.thecvf.com/",
+  "start_utc": "2026-10-19T21:30:15.162432+00:00",
+  "end_utc": "2026-10-19T21:30:15.978407+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/cvf.headers",
+    "-o",
+    "/tmp/tmpcyqp3fvn/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://openaccess.thecvf.com/"
+  ],
+  "exit": 0,
+  "curl_output": "302\ntext/html; charset=iso-8859-1\n",
+  "stderr": "",
+  "first200": "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n<html><head>\n<title>302 Found</title>\n</head><body>\n<h1>Found</h1>\n<p>The document has moved <a href=\"https://openaccess.thecvf.com/menu\">here</a>.</",
+  "body_bytes": 306
+}

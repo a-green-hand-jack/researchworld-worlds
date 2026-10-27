@@ -1,0 +1,36 @@
+"""Supplementary: local orders from double-precision errors, and 50-digit GL/Simpson errors
+for exp(x) and 1/(1+25x^2) to show the rule's true order beyond the rounding floor."""
+import json, numpy as np
+from mpmath import mp, mpf, exp, atan, sqrt, log
+mp.dps = 50
+res = json.load(open("results/results.json"))
+loc = {}
+for key, e in res["errors"].items():
+    e = np.array(e); ok = e > 1e-15
+    loc[key] = [float(np.log2(e[i]/e[i+1])) if ok[i] and ok[i+1] else None for i in range(11)]
+a = sqrt(mpf(3)/7 - 2*sqrt(mpf(6)/5)/7); b = sqrt(mpf(3)/7 + 2*sqrt(mpf(6)/5)/7)
+wa = (18 + sqrt(mpf(30)))/36; wb = (18 - sqrt(mpf(30)))/36
+T = [-b, -a, a, b]; W = [wb, wa, wa, wb]
+fs = {"exp(x)": (exp, exp(1)-1), "1/(1+25x^2)": (lambda x: 1/(1+25*x**2), atan(5)/5)}
+def gl(f, n):
+    h = mpf(1)/n; s = 0
+    for i in range(n):
+        for t, w in zip(T, W): s += w*f(i*h + h*(t+1)/2)
+    return h/2*s
+def simp(f, n):
+    h = mpf(1)/n; s = 0
+    for i in range(n):
+        s += f(i*h) + 4*f(i*h+h/2) + f((i+1)*h)
+    return h/6*s
+hp = {}
+for fn, (f, ex) in fs.items():
+    for rn, r in (("Simpson", simp), ("Gauss-Legendre (4 nodes)", gl)):
+        errs = [abs(r(f, 2**k) - ex) for k in range(1, 13)]
+        # fit on all 12 points, and local orders
+        x = np.array([float(log(2**k)) for k in range(1, 13)]); y = np.array([float(log(e)) for e in errs])
+        p = np.polyfit(x, y, 1)
+        hp[f"{fn}|{rn}"] = dict(errors=[float(e) for e in errs], fitted_order_all12=float(-p[0]),
+                               local=[float(log(errs[i]/errs[i+1])/log(2)) for i in range(11)])
+json.dump(dict(local_orders_double=loc, high_precision=hp), open("results/supplement.json", "w"), indent=1)
+for k, d in hp.items(): print(k, round(d["fitted_order_all12"], 3), [round(v, 2) for v in d["local"]])
+for k, v in loc.items(): print(k, [None if x is None else round(x, 2) for x in v])

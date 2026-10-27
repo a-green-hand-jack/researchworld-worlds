@@ -1,0 +1,41 @@
+"""Independent recomputation of the NOAA MLO annual-mean fits from the kept CSV (review check)."""
+import sys, hashlib, csv, io, json
+import numpy as np
+from scipy import stats
+path = sys.argv[1]
+raw = open(path, 'rb').read()
+print('sha256', hashlib.sha256(raw).hexdigest(), 'bytes', len(raw))
+rows = [r for r in csv.reader(io.StringIO(raw.decode())) if r and not r[0].startswith('#')]
+hdr, rows = rows[0], rows[1:]
+yr = np.array([int(r[0]) for r in rows]); y = np.array([float(r[1]) for r in rows])
+print('header', hdr, 'years', yr.min(), yr.max(), 'n', len(yr))
+m = yr >= 1960; t = yr[m].astype(float); y = y[m]; n = len(t)
+for deg in (1, 2):
+    # raw-year design, uncentered, then convert: independent of centering choice
+    X = np.vander(t - 1992.5, deg + 1, increasing=True)
+    beta, *_ = np.linalg.lstsq(X, y, rcond=None)
+    r = y - X @ beta; df = n - deg - 1; s2 = r @ r / df
+    cov = s2 * np.linalg.inv(X.T @ X)
+    r2 = 1 - r @ r / ((y - y.mean()) @ (y - y.mean()))
+    rho = np.corrcoef(r[:-1], r[1:])[0, 1]
+    print(f'deg{deg} beta', beta, 'se', np.sqrt(np.diag(cov)), 'resSD', np.sqrt(s2), 'R2', r2, 'lag1', rho, 'df', df)
+    # also fit in raw year to cross-check derivatives
+    pr = np.polyfit(t, y, deg)
+    if deg == 2:
+        tc = stats.t.ppf(0.975, df)
+        last = int(t.max())
+        for lo, hi in ((1960, 1969), (last - 9, last)):
+            yrs = np.arange(lo, hi + 1) - 1992.5
+            L = np.array([0, 1, 2 * yrs.mean()])
+            rate = L @ beta; se = np.sqrt(L @ cov @ L)
+            # raw-year polyfit derivative averaged over the window
+            rate2 = np.mean(np.polyval(np.polyder(pr), np.arange(lo, hi + 1)))
+            print(f'  {lo}-{hi}: rate {rate:.6f} (polyfit {rate2:.6f}) se {se:.6f} CI [{rate-tc*se:.6f}, {rate+tc*se:.6f}] t={tc:.4f}')
+            # Newey-West lag 5 sensitivity
+            for lag in (1, 3, 5, 10):
+                XU = X * r[:, None]; S = XU.T @ XU
+                for l in range(1, lag + 1):
+                    w = 1 - l / (lag + 1); G = XU[l:].T @ XU[:-l]; S += w * (G + G.T)
+                B = np.linalg.inv(X.T @ X); V = B @ S @ B * n / (n - 3)
+                seh = np.sqrt(L @ V @ L)
+                print(f'    HAC lag{lag}: CI [{rate-tc*seh:.6f}, {rate+tc*seh:.6f}]')

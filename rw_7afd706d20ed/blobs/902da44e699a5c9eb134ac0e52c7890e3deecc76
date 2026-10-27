@@ -1,0 +1,32 @@
+"""Running pilot estimate of pi vs samples. Usage: make_fig.py pilot.json out.png"""
+import json, sys, math
+import matplotlib; matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+d = json.load(open(sys.argv[1]))
+rows = [r for r in d["trace"] if r[1] > 0]
+n = [r[1] for r in rows]; est = [r[2] for r in rows]
+sig = lambda m: 4 * math.sqrt((math.pi/4) * (1 - math.pi/4) / m)
+grid = [min(n) * (max(n) / min(n)) ** (i / 200) for i in range(201)]
+fig, (ax, bx) = plt.subplots(2, 1, figsize=(7, 7), dpi=150)
+ax.fill_between(grid, [math.pi - 1.96*sig(m) for m in grid], [math.pi + 1.96*sig(m) for m in grid],
+                color="#cfd8e8", label="expected ±1.96·σ(n) envelope (σ=4√(p(1−p)/n), p=π/4)")
+ax.plot(n, est, "o-", ms=3, lw=1.2, color="#1f4e9c", label="pilot running estimate")
+ax.axhline(math.pi, color="#c0392b", lw=1.2, label="true π = 3.14159265…")
+lo, hi = d["ci95"]
+ax.set_xscale("log")
+ax.set_xlabel("number of samples n (points)")
+ax.set_ylabel("estimate of π")
+ax.set_title(f"Pilot: final n = {d['samples']:,}, estimate {d['estimate']:.6f}, 95% CI [{lo:.6f}, {hi:.6f}]", fontsize=9)
+ax.legend(fontsize=7, loc="upper right")
+ax.set_title("(a) full range; "+ax.get_title(), fontsize=9)
+zi = [i for i, m in enumerate(n) if m >= 2e7]
+zg = [m for m in grid if m >= 2e7] or grid
+zg = [2e7 * (max(n) / 2e7) ** (i / 200) for i in range(201)]
+bx.fill_between(zg, [-1.96*sig(m)*1e5 for m in zg], [1.96*sig(m)*1e5 for m in zg], color="#cfd8e8", label="expected ±1.96·σ(n)")
+bx.plot([n[i] for i in zi], [(est[i]-math.pi)*1e5 for i in zi], "o-", ms=3, lw=1.2, color="#1f4e9c", label="running estimate − π")
+bx.axhline(0, color="#c0392b", lw=1.2, label="true π")
+bx.set_xscale("log"); bx.set_xlabel("number of samples n (points)"); bx.set_ylabel("estimate − π (×10⁻⁵)")
+bx.set_title("(b) zoom, n ≥ 2×10⁷: deviation from π (points are cumulative, hence correlated)", fontsize=9)
+bx.legend(fontsize=7, loc="upper right")
+fig.tight_layout(); fig.savefig(sys.argv[2])

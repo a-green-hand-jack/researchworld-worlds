@@ -1,0 +1,96 @@
+{\scriptsize
+\setlength{\tabcolsep}{2pt}
+\renewcommand{\arraystretch}{1.08}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.72in}>{\raggedright\arraybackslash}p{1.38in}>{\raggedright\arraybackslash}p{1.46in}>{\raggedright\arraybackslash}p{0.94in}>{\raggedright\arraybackslash}p{0.64in}@{}}
+\caption{Registered extension tests: prediction (with its tolerance) against the measured value, the best baseline and the verdict as registered, one row per test in the order of the results. Intervals are 95\% percentile bootstrap over runs (E8: over seeds); each group names the score files it is read from. Pass/fail is the registration's, not re-scored.}\label{tab:ext-tests}\\
+\toprule
+Test & Registered prediction (tolerance) & Measured [95\% CI] & Best baseline & Verdict as registered \\
+\midrule
+\endfirsthead
+\toprule
+Test & Registered prediction (tolerance) & Measured [95\% CI] & Best baseline & Verdict as registered \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\multicolumn{5}{@{}p{5.4in}@{}}{\textbf{A1, held-out grid 1 (frozen v3; 384 runs)} \quad {\tiny \texttt{e4/a1/a1\_score.json}, \texttt{e4/a1\_tolerance\_v2.json}}} \\*[1pt]
+A1a (reduction) & state agr.\ $\ge$0.99 and rank equality $\ge$0.99 & 0.989 and 0.899 (48 runs) & -- & fails \\
+A1b (burst wait) & median $|\ln$ ratio$|\le$0.05, p90 $\le$0.15, misses $\le$5\%, median $\le\frac12$ oracle & median 0.0015, p90 0.0056, misses 0.09\% (10398 dirs.) & constant-wait oracle: median 0.99 & passes \\
+A1c (return wait) & median $\le$0.10, p90 $\le$0.30, misses $\le$5\%, median $\le\frac12$ oracle & median 0.0045, p90 0.090, misses 0.62\% (10809 dirs.) & constant-wait oracle: median 0.90 & passes \\
+A1d (alive state, rank) & agr.\ $\ge$0.90; rank $\pm1$ $\ge$0.90; error $\le\frac12$ best baseline & agr.\ 0.978; rank $\pm1$ 0.808 & majority oracle: error 0.270; rank $\pm1$ 0.406 & fails \\
+\midrule
+\multicolumn{5}{@{}p{5.4in}@{}}{\textbf{A1\_v4 H2, held-out grid 2 (frozen v4; 384 runs)} \quad {\tiny \texttt{e4/a1h2/a1h2\_score.json}, \texttt{e4/prediction.json}}} \\*[1pt]
+A1b (burst wait) & as in grid 1 & median 0.0020, p90 0.0131, misses 0.24\% (6722 dirs.) & constant-wait oracle: median 0.65 & passes \\
+A1c (return wait) & as in grid 1 & median 0.0044, p90 0.064, misses 0.82\% (7973 dirs.) & constant-wait oracle: median 0.87 & passes \\
+A1d (alive state, rank) & as in grid 1 & agr.\ 0.989; rank $\pm1$ 0.947 & majority oracle: error 0.191; rank $\pm1$ 0.421 & passes \\
+\midrule
+\multicolumn{5}{@{}p{5.4in}@{}}{\textbf{A1\_v4 H3, scope of the settled law ($\eta\lambda T$ from 0.54 to 25.2; 128 runs)} \quad {\tiny \texttt{e4/a1h3/a1h3\_score.json}, \texttt{e4/prediction.json}}} \\*[1pt]
+H3 scope (A-iv$'$) & binding iff unsettled-bin rank-$\pm1$ failure $>$0.10 and $>2\times$ the settled bin's & failure: unsettled 0.041 (80 runs), settled 0.012 (32 runs) & persistence at $K$ failure 0.64 / 0.73 & not binding for the count \\
+\midrule
+\multicolumn{5}{@{}p{5.4in}@{}}{\textbf{A2, AdamW rank at $T_h$ (frozen v4; 192 runs, 121 converged)} \quad {\tiny \texttt{e4/a2/a2\_score.json}, \texttt{e4/prediction.json}}} \\*[1pt]
+A2, strict & rank $\pm1\ge0.90-f_{\rm floor}$ (non-converged = miss) and every baseline's MAE-difference CI $>0$ & rank $\pm1$ 0.630 & static bound: 0.453 & fails \\
+A2, converged runs only & registered secondary scoring; reported beside the failure, not a pass & MAE 0.017 ($\pm1$ 1.000); static bound $-$ model 2.17 [1.53, 2.83] & static bound: MAE 2.19 & not a pass \\
+\midrule
+\multicolumn{5}{@{}p{5.4in}@{}}{\textbf{A2$'$, prospective test at $T_h$ (frozen v4; 216 runs)} \quad {\tiny \texttt{e4/a2p/a2p\_score.json}, \texttt{e4/prediction.json}}} \\*[1pt]
+A2$'$ & rank $\pm1\ge0.90-f_{\rm floor}$ on all runs; every baseline's MAE-difference CI $>0$ & rank $\pm1$ 0.935, MAE 0.356; static bound $-$ model 5.42 [4.81, 6.04] & static bound: MAE 5.77; $\pm1$ 0.34 & passes \\
+\midrule
+\multicolumn{5}{@{}p{5.4in}@{}}{\textbf{A3s\_mech, rotation and weight-decay signs (480 runs, 118 paired cells)} \quad {\tiny \texttt{e4/a3h/a3h\_score.json}, \texttt{e4/a3\_tolerance.json}}} \\*[1pt]
+A3s\_mech & sign precision $\ge$0.80, opposite $\le$0.05, right in $\ge$0.80 of the pairs where the prediction differs from each baseline & precision 0.9875 (80 cells), opposite 0.00, recall 1.00; right vs.\ baselines 1.00 & GD account: precision 0.00, opposite 0.44 & passes \\
+\midrule
+\multicolumn{5}{@{}p{5.4in}@{}}{\textbf{E6 rung 1a, deep linear encoder, held-out (504 runs; tolerance v2)} \quad {\tiny \texttt{e6/r1heldout/r1\_heldout\_score.json}, \texttt{e6/r1\_tolerance\_v2.json}}} \\*[1pt]
+control $L{=}1$ & A1 equals the depth-1 race on every run (code check, not scored) & equal on 120/120 runs & A1 MAE 0.058 & holds \\
+aligned, $L{=}2$ & within-1 $\ge$0.90; A1 MAE below every baseline's; paired CI of (baseline $-$ A1) $>0$ & A1 MAE 0.033 [0.008, 0.067], within-1 1.00 (120 runs) & reading at $t{=}50$: 0.242; margin 0.208 [0.108, 0.308] & passes \\
+aligned, $L{=}3$ & as above & A1 MAE 0.050 [0.017, 0.092], within-1 1.00 (120 runs) & reading at $t{=}50$: 0.167; margin 0.117 [0.033, 0.208] & passes \\
+aligned, pooled & as above & A1 MAE 0.042 [0.017, 0.071], within-1 1.00 (240 runs) & reading at $t{=}50$: 0.204; margin 0.163 [0.096, 0.229] & passes \\
+generic, $L{=}2$ & as above & A1 MAE 0.111 [0.042, 0.181], within-1 1.00 (72 runs) & reading at $t{=}50$: 0.111; margin 0.000 [$-$0.083, 0.083] & fails \\
+generic, $L{=}3$ & as above & A1 MAE 0.069 [0.014, 0.125], within-1 1.00 (72 runs) & reading at $t{=}50$: 0.042; margin $-$0.028 [$-$0.097, 0.042] & fails \\
+generic, pooled & as above & A1 MAE 0.090 [0.049, 0.139], within-1 1.00 (144 runs) & reading at $t{=}50$: 0.076; margin $-$0.014 [$-$0.069, 0.042] & fails \\
+\midrule
+\multicolumn{5}{@{}p{5.4in}@{}}{\textbf{E6 rung 1b, deep predictor with random factors, held-out (360 runs; registered before the runs)} \quad {\tiny \texttt{e6/r1b\_heldout/r1b\_heldout\_score.json}, \texttt{e6/r1b\_tolerance.json}, \texttt{e6/prediction\_r1b.json}}} \\*[1pt]
+control $M{=}1$ & \texttt{n1g\_K} equals the depth-1 rule by construction (all capture rules coincide at $M{=}1$); a control, not a verdict & MAE 0.644 Gaussian, 0.378 perturbed identity (45 runs each) & depth-1 rule: 0.644 / 0.378 (identical) & control \\
+Gaussian, $M{\ge}2$ & within-1 $\ge$0.90; \texttt{n1g\_K} MAE below every baseline's; paired CI of (baseline $-$ \texttt{n1g\_K}) $>0$ & \texttt{n1g\_K} MAE 0.385 [0.289, 0.489], within-1 0.96 (135 runs) & depth-1 rule: 0.607; margin 0.222 [0.089, 0.356] & passes \\
+\quad other baselines & same comparison & identity race 1.370; margin 0.985 [0.793, 1.170]; static bound 9.096; margin 8.711 [8.496, 8.926]; reading at $t{=}50$ 0.911; margin 0.526 [0.341, 0.704] & best $\mu$ variant (\texttt{dvd\_pq}): 1.104; margin 0.719 [0.563, 0.867] & all beaten \\
+perturbed identity, $M{\ge}2$ & as above & \texttt{n1g\_K} MAE 0.230 [0.148, 0.319], within-1 0.99 (135 runs) & depth-1 rule: 0.793; margin 0.563 [0.430, 0.696] & passes \\
+\quad other baselines & same comparison & identity race 1.822; margin 1.593 [1.348, 1.844]; static bound 6.837; margin 6.607 [6.437, 6.770]; reading at $t{=}50$ 1.837; margin 1.607 [1.341, 1.881] & best $\mu$ variant (\texttt{dvd\_pq}): 2.222; margin 1.993 [1.726, 2.259] & all beaten \\
+Gaussian, $M{=}2$ (reported) & same rule; reported per depth, not a verdict cell & \texttt{n1g\_K} MAE 0.511 [0.356, 0.667], within-1 0.98 (45 runs) & depth-1 rule: 0.556; margin 0.044 [$-$0.156, 0.244] & not resolved from the depth-1 rule (margin CI includes 0); ill-posed by the floor \\
+Gaussian, $M{=}3$ (reported) & same rule; reported per depth, not a verdict cell & \texttt{n1g\_K} MAE 0.178 [0.067, 0.289], within-1 1.00 (45 runs) & depth-1 rule: 0.356; margin 0.178 [$-$0.044, 0.378] & not resolved from the depth-1 rule (margin CI includes 0) \\
+Gaussian, $M{=}4$ (reported) & same rule; reported per depth, not a verdict cell & \texttt{n1g\_K} MAE 0.467 [0.267, 0.689], within-1 0.89 (45 runs) & reading at $t{=}50$: 0.378; margin $-$0.089 [$-$0.356, 0.156]; depth-1 rule 0.911, margin 0.444 [0.200, 0.689] & not beaten by reading at $t{=}50$ \\
+perturbed identity, $M{=}2$ (reported) & same rule; reported per depth, not a verdict cell & \texttt{n1g\_K} MAE 0.156 [0.067, 0.267], within-1 1.00 (45 runs) & depth-1 rule: 0.644; margin 0.489 [0.289, 0.689] & beats every baseline here \\
+perturbed identity, $M{=}3$ (reported) & same rule; reported per depth, not a verdict cell & \texttt{n1g\_K} MAE 0.178 [0.067, 0.289], within-1 1.00 (45 runs) & depth-1 rule: 0.756; margin 0.578 [0.378, 0.778] & beats every baseline here \\
+perturbed identity, $M{=}4$ (reported) & same rule; reported per depth, not a verdict cell & \texttt{n1g\_K} MAE 0.356 [0.177, 0.578], within-1 0.96 (45 runs) & depth-1 rule: 0.978; margin 0.622 [0.333, 0.889] & beats every baseline here \\
+Gaussian, $M{\ge}2$, reading at 0.1\,$T$ & not registered; reported beside the verdict & MAE 0.244; (reading $-$ \texttt{n1g\_K}) [$-$0.252, $-$0.022] & -- & reading better than \texttt{n1g\_K} \\
+perturbed identity, $M{\ge}2$, reading at 0.1\,$T$ & not registered; reported beside the verdict & MAE 0.504; (reading $-$ \texttt{n1g\_K}) [0.133, 0.407] & -- & \texttt{n1g\_K} better than the reading \\
+\midrule
+\multicolumn{5}{@{}p{5.4in}@{}}{\textbf{E5, weight-decay schedules, held-out (4{,}890 runs, frozen stage\_model\_qs)} \quad {\tiny \texttt{e5/b1heldout/b1\_heldout\_score.json}, \texttt{e5/b1\_tolerance\_v2.json}, \texttt{e5/b1heldout/mu\_baseline.json}}} \\*[1pt]
+B1a$'$, overall & agreement on schedule-affected pairs $\ge$0.90 and the model beats every time-resolved baseline (paired CI of baseline $-$ model $>0$) & 0.984 (490{,}078 pairs); on all 1{,}252{,}126 pairs where truth or any predictor changes: 0.994 & stage$_1$ (earlier model): 0.983 (all pairs: 0.989, margin [0.0038, 0.0050]); capture-static: 0.944; static-now: 0.950 & passes the overall bar \\
+B1a$'$, per cell & agreement $\ge$0.80 in every kind$\times$variant cell with $\ge$100 such pairs (39 cells) & 3 of 39 cells below: short pulse, base 0.75 (1{,}140); short pulse, $\alpha{=}0.5$ 0.56 (585); short pulse, EMA 0.2 0.77 (1{,}840); lowest other cell 0.89 & -- & fails \\
+B1b$'$, post-knot events & median $|\ln$ ratio$|\le$0.10, p90 $\le$0.30, unmatched $\le$5\%, unmatched below capture-static's & median 0.049, p90 0.21, unmatched 2.5\% (12{,}450 events) & capture-static: median 0.106, p90 5.6, unmatched 20.4\% & passes \\
+B1d (predictor after loss) & median $|\ln(|p|/p_{\rm model})|\le$0.5 & median 1.45 (39{,}800 post-loss pairs, 796 runs) & own decay: 2.83; slaved relation: 10.9 (reported, not scored) & fails \\
+B2a (warm-up sign) & sign of final count (step-up $-$ constant high) agrees in $\ge$0.90 of pairs; mean $D<0$ with CI below 0 where predicted negative on every seed & sign agreement 1.000 (840 pairs; $D<0$ in 15, all predicted); 3 such groups, mean $D$ = $-$1.00 [$-$1.00, $-$1.00] & -- & passes \\
+B2b (increasing-schedule bound) & no run ends above the static count at the final $\lambda$ & 0 violations in 1{,}680 runs & -- & passes \\
+B2c (late decrease) & predicted $R$ = measured $R$ in $\ge$0.90 of runs & 0.894 (1{,}950 runs; non-fragile 0.901); 58\% of runs revive nothing; runs with $R>0$ (889): 0.77 & v1 claim ``nothing revives'': 0.58 & fails \\
+B2d (early decrease) & final count within 1 of the constant-low run in $\ge$0.90 of pairs & within-1 share 0.22 (840 pairs) & the model itself: 0.25 & fails \\
+Final rank (not a registered test) & reported, not scored & MAE 0.054, within 1 1.00 (4{,}890 runs) & capture-static 0.217; static-now 6.84; $\mu$ count 3.62 (true count above it in 86.9\%) & context \\
+$\mu$ criterion (2610.02344), baseline added before scoring & reported beside the model (E5 amendment 5), not scored & B1a$'$ 0.306 vs.\ 0.984 (all-pairs margin [0.273, 0.298]); B1b$'$ unmatched 97.4\% & -- & context \\
+\midrule
+\multicolumn{5}{@{}p{5.4in}@{}}{\textbf{E5 B3, minibatch noise in the race, held-out (160 runs, 1 diverged; registration and amendment 1 before the run)} \quad {\tiny \texttt{e5/b3\_heldout/b3\_heldout\_score.json}, \texttt{e5/prediction\_b3.json}, \texttt{e5/b3\_heldout/precision/split\_p0\_lam.json}, \texttt{e5/b3\_heldout/precision/precision\_heldout\_summary.json}}} \\*[1pt]
+B3 S1, no reseeding (consistency check, amendment 1) & share of noisy runs with a re-escape event $\le$0.05; invariance excludes reseeding by construction in this linear copy-target model, so no outcome can favour a floor & 0 of 119 noisy runs (sensitivity with the diverged run as an event: 0.008 $\le$0.05) & -- & passes \\
+B3 S2, dead level, $\eta{=}0.02$ & median $\log_{10}$(largest dead s.v.\ / top) at $T$: $B{=}2<B{=}32<$ population (pairs read by amendment 1's round-off rule) & $B{=}2$: $-$15.18; $B{=}32$: $-$9.50; population: $-$11.38 (20, 20, 20 runs); pairs $B{=}2<B{=}32$ holds, $B{=}32<$ pop.\ fails & det: no $B$ dependence (no order predicted) & fails \\
+B3 S2, dead level, $\eta{=}0.05$ & median $\log_{10}$(largest dead s.v.\ / top) at $T$: $B{=}2<B{=}32<$ population (pairs read by amendment 1's round-off rule) & $B{=}2$: $-$15.18; $B{=}32$: $-$11.67; population: $-$11.58 (19, 20, 20 runs); pairs $B{=}2<B{=}32$ holds, $B{=}32<$ pop.\ holds & det: no $B$ dependence (no order predicted) & holds \\
+B3 S3, rank (noisy runs) & mean $|\Delta$ vs population$|\le$1.5 and shift-account MAE $\le$1.5; no ordering among accounts registered & 1.454 and 1.454 (119 runs); 1.575 with the diverged run counted as a miss (above 1.5) & reading at 0.1\,$T$: 1.361 (difference to shift [$-$0.29, 0.09]); MC exponents: 1.66; window and every $\mu$ variant: 4.66; static: 7.34 & undetermined \\
+B3 S4, sign of the noise effect follows $p_0$ & $\Delta$ rank (noisy $-$ population) $\le0$ at $p_0{=}0.7$ and $\ge0$ at $p_0{=}1.5$ (a regularity, not a test of an account) & $\Delta$ = $-$0.55 at $p_0{=}0.7$, 2.37 at $p_0{=}1.5$ (with the diverged run counted as a miss: $-$0.55 / 2.07) & no account here predicts the sign or size & passes \\
+B3 post hoc split (not registered) & none; split of S2 and S4 by $p_0\times\lambda$ after the verdicts & S2 order holds in all four $\lambda\times\eta$ cells at $p_0{=}0.7$ and fails in all four at $p_0{=}1.5$ ($B{=}32$ above the population run, whose initial whole-$W$ collapse sets its dead levels); S4 $\Delta$ at $\lambda{=}0.006$ / 0.012: $-$0.60 / $-$0.50 at $p_0{=}0.7$, 3.67 / 1.03 at $p_0{=}1.5$ & S2 pair outcomes, population levels and $\Delta$ identical in float64 and 80-bit state (the noisy round-off medians are not) & context \\
+B3 regrowth indices at $p_0{=}1.5$ & amendment 1's exact check, reported beside S1: indices that reach $\le10^{-13}\times$ top and later exceed the threshold; expected 0 (amendment 1, reported beside S1) & 80 indices in 30 of 59 noisy runs, 20 in the population runs; same count and final ranks in float64 and 80-bit state & -- & exact dynamics, not round-off (post hoc precision check) \\
+\midrule
+\multicolumn{5}{@{}p{5.4in}@{}}{\textbf{E8, weight-decay switch in the ViT (5 seeds per row; $e\in\{2,5,10,20\}$)} \quad {\tiny \texttt{e8/grid/summary.json}, \texttt{e8/grid/posthoc/grid\_readings.json}, \texttt{e8/prediction.json}}} \\*[1pt]
+E8 T lo$\to$hi & B: $D{=}{>}20$ and $f(20)\ge0.5$; near-collapse premise: $D\le5$ & $D$ = $>$20 (late); $f(20)$ = 1.000 [1.000, 1.000]; Fieller [1.000, 1.000] & lr share left 0.60; premise not met & holds (strong) \\
+E8 T hi$\to$lo & as above & $D$ = 10 (intermediate); $f(20)$ = 0.006 [0.000, 0.017]; Fieller [$-$0.010, 0.022] & lr share left 0.60; premise not met & fails \\
+E8 P lo$\to$hi & as above & $D$ = $>$20 (late); $f(20)$ = 0.453 [0.384, 0.506]; Fieller [0.354, 0.553] & lr share left 0.37; premise not met & fails \\
+E8 P hi$\to$lo & as above & $D$ = 20 (intermediate); $f(20)$ = 0.072 [0.046, 0.098]; Fieller [0.030, 0.113] & lr share left 0.37; premise not met & fails \\
+E8 warm-up, T & lo$\to$hi: $f(e)\ge0.5$ for all $e$ & $f(e)$ = 1.01, 1.02, 1.03, 1.00 & lr share left at $e{=}20$: 0.60 & holds \\
+E8 warm-up, P & lo$\to$hi: $f(e)\ge0.5$ for all $e$ & $f(e)$ = 0.99, 0.94, 0.85, 0.45 & lr share left at $e{=}20$: 0.37 & fails at $e{=}20$ \\
+E8-R (P ramp) & $f_{\rm ramp}\ge0.5$ (B); informative iff $\Delta_R$ CI excludes 0 and $|\Delta_R|\ge5$ & $\Delta_R$ = $-$2.0 [$-$4.9, 0.9]; $R(0.04)$ = 127.0, $R(0.4)$ = 125.0 & width ceiling 127 & not informative \\
+\addlinespace[3pt]
+\multicolumn{5}{@{}p{5.4in}@{}}{Verdicts are those of the registration, not re-scored here. Rung 1a is read as: A1 gives at $t{=}0$ the count a measurement gives only from about 10\% of $T$ (post hoc trajectory), not ``A1 beats measurement''; 0.78 of aligned and 0.72 of generic runs have zero outcome, so results on the informative runs are post hoc. E8: $n{=}5$ seeds per row, hardware confounded with row; intervals are percentile bootstrap over seeds, Fieller ($df{=}4$) beside the $f(20)$; the lr share left is the dose reference, not a baseline. E5: ``schedule-affected pairs'' are the (direction, checkpoint) pairs after the first schedule knot at which the truth or a predictor changes alive state; the pair counts in B1a$'$ are for the truth-or-model subset, the paired CIs of the registration are over the larger all-predictor set, and the per-cell bar is applied to cells with at least 100 pairs (the other cell flags in the score file are floor flags, not verdicts); ``stage$_1$'' is the earlier delivered stage model, the other baselines are time-resolved static rules. B1a$'$ fails as registered through its per-cell bar alone. E5 B3: verdicts are amendment 1's (written before the held-out run); the first-registered reading is kept in the score file (S3 passes there on the primary scoring; S1 and S4 pass, S2 fails). Level medians below $10^{-13}$ of the top are at round-off. The regrowth indices at $p_0{=}1.5$ (amendment 1 registers an expected 0) are directions that the initial collapse takes below $10^{-13}$ of the top and that grow when their window opens (exact dynamics, the same in 80-bit state), not round-off. A2 converged-only is a secondary scoring and never a pass. A1\_v4 H3 reads ``binding'' only if the unsettled-bin failure exceeds 0.10 and twice the settled one.} \\
+\end{longtable}
+}

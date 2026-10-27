@@ -1,0 +1,35 @@
+# Review record — optimizer provenance fact sheet
+
+Reviewer: `internal-review-repo`. Date: 2026-10-17. Conclusion: **approve** — the assembled
+delivery meets the objective; no disagreements found.
+
+## What was inspected, at which revisions
+
+- Delivered `fact-sheet.md` — paper-repo @ `6348cef41f189890d873ddf59038efcf57f6ea42`
+- `adamw-lookup.md` (paper-repo's AdamW + Lion lookup record) — same commit
+- `adam-lookup.md` (experiment-repo's Adam lookup record) — experiment-repo @ `eb8488de89b52e5588adfd320485328981305b14`
+- Brief — experiment-repo @ `eb8488de89b52e5588adfd320485328981305b14`
+- Own independent Lion record `lion-lookup.md` — internal-review-repo @ `2a5f050051ef7be2a180b5227591c081ad06f6b6`
+
+## Independent checks (sources I opened myself this task)
+
+Each entry was found with my own web search first, then the found arXiv page was opened and read.
+
+| Entry | My search query | Source I opened | Result |
+| --- | --- | --- | --- |
+| Adam | `Adam A Method for Stochastic Optimization paper arXiv Kingma` | https://arxiv.org/abs/1412.6980 | Title "Adam: A Method for Stochastic Optimization"; authors Diederik P. Kingma, Jimmy Ba (first author Kingma); submitted 22 Dec 2014 (v1); arXiv:1412.6980 — **all four fields match the fact sheet** |
+| AdamW | `Decoupled Weight Decay Regularization AdamW paper arXiv Loshchilov Hutter` | https://arxiv.org/abs/1711.05101 and https://arxiv.org/abs/1711.05101v1 | Title "Decoupled Weight Decay Regularization"; authors Ilya Loshchilov, Frank Hutter (first author Loshchilov); submitted 14 Nov 2017 (v1); arXiv:1711.05101 — **all four fields match**; the v1 page confirms the fact sheet's note that v1 was titled "Fixing Weight Decay Regularization in Adam" |
+| Lion | `Lion EvoLved Sign Momentum optimizer paper arXiv` | https://arxiv.org/abs/2302.06675 | Title "Symbolic Discovery of Optimization Algorithms"; first author Xiangning Chen; submitted 13 Feb 2023 (v1); arXiv:2302.06675 — **all four fields match the fact sheet and my own independent lookup** |
+
+## Further checks against the objective
+
+- One page, covers exactly Adam, AdamW (decoupled weight decay) and Lion: yes (single markdown page, three rows).
+- Every fact cites the URL of the page it was read from: yes (per-row source URLs; v1 page cited for the AdamW title note).
+- Facts looked up on the web during this task, not from memory: supported by the three lookup records, each documenting a web search first and then the opening of the found page (`adam-lookup.md`, `adamw-lookup.md`, `lion-lookup.md`).
+- Each paper's connection to its optimizer is established from the opened sources (Adam abstract: "We introduce Adam"; AdamW abstract: decoupling weight decay from Adam's update steps; Lion abstract: "discovers ... Lion (EvoLved Sign Momentum)").
+- First-appearance years use the initial (v1) arXiv submissions, with later conference/revision years correctly distinguished in the notes (Adam ICLR 2015, AdamW ICLR 2019 — both confirmed on the pages I opened).
+- paper-repo's Lion entry agrees with my own independent Lion lookup on every field.
+
+## Disagreements
+
+None.

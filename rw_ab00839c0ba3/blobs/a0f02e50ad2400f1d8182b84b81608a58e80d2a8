@@ -1,0 +1,5 @@
+#!/bin/sh
+# Launch the unmodified sampler for 12 minutes on the world's local-compute resource.
+# Run from the repository root; the job writes results/extended_12.json and logs/extended_12.log.
+ht-resource run local-compute --cwd "$(pwd)" --note "extended.py 12 min pi run" -- \
+  sh -c 'python3 -u /initial-state/inputs/0/extended.py 12 results/extended_12.json 2>&1 | tee logs/extended_12.log'

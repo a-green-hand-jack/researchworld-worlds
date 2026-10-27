@@ -1,0 +1,9 @@
+import sys, numpy as np, time
+sys.path.insert(0,'.')
+from e1b import stats, configs, SV_THR, d
+from linjepa import simulate
+cf=[c for c in configs() if c['exp']=='adam' and c['seed']==0 and c['w0']==1e-4 and c['lam'] in (0.005,0.05) and c['p0'] in (0.5,2.0)]
+for c in cf:
+    S11,S21=stats(c); t0=time.time()
+    o=simulate(S11,S21,d,c['lam'],c['lam'],p0=c['p0'],w0=c['w0'],eta=0.02,T=200000,w_init='orthogonal',jitter=0.1,optimizer='adam',rank_checks=20,sv_thr=SV_THR,seed=0)
+    print(c['p0'],c['lam'],[r for _,r in o['ranks']], f"{time.time()-t0:.0f}s", flush=True)

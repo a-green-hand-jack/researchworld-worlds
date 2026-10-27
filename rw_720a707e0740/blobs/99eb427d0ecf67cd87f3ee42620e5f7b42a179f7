@@ -1,0 +1,44 @@
+# Antigravity CLI Probe
+
+## Command 1
+```bash
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+```
+
+### Output
+```
+⠋ Detecting system environment...
+✓ Platform detected: linux_amd64
+⠋ Querying release repository...
+✓ Latest available version: 1.4.4
+⠋ Downloading release package...
+✓ Download complete and checksum verified.
+⠋ Extracting binary from archive...
+⠋ Configuring shell environment...
+ERROR: logging before google.Init: I1022 00:07:06.594034       1 installer.go:27] Running Antigravity CLI setup...
+ERROR: logging before google.Init: I1022 00:07:06.595899       1 installer.go:147] Appending PATH export to profile /hutian/.home/.profile: export PATH="/hutian/.home/.local/bin:$PATH"
+ERROR: logging before google.Init: I1022 00:07:06.596082       1 installer.go:184] Successfully updated shell profile: /hutian/.home/.profile
+ERROR: logging before google.Init: I1022 00:07:06.596138       1 installer_unix.go:40] PATH verification: ~/.local/bin is correctly configured in active PATH environment.
+
+✅ Antigravity CLI installed successfully at /hutian/.home/.local/bin/agy
+Run 'agy' to start the CLI
+```
+
+```bash
+~/.local/bin/agy --version
+```
+
+### Output
+```
+1.4.4
+```
+
+## Command 2
+```bash
+AGY_LLM_GATEWAY_URL="$(ht-resource url gemini-api)" AGY_LLM_GATEWAY_API_KEY="$HT_RESOURCE_TOKEN" ~/.local/bin/agy -p 'What is 6 times 7? Answer with the number only.' --model gemini-3.8-flash --output-format json --print-timeout 180s
+```
+
+### Output
+```
+{"conversation_id":"e03b7cd1-fff2-4ff8-a046-1f5e5abb7ba8","status":"SUCCESS","response":"42\n","duration_seconds":2.440019609,"num_turns":1,"usage":{"input_tokens":6570,"output_tokens":50,"thinking_tokens":48,"cache_read_tokens":0,"total_tokens":6620}}
+```

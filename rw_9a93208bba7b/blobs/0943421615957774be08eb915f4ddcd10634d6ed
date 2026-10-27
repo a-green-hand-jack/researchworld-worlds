@@ -1,0 +1,108 @@
+"""E4 / A1 scope grid H3: the settledness condition of A-iv' (eta lam (t - t_c) >> 1; internal review point 3) tested
+on the frozen phase model v4 (code/e4_theory.py phase_model_v4, md5 in results/e4/prediction.json A1_v4_scope), which
+uses the settled law from the first crossing on. H2 (code/e4_a1h2.py) had eta lam T >= 6 in every cell, so it did not
+test the condition. H3 crosses eta in {0.006, 0.012} with lam in {0.0015, 0.0035, 0.006, 0.035}: eta lam T (T = 60000)
+0.54 / 1.26 / 2.16 / 12.6 and 1.08 / 2.52 / 4.32 / 25.2, so six unsettled cells (eta lam T <= 2.52), one intermediate
+(4.32) and two settled controls (12.6, 25.2) on the same statistics, p0, a0, b1, b2 and seed.
+Disjoint from development grids 1-3, A1's held-out grid and H2: new statistics sets (c/s ratios 0.87, 0.96), and
+new p0, lam, a0, eta, b1, b2 values and seed (checked by set intersection in `python3 code/e4_a1h3.py list`).
+Ground truth, metrics and the 1e-15 truth floor as code/e4_a1h2.py (80-bit, 30 log-spaced checkpoints, K = 300).
+Usage: python3 code/e4_a1h3.py run results/e4/a1h3 [NPROC]   (writes a1h3_runs.jsonl.gz, a1h3_score.json)
+       python3 code/e4_a1h3.py list"""
+import sys, os, json, time, itertools, gzip, hashlib
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+import e4_a1 as A
+import e4_a1h2 as H2
+
+H3_STATS = {"h3a": (np.linspace(1.9, 0.5, 32), 0.87), "h3b": (np.linspace(2.6, 0.7, 32), 0.96)}
+A.STATS = dict(H3_STATS)
+SEED = 41
+ETA, LAM = [0.006, 0.012], [0.0015, 0.0035, 0.006, 0.035]
+BINS = {"unsettled_le_2.52": (0, 2.6), "intermediate_4.32": (2.6, 6), "settled_ge_12.6": (6, np.inf)}
+
+
+def configs():
+    out = []
+    for st, p0, lam, a0, eta, b1, b2 in itertools.product(A.STATS, [0.8, 1.8], LAM, [8e-4, 2e-3], ETA, [0.88],
+                                                           [0.9975, 0.9985]):
+        out.append(dict(id=len(out), stats=st, p0=p0, lam=lam, a0=a0, eta=eta, b1=b1, b2=b2, seed=SEED,
+                        eta_lam_T=eta * lam * A.T))
+    return out
+
+
+def disjoint():
+    """Set intersection of every grid value with the grids v4 was developed, diagnosed or scored on."""
+    import e4_dev, e4_dev2, e4_dev3
+    used = {k: set() for k in ("ratio", "p0", "lam", "a0", "eta", "b1", "b2", "seed")}
+    ratios = {0.92, 0.94, 0.93, 0.90, 0.89, 0.91, 0.88, 0.95}  # dev1/dev2, A1 ho1/ho2, dev3, H2
+    used["ratio"] |= ratios
+    old = []
+    for mod in (e4_dev, e4_dev2, e4_dev3):
+        old += mod.configs()
+    import importlib; a1 = importlib.reload(A)  # e4_a1's own STATS (ho1, ho2) for its held-out configs
+    old += a1.configs(); old += H2.configs()
+    A.STATS = dict(H3_STATS)
+    for c in old:
+        for k in used:
+            if k in c and k != "ratio":
+                used[k].add(c[k])
+    new = configs()
+    hit = {k: sorted(set(c[k] for c in new) & used[k]) if k != "ratio" else sorted({r for _, r in H3_STATS.values()} & ratios)
+           for k in used}
+    return hit
+
+
+def run_one(cfg):
+    A.STATS = dict(H3_STATS)
+    return H2.run_one(cfg)
+
+
+def strong_dead(runs):
+    """Wrong pairs where the model says alive, the truth dead, on a direction with c/s > thr (what an unsettled
+    amplitude below c/s would produce), per bin; reported without tolerance."""
+    out = {}
+    for b, (lo, hi) in BINS.items():
+        n = tot = 0
+        for r in runs:
+            if not lo <= r["eta_lam_T"] < hi:
+                continue
+            c, s = A.stats(r["stats"]); strong = c / s > A.THR
+            T0, P = np.array(r["alive"], bool), np.array(r["pred_alive"], bool)
+            W = P != T0; tot += int(W.sum()); n += int((W & P & ~T0 & strong[None, :]).sum())
+        out[b] = dict(wrong_pairs=tot, model_alive_truth_dead_on_cs_gt_thr=n, share=n / tot if tot else None)
+    return out
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    cfgs = configs()
+    if cmd == "list":
+        print(len(cfgs), "runs;", sum(c["id"] % 8 == 0 for c in cfgs), "with the 1e-15 floor run")
+        print("eta lam T:", sorted({round(c["eta_lam_T"], 3) for c in cfgs}))
+        print("intersection with earlier grids:", disjoint()); sys.exit()
+    outdir = sys.argv[2]; nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    os.makedirs(outdir, exist_ok=True)
+    t0 = time.time(); runs = []
+    with Pool(nproc) as pool:
+        for i, r in enumerate(pool.imap(run_one, cfgs)):
+            runs.append(r)
+            if (i + 1) % 32 == 0:
+                print(f"{i+1}/{len(cfgs)} {time.time()-t0:.0f}s", flush=True)
+    with gzip.open(os.path.join(outdir, "a1h3_runs.jsonl.gz"), "wt") as f:
+        for r in runs:
+            f.write(json.dumps(r) + "\n")
+    res = dict(all=A.score(runs))
+    res["bins"] = {b: A.score(runs, lambda r, lo=lo, hi=hi: lo <= r["eta_lam_T"] < hi) for b, (lo, hi) in BINS.items()}
+    res["cells_eta_lam_T"] = {str(round(v, 3)): A.score(runs, lambda r, v=v: abs(r["eta_lam_T"] - v) < 1e-9)["A1d"]
+                              for v in sorted({c["eta_lam_T"] for c in cfgs})}
+    res["model_alive_truth_dead_on_cs_gt_thr"] = strong_dead(runs)
+    res["truth_floor_1e-15"] = H2.floor(runs)
+    res["truth_floor_by_bin"] = {b: H2.floor([r for r in runs if lo <= r["eta_lam_T"] < hi]) for b, (lo, hi) in BINS.items()}
+    res.update(runs=len(runs), seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv),
+               e4_theory_md5=hashlib.md5(open(os.path.join(os.path.dirname(__file__), "e4_theory.py"), "rb").read()).hexdigest())
+    json.dump(res, open(os.path.join(outdir, "a1h3_score.json"), "w"), indent=1)
+    print(json.dumps({b: v["A1d"] for b, v in res["bins"].items()}, indent=1))
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E4 A1 scope grid H3 scored", flush=True)

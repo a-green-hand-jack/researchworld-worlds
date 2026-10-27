@@ -1,0 +1,43 @@
+# Cluster run record (KAUST Ibex)
+
+Directory on the cluster: `/ibex/user/wuj0c/rw/rw-d14c738fb547/` (our own; one per world).
+The three scripts were copied from `/initial-state/inputs/0/` unchanged; `sha256sum` on the cluster
+matched the frozen manifest (long e407123e…, pi_sweep d4f3a782…, reserve d416a1ad…).
+Each was submitted as `sbatch --job-name rw-d14c738fb547-<what> <script>` (job name only, per the
+resource's naming rule; no other option, no edit). Times below are cluster local time (UTC+3).
+
+| step | script | job id | submitted | outcome |
+|---|---|---|---|---|
+| 1 | reserve.sbatch | 53951127 | 12:40:15 | pending on BeginTime (now+3h); ended at 12:40:37, after the sweep was submitted, before it started: CANCELLED, elapsed 0 |
+| 2 | pi_sweep.sbatch | 53951131 (array 0-3) | 12:40:21 | all 4 tasks COMPLETED, 12:48:27-12:55:42 |
+| 3 | long.sbatch | 53951217 | 12:40:54 | started 12:47:26 on cn511-18; **CANCELLED** at 12:48:23 (SIGTERM, elapsed 57 s, batch exit 0:15) — did not complete |
+| 3b | long.sbatch (resubmitted once, unchanged) | 53951746 | 12:49:39 | started 12:51:12 on cn504-26; **COMPLETED** 13:21:17 (elapsed 30:05, exit 0:0, `long done`) |
+
+The reserve was ended with the world's `ht-resource stop` (the resource's rule; it cancels the SLURM job).
+
+## Sweep (array job 53951131)
+
+Started 12:47:26 (after ~7 min in the queue, reason Priority); tasks on cn511-18/19. The `out/pi_<i>.txt`
+files are written before each task's padding sleep; they were copied to `raw/` unchanged and each is
+identical, character for character, to the off-cluster seed reproduction (`offcluster/reproduce_<i>.json`).
+All four tasks COMPLETED (exit 0:0, each log `task <i> done`), ending at different times as designed:
+task 0 12:48:27 (1:01), task 1 12:50:28 (3:02), task 2 12:52:29 (5:03), task 3 12:55:42 (8:16).
+Full record: `raw/sacct_sweep.txt`. The estimates in `raw/pi_<i>.txt` are unchanged by the task ends.
+
+## Long run, first submission (53951217)
+
+`raw/long_run1/`: `long.log` holds only the SLURM line
+`*** JOB 53951217 ON cn511-18 CANCELLED AT 2026-10-18T12:48:23 DUE to SIGNAL Terminated ***`, and no
+`long done`; `sacct` gives `CANCELLED by 217052`. 217052 is the uid of the cluster account the world uses
+(the same id shows on the reserve, which we ended); this position issued no stop or cancel for 53951217,
+so the cancellation came from outside our commands. The sampling part had already finished:
+`pi_long.txt` = `samples=30000000 estimate=3.14108947 abs_error=5.032e-04`, identical to the seed
+reproduction; |err|/sigma = 1.68 (sigma = 2.998e-4 at n = 3e7), within the expected spread. The run did
+not complete (killed in its 30-min padding sleep, 57 s after start). It was resubmitted once, unchanged.
+
+## Long run, second submission (53951746)
+
+`raw/long_run2/`: submitted 12:49:39, started 12:51:12, COMPLETED at 13:21:17 (elapsed 30:05, exit 0:0);
+`long.log` = `long done`; `pi_long.txt` = `samples=30000000 estimate=3.14108947 abs_error=5.032e-04`,
+the same as the first submission's sampling and the seed reproduction (same seed 7, deterministic).
+|err|/sigma = 1.68: within the expected spread (two-sided p = 0.09 under the half-normal model).

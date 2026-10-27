@@ -1,0 +1,79 @@
+"""Uniform quarter-circle Monte Carlo; never replace points with binomial draws."""
+import argparse
+import csv
+import json
+import math
+import platform
+import time
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+import numpy as np
+
+NS = (1000, 10000, 100000, 1000000, 10000000)
+CHUNK = 100000
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def one_run(index, sizes=NS, chunk=CHUNK):
+    rng = np.random.default_rng(2026 + index)
+    done = count = 0
+    rows = []
+    for n in sizes:
+        while done < n:
+            m = min(chunk, n-done)
+            points = rng.random((m, 2))
+            count += int(np.count_nonzero(points[:, 0]**2 + points[:, 1]**2 <= 1.0))
+            done += m
+        estimate = 4.0 * count/n
+        rows.append(dict(run_index=index, seed=2026+index, N=n,
+                         inside=count, estimate=estimate,
+                         absolute_error=abs(estimate-math.pi)))
+    return rows
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--pilot', action='store_true')
+    parser.add_argument('--workers', type=int, default=2)
+    args = parser.parse_args()
+    start = time.perf_counter()
+    if args.pilot:
+        rows = one_run(0)
+        seconds = time.perf_counter()-start
+        # Check chunk/prefix equivalence at tractable sizes, including exact counts.
+        small = one_run(0, sizes=NS[:3], chunk=7777)
+        for row in small:
+            p = np.random.default_rng(2026).random((row['N'], 2))
+            assert row['inside'] == int(np.count_nonzero(np.sum(p*p, axis=1) <= 1))
+        result = dict(seconds_one_full_run=seconds,
+                      serial_seconds_200_estimate=seconds*200,
+                      two_worker_seconds_200_estimate=seconds*100,
+                      chunk_equivalence_checked_sizes=list(NS[:3]),
+                      run0=rows)
+        (ROOT/'results/pilot.json').write_text(json.dumps(result, indent=2)+'\n')
+        print(json.dumps(result), flush=True)
+        return
+    out = ROOT/'results/runs.csv'
+    with out.open('w') as f, ProcessPoolExecutor(max_workers=args.workers) as pool:
+        writer = None
+        for i, rows in enumerate(pool.map(one_run, range(200))):
+            if writer is None:
+                writer = csv.DictWriter(f, fieldnames=list(rows[0]))
+                writer.writeheader()
+            writer.writerows(rows)
+            f.flush()
+            if (i+1) % 20 == 0:
+                print(f'Completed {i+1}/200 run vectors in {time.perf_counter()-start:.2f}s', flush=True)
+    metadata = dict(python=platform.python_version(), numpy=np.__version__,
+                    rng='numpy.random.default_rng / PCG64',
+                    seeds=[2026, 2225], runs=200, sample_sizes=list(NS),
+                    workers=args.workers, chunk_points=CHUNK,
+                    seconds=time.perf_counter()-start,
+                    input='Research objective, experiment-repo issue #1; no external data',
+                    point_order='Interleaved x,y; same seed prefix at all N',
+                    estimator='4 * count(x*x+y*y <= 1) / N', reference_pi=math.pi)
+    (ROOT/'results/simulation_metadata.json').write_text(json.dumps(metadata, indent=2)+'\n')
+    print('Simulation complete: '+json.dumps(metadata), flush=True)
+
+if __name__ == '__main__':
+    main()

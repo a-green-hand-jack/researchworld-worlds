@@ -1,0 +1,26 @@
+# Code: multinomial logistic regression vs kNN on Iris (OpenML 61)
+
+Every number in `report/results/` (and so in the paper, via `results/numbers.tex`) is produced by
+the scripts here. Command sequence: `bash code/make_all.sh` from `report/` (the Ibex job is
+submitted separately, see step 3 in that file). Design: `story-repo` `plan.md` D1-D6.
+
+| File | Step | What it does |
+|---|---|---|
+| `fetch_data.py` | A0 | Downloads `iris.arff` (dataset 61, version 1) and its metadata from OpenML; checks the OpenML-listed md5; writes `results/data/` and `results/data_provenance.json` (URL, md5, sha256). |
+| `run_cv.py` | A1/A2 | The full study: 10 x stratified 5-fold outer CV (seed 20261017), multinomial LR (standardised, L2, C = 1, lbfgs; softmax check) and kNN (standardised, Euclidean, uniform; k in {1,3,...,31} by inner stratified 5-fold CV, seed 1000+f, ties -> smallest k). Single-threaded. Checks the data sha256. Writes `folds.csv`, `predictions.csv`, `inner_scores.csv`, `run_info.json`. |
+| `run_local.sh` | A1 | Local run of `run_cv.py` into `results/run_local/`. |
+| `ibex_job.sbatch` | A2 | The same run as one Ibex CPU job (partition batch, 1 CPU) into `results/run_ibex/`. |
+| `summarize.py` | A3 | Means and 95% intervals: corrected resampled t (primary), naive t over folds, t over repetition means, repetition bootstrap; fold win/tie/loss counts; selected-k distribution. |
+| `compare_runs.py` | A4 | Local vs Ibex identity: L1 raw (predictions, k, fold accuracies), L2 printed numbers, and diagnostics (max abs differences, file hashes). |
+| `sensitivity.py` | extra | Robustness checks outside the pre-specified plan: LR/kNN without standardisation, LR with C tuned by inner CV, kNN over all k = 1..31, kNN with k = 5 fixed. |
+| `make_numbers.py` | A5 | Writes `results/numbers.tex` (`\newcommand` macros for every printed number). |
+| `requirements.lock` | env | Exact package versions used on both machines. |
+| `make_all.sh` | all | The command sequence above. |
+
+Environment used: local Python 3.11.2 (Debian, sandbox container); Ibex Python 3.11.17
+(uv-managed CPython in a venv on the login node), both with the packages of `requirements.lock`
+installed from PyPI wheels (OpenBLAS bundled with numpy/scipy).
+
+Rerunning `make_all.sh` rewrites `results/run_local/` with identical CSVs. Only the host name,
+the start time and the wall time in `run_info.json` change, and so does `\LocalWall` in
+`numbers.tex`. This was checked on 2026-10-17: every other file was byte-identical after a full rerun.

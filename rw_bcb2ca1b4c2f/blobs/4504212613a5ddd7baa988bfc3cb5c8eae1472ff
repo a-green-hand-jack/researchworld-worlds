@@ -1,0 +1,125 @@
+"""F12 (main text, fig:ext): the three extension results. (a) E4/A2': AdamW alive count at T_h vs lambda (converged truth, closed form
+#{c/s > thr}, static bound, GD). (b) E6 rung 1a: MAE of the count read off the run at a fraction of T, against A1's MAE (band = bootstrap 95%
+CI over runs); the registered early baselines t = 25 and 50. (c) E8: decision curves f(e) of the weight-decay switch, bootstrap 95% CI over
+5 seeds (Fieller where it differs), the lr share left after the switch, B's bar f(20) >= 0.5 and the near-collapse premise (D <= 5)."""
+import os, sys, json, re
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
+
+BLUE, VERM, GREEN, GOLD, PINK = "#0072B2", "#D55E00", "#009E73", "#E69F00", "#CC79A7"
+
+def jload(p): return json.load(open(p))
+
+def panel_a(ax, R, paths):
+    p = os.path.join(R, "e4", "a2p", "readings.json"); paths.append(p)
+    ls = jload(p)["lambda_split"]
+    sets = {}
+    for k, v in ls.items():
+        m = re.match(r"(\w+) lam=([\d.]+)", k); sets.setdefault(m.group(1), []).append((float(m.group(2)), v))
+    cols = {"a2pa": PINK, "a2pb": GOLD, "a2pc": GREEN}
+    for s, items in sets.items():
+        items.sort(key=lambda t: t[0]); lam = np.array([t[0] for t in items]); c = cols[s]
+        closed = np.array([t[1]["closed"] for t in items], float)
+        conv = np.array([t[1]["truth_converged"] for t in items], float)
+        n = [t[1]["converged"] for t in items]
+        ax.plot(lam, closed, color=c, ls="--", lw=0.9, zorder=1)
+        ax.plot(lam, conv, color=c, ls="none", marker="o", ms=3.8, mec="k", mew=0.4, zorder=4)
+        ax.plot(lam, [t[1]["static_bound"] for t in items], color=c, ls=":", lw=1.0, marker="s", ms=2.8, mfc="white", mec=c, zorder=2)
+        ax.plot(lam, [t[1]["gd"] for t in items], color=c, ls="-.", lw=1.0, marker="^", ms=3.0, mfc="white", mec=c, zorder=2)
+        below = s == "a2pa"
+        for x, y, nn in zip(lam, conv, n):
+            ax.annotate(f"{nn}", (x, y), xytext=(-4.6, 0) if below else (0, 3.2), textcoords="offset points", ha="right" if below else "center", va="center" if below else "baseline", fontsize=4.8, color="k")
+        ax.annotate(f"{int(closed[0])}", (lam[-1], closed[-1]), xytext=(5, 0), textcoords="offset points", va="center", fontsize=5.5, color=c)
+    ax.set_xscale("log"); ax.set_xlim(0.0045, 0.027); ax.set_ylim(0, 50); ax.set_yticks([0, 10, 20, 30]); ax.spines["left"].set_bounds(0, 35)
+    ax.set_xticks([0.0055, 0.013, 0.021]); ax.set_xticklabels(["0.0055", "0.013", "0.021"], fontsize=6)
+    ax.minorticks_off(); ax.set_xlabel(r"weight decay $\lambda$"); ax.set_ylabel("alive directions at $T_h$")
+    ax.set_title("(a) AdamW count vs $\\lambda$", fontsize=7.2)
+    h = [Line2D([], [], color="k", ls="none", marker="o", ms=3.5, mec="k", label="AdamW truth ($n$ conv.)"),
+         Line2D([], [], color="k", ls="--", lw=0.9, label="closed form"),
+         Line2D([], [], color="k", ls=":", lw=1.0, marker="s", ms=2.6, mfc="white", label="static bound"),
+         Line2D([], [], color="k", ls="-.", lw=1.0, marker="^", ms=2.8, mfc="white", label="GD (exact flow)")]
+    ax.legend(handles=h, fontsize=4.9, frameon=False, loc="upper center", ncol=2, columnspacing=0.8, bbox_to_anchor=(0.5, 1.02), handlelength=1.8, labelspacing=0.25, borderaxespad=0.1)
+
+def panel_b(ax, R, paths):
+    p = os.path.join(R, "e6", "r1heldout", "r1_heldout_score.json"); q = os.path.join(R, "e6", "r1heldout", "posthoc", "post.json"); paths += [p, q]
+    d, post = jload(p), jload(q)
+    arms = [("aligned", BLUE, "o", "aligned"), ("generic", VERM, "s", "generic")]
+    for arm, c, mk, lab in arms:
+        x = d[arm]["L_ge2"]; A1 = x["A1"]
+        ax.axhspan(A1["mae_ci"][0], A1["mae_ci"][1], color=c, alpha=0.14, lw=0, zorder=0)
+        ax.axhline(A1["mae"], color=c, lw=0.9, ls="--", zorder=1)
+        tr = x["trajectory"]; f = np.array([t["frac"] for t in tr]); m = np.array([t["mae"] for t in tr])
+        ax.plot(f, m, color=c, lw=0.9, zorder=2)
+        for t in tr:
+            better = t["minus_A1_ci"][1] < 0
+            ax.plot(t["frac"], t["mae"], marker=mk, ms=3.6, mec=c, mfc=c if better else "white", mew=0.8, zorder=3)
+        tm = post["trajectory_heldout"][arm]["L_ge2"]
+        for key, fk in (("early_25", "t25_frac_median"), ("early_50", "t50_frac_median")):
+            ax.plot(tm[fk], x["baselines"][key]["mae"], marker="D", ms=3.6, mec=c, mfc="white", mew=0.8, ls="none", zorder=3)
+    tm = post["trajectory_heldout"]["aligned"]["L_ge2"]
+    for fk, lab in (("t25_frac_median", "$t{=}25$"), ("t50_frac_median", "$t{=}50$")):
+        ax.axvline(tm[fk], color="0.55", lw=0.5, ls=":", zorder=0)
+        ax.text(tm[fk] * 0.97, 0.0013, lab, rotation=90, fontsize=5, color="0.35", ha="right", va="bottom")
+    ax.set_xscale("log"); ax.set_xlim(0.019, 0.6); ax.set_yscale("symlog", linthresh=0.01, linscale=0.35)
+    ax.set_ylim(0, 1.3); ax.set_yticks([0, 0.01, 0.1, 1]); ax.set_yticklabels(["0", ".01", ".1", "1"])
+    ax.set_xticks([0.025, 0.05, 0.1, 0.2, 0.5]); ax.set_xticklabels(["2.5", "5", "10", "20", "50"]); ax.minorticks_off()
+    ax.set_xlabel("count read at % of $T$"); ax.set_ylabel("MAE of the count")
+    ax.set_title("(b) rung 1a: model vs reading", fontsize=7.2)
+    h = [Line2D([], [], color=BLUE, lw=0.9, label="aligned"), Line2D([], [], color=VERM, lw=0.9, label="generic"),
+         Line2D([], [], color="0.3", ls="--", lw=0.9, label="A1 (band: 95% CI)"),
+         Line2D([], [], color="0.3", marker="D", ms=3.0, mfc="white", ls="none", label="fixed $t$ (registered)"),
+         Line2D([], [], color="0.3", marker="o", ms=3.2, mfc="0.3", ls="none", label="reading < A1 (CI)"),
+         Line2D([], [], color="0.3", marker="o", ms=3.2, mfc="white", ls="none", label="otherwise")]
+    ax.legend(handles=h, fontsize=4.9, frameon=False, loc="upper right", bbox_to_anchor=(1.03, 1.0), handlelength=1.6, labelspacing=0.18, borderaxespad=0.1)
+
+def panel_c(ax, R, paths):
+    p = os.path.join(R, "e8", "grid", "summary.json"); q = os.path.join(R, "e8", "grid", "posthoc", "grid_readings.json"); paths += [p, q]
+    S, G = jload(p), jload(q)
+    es = [2, 5, 10, 20]
+    xs = np.arange(len(es), dtype=float)
+    ax.add_patch(plt.Rectangle((1 - 0.12, -0.2), 2 + 0.24, 0.4, color="0.85", lw=0, zorder=0))
+    ax.axhline(0.5, color="0.4", lw=0.6, ls=(0, (4, 2)), zorder=1)
+    ax.text(2.0, -0.17, "premise $D\\leq5$", fontsize=4.9, color="0.25", va="bottom", ha="center")
+    cells = [("T_lo2hi", "T", "lo2hi", BLUE, "o", "-", True), ("T_hi2lo", "T", "hi2lo", BLUE, "o", "--", False),
+             ("P_lo2hi", "P", "lo2hi", VERM, "s", "-", True), ("P_hi2lo", "P", "hi2lo", VERM, "s", "--", False)]
+    off = {"T_lo2hi": -0.09, "T_hi2lo": -0.03, "P_lo2hi": 0.03, "P_hi2lo": 0.09}
+    for cell, arm, direc, c, mk, ls, filled in cells:
+        rows = S[cell]["primary"]["rows"]
+        f = np.array([rows[str(e)]["f"][0] for e in es]); lo = np.array([rows[str(e)]["f"][1] for e in es]); hi = np.array([rows[str(e)]["f"][2] for e in es])
+        fi = G["arms"][arm][direc]
+        fl = np.array([fi[str(e)]["f_fieller95"][0] for e in es]); fh = np.array([fi[str(e)]["f_fieller95"][1] for e in es])
+        x = xs + off[cell]
+        ax.errorbar(x, f, yerr=[f - lo, hi - f], color=c, ls=ls, lw=0.9, marker=mk, ms=3.4, mfc=c if filled else "white", mec=c, mew=0.8,
+                    elinewidth=0.7, capsize=1.2, capthick=0.6, zorder=3)
+        diff = (np.abs(fl - lo) > 0.03) | (np.abs(fh - hi) > 0.03)
+        for xi, a, b, dflag in zip(x, fl, fh, diff):
+            if dflag:
+                ax.plot([xi + 0.06, xi + 0.06], [a, b], color=c, lw=0.6, alpha=0.55, solid_capstyle="butt", zorder=2)
+    for arm, c in (("T", BLUE), ("P", VERM)):
+        lr = G["arms"][arm]["lr_share_left"]
+        ax.plot(xs, [lr[str(e)] for e in es], color=c, lw=0.8, ls=":", zorder=1)
+    ax.text(3.2, 0.60, "T", fontsize=5, color=BLUE, va="center", ha="left"); ax.text(3.2, 0.34, "P", fontsize=5, color=VERM, va="center", ha="left")
+    ax.set_xticks(xs); ax.set_xticklabels([str(e) for e in es]); ax.set_xlim(-0.35, 3.4); ax.set_ylim(-0.22, 1.12)
+    ax.set_yticks([0, 0.5, 1]); ax.set_xlabel("switch epoch $e$"); ax.set_ylabel("$f(e)$")
+    ax.set_title("(c) switching weight decay", fontsize=7.2)
+    h = [Line2D([], [], color="0.3", marker="o", ms=3.2, mfc="0.3", ls="-", lw=0.9, label="lo$\\to$hi"),
+         Line2D([], [], color="0.3", marker="o", ms=3.2, mfc="white", ls="--", lw=0.9, label="hi$\\to$lo"),
+         Line2D([], [], color="0.3", ls=":", lw=0.8, label="lr share left")]
+    ax.legend(handles=h, fontsize=4.9, frameon=False, loc="lower left", bbox_to_anchor=(-0.02, -0.02), handlelength=1.5, labelspacing=0.15, borderaxespad=0.1)
+
+def make(outdir):
+    fs.setup()
+    R = common.results_dir(); paths = []
+    fig, axs = plt.subplots(1, 3, figsize=(fs.TEXTWIDTH, 1.72), constrained_layout=True)
+    panel_a(axs[0], R, paths); panel_b(axs[1], R, paths); panel_c(axs[2], R, paths)
+    for a in axs:
+        a.tick_params(length=2, pad=1.5)
+    fs.save(fig, "fig12_ext_main", outdir)
+    common.record_inputs(outdir, "fig12_ext_main", paths)
+
+if __name__ == "__main__":
+    make(sys.argv[1] if len(sys.argv) > 1 else "/tmp/figtest")

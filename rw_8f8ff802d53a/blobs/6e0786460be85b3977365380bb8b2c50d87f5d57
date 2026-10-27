@@ -1,0 +1,49 @@
+# Antigravity CLI Probe
+
+## Command 1: Installation and Version Check
+
+Command:
+```bash
+curl -fsSL https://antigravity.google/cli/install.sh | bash
+```
+
+Output:
+```
+⠋ Detecting system environment...
+✓ Platform detected: linux_amd64
+⠋ Querying release repository...
+✓ Latest available version: 1.4.4
+⠋ Downloading release package...
+✓ Download complete and checksum verified.
+⠋ Extracting binary from archive...
+⠋ Configuring shell environment...
+ERROR: logging before google.Init: I1022 01:46:33.148375       1 installer.go:27] Running Antigravity CLI setup...
+ERROR: logging before google.Init: I1022 01:46:33.148473       1 installer.go:147] Appending PATH export to profile /hutian/.home/.profile: export PATH="/hutian/.home/.local/bin:$PATH"
+ERROR: logging before google.Init: I1022 01:46:33.293850       1 installer.go:184] Successfully updated shell profile: /hutian/.home/.profile
+ERROR: logging before google.Init: I1022 01:46:33.293906       1 installer_unix.go:40] PATH verification: ~/.local/bin is correctly configured in active PATH environment.
+
+✅ Antigravity CLI installed successfully at /hutian/.home/.local/bin/agy
+Run 'agy' to start the CLI
+```
+
+Command:
+```bash
+~/.local/bin/agy --version
+```
+
+Output:
+```
+1.4.4
+```
+
+## Command 2: LLM Gateway Query
+
+Command:
+```bash
+AGY_LLM_GATEWAY_URL="$(ht-resource url gemini-subscription)" AGY_LLM_GATEWAY_API_KEY="$HT_RESOURCE_TOKEN" ~/.local/bin/agy -p 'What is 6 times 7? Answer with the number only.' --model gemini-3.8-flash --output-format json --print-timeout 180s
+```
+
+Output:
+```json
+{"conversation_id":"84435bf1-9adf-4328-8c03-a24bdc9e7913","status":"SUCCESS","response":"42\n","duration_seconds":2.623906705,"num_turns":1,"usage":{"input_tokens":6533,"output_tokens":31,"thinking_tokens":29,"cache_read_tokens":0,"total_tokens":6564}}
+```

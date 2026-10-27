@@ -1,0 +1,80 @@
+# Review standard (internal-review-repo)
+
+Source: the `Research objective` issue (#1), the brief (idea-repo ef3c571,
+requirements D1, S1-S3, R1-R2, C1-C4, P1-P5) and the work assignment
+(story-repo bdd8805). Where they differ, the objective wins.
+
+The assembled delivery is judged against each item below. Every item is
+checked on the delivered artifacts themselves at the delivered revisions
+(PDF opened page by page, figure inspected, code re-run locally, LaTeX
+re-compiled), not on assertions in issues or commit messages.
+
+## R1 Data
+- Iris fetched from OpenML itself, dataset id 61 (code shows the OpenML
+  call/URL; dataset version and a checksum or row/class counts recorded:
+  150 rows, 4 features, 3 classes of 50).
+- No other copy of Iris (e.g. `sklearn.datasets.load_iris`) used for any number.
+
+## R2 Methods
+- Multinomial logistic regression (a softmax model, not one-vs-rest); solver,
+  regularisation and preprocessing stated.
+- k-NN with k chosen by inner cross-validation on the outer training folds
+  only (nested CV, no leakage); k grid and inner scheme stated; the k values
+  actually chosen are reported or available.
+- Any preprocessing (e.g. standardisation) is fit inside the pipeline on
+  training data only.
+
+## R3 Protocol
+- 10 repetitions x stratified 5-fold = 50 outer test folds; both methods
+  evaluated on the same splits (so the difference is paired); seeds fixed and
+  stated.
+
+## R4 Statistics
+- Each method: mean accuracy with a 95% interval; paired difference
+  (method A - method B, direction stated) with a 95% interval.
+- The interval method is stated and suits the dependence among CV folds
+  (overlapping training sets, repeated splits). A plain t-interval over 50
+  fold scores treated as independent is too narrow; a corrected resampled
+  t (Nadeau & Bengio 2003; Bouckaert & Frank 2004) or an equivalent
+  justified choice is acceptable, with its limitation stated. A t-interval
+  over the 10 repetition means is NOT acceptable as the primary interval:
+  every repetition uses the same 150 points, so it measures only partition
+  noise (on this study it gives LR-kNN [+0.47, +1.39] pp, excluding 0, where
+  the corrected interval is [-2.51, +4.38]).
+- The text's conclusion follows from the intervals (no claim of a
+  difference the interval does not support, either way). No conclusion is
+  required in advance.
+
+## R5 Ibex and local runs
+- The full CV (all 50 folds, both methods, inner k selection) run once as a
+  CPU job on Ibex and once locally, from the same code.
+- Ibex node name reported, backed by the job's own output (SLURM job id,
+  `hostname`/`SLURM_JOB_NODELIST` captured by the job) kept in the delivery
+  or the analysis repository.
+- Whether the two runs give identical numbers is stated and backed by a
+  comparison of the per-fold results (not only the summary), with library
+  versions of both environments recorded; any difference explained.
+
+## R6 Report
+- `report/report.pdf`, compiled from the delivered LaTeX with the official
+  NeurIPS 2026 style (submission/anonymous mode), at most two pages as
+  delivered.
+- Exactly one figure and one table, each referenced and discussed in the
+  text; LaTeX source and the code that produced every number delivered
+  next to the PDF.
+- Re-compiling the delivered source reproduces the PDF (no missing files,
+  no unresolved references/citations, no overfull boxes running off the page).
+
+## R7 Figure and table
+- Figure opened and inspected: legible at print size, axes labelled with
+  units, legend or caption identifies every mark, shows what the text says
+  (e.g. per-fold/per-repetition accuracies or paired differences with the
+  intervals); not blank, placeholder or truncated.
+- Table: the reported means, intervals, paired difference, and the
+  Ibex/local comparison, with the interval method named.
+
+## R8 Traceability
+- Every number in the text, table and figure matches a result file produced
+  by the delivered code; re-running the delivered code locally reproduces
+  them.
+- Citations real and correctly attributed.

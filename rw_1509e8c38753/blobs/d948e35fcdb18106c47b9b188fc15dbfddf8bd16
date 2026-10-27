@@ -1,0 +1,24 @@
+# Code: multinomial logistic regression vs k-NN on Iris (OpenML 61)
+
+Every number in the report comes from these scripts. Run them from this directory (`report/code/`),
+with Python 3.11 and `requirements.txt` installed.
+
+| step | command | writes |
+|---|---|---|
+| 1. data | `python fetch_data.py` | `data/iris.arff` (OpenML 61 v1, md5 checked against OpenML), `data/openml_61_meta.json` |
+| 2a. local run | `./run_local.sh` | `../results/run_local/` (`folds.csv`, `predictions.csv`, `run.json`, log) |
+| 2b. Ibex run | `mkdir -p ../results/run_ibex && sbatch ibex_job.sbatch` | `../results/run_ibex/` (same files + `slurm_<jobid>.log`) |
+| 3. comparison | `python compare_runs.py --a ../results/run_local --b ../results/run_ibex --out ../results/reproducibility.json` | identity check of the two runs |
+| 4. summary | `python summarize.py --results ../results` | `summary.json`, `table.csv`, `folds_long.csv`, `numbers.tex` |
+
+Design (`cv_compare.py`): outer `RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=20261017)`,
+both methods on identical splits (50 paired folds, 120 train / 30 test).
+LR = `StandardScaler` + `LogisticRegression(lbfgs, multinomial, L2, C=1, max_iter=10000)`, C not tuned.
+k-NN = `StandardScaler` + `KNeighborsClassifier` (Euclidean, uniform), k in 1..30 chosen by `GridSearchCV`
+with an inner stratified 5-fold CV (seed 20261017+1000+fold index) on the outer training set only; ties go to the
+smallest k. Scalers are fitted inside the pipelines on training data only. A robustness variant without
+scaling is computed for both methods (`*_unscaled` columns). BLAS is single-threaded.
+
+Intervals (`summarize.py`), 95%, over the 50 fold scores: primary = Nadeau–Bengio corrected resampled t
+(variance x (1/50 + 30/120), t with 49 df); naive t (folds treated as independent, too narrow) and a t interval
+over the 10 repetition means (also too narrow, since every repetition reuses the same 150 rows) are given for comparison.

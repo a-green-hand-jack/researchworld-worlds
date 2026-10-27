@@ -1,0 +1,125 @@
+"""E5 / B1 development grid: the post-loss law of the predictor (internal review #2 of the E5 dev check, B-iii).
+Post hoc; no registered statistic or verdict changes. Linearised about w = 0 (theory/ext_B_stagewise.md B-iii):
+w decays at rate lam_W (the window term p c - p^2 s vanishes with p), and the predictor obeys
+dp/dt = -alpha lam_P p + alpha c wbar w, so p decays at the slower of its own rate alpha lam_P and the forced rate of
+the drive wbar w (2 lam_W for a copy target). In the clock Lambda_W (lam_P = rho lam_W on every dev schedule):
+  -d ln w / dLambda_W -> 1,   -d ln p / dLambda_W -> min(alpha rho, 2),
+so ln(p / w) moves with slope 1 - min(alpha rho, 2): p/w is held for alpha rho = 1, p is above the slaved value and on
+its own decay for alpha rho < 1, and below it for alpha rho > 1. At alpha rho = 2 (dev alpha2 and rhoP2) the two rates
+coincide and p e^{2 dLambda_W} = p_l + alpha c w_l^2 dt (linear in the time dt since the loss, not in Lambda_W): p sits
+above its own decay by the log of a linear factor, and the slope deficit 2 - slope_p times dLambda_W tends to
+lam_W-bar / lam_W(t) (mean lam_W since the loss over the current one; 1 only for constant lam_W, large after a high
+pulse ends). Reported: that deficit divided by lam_W-bar / lam_W(t), which tends to 1.
+Level test (copy-target variants; the internal review's suggestion): p_law integrated from (p, w) at the first dead
+checkpoint by dp/dt = -alpha lam_P p + alpha c w^2, with w (a) log-linear in Lambda_W between the truth's checkpoints and
+(b) w_l e^{-dLambda_W}; median |ln(p_truth / p_law)| over the later dead checkpoints, beside own decay alone.
+Measured per variant on consecutive dead checkpoints of truly lost directions (dead and dead, the first dead interval
+after the loss excluded as the bottleneck; p and w above 1e-300).
+Usage: python3 code/checks/e5_postloss_law.py RUNDIR OUT.json [NPROC]"""
+import sys, os, json, gzip, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import e5_b1 as B, e5_theory as th
+
+THR = B.THR
+
+
+def one(line):
+    rec = json.loads(line); cfg, tr = rec["cfg"], rec["truth"]
+    t = np.array(tr["t"]); A = np.abs(np.array(tr["a"], float)); P = np.abs(np.array(tr["p"], float)); am = A > THR
+    tf = np.linspace(0.0, cfg["T"], int(cfg["T"] / 0.5) + 1)
+    LW = np.concatenate([[0.0], np.cumsum(0.5 * np.diff(tf) * (th.lam_of(cfg["kW"], tf[1:]) + th.lam_of(cfg["kW"], tf[:-1])))])
+    LWc = np.interp(t, tf, LW)
+    was = np.maximum.accumulate(am, axis=0); dead = was & ~am
+    out = dict(id=cfg["id"], variant=cfg["variant"], ar=cfg["alpha"] * cfg["rho"], sp=[], sw=[], dL=[], ratio=[], lbar_over_l=[], lev_a=[], lev_b=[], lev_own=[])
+    la = np.full(am.shape[1], -1)
+    for j in range(t.size):
+        la = np.where(am[j], j, la)
+        if j == 0:
+            continue
+        ok = dead[j] & dead[j - 1] & (la >= 0) & (j - 1 > la) & (P[j] > 1e-300) & (P[j - 1] > 1e-300) & (A[j] > 1e-300) & (A[j - 1] > 1e-300)
+        for k in np.nonzero(ok)[0]:
+            dl = LWc[j] - LWc[j - 1]
+            if dl <= 0:
+                continue
+            out["sp"].append(float(-np.log(P[j, k] / P[j - 1, k]) / dl))
+            out["sw"].append(float(-np.log(A[j, k] / A[j - 1, k]) / dl))
+            out["dL"].append(float(0.5 * (LWc[j] + LWc[j - 1]) - LWc[la[k]]))
+            out["ratio"].append(float(np.log(P[j, k] / A[j, k])))
+            tm = 0.5 * (t[j] + t[j - 1]); lm = float(th.lam_of(cfg["kW"], [tm])[0])
+            out["lbar_over_l"].append(float((0.5 * (LWc[j] + LWc[j - 1]) - LWc[la[k]]) / max(tm - t[la[k]], 1e-12) / lm))
+    if cfg["kappa"] is None and dead.any():
+        G = B.GRIDS[cfg["grid"]]; c, s = B.stats(G); al = cfg["alpha"]
+        lPf = th.lam_of(cfg["kP"], tf); LPf = np.concatenate([[0.0], np.cumsum(0.5 * np.diff(tf) * (lPf[1:] + lPf[:-1]))])
+        for k in np.nonzero(dead.any(0))[0]:
+            j0 = int(np.argmax(dead[:, k]))
+            js = [j0]
+            for j in range(j0 + 1, t.size):
+                if not dead[j, k]:
+                    break
+                js.append(j)
+            if len(js) < 2 or not (P[j0, k] > 1e-300 and A[j0, k] > 1e-300):
+                continue
+            m = (tf >= t[j0]) & (tf <= t[js[-1]]); tt = tf[m]
+            lwa = np.interp(LW[m], LWc[js], np.log(np.maximum(A[js, k], 1e-300)))
+            lwb = np.log(A[j0, k]) - (LW[m] - np.interp(t[j0], tf, LW))
+            for lw, key in ((lwa, "lev_a"), (lwb, "lev_b")):
+                # exponential integrator: p_{n+1} = p_n e^{-a h} + alpha c w_mid^2 (1 - e^{-a h}) / a
+                p_ = np.empty(tt.size); p_[0] = P[j0, k]; aP = al * lPf[m]
+                for n in range(tt.size - 1):
+                    h = tt[n + 1] - tt[n]; a_ = 0.5 * (aP[n] + aP[n + 1]); e = np.exp(-a_ * h)
+                    p_[n + 1] = p_[n] * e + al * c[k] * np.exp(lw[n] + lw[n + 1]) * (1 - e) / max(a_, 1e-300)
+                pc = np.interp(t[js[1:]], tt, p_)
+                ok = (P[js[1:], k] > 1e-300) & (pc > 1e-300)
+                out[key] += np.abs(np.log(P[js[1:], k][ok] / pc[ok])).tolist()
+            own = P[j0, k] * np.exp(-al * (np.interp(t[js[1:]], tf, LPf) - np.interp(t[j0], tf, LPf)))
+            ok = (P[js[1:], k] > 1e-300) & (own > 1e-300)
+            out["lev_own"] += np.abs(np.log(P[js[1:], k][ok] / own[ok])).tolist()
+    return out
+
+
+if __name__ == "__main__":
+    rundir, outp = sys.argv[1], sys.argv[2]; nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    t0 = time.time()
+    lines = list(gzip.open(os.path.join(rundir, "b1_dev_runs.jsonl.gz"), "rt"))
+    with Pool(nproc) as pool:
+        rows = list(pool.imap_unordered(one, lines, chunksize=8))
+    res = dict(status="post hoc on the development grid (unregistered; theory B-iii post-loss law)",
+               runs=os.path.join(rundir, "b1_dev_runs.jsonl.gz"), by_variant={})
+    for v, spec in B.VARIANTS.items():
+        R = [r for r in rows if r["variant"] == v]
+        sp = np.concatenate([r["sp"] for r in R]); sw = np.concatenate([r["sw"] for r in R]); dL = np.concatenate([r["dL"] for r in R])
+        ar = spec["alpha"] * spec["rho"]; pred = min(ar, 2.0)
+        late = dL > np.median(dL) if dL.size else dL
+        d = dict(alpha_rho=ar, predicted_slope_p=pred, predicted_slope_ratio=1 - pred, intervals=int(sp.size),
+                 runs_with_intervals=int(sum(len(r["sp"]) > 0 for r in R)))
+        if sp.size:
+            q = lambda x: [float(np.quantile(x, a)) for a in (0.1, 0.5, 0.9)]
+            d.update(slope_p_q10_50_90=q(sp), slope_w_q10_50_90=q(sw), slope_ratio_median=float(np.median(sw - sp)),
+                     slope_p_late_median=float(np.median(sp[late])), slope_w_late_median=float(np.median(sw[late])),
+                     dLambda_median=float(np.median(dL)),
+                     share_ratio_falling=float(np.mean(sp > sw)) if ar > 1 else None,
+                     share_ratio_rising=float(np.mean(sp < sw)) if ar < 1 else None)
+            if ar == 2.0:
+                d["resonance_deficit_times_dLambda_median"] = float(np.median((2 - sp) * dL))
+                d["resonance_deficit_times_dLambda_late_median"] = float(np.median(((2 - sp) * dL)[late]))
+                lb = np.concatenate([r["lbar_over_l"] for r in R])
+                d["resonance_deficit_times_dLambda_over_lbar_ratio_median"] = float(np.median((2 - sp) * dL / lb))
+                d["resonance_deficit_times_dLambda_over_lbar_ratio_late_median"] = float(np.median(((2 - sp) * dL / lb)[late]))
+                ed = np.quantile(dL, np.linspace(0, 1, 9)); kd = np.clip(np.searchsorted(ed, dL, side="right") - 1, 0, 7)
+                d["resonance_slope_p_by_dLambda_octile"] = [dict(dLambda_median=float(np.median(dL[kd == i])),
+                                                                 slope_p_median=float(np.median(sp[kd == i])), n=int((kd == i).sum()))
+                                                            for i in range(8)]
+        if spec["kappa"] is None:
+            q2 = lambda x: dict(n=int(x.size), median=float(np.median(x)), q90=float(np.quantile(x, 0.9))) if x.size else None
+            d["level_test_abs_ln"] = dict(law_w_truth=q2(np.concatenate([r["lev_a"] for r in R])),
+                                          law_w_exp_decay=q2(np.concatenate([r["lev_b"] for r in R])),
+                                          own_decay_only=q2(np.concatenate([r["lev_own"] for r in R])))
+        res["by_variant"][v] = d
+    res.update(seconds=time.time() - t0, numpy=np.__version__, command=" ".join(["code/checks/e5_postloss_law.py"] + sys.argv[1:]),
+               md5={f: B.md5(os.path.join(os.path.dirname(__file__), "..", f)) for f in ("e5_b1.py", "e5_theory.py")})
+    os.makedirs(os.path.dirname(outp), exist_ok=True)
+    json.dump(res, open(outp, "w"), indent=1)
+    print(json.dumps(res["by_variant"], indent=1))

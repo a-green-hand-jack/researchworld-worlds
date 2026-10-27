@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""A0: download Iris (OpenML dataset 61) from OpenML and record its provenance.
+
+Writes report/results/data/iris.arff, report/results/data/openml_61_description.json
+and report/results/data_provenance.json. Aborts if the md5 of the downloaded file
+differs from the md5_checksum listed by OpenML.
+"""
+import hashlib
+import json
+import os
+import time
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+RES = os.path.join(HERE, "..", "results")
+META_URL = "https://www.openml.org/api/v1/json/data/61"
+
+
+def get(url):
+    with urllib.request.urlopen(url, timeout=60) as r:  # follows the openml.org -> www redirect
+        return r.read(), r.geturl()
+
+
+def main():
+    os.makedirs(os.path.join(RES, "data"), exist_ok=True)
+    meta_raw, _ = get(META_URL)
+    meta = json.loads(meta_raw)["data_set_description"]
+    raw, final_url = get(meta["url"])
+    md5 = hashlib.md5(raw).hexdigest()
+    if md5 != meta["md5_checksum"]:
+        raise SystemExit(f"md5 mismatch: {md5} vs OpenML {meta['md5_checksum']}")
+    with open(os.path.join(RES, "data", "iris.arff"), "wb") as f:
+        f.write(raw)
+    with open(os.path.join(RES, "data", "openml_61_description.json"), "wb") as f:
+        f.write(meta_raw)
+    prov = dict(openml_id=int(meta["id"]), name=meta["name"], version=int(meta["version"]),
+                format=meta["format"], default_target=meta["default_target_attribute"],
+                metadata_url=META_URL, listed_url=meta["url"], downloaded_from=final_url,
+                openml_md5=meta["md5_checksum"], computed_md5=md5,
+                sha256=hashlib.sha256(raw).hexdigest(), bytes=len(raw),
+                downloaded_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    with open(os.path.join(RES, "data_provenance.json"), "w") as f:
+        json.dump(prov, f, indent=1)
+    print(json.dumps(prov, indent=1))
+
+
+if __name__ == "__main__":
+    main()

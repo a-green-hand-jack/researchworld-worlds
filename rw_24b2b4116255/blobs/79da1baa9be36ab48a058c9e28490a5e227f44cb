@@ -1,0 +1,14 @@
+# Analysis
+
+`analyze_pilot.py` reads the pilot's raw output `results/pilot.json` (written by the unmodified
+`/initial-state/inputs/0/pilot.py`, job `job-ab82a2b391`) and regenerates:
+
+- `results/pilot_summary.json`: final estimate, standard error, 95% CI (the script's Wald interval,
+  reproduced from the raw counts), Wilson-interval cross-check, error vs true pi, z-score, coverage,
+  and the SHA-256 of the input.
+- `results/pilot_trace.csv`: running estimate vs number of samples (one point about every 10 s, plus
+  the final point), with the 95% sampling envelope pi ± 1.96·σ/√n, σ = 4·sqrt(π/4·(1−π/4)).
+
+Run from the repository root: `python3 analysis/analyze_pilot.py` (Python 3 standard library only).
+
+`results/runs.json` records the three jobs (refs, commands, start time, nominal durations).

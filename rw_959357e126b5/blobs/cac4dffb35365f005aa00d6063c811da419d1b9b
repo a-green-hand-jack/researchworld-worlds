@@ -1,0 +1,43 @@
+"""Order of settling in the A2 scalar AdamW map (my 80-bit loop of checks/e4_a2_twostage.py): for every direction of
+runs 187, 27, 59, 91, 186, 188, 3, 100, to 3 T_h, the first step where p is within 5% of c/s, |a| at that step, and
+|a| at T_h. Usage: python3 checks/e4_a2_porder.py EXPERIMENT_CHECKOUT OUT.json"""
+import sys, os, json
+EXP = sys.argv[1]; OUT = sys.argv[2]; sys.argv = [sys.argv[0], EXP]
+import importlib.util
+spec = importlib.util.spec_from_file_location("ts", os.path.join(os.path.dirname(os.path.abspath(__file__)), "e4_a2_twostage.py"))
+ts = importlib.util.module_from_spec(spec); spec.loader.exec_module(ts)
+import numpy as np
+from multiprocessing import Pool
+A, A2 = ts.A, ts.A2
+cf = {c["id"]: c for c in A2.configs()}
+def one(rid):
+    cfg = cf[rid]; A.STATS = dict(A2.A2_STATS)
+    c, s = A.stats(cfg["stats"]); D = np.longdouble; o = D(1)
+    c = c.astype(D); s = s.astype(D)
+    b1, b2, eta, lam = (D(cfg[k]) for k in ("b1", "b2", "eta", "lam")); eps = D(1e-8)
+    a = A.init_a(cfg).astype(D); p = np.full(c.shape, D(cfg["p0"]))
+    ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c)
+    Th = cfg["T_h"]; cs = (c/s).astype(float); n = c.size
+    tset = np.full(n, -1); aset = np.full(n, np.nan); aTh = None
+    for t in range(1, 3 * Th + 1):
+        r = c - p * s; ga = -a * p * r; gp = -a * a * r
+        ma = b1*ma + (o-b1)*ga; va = b2*va + (o-b2)*ga*ga; mp = b1*mp + (o-b1)*gp; vp = b2*vp + (o-b2)*gp*gp
+        bc1 = o - b1**t; bc2 = o - b2**t
+        a = a*(o-eta*lam) - eta*(ma/bc1)/(np.sqrt(va/bc2)+eps); p = p*(o-eta*lam) - eta*(mp/bc1)/(np.sqrt(vp/bc2)+eps)
+        pa = np.abs(p.astype(float)); aa = np.abs(a.astype(float))
+        new = (tset < 0) & (np.abs(pa/cs - 1) < 0.05)
+        tset[new] = t; aset[new] = aa[new]
+        if t == Th: aTh = aa.copy()
+    return dict(run=rid, stats=cfg["stats"], lam=cfg["lam"], eta=cfg["eta"], b2=cfg["b2"], p0=cfg["p0"], a0=cfg["a0"],
+                rows=[dict(k=k, cs=cs[k], t_p_settled=int(tset[k]), abs_a_at_p_settled=float(aset[k]), abs_a_T_h=float(aTh[k]))
+                      for k in range(n)])
+if __name__ == "__main__":
+    ids = [187, 27, 59, 91, 186, 188, 3, 100]
+    ids = [i for i in ids if i in cf]
+    with Pool(8) as P: res = P.map(one, ids)
+    json.dump(res, open(OUT, "w"), indent=1)
+    for r in res:
+        rows = [x for x in r["rows"] if x["cs"] > 0.05]
+        pl = [x for x in rows if x["t_p_settled"] > 0 and x["abs_a_at_p_settled"] < 0.5*x["cs"]]
+        print(r["run"], r["stats"], r["lam"], r["eta"], r["b2"], r["p0"], r["a0"], "dirs c/s>thr", len(rows), "plateau(|a|<0.5c/s when p settles)", len(pl),
+              "levels", sorted(round(x["abs_a_at_p_settled"], 3) for x in pl)[:12], "...", "dead at T_h", sum(x["abs_a_T_h"] <= 0.05 for x in rows))

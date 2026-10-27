@@ -1,0 +1,74 @@
+"""Render committed results without fitting. Run: python figures/generate.py --results PATH."""
+import argparse
+import csv
+import hashlib
+import json
+from pathlib import Path
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import numpy as np
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--results', type=Path, default=Path(__file__).resolve().parents[1] / 'results')
+parser.add_argument('--source-commit', default='unspecified')
+args = parser.parse_args()
+root = Path(__file__).resolve().parents[1]
+figdir, tabdir = root / 'figures', root / 'tables'
+tabdir.mkdir(exist_ok=True)
+r = json.loads((args.results / 'results.json').read_text())
+d = np.genfromtxt(args.results / 'data.csv', delimiter=',', names=True)
+e = np.genfromtxt(args.results / 'residuals.csv', delimiter=',', names=True)
+x = d['x']
+assert len(x) == r['n'] and np.array_equal(x, e['x'])
+plt.rcParams.update({'font.size': 9, 'axes.spines.top': False, 'axes.spines.right': False,
+                     'svg.fonttype': 'none', 'svg.hashsalt': 'seed221'})
+fig, (ax, rx) = plt.subplots(1, 2, figsize=(7, 3.2), gridspec_kw={'width_ratios': [1.15, 1]}, layout='constrained')
+handles = []
+for name, color, marker, style in [('A', '#0072B2', 'o', '-'), ('B', '#D55E00', '^', '--')]:
+    chosen = r['chosen'][name]
+    fit = r['series'][name][chosen['key']]
+    ols = r['series'][name]['ols']
+    assert np.allclose(e[f'ols_resid_{name}'], d[f'y{name}'] - ols['intercept'] - ols['slope']*x)
+    ax.scatter(x, d[f'y{name}'], s=19, marker=marker, facecolors='none', edgecolors=color, linewidths=.85)
+    ax.plot(x, fit['intercept'] + fit['slope']*x, color=color, linestyle=style, linewidth=1.7)
+    rx.scatter(x, e[f'ols_resid_{name}'], s=19, marker=marker, facecolors='none', edgecolors=color, linewidths=.85)
+    handles.append(Line2D([], [], color=color, linestyle=style, marker=marker, markerfacecolor='none', markersize=4, label=f'{name}: {chosen["method"]}'))
+ax.legend(handles=handles, loc='upper left', frameon=False, handlelength=2.5)
+ax.set(title='(a) Data and selected fits', ylabel='y (arbitrary units)', ylim=(-2, 43))
+rx.axhline(0, color='0.35', linewidth=.8, zorder=0)
+rx.set(title='(b) OLS residual check', ylabel='Residual (y units)', ylim=(-12, 12))
+for a in (ax, rx):
+    a.set(xlabel='x (arbitrary units)', xlim=(-1, 40), xticks=[0, 10, 20, 30, 40])
+    a.grid(axis='y', color='0.9', linewidth=.5)
+    a.set_axisbelow(True)
+fig.savefig(figdir / 'series_and_residuals.png', dpi=250)
+fig.savefig(figdir / 'series_and_residuals.svg', metadata={'Date': None})
+plt.close(fig)
+caption = (f"Seed {r['seed']}; n = {r['n']} per series, generated about y = {r['truth']['intercept']} + {r['truth']['slope']}x. "
+           'Panel (a) shows observations (A: blue circles; B: orange triangles) and selected fitted mean lines (A: OLS, solid; B: WLS, dashed); panel (b) shows unweighted OLS residuals for both series on a common scale.\n')
+(figdir / 'caption.md').write_text(caption)
+rows = []
+md = ['| Series | Method | Slope (95% CI) | Intercept (95% CI) |', '|:--|:--|:--|:--|']
+for name in ('A','B'):
+    method = r['chosen'][name]['method']
+    fit = r['series'][name][r['chosen'][name]['key']]
+    cells=[]
+    for p, places in [('slope',3),('intercept',2)]:
+        lo, hi = fit['ci95'][p]
+        cells.append(f'{fit[p]:.{places}f} [{lo:.{places}f}, {hi:.{places}f}]')
+    md.append(f'| {name} | {method} | {cells[0]} | {cells[1]} |')
+    rows.append([name, method, fit['slope'], *fit['ci95']['slope'], fit['intercept'], *fit['ci95']['intercept']])
+(tabdir / 'parameters.md').write_text('\n'.join(md)+'\n')
+with (tabdir / 'parameters.csv').open('w') as f:
+    writer=csv.writer(f)
+    writer.writerow(['series','method','slope','slope_ci95_low','slope_ci95_high','intercept','intercept_ci95_low','intercept_ci95_high'])
+    writer.writerows(rows)
+provenance = {'analysis_repository': 'world/experiment-repo', 'analysis_commit': args.source_commit,
+ 'inputs': {f: hashlib.sha256((args.results/f).read_bytes()).hexdigest() for f in ['data.csv','residuals.csv','results.json']},
+ 'versions': {'numpy':np.__version__, 'matplotlib':matplotlib.__version__},
+ 'interval_construction':r['interval_construction'],
+ 'weights_B':r['chosen']['B']['weights'],
+ 'rendering': 'No fitting or inference is performed. Lines use selected coefficients; residuals use committed OLS residuals; table reads chosen ci95 values.'}
+(figdir / 'provenance.json').write_text(json.dumps(provenance, indent=2)+'\n')

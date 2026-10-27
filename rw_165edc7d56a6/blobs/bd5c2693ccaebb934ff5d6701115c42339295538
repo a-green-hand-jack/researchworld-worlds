@@ -1,0 +1,33 @@
+# Review record: optimizer provenance fact sheet
+
+Reviewer: internal-review-repo. Date: 2026-10-17.
+
+## What was inspected (exact revisions)
+
+- Assembled delivery at review time: `README.md` and `fact-sheet.md`, both from
+  paper-repo @ 5ff5e687b656cb6d0111f4d6233f1944cd3aabfa (delivery file list obtained with
+  `ht-role delivery --into`).
+- Supporting source records: experiment-repo `findings/adam.md` @
+  f6b912225c5a01b3baf528123dea16e85de2c5a7; internal-review-repo `lion-lookup.md` @
+  f2e75d64e002b1777b0e70cd39b837902527e234 (my own independent Lion lookup).
+
+## Independent verification (sources opened by me during this check)
+
+| Entry | Fact-sheet claim | Source I opened | Result |
+|---|---|---|---|
+| Adam | "Adam: A Method for Stochastic Optimization", Diederik P. Kingma, 2014 (v1 22 Dec 2014), 1412.6980 | https://arxiv.org/abs/1412.6980 | Agrees: title, author order (Kingma first, Ba second), "Submitted on 22 Dec 2014 (v1)", identifier 1412.6980 all match. |
+| AdamW | "Decoupled Weight Decay Regularization" (v1 title "Fixing Weight Decay Regularization in Adam"), Ilya Loshchilov, 2017 (v1 14 Nov 2017), 1711.05101 | https://arxiv.org/abs/1711.05101 and https://arxiv.org/abs/1711.05101v1 | Agrees: current title and authors (Loshchilov first, Hutter second) on the latest page; v1 page confirms the v1 title and "Submitted on 14 Nov 2017"; identifier 1711.05101 matches. |
+| Lion | "Symbolic Discovery of Optimization Algorithms", Xiangning Chen, 2023 (v1 13 Feb 2023), 2302.06675 | https://arxiv.org/abs/2302.06675 (also Semantic Scholar Graph API lookup, see `lion-lookup.md`) | Agrees: title, first author Xiangning Chen (12 authors listed, last Quoc V. Le, matching the sheet's "11 co-authors"), "Submitted on 13 Feb 2023 (v1)", identifier 2302.06675 all match; the abstract confirms this paper introduced Lion. |
+
+## Findings
+
+- All three entries carry the four required fields (introducing-paper title, first author,
+  year first appeared = year of first arXiv submission, arXiv identifier) and each cites the
+  URL it was read from. No disagreements found.
+- The sheet is one page, states the year convention, and notes the tool limitation (arXiv API
+  over plain HTTP/curl unauthorized) with the alternative used, as the objective asks.
+
+## Conclusion
+
+The delivered `fact-sheet.md` meets the objective; every entry was verified against a source I
+opened myself. No disagreements to report. Approved for release via `ht-role approve`.

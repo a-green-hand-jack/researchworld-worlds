@@ -1,0 +1,90 @@
+{
+  "N": [
+    1000,
+    10000,
+    100000,
+    1000000,
+    10000000
+  ],
+  "mae": [
+    0.04188704496667313,
+    0.014406293856408263,
+    0.004310053071795872,
+    0.0013987999999999978,
+    0.00041945560769380164
+  ],
+  "mae_se": [
+    0.0022661186542054478,
+    0.0007510523069005437,
+    0.00021939173506158193,
+    7.329460938374138e-05,
+    2.2263268087883934e-05
+  ],
+  "run_error_p025": [
+    0.0015926535897929917,
+    0.0007830209103034226,
+    0.00023065358979297294,
+    5.494641020687975e-05,
+    2.4213589792965175e-05
+  ],
+  "run_error_p975": [
+    0.12240734641020667,
+    0.039236979089696616,
+    0.010997346410206705,
+    0.004032920910303662,
+    0.0011134264102068859
+  ],
+  "benchmark_mae": [
+    0.04143446262256112,
+    0.013102727551240674,
+    0.004143446262256111,
+    0.0013102727551240674,
+    0.00041434462622561116
+  ],
+  "ols": {
+    "intercept": 0.3281259480421345,
+    "slope": -0.5011584081803622,
+    "slope_se": 0.005660293289460738,
+    "t_interval_95": [
+      -0.5191719876462286,
+      -0.48314482871449566
+    ],
+    "residual_df": 3,
+    "log_base": "natural",
+    "contains_minus_half": true
+  },
+  "bootstrap": {
+    "interval_95": [
+      -0.5159688779322689,
+      -0.4860621055015097
+    ],
+    "replicates": 50000,
+    "seed": 602026,
+    "second_seed": 602027,
+    "second_interval_95": [
+      -0.5162687396684885,
+      -0.48620832119253365
+    ],
+    "endpoint_absolute_difference": [
+      0.0002998617362196532,
+      0.00014621569102396537
+    ],
+    "method": "percentile; resample 200 complete run vectors with replacement",
+    "contains_minus_half": true
+  },
+  "provenance": {
+    "seed_convention": "seed=2026+run_index; zero-based run_index",
+    "draw_call": "rng.random((m, 2)); contiguous pairs across chunks and N",
+    "numpy_version": "2.4.6",
+    "scipy_version": "1.17.1",
+    "python_version": "3.11.2",
+    "bit_generator": "PCG64",
+    "source_files": [
+      "results/full/runs.csv",
+      "results/full/metadata.json"
+    ],
+    "raw_csv_sha256": "0061120c28890572abf8779956c4d14f9b731775474b93f3e0b6dcc027fdf79c",
+    "simulation_code_commit": "463dba3745d8731efe508a5d73a821f6aa0646a4",
+    "analysis_code_commit": "03cbc342ca6926a8a65cfc43a0353122de8b7763"
+  }
+}

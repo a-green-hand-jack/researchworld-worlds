@@ -1,0 +1,83 @@
+"""B1' development on the timed pilot (disjoint seed 390): the post-loss law started at the detachment of p from its
+nullcline (captured, w falling, own decay above the nullcline) instead of at the model's THR crossing, without (det)
+and with (det_s) the -alpha s p w^2 term (det_s is the exact continuous-time p equation from the detachment on), against
+stage_model_pl and stage_model_qs: B1d, state agreement, regains. Not the registered model; reported as development.
+Usage: python3 code/checks/e5_b1p_dev_detach.py PILOT_RUNS.jsonl.gz OUT.json"""
+import sys, os, json, gzip
+os.environ["OMP_NUM_THREADS"] = "1"
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import numpy as np
+from multiprocessing import Pool
+import e5_b1p as P, e5_b1 as B, e5_theory as th
+from linjepa import growth_rate
+THR = B.THR
+
+def model_detach(c, s, w0, p0, knotsW, knotsP, alpha, T, dt, t_out, sterm=False):
+    n = c.size; N = int(round(T / dt)); t = np.arange(N + 1) * dt
+    lW = th.lam_of(knotsW, t); lP = th.lam_of(knotsP, t)
+    logw = np.log(w0).copy(); p = np.full(n, float(p0)); W = np.empty((N + 1, n)); Pm = np.empty((N + 1, n))
+    tc = np.full(n, np.nan); post = np.zeros(n, bool)
+    pnc = lambda lw, lp: c * np.exp(2 * np.minimum(lw, 50.0)) / (lp + s * np.exp(2 * np.minimum(lw, 50.0)))
+    def fp(p, lw, lp):
+        w2 = np.exp(2 * np.minimum(lw, 50.0))
+        return alpha * (c * w2 - lp * p - (s * p * w2 if sterm else 0.0))
+    for j in range(N + 1):
+        W[j] = np.exp(np.minimum(logw, 50.0)); Pm[j] = p
+        if j == N: break
+        g1 = growth_rate(p, c, s, lW[j], None)
+        pdec = p * np.exp(-alpha * 0.5 * (lP[j] + lP[j + 1]) * dt)
+        p1q = np.maximum(pdec, pnc(logw + dt * g1, lP[j + 1]))
+        k1 = fp(p, logw, lP[j]); p1l = p + dt * k1
+        p1 = np.where(post, p1l, p1q)
+        g2 = growth_rate(p1, c, s, lW[j + 1], None)
+        logw = logw + 0.5 * dt * (g1 + g2)
+        pq = pnc(logw, lP[j + 1])
+        new = np.isnan(tc) & (pq > pdec) & (g2 > 0) & ~post
+        tc[new] = t[j + 1]
+        pl = p + 0.5 * dt * (k1 + fp(p1l, logw, lP[j + 1]))
+        pqs = np.maximum(pdec, pq)
+        on = (~post) & ~np.isnan(tc) & (pdec > pq) & (g2 < 0)
+        off = post & (g2 > 0) & (pq >= pl)
+        p = np.where(post & ~off, pl, pqs)
+        post = (post & ~off) | on
+    idx = np.clip(np.round(np.asarray(t_out) / dt).astype(int), 0, N)
+    return W[idx], Pm[idx]
+
+def regains(al):
+    lost = np.zeros(al.shape[1], bool); reg = np.zeros(al.shape[1], bool)
+    for j in range(1, al.shape[0]): lost |= al[j-1] & ~al[j]; reg |= lost & al[j]
+    return reg
+
+def one(line):
+    rec = json.loads(line); cfg, tr, pr = rec["cfg"], rec["truth"], rec["pred"]
+    G = B.GRIDS[cfg["grid"]]; c, s = B.stats(G); n = c.size
+    t = np.array(tr["t"]); A = np.array(tr["a"], float); Pt = np.abs(np.array(tr["p"], float)); am = A > THR
+    w0 = np.linalg.norm(B.init_amp(cfg, n), axis=0)
+    out = dict(variant=cfg["variant"], ar=cfg["alpha"] * cfg["rho"], kind=cfg["kind"])
+    dead = np.maximum.accumulate(am, axis=0) & ~am
+    Ms = {"pl": (B.unbits(pr["model"]["chk"], n), np.array(pr["model"]["P"], float)),
+          "qs": (B.unbits(pr["stage_qs"]["chk"], n), np.array(pr["stage_qs"]["P"], float))}
+    for nm, st in (("det", False), ("det_s", True)):
+        Wd, Pd = model_detach(c, s, w0, cfg["p0"], cfg["kW"], cfg["kP"], cfg["alpha"], cfg["T"], B.ETA, t, sterm=st)
+        Ms[nm] = (Wd > THR, Pd)
+    rt = regains(am)
+    for k, (al, Pm) in Ms.items():
+        out[k] = dict(agree=float((al == am).mean()), regain=int(regains(al).sum()), regain_both=int((rt & regains(al)).sum()),
+                      e=np.log(Pt[dead] / np.maximum(Pm[dead], 1e-300)).tolist() if dead.any() else [])
+    out["regain_truth"] = int(rt.sum())
+    return out
+
+if __name__ == "__main__":
+    with gzip.open(sys.argv[1], "rt") as fh, Pool(8) as pool:
+        R = list(pool.imap_unordered(one, fh, chunksize=2))
+    cls = lambda a: "<1" if a < 1-1e-9 else "=1" if a < 1+1e-9 else "1-2" if a < 2-1e-9 else "=2" if a < 2+1e-9 else ">2"
+    res = {}
+    for key in ["all", "<1", "=1", "1-2", ">2"]:
+        S = [r for r in R if key == "all" or cls(r["ar"]) == key]
+        d = {"regain_truth": sum(r["regain_truth"] for r in S)}
+        for k in ("pl", "qs", "det", "det_s"):
+            e = np.array([x for r in S for x in r[k]["e"]])
+            d[k] = dict(b1d=round(float(np.median(np.abs(e))), 3), signed=round(float(np.median(e)), 3), agree=round(float(np.mean([r[k]["agree"] for r in S])), 4),
+                        regain=sum(r[k]["regain"] for r in S), regain_both=sum(r[k]["regain_both"] for r in S))
+        res[key] = d; print(key, d, flush=True)
+    json.dump(res, open(sys.argv[2], "w"), indent=1)

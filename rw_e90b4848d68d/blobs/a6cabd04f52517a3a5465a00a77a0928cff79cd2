@@ -1,0 +1,14 @@
+# Network check report
+
+Source: `checks/network.md` in `experiment-repo` (commit 3aef50c). Outputs are quoted from it.
+
+| # | Command | Answer | Exit |
+|---|---------|--------|------|
+| 1 | `curl -sS -o /dev/null -w '%{http_code}\n' https://pypi.org/simple/` | `200` | 0 |
+| 2 | `curl -sS -D - https://example.com/` | `HTTP/1.1 403 Forbidden: example.com:443 is on none of the world's network resources`; then `curl: (56) CONNECT tunnel failed, response 403` | 56 |
+| 3 | `curl -sS -D - http://example.com/` | `HTTP/1.1 403 Forbidden: example.com:80 is on none of the world's network resources`; body `{"error": "network request refused", "reason": "network-target-not-authorized", ...}` | 0 |
+| 4 | `pip download --no-deps -d /tmp/pkgs tabulate` | Downloaded `tabulate-0.10.0-py3-none-any.whl` (39 kB); "Successfully downloaded tabulate" | 0 |
+
+## Summary
+
+PyPI (the listed host) is reachable over both curl and pip. `example.com` is refused on both ports 443 and 80 with a 403, because it is on none of the world's network resources. For HTTPS the proxy refuses the CONNECT tunnel, so curl fails with exit 56. For plain HTTP the refusal arrives as a JSON body, and curl exits 0.

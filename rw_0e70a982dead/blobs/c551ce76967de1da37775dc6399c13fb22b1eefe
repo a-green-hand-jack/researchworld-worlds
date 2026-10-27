@@ -1,0 +1,34 @@
+# Review standard (internal-review-repo)
+
+Judged against the `Research objective` (internal-review-repo#1). Approval requires every item below
+to hold in the assembled delivery at the approved revisions.
+
+## Method fidelity
+1. Points sampled uniformly in the unit square; inside test x^2+y^2 <= 1 (or < 1, stated);
+   estimate = 4 * inside / N.
+2. N in {1e3, 1e4, 1e5, 1e6, 1e7}, exactly 200 independent estimates per N.
+3. Each estimate uses `numpy.random.default_rng(2026 + run_index)`; the report or code states what
+   the run index is (0..199 within each N, or global). If seeds are reused across N, the report
+   notes that the per-N errors are then correlated across N (common random numbers).
+4. Error = mean absolute error |pi_hat - math.pi| averaged over the 200 runs, per N.
+5. Code that produced the numbers is delivered or referenced at a revision, runs as stated, and the
+   table values are traceable to a results file it wrote (no hand-typed numbers).
+
+## Analysis validity
+6. OLS fit of log(MAE) on log(N) over the 5 points; exponent = slope.
+7. 95% interval uses the slope standard error with a t quantile on n-2 = 3 dof (t = 3.182),
+   or another stated, justified method (e.g. bootstrap over runs); a z = 1.96 interval on 5 points
+   is a finding.
+8. Explicit comparison with -1/2: whether -0.5 lies in the interval, and the deviation stated.
+9. Numbers consistent with theory: MAE ~ sqrt(2/pi) * 4 sqrt(p(1-p)/N), p = pi/4 (~1.31/sqrt(N));
+   with 200 runs each MAE has ~5% relative sampling error, so values far outside that are a finding.
+   Reviewer's independent reproduction: `check/reproduce.py` -> `check/reproduce.json`.
+10. Claims do not exceed the evidence (e.g. no "confirms exactly -1/2" beyond what the interval shows).
+
+## Report and figure
+11. `report/report.md` exists, nonempty, about one page; contains: table of N and MAE (ideally with
+    per-N standard error), the fitted exponent with its 95% interval, and exactly one log-log figure.
+12. The figure is referenced by a path that resolves in the assembled delivery; opened and inspected:
+    log-log axes, labeled (N, mean absolute error), data points and fitted line visible with legend,
+    readable; a -1/2 reference line is welcome. Blank, placeholder or unresolvable figure is a defect.
+13. Numbers in text, table and figure agree with each other and with the results file.

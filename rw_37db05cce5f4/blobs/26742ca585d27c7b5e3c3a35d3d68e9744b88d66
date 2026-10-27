@@ -1,0 +1,38 @@
+# Independent check of experiment-repo evidence (pre-report)
+
+Inspected experiment-repo at c45142683f6b (main). report/report.md does not yet exist in paper-repo (4249ede), so no decision has been given yet.
+
+| Step | What I checked | Found |
+|---|---|---|
+| 1 | checks/status-loop.txt, status-err-1..18.txt, status.md | 18 timestamped `ok` lines, 21:29:14 to 21:32:50 UTC; all 18 stderr files are empty. The ordering deviation (the objective was read before the loop ran) is disclosed in status.md and brief.md and must not be reported as success. |
+| 2 | sources.md vs research-network.json and sources/*.json | 36 rows, one per source: all 11 named package/code/data sources plus every literature service and venue in the description, including the bot-check sites. Each row has a JSON with argv, start/end UTC, exit, status, content type and the first 200 bytes. Non-2xx statuses are recorded as measured: npm 403, Semantic Scholar 429, DOI 301, CVF 302, NeurIPS virtual 302, DBLP 202, Springer 303, IEEE 418, ACM/ScienceDirect/SSRN 403. |
+| 3 | refusals.md | All five exact commands, with full output. http://example.com/ gave 503 "The Website is Blocked" (an upstream KAUST filter page, not the world proxy). https://example.org/ gave 403 (deny list #280), curl exit 56. http://example.org/ gave 403 with a JSON body, reason network-target-denied. 169.254.169.254 gave 403, network-address-not-public. https://localtest.me/ gave 403 (not public), exit 56. For the two HTTPS cases curl prints no CONNECT body; this is disclosed. |
+| 4 | forge.md, plus my own download | `forge api ... -R world/experiment-repo` from /hutian succeeded (exit 0). The release capability-check has the asset random-5MB.bin, 5,000,000 bytes. The curl download sha256 is 916aa60f…d3a1, matching the original. `forge release download` exited 1 ("releases is not supported by this forge"), so it has no hash. I re-downloaded the asset with curl myself: 5,000,000 bytes, sha256 916aa60fd47f1db49ec0ab77a8db7c6e644029aa8f49f7668fc83fed0ef6d3a1, same. |
+| 5 | data/ and checks/large.sha256 in the tree, commit 2a7df9a00deb53ca2c9eb357b4b70aca0e39c93a | data/large.bin is 167,772,160 bytes; my own sha256 is ab4dc034c0a4c00ba0f6c2a33ede656a17115f6149fccb64385fb0ea13bde0c0, equal to checks/large.sha256. data/many has 1,500 files, f0001.txt to f1500.txt, each holding its number (all verified). All were added in the single commit 2a7df9a (1503 files: large.bin, large.sha256, size.md, 1,500 text files). |
+
+Still to do: judge report/report.md against this table. First decision: revise, asking for the run time of each check. Then an accepting decision.
+
+## Decision 1: revise (paper-repo#4), report at 35e93e99477a2797a0abe66b4d064cab74ab6486
+
+I compared every row of the report with checks/ at c45142683f6b. The commands, exits, statuses, hashes and counts all match. Three findings were sent to paper-repo:
+1. Add the UTC run time of each check, from checks/. The objective prescribes this request.
+2. Row 3.1 must say that the 503 body is an upstream KAUST "The Website is Blocked" filter page, so example.com was not reached.
+3. Step 2 must give a body excerpt per source, from sources/*.first200. "Reading the results" must list DBLP's 202 "Making sure you're not a bot!" challenge among the challenge pages.
+
+## Decision 2: accept, report at c77e5abe22e0ea76e7fb80179c39e6fbe320361a
+
+Inspected revisions: paper-repo c77e5abe22e0ea76e7fb80179c39e6fbe320361a and experiment-repo c45142683f6b225b36c9f6b6e9cf70f839ec8d34.
+
+- Run times. I compared every run-time cell with checks/. Step 1 is 21:29:14 to 21:32:50 (status-loop.txt). For step 2, I checked all 36 per-source start/end times and statuses against sources/*.json by script, with 0 mismatches; the step total is 21:30:14.297 to 21:30:17.888. Steps 3.1 to 3.5 match refusals.md. Steps 4a to 4d match forge.md. Steps 5a and 5b match size.md. For 5c, the commit is at 21:31:14 (git commit date of 2a7df9a), and the push runs 21:31:14Z to 21:31:23Z (size-push-start.txt and size-push-end.txt).
+- Row 3.1 and the reading now identify the upstream KAUST filter page, so example.com was not reached.
+- Step 2 has a first-200-bytes excerpt column. Each title or prefix appears in its sources/*.first200 (checked by script). DBLP's 202 challenge is listed. ScienceDirect and IEEE are described as undetermined from 200 bytes, which is correct.
+- Earlier rows are unchanged and still match, as recorded under Decision 1.
+- Remaining nit, not blocking: "behind four non-200 or 200 answers" is awkwardly worded, since all four are non-200.
+
+Assembled-delivery download (ht-role delivery) did not finish within the turn and was stopped; data/ was verified directly in experiment-repo at the same revision c45142683f6b, and the board lists no assembly errors.
+
+Conclusion: the report meets the objective's requirement of a table of every check with its command, result and run time, taken from checks/. Delivery check: ht-role status shows no delivery errors and report/report.md delivered.
+
+## Re-approval at paper-repo 1a4d6267d74c3bed11429d226ecf2065eef7b26c
+
+The diff from c77e5ab is one line in "Reading the results": "behind four non-200 or 200 answers" becomes "behind four answers". This resolves the non-blocking nit, and it is correct: DBLP 202 and npm, ACM DL and SSRN 403 are the four challenge pages. Nothing else changed. experiment-repo is still at c45142683f6b225b36c9f6b6e9cf70f839ec8d34. paper-repo confirmed the accepting decision in paper-repo#5, so the cycle has converged. Approved at this revision.

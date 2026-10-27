@@ -1,0 +1,23 @@
+"""Referee check: when is Sigma_tc = E[M_t Sigma M_c] symmetric and commuting with Sigma_c = E[M_c Sigma M_c]?
+Stationary cyclic 1D signal, Sigma_ij = rho^{d(i,j)}. Masks enumerated exactly over placements."""
+import numpy as np, itertools
+n, rho = 32, 0.8
+i = np.arange(n); D = np.minimum(np.abs(i[:, None] - i[None]), n - np.abs(i[:, None] - i[None]))
+S = rho ** D
+def block(start, L): m = np.zeros(n); m[(start + np.arange(L)) % n] = 1; return m
+def stats(pairs):
+    Sc = np.mean([np.outer(c, c) * S for t, c in pairs], 0)
+    Stc = np.mean([np.outer(t, c) * S for t, c in pairs], 0)
+    asym = np.abs(Stc - Stc.T).max() / np.abs(Stc).max()
+    comm = np.abs(Sc @ Stc - Stc @ Sc).max() / (np.abs(Sc).max() * np.abs(Stc).max() * n)
+    return asym, comm
+cases = {}
+# (a) I-JEPA-like, cyclic: target = block of 6 at random start; context = block of 20 at random start minus target
+cases["block ctx(20)-minus-target(6), cyclic, random placement"] = [(block(a, 6), np.clip(block(b, 20) - block(a, 6), 0, 1)) for a in range(n) for b in range(n)]
+# (b) same but context block always placed *after* the target (breaks reflection symmetry)
+cases["context block always to the right of target (no reflection symmetry)"] = [(block(a, 6), block(a + 6, 14)) for a in range(n)]
+# (c) non-cyclic image-like boundary: blocks must fit inside [0, n)
+def blk(start, L): m = np.zeros(n); m[start:start + L] = 1; return m
+cases["block ctx(20)-minus-target(6), non-cyclic (boundaries)"] = [(blk(a, 6), np.clip(blk(b, 20) - blk(a, 6), 0, 1)) for a in range(n - 5) for b in range(n - 19)]
+for name, pairs in cases.items():
+    a, c = stats(pairs); print(f"{name}: rel. asymmetry of Sigma_tc {a:.2e}; rel. commutator [Sigma_c, Sigma_tc] {c:.2e}")

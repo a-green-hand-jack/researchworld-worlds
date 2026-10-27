@@ -1,0 +1,52 @@
+"""Shared Monte Carlo statistics: integrated autocorrelation time, Binder cumulant, crossings."""
+import numpy as np
+
+
+def autocorr(x):
+    """Normalised autocorrelation function rho(t), t = 0..N-1, via FFT."""
+    x = np.asarray(x, float) - np.mean(x)
+    n = len(x)
+    f = np.fft.rfft(x, 2 * n)
+    acf = np.fft.irfft(f * np.conj(f))[:n]
+    return acf / acf[0] if acf[0] > 0 else np.ones(n)
+
+
+def tau_int(x, c=6.0):
+    """Integrated autocorrelation time tau = 1/2 + sum_{t=1}^{W} rho(t) with Sokal's automatic
+    window: the smallest W with W >= c * tau(W). Returns (tau, W, ok) where ok is False if no such
+    W < N/2 exists (series too short for a reliable estimate)."""
+    rho = autocorr(x)
+    taus = 0.5 + np.cumsum(rho[1:])
+    for W in range(1, len(taus) // 2):
+        if W >= c * taus[W - 1]:
+            return float(taus[W - 1]), W, True
+    W = len(taus) // 2
+    return float(taus[W - 1]), W, False
+
+
+def binder(m2, m4):
+    return 1.0 - m4 / (3.0 * m2 ** 2)
+
+
+def crossing(T, Ua, Ub, deg, centre):
+    """Crossing of two curves U_a(T), U_b(T), each a least-squares polynomial of degree deg in
+    (T - centre) over the sampled T. Returns the real root of the difference inside [T.min, T.max]
+    closest to the point where the measured difference changes sign (or to centre), else nan."""
+    x = np.asarray(T) - centre
+    pa, pb = np.polyfit(x, Ua, deg), np.polyfit(x, Ub, deg)
+    r = np.roots(np.polysub(pa, pb))
+    r = r[np.isreal(r)].real
+    r = r[(r >= x.min()) & (r <= x.max())]
+    if len(r) == 0:
+        return np.nan
+    return float(r[np.argmin(abs(r))] + centre)
+
+
+def common_crossing(T, Us, deg, centre, grid=2001):
+    """T minimising the spread (variance across sizes) of the fitted U_L(T): the point where all
+    sizes' curves come closest to a common crossing. Returns (T*, U* = mean fitted U at T*)."""
+    x = np.asarray(T) - centre
+    xs = np.linspace(x.min(), x.max(), grid)
+    fits = np.array([np.polyval(np.polyfit(x, U, deg), xs) for U in Us])
+    k = int(np.argmin(fits.var(axis=0)))
+    return float(xs[k] + centre), float(fits[:, k].mean())

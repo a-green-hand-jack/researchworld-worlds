@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Check a compiled ICLR 2027 submission PDF and its LaTeX source against the venue rules in VENUE.md.
+
+usage: check_submission.py PAPER.pdf [SOURCE_DIR]
+Hard checks (exit 1): US Letter, main text <= 9 pages (up to the first References / appendix / statement heading),
+anonymous submission mode (header 'Under review as a conference paper at ICLR 2027', 'Anonymous authors', left ruler),
+AI use statement present and filled in, no Type 3 / non-embedded fonts, no Acknowledgments/author-contributions in the PDF,
+style file unmodified, no \\iclrfinalcopy, no margin/font tampering packages, no TODO/placeholder text.
+Warnings: statements placed before References push the conservative page count above 9, size, missing recommended statements.
+"""
+import sys, re, hashlib, pathlib
+from pypdf import PdfReader
+
+STY_SHA256 = "797deef41724e93761426ac0cbcca46279a91cc650dd1f0ce76a4f08d2098ea6"
+BST_SHA256 = "2d67552db7ed38ccfccb5957b52f95656e25c249724761d3cf5f7922ad1844c5"
+pdf = pathlib.Path(sys.argv[1]); src = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else None
+r = PdfReader(str(pdf)); fails = []
+
+def ok(c, msg, hard=True):
+    print(("PASS " if c else ("FAIL " if hard else "WARN ")) + msg)
+    if not c and hard: fails.append(msg)
+
+ok(pdf.stat().st_size <= 50 * 2**20, f"file size {pdf.stat().st_size/2**20:.2f} MB (ICLR sets no PDF cap in the template; OpenReview upload limit is 50 MB)", hard=False)
+w, h = (float(x) for x in r.pages[0].mediabox[2:])
+ok(abs(w - 612) < 2 and abs(h - 792) < 2, f"page size {w:.0f}x{h:.0f} pt is US Letter")
+
+HEADER = "Under review as a conference paper at ICLR 2027"
+RULER = re.compile(r"\d{3}")
+def clean_lines(t):
+    out = []
+    for l in t.split("\n"):
+        l = l.strip()
+        if not l or RULER.fullmatch(l) or l == HEADER or re.fullmatch(r"\d{1,2}", l): continue  # ruler, header, page number
+        out.append(l)
+    return out
+texts = [(p.extract_text() or "") for p in r.pages]
+pages = [clean_lines(t) for t in texts]
+
+# small-caps headings extract with irregular spaces ("AIUSE STATEMENT"), so headings are compared with spaces removed
+def norm(l): return re.sub(r"[\s]+", "", l).upper()
+MARK = re.compile(r"(\d+|[A-Z])?(REFERENCES|APPENDIX[A-Z]*|AIUSESTATEMENT|ETHICSSTATEMENT|REPRODUCIBILITYSTATEMENT|"
+                  r"ACKNOWLEDG(E)?MENTS|AUTHORCONTRIBUTIONS|LLMUSAGESTATEMENT|USEOF(LARGELANGUAGEMODELS|LLMS|AI)[A-Z]*)")
+def first_heading(pattern):
+    for i, ls in enumerate(pages):
+        for j, l in enumerate(ls):
+            if re.fullmatch(pattern, norm(l)): return i, j
+    return None
+first = None
+for i, ls in enumerate(pages):
+    for j, l in enumerate(ls):
+        if MARK.fullmatch(norm(l)): first = (i, j, l); break
+    if first: break
+if first is None:
+    ok(False, "no References / appendix / statement heading found")
+else:
+    pg, j, name = first
+    above = pages[pg][:j]
+    last_main = pg + 1 if above else pg
+    ok(last_main <= 9, f"main text ends on page {last_main} (first back-matter heading '{name}' on page {pg+1}, {len(above)} text lines above it on that page); limit 9")
+refh = first_heading(r"(\d+)?REFERENCES")
+if refh:
+    pg, j = refh; last = pg + 1 if pages[pg][:j] else pg
+    ok(last <= 9, f"conservative count: everything before References (statements included) ends on page {last}; the template says the AI/ethics/reproducibility statements are not counted, but if they sit before References the unambiguous way to stay within 9 pages is to fit them in", hard=False)
+else:
+    ok(False, "no References heading found")
+
+full = "\n".join(texts); flat = re.sub(r"\s+", " ", full)
+ok(HEADER in full, "anonymous review header 'Under review as a conference paper at ICLR 2027' present (no iclrfinalcopy)")
+ok("Anonymous authors" in full and "double-blind review" in full, "'Anonymous authors / Paper under double-blind review' title block present")
+ok(sum(1 for l in texts[0].split("\n") if RULER.fullmatch(l.strip())) >= 40, "left line-number ruler present on page 1 (submission mode)", hard=False)
+ok(not re.search(r"Published as a conference paper", full), "not built as the camera-ready ('Published as a conference paper')")
+nflat = re.sub(r"\s+", "", flat).upper()
+ai = re.search(r"AI\s*USE\s*STATEMENT(.{0,3000})", flat, re.I)
+ok(ai is not None, "AI use statement section present (required by ICLR 2027)")
+if ai:
+    body = ai.group(1)
+    ok(not re.search(r"\[(tasks|other|the rest|elaborate)", body, re.I), "AI use statement has no template placeholders left in square brackets")
+ok("REPRODUCIBILITYSTATEMENT" in nflat, "reproducibility statement present (recommended)", hard=False)
+ok(not any(re.fullmatch(r"(\d+|[A-Z])?(ACKNOWLEDG(E)?MENTS|FUNDING|AUTHORCONTRIBUTIONS)", norm(l)) for ls in pages for l in ls),
+   "no Acknowledgments / Funding / Author Contributions heading (anonymity)")
+ok(not re.search(r"\bTODO\b|\bFIXME\b|\?\?", full), "no TODO/FIXME/'??' (unresolved reference) text in PDF")
+ok(not re.search(r"https?://(?!openreview\.net)\S*(github|gitlab|huggingface|bitbucket|drive\.google|dropbox)", flat, re.I), "no repository/file-host links in the PDF text (anonymity; use anonymized supplementary code)", hard=False)
+
+bad = set()
+for p in r.pages:
+    res = p.get("/Resources") or {}
+    fonts = (res.get("/Font") or {}) if hasattr(res, "get") else {}
+    for k, f in (fonts.items() if fonts else []):
+        f = f.get_object(); st = str(f.get("/Subtype"))
+        desc = f.get("/FontDescriptor"); emb = False
+        if desc is not None:
+            d = desc.get_object(); emb = any(x in d for x in ("/FontFile", "/FontFile2", "/FontFile3"))
+        if st == "/Type3" or (st != "/Type0" and not emb): bad.add((str(f.get("/BaseFont")), st))
+        if st == "/Type0":
+            df = f["/DescendantFonts"][0].get_object(); d = df.get("/FontDescriptor")
+            if d is None or not any(x in d.get_object() for x in ("/FontFile", "/FontFile2", "/FontFile3")): bad.add((str(f.get("/BaseFont")), st))
+ok(not bad, f"all fonts embedded and none Type 3 (offenders: {sorted(bad)[:5]})")
+
+if src:
+    sty = list(src.rglob("iclr2027_conference.sty"))
+    ok(bool(sty) and hashlib.sha256(sty[0].read_bytes()).hexdigest() == STY_SHA256, "iclr2027_conference.sty present and identical to the official file")
+    bst = list(src.rglob("iclr2027_conference.bst"))
+    ok(bool(bst) and hashlib.sha256(bst[0].read_bytes()).hexdigest() == BST_SHA256, "iclr2027_conference.bst present and identical to the official file", hard=False)
+    tex = "\n".join(re.sub(r"(?<!\\)%.*", "", p.read_text(errors="ignore")) for p in src.rglob("*.tex"))
+    ok(re.search(r"\\usepackage(\[[^\]]*\])?\{iclr2027_conference[^}]*\}", tex) is not None, "uses \\usepackage{iclr2027_conference}")
+    ok("\\iclrfinalcopy" not in tex, "\\iclrfinalcopy not enabled (submission, not camera-ready)")
+    ok(not re.search(r"\\(geometry|setlength\{\\(textwidth|textheight|oddsidemargin|evensidemargin|topmargin|parskip|headsep)\})|\\usepackage(\[[^\]]*\])?\{(geometry|fullpage|savetrees|anysize|vmargin|setspace|titlesec|nopageno)\}", tex),
+       "no margin/spacing/font-size tampering (geometry, fullpage, savetrees, setlength of text block, ...)")
+    ok(re.search(r"\\author\{[^}]*(@|University|Institute|Department)", tex) is None, "no author names/affiliations/emails in \\author (anonymity)")
+print("RESULT:", "FAIL" if fails else "PASS"); sys.exit(1 if fails else 0)

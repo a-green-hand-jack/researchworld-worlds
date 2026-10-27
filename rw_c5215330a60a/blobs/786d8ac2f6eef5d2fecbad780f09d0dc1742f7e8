@@ -1,0 +1,26 @@
+# Brief (experiment-repo, context function)
+
+## Objective, quoted
+> How fast do three quadrature rules converge, and does the observed order match theory?
+>
+> Integrate three functions on [0, 1]: exp(x), 1/(1 + 25 x^2) and sqrt(x), whose exact integrals are e - 1, atan(5)/5 and 2/3. For each function use the composite trapezoid rule, the composite Simpson rule and Gauss-Legendre quadrature (`numpy.polynomial.legendre.leggauss`, composite over equal panels with 4 nodes each), with n = 2^k panels for k = 1, ..., 12, and record the absolute error.
+>
+> For each function and rule, fit log(error) against log(n) by least squares over the points above machine precision and give the convergence order with a 95% interval; say where and why the observed order departs from the theoretical 2, 4 and 8.
+>
+> Report: `report/report.md`, at most two pages: a table of the fitted orders with their intervals, one log-log figure per function with the three rules, a short discussion of sqrt(x), and at its top a small cover illustration `report/cover.png` made with the world's image generation.
+
+No data files or related literature are supplied; everything is computed from the stated definitions.
+
+## Requirements / deliverables
+1. Absolute errors: 3 functions x 3 rules x k=1..12 (n=2^k panels).
+2. Per (function, rule): OLS fit of log(error) vs log(n) over points above machine precision; slope magnitude = order; 95% interval (t-based, dof = points-2).
+3. Explanation of where/why observed order departs from theory 2 (trapezoid), 4 (Simpson), 8 (Gauss-Legendre 4 nodes/panel).
+4. `report/report.md` (<= 2 pages): orders table with intervals; 3 log-log figures (one per function, three rules each); short sqrt(x) discussion; cover illustration `report/cover.png` at top, made with the world's image generation.
+
+## Conventions / interpretation (ours, to be stated in the report)
+- Simpson: n panels, each panel integrated by Simpson (endpoints + midpoint), i.e. 2n subintervals; trapezoid: n panels. Order measured in n (panel count). Gauss-Legendre: 4-node rule on each of n panels.
+- "Machine precision" cut-off: keep points with error > a threshold (primary 1e-15, sensitivity at 1e-14/1e-13); exact zeros excluded. Truncation-vs-roundoff checked.
+- Expected theory: exp: 2/4/8 clean (until the roundoff floor). sqrt(x): endpoint singularity at 0 (f' unbounded) -> all rules ~ n^-1.5 (GL: n^-1.5 too, the 8th-order claim needs smoothness). 1/(1+25x^2): poles at +-i/5, so pre-asymptotic until h << 0.2; early fitted orders differ from 2/4/8; GL reaches the floor within few k, leaving very few fit points (wide intervals).
+
+## Not established
+- Whether the image-generation resource is available to a worker: it is not available to experiment-repo's worker (anthropic provider); the cover must come from a position whose worker can use it.

@@ -1,0 +1,76 @@
+# Review record
+
+## Pass 1 (2026-10-17): assembled delivery at paper-repo `a22fbda9f904b545eefc8169a2b7c487d3de6c30`, experiment-repo `71ac236351917e5df0536545a5c2de4c50705c3f`
+
+Judged against the objective (internal-review-repo#1), the brief (story-repo `fa0b141bcc55950f671deb52e5b5b7611a8486d8`, R1-R17),
+the assignment (same commit) and each owner's commitment. Delivery assembled with `ht-role delivery` (27 files, no errors).
+
+### What I inspected and how
+
+| Check | How | Result |
+|---|---|---|
+| R1 data | Fetched `https://www.openml.org/api/v1/json/data/61` and the ARFF myself; ran the delivered `fetch_data.py` in a clean copy | MD5 `ad484452...39a9` = OpenML's; fetched file byte-identical to delivered `code/data/iris.arff`; 150 x 4, 3 x 50 |
+| R2 LR | Read `cv.py`; fitted the delivered pipeline (sklearn 1.5.2) | softmax(decision_function) = predict_proba, coef 3x4: multinomial; L2, C=1, lbfgs; scaler in pipeline |
+| R3 kNN nested | Read `cv.py` | GridSearchCV(StratifiedKFold(5), seeded per outer fold) on the outer training set only; scaler inside the pipeline; ties to smallest k (first in ascending grid) |
+| R4/R6 protocol, pairing | `predictions.csv` | 50 folds of 120/30, 10 per class per test fold, each repetition partitions all 150 rows, 10 distinct repetitions, both methods scored on the same test rows |
+| Full re-run | Pinned venv (Python 3.11.2, numpy 2.1.3, scipy 1.14.1, scikit-learn 1.5.2, matplotlib 3.9.2); `cv.py` from scratch (19 s) | `folds.csv` and `predictions.csv` byte-identical to delivered local and Ibex files (sha256 `d4e5daab...`, `4c302cc2...`) |
+| R5/R6 intervals | Recomputed independently from `results/ibex/folds.csv` with my own code | LR 95.40 [91.56, 99.24], kNN 94.47 [89.67, 99.27], diff +0.93 [-2.14, +4.00] pp, naive [+0.10, +1.77], p = 0.544, 13/32/5 folds: all match the table, text and `summary.json`; method (Nadeau-Bengio / Bouckaert-Frank, rho = 30/120, t49) appropriate and named |
+| Analysis outputs | Ran delivered `analyze.py` | `summary.json`, `numbers.tex`, `tables/results.tex`, `figures/accuracy.pdf` and `.png` byte-identical to delivered |
+| R7/R9 Ibex | `results/ibex/ibex_53909243.log`, `run_info.json`; `sacct -j 53909243` on Ibex | job `rw-012220dd9031-iris-cv`, partition batch, 1 CPU, COMPLETED on `cn504-26`, 14:41:40-14:41:57 local (= 11:41:57Z in run_info) |
+| R8/R10 identity | sha256 of both runs' files; my re-run | identical per-fold results and every prediction; paper states node and identity correctly |
+| R11-R13 paper | Rendered both pages (110 and 300 dpi) and read them; recompiled with TeX Live 2026 `latexmk -pdf`; sty sha256 vs the official zip (sha256 `82473931...`) | 2 pages, Letter; sty unmodified (`c3fc2894...`); default option = anonymous submission (line numbers, "Submitted to ... Do not distribute"); recompile gives identical text, no warnings, no `??` |
+| R14/R15 | Rendered page 2 | exactly one figure (two panels, labelled axes, legible at print size, caption matches content) and one table; numbers in both match results |
+| R16/R17 | Every macro in `numbers.tex` traced to `summary.json` / `run_info.json`; code, LaTeX, bib, sty next to the PDF | all paper numbers generated, none hand-typed; see finding E1 |
+| Citations | Read bib entries against the brief's Crossref-verified list | 5 references correct; see finding P2 |
+
+### Findings (pass 1)
+
+- **E1 (experiment-repo, revise).** The paper's sentence "A grid k in {1,...,30} gave the same conclusion (code/README.md)"
+  rests on numbers in `code/README.md` (kNN 94.40, diff +1.00 [-2.39, +4.39], naive [+0.08, +1.92]) from experiment-repo commit
+  6950192, whose results are not delivered, and the delivered `cv.py` cannot produce them (its `K_GRID` is hard-coded to odd k).
+  This breaks R16 ("the code that produced every number") and experiment-repo's own commitment ("one command reproduces
+  every number"). I reproduced the numbers exactly by changing `K_GRID` to `range(1, 31)`, so the claim is true; it only
+  needs delivering. Needed: the sensitivity run's code path in `report/code/` (e.g. an optional grid argument, default unchanged,
+  or a separate script) and its per-fold results and summary under `report/results/`, with `code/README.md` pointing to them.
+  The main runs must stay byte-identical (do not change what `cv.py` writes for the main grid).
+- **P1 (paper-repo, revise).** "The two runs are identical on two different CPU architectures": both CPUs are x86-64
+  (Intel Xeon Gold 6230, AMD EPYC 9655); they differ in vendor and microarchitecture, not in architecture/ISA. State it precisely.
+- **P2 (paper-repo, revise).** All results come from scikit-learn implementations (LogisticRegression/lbfgs, KNeighborsClassifier,
+  GridSearchCV, RepeatedStratifiedKFold) but scikit-learn is not cited; the brief lists Pedregosa et al. (2011), JMLR 12:2825-2830,
+  as the conventional citation. Add it (page 2 has room).
+
+### Non-blocking notes (no action required)
+
+- `folds.csv` column `inner_acc_knn` is written as `np.float64(0.95)` (numpy 2 repr via `!r`), so that column is not numeric.
+  It is unused by any reported number; fixing it would change the bytes of both runs and require re-running both, so I do
+  not ask for it.
+- Figure 1a draws the fold-level corrected interval next to repetition means; the caption says so, so it is not misleading.
+
+### Conclusion of pass 1
+
+Not approved yet: E1, P1, P2 open. Everything else in the objective is met and independently verified.
+
+## Pass 2 (2026-10-17): assembled delivery at paper-repo `24fa724765099f11bb99d7e2b19ee2d3c8ca3d18`, experiment-repo `e84ecd5a24c08a42d9893f11aedabe300fba4ad0`
+
+Delivery re-assembled with `ht-role delivery` (31 files, no errors). Against pass 1, the only changed files are
+`report/README.md`, `report/report.{tex,pdf}`, `report/references.bib` (paper-repo), `report/code/{README.md,cv.py,analyze.py}`
+and the new `report/results/sensitivity_k1-30/` (experiment-repo). Every other delivered file is byte-identical to pass 1,
+so the pass-1 checks on them still hold.
+
+| Finding | What I checked | Result |
+|---|---|---|
+| E1 | Read the diffs of `cv.py` and `analyze.py`. In a clean copy of the delivery and the pinned venv, ran `cv.py OUT` and `cv.py OUT --k-grid all` from scratch, then `analyze.py` | The default grid is unchanged: main `folds.csv` and `predictions.csv` are byte-identical to the delivered local and Ibex files. The sensitivity run is byte-identical to `results/sensitivity_k1-30/`. `analyze.py` regenerates `summary.json`, `numbers.tex`, the table, the figure (pdf and png) and `sensitivity_k1-30/summary.json` byte-identically. That summary gives kNN 94.40 and diff +1.00 [-2.39, +4.39], naive [+0.08, +1.92], matching `code/README.md`, which now gives the command and the file. **Resolved.** |
+| P1 | Rendered and read both pages | The text reads "two different CPU models (Intel and AMD, both x86-64)", and the full model names stay in Setup. **Resolved.** |
+| P2 | Bib entry, rendered references, recompile | Pedregosa et al. (2011), JMLR 12:2825-2830, is cited where the scikit-learn version is stated, and the reference renders correctly. **Resolved.** |
+| Paper as a whole | Recompiled from the assembled delivery (TeX Live 2026, `latexmk -pdf`); compared with the delivered PDF; rendered at 110 dpi and read both pages | 2 pages; the text is identical to the delivered PDF. There are no LaTeX or BibTeX warnings and no `??`. The style file is still the official one (`c3fc2894...`) in submission mode. There is one figure and one table, and all numbers are unchanged from pass 1 and match my recomputation. The parenthetical "name from the job's log" was dropped; the node name's provenance stays in `report/README.md` and the delivered log, and sacct confirms it. |
+
+Non-blocking notes from pass 1 still stand: the `inner_acc_knn` repr wart is unused by any reported number. `report/README.md`
+says the PDF was compiled against experiment-repo 71ac236 rather than e84ecd5. Every file the PDF reads is byte-identical
+between those revisions, and my recompile from the assembled delivery reproduces the text exactly.
+
+### Conclusion of pass 2
+
+Every requirement of the objective (R1-R17 of the brief) is met. I verified each one independently: the data, the nested CV,
+the paired 10x5 design, the corrected intervals, the Ibex job on cn504-26, the byte-identical local and Ibex runs, the
+two-page NeurIPS 2026 submission-format PDF compiled from the delivered LaTeX, one figure, one table, and code that
+regenerates every number. **Approved** for release at the revisions above.

@@ -1,0 +1,19 @@
+"""Independent numerical and quantization sensitivity checks; uses committed bins."""
+import json,numpy as np
+from scipy.special import ndtr
+from scipy.optimize import least_squares
+r=json.load(open('results/fit.json')); d=np.genfromtxt('results/lightcurve.csv',delimiter=',',names=True)
+p=np.array([r['params'][k]['value'] for k in ('background_rate','burst_counts','centre','width')]); scale=np.array([20000,6000000,600,30]); edges=np.arange(1201.)
+def mu(q,midpoint=False):
+ b,a,c,s=q*scale
+ return b+a*(np.exp(-.5*((edges[:-1]+.5-c)/s)**2)/(s*np.sqrt(2*np.pi)) if midpoint else np.diff(ndtr((edges-c)/s)))
+def fit(y,midpoint=False):
+ def residual(q):
+  m=mu(q,midpoint); v=(m-y)/y
+  return np.sign(v)*np.sqrt(np.maximum(2*y*(v-np.log1p(v)),0))
+ fit=least_squares(residual,p/scale,xtol=1e-13,ftol=1e-13,gtol=1e-10,diff_step=1e-5)
+ return fit.x*scale
+independent=fit(d['observed']); removed=d['observed'].copy(); removed[-1]-=1
+out={'independent_least_squares_deviance_solution':independent.tolist(),'difference_from_primary':(independent-p).tolist(),'midpoint_model_parameter_shift':(fit(d['observed'],True)-p).tolist(),'remove_single_1200_endpoint_parameter_shift':(fit(removed)-p).tolist(),'parameter_order':['background_rate','burst_counts','centre','width'],'note':'Sensitivity fits only; primary fit retains every photon and integrates the Gaussian over bins.'}
+assert max(abs((independent-p)/np.array([r['params'][k]['fisher_se'] for k in out['parameter_order']])))<.001
+open('results/numerical_checks.json','w').write(json.dumps(out,indent=2)+'\n'); print(out)

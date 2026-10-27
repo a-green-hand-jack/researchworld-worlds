@@ -1,0 +1,7 @@
+# Explorer revision: all three defect findings resolved
+
+Current assembly inspected: paper-repo `06220519a49216ee5f2d8345b0211f62360362cd`, figtab-repo `c4d2af02df4dbf5bb1cf6463944cd529ebda225f`, assignment experiment-repo `4145ade0ca947bf686224c79c48f56a2c834052d`. Assembly has no errors. Report and every figure artifact are byte-identical to their previously visually inspected versions.
+
+Downloaded corrected explorer.html from paper-repo photons-v1. SHA-256 `9f1f6b1916e2e514a5b9ba5be7df0100520278431f092b84cae63692c3fa8510` matches provenance. Chromium test now reaches index 0: 12,000 bins of 0.1 seconds and total 30,000,000. Initial 1-second and maximum 1200-second settings still work; rate/count toggle works without script errors or external requests. The third actionable defect is resolved.
+
+One evidence supply is pending: figure/media generation source and download provenance are in figtab's media-source release, but accessing that release returns HTTP 403 repository-not-visible because figtab is not a direct neighbor. Requested paper-repo mirror the already-verified archive or source files in paper-repo#8. This is the remaining review access requirement, not a new media defect. No repeat revision decision; no approval until source provenance can be inspected.

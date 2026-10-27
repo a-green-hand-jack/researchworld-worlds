@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""Render the report's log-log error-scaling figure from experiment-repo's results.
+
+Outputs (next to this script):
+  error_scaling.png  PNG, 1600 px wide, 5:3 aspect (fits one page at ~6 in)
+  error_scaling.svg  vector copy
+  provenance.json    exact inputs (SHA256), source commit, rendered numbers
+
+Expected inputs (interface settled in world/experiment-repo issue #2 and
+world/figtab-repo issue #2):
+
+  summary.csv  columns: N, mean_absolute_error, fitted_error, theoretical_error
+               plus standard_error (SEM of the mean over the 200 runs)
+  fit.json     fields (as delivered by experiment-repo at 07018b8348f9):
+                     slope, intercept, log_base ("natural")
+                     slope_ci95: [lo, hi]           (paired whole-run bootstrap,
+                                                    percentile endpoints; primary)
+                     regression_t_ci95: [lo, hi]    (regression t interval,
+                                                    sensitivity check)
+                     bootstrap_replicates
+                     asymptotic_mae_coefficient     (sqrt(32*p*(1-p)/pi), p=pi/4)
+
+The script cross-checks the interface (fitted_error vs slope/intercept, local
+refit of slope, N values) and exits with a message on mismatch instead of
+rendering a figure that silently disagrees with the analysis.
+
+Usage:
+  python3 make_figure.py --results-dir <dir> [--source-commit <sha>] [--out-dir <dir>]
+"""
+
+import argparse
+import hashlib
+import json
+import platform
+import sys
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+REQUIRED_N = [10**3, 10**4, 10**5, 10**6, 10**7]
+REQUIRED_COLS = ["N", "mean_absolute_error", "fitted_error", "theoretical_error"]
+REQUIRED_FIT_FIELDS = ["slope", "intercept", "slope_ci95"]
+FIT_REL_TOL = 1e-4
+SLOPE_ABS_TOL = 1e-6
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 16), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def fail(msg):
+    sys.exit(f"make_figure.py: {msg}")
+
+
+def load_inputs(results_dir):
+    summary_path = Path(results_dir) / "summary.csv"
+    fit_path = Path(results_dir) / "fit.json"
+    for p in (summary_path, fit_path):
+        if not p.is_file():
+            fail(f"missing required input: {p}")
+    df = pd.read_csv(summary_path)
+    fit = json.loads(fit_path.read_text())
+    return summary_path, fit_path, df, fit
+
+
+def validate(df, fit):
+    missing_cols = [c for c in REQUIRED_COLS if c not in df.columns]
+    if missing_cols:
+        fail(f"summary.csv missing columns: {missing_cols}")
+    missing_fields = [k for k in REQUIRED_FIT_FIELDS if k not in fit]
+    if missing_fields:
+        fail(f"fit.json missing fields: {missing_fields}")
+
+    n_values = sorted(int(v) for v in df["N"])
+    if n_values != REQUIRED_N:
+        fail(f"summary.csv N values {n_values} != required {REQUIRED_N}")
+
+    slope = float(fit["slope"])
+    intercept = float(fit["intercept"])
+    ci = fit.get("slope_ci95", fit.get("interval_95"))
+    lo, hi = (float(v) for v in ci)
+    if not lo < slope < hi:
+        print(
+            f"WARNING: bootstrap 95% interval [{lo:.6g}, {hi:.6g}] "
+            f"does not contain the fitted slope {slope:.6g}",
+            file=sys.stderr,
+        )
+
+    N = df["N"].to_numpy(float)
+    mae = df["mean_absolute_error"].to_numpy(float)
+    fitted_col = df["fitted_error"].to_numpy(float)
+
+    fitted_from_line = np.exp(intercept + slope * np.log(N))
+    rel_dev = np.max(np.abs(fitted_from_line - fitted_col) / fitted_col)
+    if rel_dev > FIT_REL_TOL:
+        fail(
+            "fitted_error column disagrees with exp(intercept + slope*log(N)) "
+            f"(max relative deviation {rel_dev:.3g} > {FIT_REL_TOL}); "
+            "check that fit.json uses natural-log units"
+        )
+
+    A = np.column_stack([np.log(N), np.ones_like(N)])
+    coef, *_ = np.linalg.lstsq(A, np.log(mae), rcond=None)
+    if abs(coef[0] - slope) > SLOPE_ABS_TOL:
+        fail(
+            "local OLS refit of log(mean_absolute_error) vs log(N) gives slope "
+            f"{coef[0]:.10g}, fit.json says {slope:.10g}; results and fit disagree"
+        )
+
+    theory_col = df["theoretical_error"].to_numpy(float)
+    C = fit.get("asymptotic_mae_coefficient", fit.get("theoretical_coefficient"))
+    if C is None:
+        C = float(theory_col[0] * np.sqrt(N[0]))
+    else:
+        C = float(C)
+    theory_from_C = C / np.sqrt(N)
+    rel_dev_t = np.max(np.abs(theory_from_C - theory_col) / theory_col)
+    if rel_dev_t > FIT_REL_TOL:
+        print(
+            f"WARNING: theoretical_error column vs C/sqrt(N) with C={C:.6g}: "
+            f"max relative deviation {rel_dev_t:.3g}",
+            file=sys.stderr,
+        )
+    return N, mae, fitted_col, theory_col, slope, intercept, (lo, hi), C
+
+
+def render(N, mae, slope, intercept, interval, C, sem, out_dir):
+    lo, hi = interval
+    png_path = out_dir / "error_scaling.png"
+    svg_path = out_dir / "error_scaling.svg"
+
+    plt.rcParams.update(
+        {"font.size": 12, "legend.fontsize": 10.5, "svg.fonttype": "none"}
+    )
+    fig, ax = plt.subplots(figsize=(8.0, 4.8), dpi=200)
+
+    if sem is not None:
+        ax.errorbar(
+            N,
+            mae,
+            yerr=sem,
+            fmt="o",
+            color="#1f77b4",
+            markersize=6,
+            capsize=3,
+            elinewidth=1.0,
+            label="Measured mean $|\\hat\\pi-\\pi|$ (200 runs; $\\pm$1 SEM bars)",
+        )
+    else:
+        ax.plot(
+            N,
+            mae,
+            "o",
+            color="#1f77b4",
+            markersize=6,
+            label="Measured mean $|\\hat\\pi-\\pi|$ (200 runs)",
+        )
+
+    xs = np.logspace(np.log10(N[0]), np.log10(N[-1]), 200)
+    ax.plot(
+        xs,
+        np.exp(intercept + slope * np.log(xs)),
+        "-",
+        color="#d62728",
+        linewidth=1.8,
+        label=(
+            f"OLS fit: slope $= {slope:.3f}$, "
+            f"95% CI $[{lo:.3f},\\ {hi:.3f}]$ (paired bootstrap)"
+        ),
+    )
+    ax.plot(
+        xs,
+        C / np.sqrt(xs),
+        "--",
+        color="#7f7f7f",
+        linewidth=1.8,
+        label=(f"Asymptotic theory: ${C:.3f}\\,N^{{-1/2}}$ (expected slope $-1/2$)"),
+    )
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xticks(REQUIRED_N)
+    ax.set_xticklabels([f"$10^{{{k}}}$" for k in range(3, 8)])
+    ax.set_xlim(N[0] * 0.75, N[-1] * 1.4)
+    ax.set_xlabel("Number of samples $N$ per estimate")
+    ax.set_ylabel("Mean absolute error of $\\hat\\pi$")
+    ax.grid(True, which="major", alpha=0.3, linewidth=0.5)
+    ax.legend(loc="upper right", framealpha=0.9)
+
+    fig.tight_layout()
+    fig.savefig(png_path, dpi=200)
+    fig.savefig(svg_path)
+    plt.close(fig)
+    return png_path, svg_path
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--results-dir", required=True, help="directory with summary.csv and fit.json")
+    ap.add_argument("--source-commit", default="", help="experiment-repo commit the results come from")
+    ap.add_argument("--out-dir", default=str(Path(__file__).resolve().parent))
+    args = ap.parse_args()
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    summary_path, fit_path, df, fit = load_inputs(args.results_dir)
+    N, mae, fitted_col, theory_col, slope, intercept, interval, C = validate(df, fit)
+    sem_col = "standard_error" if "standard_error" in df.columns else "sem"
+    sem = df[sem_col].to_numpy(float) if sem_col in df.columns else None
+
+    png_path, svg_path = render(N, mae, slope, intercept, interval, C, sem, out_dir)
+
+    provenance = {
+        "figure": "error_scaling.png",
+        "generated_by": "report/figures/make_figure.py",
+        "inputs": {
+            str(summary_path): {"sha256": sha256(summary_path)},
+            str(fit_path): {"sha256": sha256(fit_path)},
+        },
+        "source_commit": args.source_commit,
+        "rendered_numbers": {
+            "N": [int(v) for v in N],
+            "mean_absolute_error": [float(v) for v in mae],
+            "slope": slope,
+            "intercept": intercept,
+            "slope_ci95": [float(v) for v in interval],
+            "regression_t_ci95": fit.get("regression_t_ci95", fit.get("interval_95_t")),
+            "asymptotic_mae_coefficient": C,
+            "bootstrap_replicates": fit.get("bootstrap_replicates"),
+        },
+        "sem_used": sem is not None,
+        "versions": {
+            "python": platform.python_version(),
+            "numpy": np.__version__,
+            "matplotlib": matplotlib.__version__,
+            "pandas": pd.__version__,
+        },
+        "outputs": {
+            png_path.name: {"sha256": sha256(png_path), "pixels": "1600x960"},
+            svg_path.name: {"sha256": sha256(svg_path)},
+        },
+    }
+    (out_dir / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
+    print(f"wrote {png_path}, {svg_path}, provenance.json")
+
+
+if __name__ == "__main__":
+    main()

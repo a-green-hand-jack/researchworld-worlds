@@ -1,0 +1,25 @@
+{
+  "runs": 4,
+  "workers": 2,
+  "N": [
+    1000,
+    10000,
+    100000,
+    1000000,
+    10000000
+  ],
+  "chunk_size": 250000,
+  "elapsed_seconds": 0.5725146350450814,
+  "per_run_seconds": [
+    0.35226107807829976,
+    0.35170226299669594,
+    0.19966224289964885,
+    0.17943311901763082
+  ],
+  "python": "3.11.2",
+  "numpy": "2.4.6",
+  "bit_generator": "PCG64",
+  "seed_convention": "seed=2026+run_index; zero-based run_index",
+  "draw_call": "rng.random((m, 2)); contiguous pairs across chunks and N",
+  "code_commit": "abe7230de7899610bd25a8a18779efe1a4fec771"
+}

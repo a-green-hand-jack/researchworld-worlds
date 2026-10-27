@@ -1,0 +1,6 @@
+# Brief
+Objective (quoted): "Measure how the running time of insertion sort and merge sort grows with the input size n (n = 1000, 2000, 4000, 8000, 16000, random integers, 5 repeats each), and check the growth against the expected n^2 and n log n shapes. Deliver the timing table, a log-log figure with both curves, the analysis code, and a short report `report/report.md` saying whether the measured growth matches the expected shapes."
+Deliverables: timing table (results/timings.csv raw, results/summary.csv), log-log figure (figures/), analysis code (code/), report/report.md.
+Questions: fitted log-log slope per algorithm (expect ~2 insertion, ~1.0-1.1 merge); ratio to n^2 / n log n reference.
+No supplied data or related material. Not established: hardware/language not specified (pure Python used, same implementations both).
+Result note: results/summary.csv has mean/sd per n and full-range log-log slope (insertion 1.89, merge 0.99); insertion n=1000 point is below the n^2 trend (ratio 2.5e-8 vs ~1.7e-8 at larger n is HIGHER, i.e. small-n deviates), so slope from n>=2000 should also be reported (~2.0). Merge/(n log2 n) is ~1.3e-7 for n>=2000, flat.

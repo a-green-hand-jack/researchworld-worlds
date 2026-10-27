@@ -1,0 +1,28 @@
+# Agreed presentation package
+
+Paper owner confirmed paths and layout in paper-repo issue 2. Study assignment
+and numerical supply are requested in experiment-repo issue 3; do not invent
+fit statistics or error data while that supply is pending.
+
+- `report/cover.png`: small, text-free image-generated illustration; target
+  1024 × 384 pixels or smaller. Retain prompt, model and generation code.
+- `report/figures/exp.png`, `runge.png`, `sqrt.png`: each approximately
+  6.5 × 2.6 inches, minimum 150 dpi. Consistent colors and markers by rule,
+  labeled logarithmic axes for panels n and absolute integral error,
+  precision threshold and fit exclusions. Reference slopes 2, 4, 8 and,
+  for sqrt, 1.5 as useful; distinguish guides from fitted lines and observations.
+  Zero errors cannot occupy a logarithmic ordinate: mark them separately at a
+  declared display floor, never treat the display floor as a measured error.
+- `report/tables/orders.md` and `orders.csv`: function, rule, fitted order,
+  95% interval, points used, nine rows. Source all numeric values from analysis.
+- `report/figures/captions.md`: compact reusable captions.
+- `presentation/`: generator code, exact input provenance and image-generation
+  prompt; dependencies recorded. Inspect the rendered PNGs and table before push.
+
+The report owner controls final two-page layout and discussion. If three
+full-width plots plus the table do not fit legibly on one page, the report
+owner may use both pages while retaining all required content.
+
+Cover concept: a restrained editorial illustration of smooth curves above
+subdivided areas, evoking quadrature, with no labels or quantitative claims.
+The world image-generation resource specifies gpt-image-2 via its Images API.

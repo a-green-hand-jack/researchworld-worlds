@@ -1,0 +1,26 @@
+{
+  "source": "Europe PMC",
+  "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=transformer&format=json&pageSize=1",
+  "start_utc": "2026-10-19T21:30:15.635344+00:00",
+  "end_utc": "2026-10-19T21:30:16.102226+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/europe-pmc.headers",
+    "-o",
+    "/tmp/tmppd2a3d7z/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=transformer&format=json&pageSize=1"
+  ],
+  "exit": 0,
+  "curl_output": "200\napplication/json;charset=UTF-8\n",
+  "stderr": "",
+  "first200": "{\"version\":\"6.9\",\"hitCount\":81388,\"nextCursorMark\":\"AoIIQEDM3Sg1NjcwOTkzOA==\",\"nextPageUrl\":\"https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=transformer&cursorMark=AoIIQEDM3Sg1NjcwOTkzOA",
+  "body_bytes": 1117
+}

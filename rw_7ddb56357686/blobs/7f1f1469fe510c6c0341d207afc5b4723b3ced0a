@@ -1,0 +1,58 @@
+"""Quadratic y = a + b x + c x^2 on the same 40 points as fit_line.py; 95% t-CIs (df = n-3); AIC vs the straight line."""
+import json
+import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(227)
+x = np.arange(40, dtype=float)
+y = 2.5 + 0.8 * x + rng.normal(0.0, 3.0, size=x.size)
+n = x.size
+
+
+def ols(X):
+    beta, *_ = np.linalg.lstsq(X, y, rcond=None)
+    rss = float(np.sum((y - X @ beta) ** 2))
+    p = X.shape[1]
+    cov = rss / (n - p) * np.linalg.inv(X.T @ X)
+    se = np.sqrt(np.diag(cov))
+    t = stats.t.ppf(0.975, df=n - p)
+    return beta, se, t, rss, p, cov
+
+
+def aic(rss, p):
+    k = p + 1  # regression coefficients + error variance
+    ll = -0.5 * n * (np.log(2 * np.pi * rss / n) + 1)  # Gaussian log-likelihood at the MLE
+    return {'k': k, 'rss': rss, 'loglik': float(ll), 'aic': float(2 * k - 2 * ll),
+            'aicc': float(2 * k - 2 * ll + 2 * k * (k + 1) / (n - k - 1))}
+
+
+bq, seq, tq, rssq, pq, covq = ols(np.column_stack([np.ones(n), x, x ** 2]))
+bl, sel, tl, rssl, pl, _ = ols(np.column_stack([np.ones(n), x]))
+aq, al = aic(rssq, pq), aic(rssl, pl)
+
+# F test of c = 0 (nested models)
+F = (rssl - rssq) / (rssq / (n - pq))
+out = {
+    'n': n, 'df': n - pq, 't_crit_95': float(tq),
+    'quadratic': {nm: {'estimate': float(b), 'se': float(s), 'ci95': [float(b - tq * s), float(b + tq * s)],
+                       'p_value': float(2 * stats.t.sf(abs(b / s), n - pq))}
+                  for nm, b, s in zip('abc', bq, seq)},
+    'cov_abc': covq.tolist(),
+    'cov_note': 'sigma^2 (RSS/(n-3)) * inv(X^T X), X = [1, x, x^2]; order (a, b, c)',
+    'residual_sd_quadratic': float(np.sqrt(rssq / (n - pq))),
+    'r_squared_quadratic': float(1 - rssq / np.sum((y - y.mean()) ** 2)),
+    'line_check': {'intercept': float(bl[0]), 'slope': float(bl[1])},
+    'aic_quadratic': aq, 'aic_line': al,
+    'delta_aic_line_minus_quadratic': al['aic'] - aq['aic'],
+    'delta_aicc_line_minus_quadratic': al['aicc'] - aq['aicc'],
+    'akaike_weight_quadratic': float(1 / (1 + np.exp(-(al['aic'] - aq['aic']) / 2))),
+    'akaike_weight_line': float(1 / (1 + np.exp((al['aic'] - aq['aic']) / 2))),
+    'akaike_weight_aicc_quadratic': float(1 / (1 + np.exp(-(al['aicc'] - aq['aicc']) / 2))),
+    'conclusion': 'Line mildly preferred: dAIC = 0.69 (AICc 1.16) in favour of the line, below the usual threshold of 2; c is not distinguishable from 0 (CI includes 0, F-test p = 0.27). Not strong evidence either way, but no support for curvature.',
+    'F_c_zero': float(F), 'F_p_value': float(stats.f.sf(F, 1, n - pq)),
+    'true_a': 2.5, 'true_b': 0.8, 'true_c': 0.0,
+    'aic_note': 'AIC = 2k - 2 logL, Gaussian logL at MLE sigma^2 = RSS/n, k = coefficients + 1 (variance); same constant for both models, so differences are exact.',
+}
+with open('../results/fit_quadratic.json', 'w') as f:
+    json.dump(out, f, indent=2)
+print(json.dumps(out, indent=2))

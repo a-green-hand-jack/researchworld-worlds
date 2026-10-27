@@ -1,0 +1,28 @@
+{
+  "generator": {
+    "seed": 205,
+    "background_draws": 24000000,
+    "background_law": "numpy Generator.uniform(0.0, 1200.0)",
+    "burst_draws": 6000000,
+    "burst_law": "numpy Generator.normal(600.0, 30.0)",
+    "order": "background drawn first, then burst; concatenated; sorted ascending as float64; cast to little-endian float32 for writing",
+    "python": "3.11.2",
+    "numpy": "2.4.6",
+    "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.36"
+  },
+  "counts": {
+    "total": 30000000,
+    "float64_min": 4.815454435203037e-05,
+    "float64_max": 1199.9999773623842,
+    "float32_min": 4.815454303752631e-05,
+    "float32_max": 1200.0,
+    "float32_exactly_1200": 1,
+    "float32_below_0": 0,
+    "float32_above_1200": 0
+  },
+  "file": {
+    "path": "photons.f32",
+    "bytes": 120000000,
+    "sha256": "af343d7a740bf6a1631ab06e63eeccb3cdff10e5ecf831e5447e5f6ad362edae"
+  }
+}

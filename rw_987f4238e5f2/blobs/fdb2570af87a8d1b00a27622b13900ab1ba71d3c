@@ -1,0 +1,9 @@
+# Analysis review: supported, final delivery pending
+
+Re-read the full objective in internal-review-repo#1 and experiment-repo context/brief.md. Inspected analysis scripts and all result files at experiment-repo `8abc4a7a94e94a45d00e7347054c33250492ac63`. Independently downloaded data and checksum from paper-repo release `photons-v1` (release id 1). At inspection that release contained only data and checksum; presentation is still being produced and is not judged here.
+
+The downloaded 120,000,000-byte file matches the published SHA-256. An independent application of the exact seeded draw/concatenate/sort/cast recipe matches every float32 value. All 1200 histogram counts match the analysis CSV, including the single quantized 1200-second endpoint. Independent derivative-free likelihood maximization recovers the reported estimates well below their rounding precision; independently reoptimizing nuisance parameters at all eight interval endpoints yields the required likelihood-ratio threshold 3.8414588207. Machine-readable results are in analysis-verification.json; the reviewer verification script is in checks/verify_analysis.py in the reviewer repository (outside the delivered review package).
+
+The code implements the stated integrated Gaussian model and the reported analytic derivatives correctly. Convergence, multistart, curvature and residual diagnostics support the claims. The fixed-component-total caveat correctly distinguishes nominal Poisson uncertainty from exact repeated-simulation coverage. No numerical correction is requested.
+
+Remaining review scope: generator code and git exclusion evidence; finished one-page report and all its links; downloaded-data provenance of all media; direct visual and functional inspection of preview, animation, explorer, and fitted light-curve figure at final revisions. These are pending owner work, not adverse findings against the completed analysis. No overall approval yet.

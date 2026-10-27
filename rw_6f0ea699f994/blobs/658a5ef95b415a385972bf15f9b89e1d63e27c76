@@ -1,0 +1,205 @@
+"""Programmatic inspection of report/figures/error_scaling.png layout.
+
+The rendering model in this environment cannot view images, so this script
+checks the rendered figure objectively: text bounding boxes must not overlap
+each other, markers, lines, the legend or leave the axes; markers must appear
+at the plotted values in the saved PNG; each annotation must contain ink; the
+threshold must be drawn.  Run:  python3 tools/check_figure.py
+"""
+import importlib.util
+import math
+import sys
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+from matplotlib.transforms import Bbox
+
+REPO = Path(__file__).resolve().parents[1]
+MOD_PATH = REPO / "report" / "figures" / "make_figure.py"
+
+spec = importlib.util.spec_from_file_location("make_figure", MOD_PATH)
+mf = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mf)
+
+fig, ax = mf.main()
+fig.canvas.draw()
+rend = fig.canvas.get_renderer()
+
+import json
+from PIL import Image
+
+fits = json.loads((mf.INPUT_DIR / "fits.json").read_text())
+errors = mf.read_errors()
+ns = sorted(errors)
+
+free_texts = list(ax.texts)
+# Text-only boxes: Annotation.get_window_extent unions in the leader arrow.
+from matplotlib.text import Text
+boxes = {id(t): Text.get_window_extent(t, rend) for t in free_texts}
+leg = ax.get_legend()
+leg_box = leg.get_window_extent(rend)
+marker_pts = [(n, float(errors[n][0]), "trap") for n in ns] + \
+             [(n, float(errors[n][1]), "simp") for n in ns]
+
+# Lines to test: data polylines, fit segments, guides, threshold, arrow.
+lines = {"trap data": [(n, float(errors[n][0])) for n in ns],
+         "simp data": [(n, float(errors[n][1])) for n in ns]}
+for rule in ("trapezoid", "simpson"):
+    f = fits["rules"][rule]
+    x0, x1 = min(f["n"]), max(f["n"])
+    a, b = float(f["intercept"]), float(f["slope"])
+    lines[f"{rule} fit"] = [(x0, math.exp(a + b * math.log(x0))),
+                            (x1, math.exp(a + b * math.log(x1)))]
+    lines[f"{rule} guide"] = mf.guide_points(fits["rules"][rule])
+lines["threshold"] = [(3.3, 1e-13), (5400, 1e-13)]
+ft, fs = fits["rules"]["trapezoid"], fits["rules"]["simpson"]
+import math as _m
+lines["trap arrow"] = [(1450, 1.1e-3),
+                      (1000, _m.exp(ft["intercept"] + ft["slope"] * _m.log(1000)))]
+lines["simp arrow"] = [(1550, 3.2e-10),
+                      (700, _m.exp(fs["intercept"] + fs["slope"] * _m.log(700)))]
+# Start 12% along so the sampled segment clears the annotation shrink gap.
+_x0, _x1, _y0, _y1 = 700, 4096, 1.1e-14, float(errors[4096][1])
+lines["excluded arrow"] = [(_x0 + 0.12 * (_x1 - _x0), _y0 + 0.12 * (_y1 - _y0)),
+                           (_x1, _y1)]
+# Each arrow may start at its own source text.
+ARROW_OWN = {"trap arrow": "trapezoidal fit", "simp arrow": "Simpson fit",
+             "excluded arrow": "not fitted"}
+
+
+def samples(seg, k=300):
+    # Lines render straight in display space, so interpolate there.
+    (x0, y0), (x1, y1) = seg
+    p0, p1 = ax.transData.transform((x0, y0)), ax.transData.transform((x1, y1))
+    return [(p0[0] + (p1[0] - p0[0]) * i / k, p0[1] + (p1[1] - p0[1]) * i / k)
+            for i in range(k + 1)]
+
+
+def seg_samples(name):
+    return [p for seg in [lines[name]] for p in samples(seg)] if len(lines[name]) == 2 \
+        else [p for a, b in zip(lines[name], lines[name][1:]) for p in samples((a, b))]
+
+
+def bb_str(b):
+    return f"[x {b.x0:.0f}..{b.x1:.0f}, y {b.y0:.0f}..{b.y1:.0f}]"
+
+
+problems, accepted = [], []
+ax_box = ax.get_window_extent(rend)
+
+for i, t in enumerate(free_texts):
+    b = boxes[id(t)]
+    label = t.get_text().split("\n")[0][:38]
+    if not (ax_box.x0 - 1 <= b.x0 and b.x1 <= ax_box.x1 + 1
+            and ax_box.y0 - 1 <= b.y0 and b.y1 <= ax_box.y1 + 1):
+        problems.append(f"text '{label}' leaves the axes: {bb_str(b)}")
+    for j, u in enumerate(free_texts[i + 1:], i + 1):
+        if b.overlaps(boxes[id(u)]):
+            problems.append(f"text overlap: '{label}' vs "
+                            f"'{u.get_text().splitlines()[0][:38]}'")
+    if b.overlaps(leg_box):
+        problems.append(f"text '{label}' overlaps the legend")
+    # Markers inside a text bbox (margin 2 px beyond the box edge).
+    pad = Bbox.from_bounds(b.x0 - 2, b.y0 - 2, b.width + 4, b.height + 4)
+    for n, y, _ in marker_pts:
+        p = ax.transData.transform((n, y))
+        if pad.contains(*p):
+            problems.append(f"marker n={n} lies inside text '{label}'")
+
+# Lines passing through free text boxes or the legend.
+for name in lines:
+    own = ARROW_OWN.get(name)
+    for p in seg_samples(name):
+        for t in free_texts:
+            if own and t.get_text().startswith(own):
+                continue
+            tb = boxes[id(t)]
+            pad = Bbox.from_bounds(tb.x0 - 1, tb.y0 - 1, tb.width + 2, tb.height + 2)
+            if pad.contains(*p):
+                problems.append(f"{name} passes through text "
+                                f"'{t.get_text().splitlines()[0][:38]}'")
+                break
+        else:
+            if leg_box.contains(*p):
+                if name == "threshold":
+                    accepted.append("threshold dotted line passes behind the "
+                                    "legend frame (legend is opaque, line "
+                                    "re-emerges on both sides)")
+                else:
+                    problems.append(f"{name} passes behind the legend")
+
+# Markers behind the legend.
+for n, y, _ in marker_pts:
+    p = ax.transData.transform((n, y))
+    if leg_box.contains(*p):
+        problems.append(f"marker n={n} hidden behind the legend")
+
+# Pixel inspection of the saved PNG.
+img = Image.open(REPO / "report" / "figures" / "error_scaling.png").convert("RGB")
+W, H = img.size
+px = img.load()
+assert (W, H) == (1600, 1020), (W, H)
+
+
+def near(c, t, tol=70):
+    return abs(c[0] - t[0]) + abs(c[1] - t[1]) + abs(c[2] - t[2]) < tol
+
+
+TRAP_RGB, SIMP_RGB = (0, 114, 178), (213, 94, 0)
+
+
+def window(cx, cy, r):
+    return [px[int(cx) + dx, int(H - 1 - cy) + dy]
+            for dx in range(-r, r + 1) for dy in range(-r, r + 1)]
+
+
+for n, y, kind in marker_pts:
+    x_disp, y_disp = ax.transData.transform((n, y))
+    target = TRAP_RGB if kind == "trap" else SIMP_RGB
+    if not any(near(c, target) for c in window(x_disp, y_disp, 8)):
+        problems.append(f"no {kind} marker pixels at n={n}")
+
+# Excluded point: white core, colored ring.
+x_disp, y_disp = ax.transData.transform((4096, float(errors[4096][1])))
+core = window(x_disp, y_disp, 3)
+ring = [c for dx in range(-9, 10) for dy in range(-9, 10)
+        if 5 <= math.hypot(dx, dy) <= 9
+        for c in [px[int(x_disp) + dx, int(H - 1 - y_disp) + dy]]]
+if not all(sum(c) > 720 for c in core):
+    problems.append("excluded point core is not white")
+if not any(near(c, SIMP_RGB) for c in ring):
+    problems.append("excluded point ring color missing")
+
+# Ink inside every free text and the legend.
+for t in free_texts:
+    b = boxes[id(t)]
+    xs = range(max(0, int(b.x0)), min(W, int(b.x1) + 1))
+    ys = range(max(0, int(H - b.y1)), min(H, int(H - b.y0) + 1))
+    ink = sum(1 for x in xs for y in ys if sum(px[x, y]) < 700)
+    if ink < 30:
+        problems.append(f"no ink in text '{t.get_text().splitlines()[0][:38]}'")
+xs = range(int(leg_box.x0), int(leg_box.x1) + 1)
+ys = range(int(H - leg_box.y1), int(H - leg_box.y0) + 1)
+if sum(1 for x in xs for y in ys if sum(px[x, y]) < 700) < 200:
+    problems.append("legend appears empty")
+
+# Threshold row drawn: dark pixels across the axes width.
+_, y_thr = ax.transData.transform((100, 1e-13))
+row = [x for x in range(int(ax_box.x0), int(ax_box.x1))
+       if sum(px[x, int(H - y_thr)]) < 400]
+if len(row) < 30:
+    problems.append("threshold line not drawn across the axes")
+
+print(f"free texts: {len(free_texts)}; lines checked: {len(lines)}; "
+      f"markers: {len(marker_pts)}")
+for a in accepted:
+    print("ACCEPTED:", a)
+if problems:
+    print("FAIL")
+    for p in problems:
+        print(" -", p)
+    sys.exit(1)
+print("PASS: no text overlaps, no hidden markers, no lines through text, "
+      "all markers and annotations present in the PNG")

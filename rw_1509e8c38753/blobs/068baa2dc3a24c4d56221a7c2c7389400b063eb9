@@ -1,0 +1,35 @@
+# Venue requirements (from the Research objective, issue #1)
+
+Audience: a reader of a short NeurIPS-2026-style paper; the delivery goes to the user as a reviewed research delivery (not an external submission).
+
+| # | Requirement | Source | How to verify |
+|---|---|---|---|
+| V1 | Deliver `report/report.pdf` | objective | file exists, nonempty (`venue-artifacts.json`) |
+| V2 | PDF compiled from LaTeX | objective | `.tex` source delivered next to PDF; `pdffonts`/`pdfinfo` show a LaTeX producer (pdfTeX/XeTeX/LuaTeX) |
+| V3 | NeurIPS 2026 submission template | objective | `neurips_2026.sty` (verbatim from `template/`, dated 2026-01-29) loaded with no `final`/`preprint` option; anonymous author block, line numbers present, footer absent; margins/fonts unchanged |
+| V4 | At most 2 pages | objective | `pdfinfo report/report.pdf` -> `Pages: <= 2`. Counted on the WHOLE PDF (references included), the strictest reading |
+| V5 | Exactly one figure and one table | objective | one `figure` and one `table` environment in the source |
+| V6 | Code that produced every number, delivered next to the PDF | objective | code directory delivered (path per work assignment); every number in the paper traceable to a produced results file |
+| V7 | LaTeX source delivered next to the PDF | objective | `.tex` (+ bib/figure/table inputs) compile from the delivered files with `latexmk -pdf` |
+| V8 | Data: Iris from OpenML id 61, downloaded from OpenML | objective | data provenance (URL, checksum) stated in code/paper |
+| V9 | Study content: LR vs kNN (k by inner CV), 10x repeated stratified 5-fold, mean acc + 95% CI each, paired difference + 95% CI, Ibex job node name, identical-or-not between Ibex and local | objective | each appears in paper text/table |
+
+## Points the objective leaves open (decisions recorded here)
+
+* NeurIPS itself allows nine content pages and does not count references or the mandatory checklist, but the objective caps the paper at two pages. The objective wins: the whole `report.pdf` is capped at 2 pages. The NeurIPS paper checklist (`template/checklist.tex`, about 5 pages) cannot fit and is NOT included in `report.pdf`; this is a deliberate, disclosed deviation from the NeurIPS rule "papers without the checklist are desk rejected". If the paper wants to mention it, one sentence suffices. If the reviewer holds that the checklist must be present, it must go outside the 2-page PDF (e.g. a separate file); the venue position does not require it.
+* Anonymity: the default (submission) mode is used, so the author block reads "Anonymous Author(s)" and no acknowledgments appear.
+* The NeurIPS LLM/agent-use disclosure is not needed for the delivered paper beyond what the paper owner chooses to state.
+* Cannot be established offline: acceptance by any publisher, licence of the delivered code/data (no licence is declared by the venue position; Iris on OpenML is public).
+
+## Supplied files
+
+`template/` holds the official files downloaded from https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip (unmodified): `neurips_2026.sty`, `neurips_2026.tex`, `checklist.tex`; plus `skeleton.tex`, a compile-checked 1-page starting point (TeX Live 2026, pdflatex). Copy `neurips_2026.sty` next to the report source.
+
+## Rendering constraints (read from `template/neurips_2026.sty`, lines 131-157, 231-240)
+
+* Paper: US letter, one column. Text block 5.5 in wide (397.5 pt) x 9 in high. Body 10 pt Times (11 pt leading); `\normalsize` is not to be changed, margins and fonts must not be altered.
+* Budget: 2 pages x 9 in of text block for everything (title block, text, one figure, one table, references). Suggested sizes: figure at most 5.5 in wide (`\linewidth`), about 2.0-2.4 in high; table at most about 1.3 in high, and no wider than 5.5 in.
+* Figure: one figure, full text width (single column; there is no two-column layout). The caption goes below it. Caption in sentence case, with a take-away message. Table: caption goes above it, no vertical rules, `booktabs`.
+* Colour: colour is allowed, but the figure and caption must stay legible in black and white (distinct markers or line styles plus colour).
+* Fonts: embed every font. Matplotlib needs `pdf.fonttype = 42` (TrueType, not Type 3), and figure text of about 7-9 pt at final size. Check with `pdffonts report/report.pdf`: all fonts `emb yes`, no `Type 3`. Prefer vector PDF for the figure.
+* Anonymous default mode adds line numbers, so keep `\linewidth` figures out of the line-number margin. Author block is "Anonymous Author(s)", with no acknowledgments and no identifying links.

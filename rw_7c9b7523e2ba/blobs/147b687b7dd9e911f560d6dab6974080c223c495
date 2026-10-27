@@ -1,0 +1,97 @@
+"""Validate the full simulation and analyze scaling with paired-run bootstrap."""
+import hashlib
+import json
+import math
+from pathlib import Path
+import platform
+import subprocess
+import time
+import numpy as np
+import scipy
+from scipy.stats import t
+
+start = time.perf_counter()
+root = Path('results')
+raw_path = root/'full/runs.csv'
+data = np.genfromtxt(raw_path, delimiter=',', names=True)
+ns = np.array([10**k for k in range(3, 8)])
+assert data.shape == (1000,)
+assert np.array_equal(data['run_index'].reshape(200, 5), np.repeat(np.arange(200)[:, None], 5, axis=1))
+assert np.array_equal(data['seed'], 2026+data['run_index'])
+assert np.array_equal(data['N'].reshape(200, 5), np.tile(ns, (200, 1)))
+hits = data['hits'].reshape(200, 5)
+assert np.all(hits == hits.astype(int)) and np.all(hits >= 0) and np.all(hits <= ns)
+assert np.all(np.diff(hits, axis=1) >= 0)
+assert np.all(np.diff(hits, axis=1) <= np.diff(ns))
+est = 4*hits/ns
+errors = np.abs(est-math.pi)
+assert np.array_equal(est.ravel(), data['pi_hat'])
+assert np.array_equal(errors.ravel(), data['absolute_error'])
+# Direct unchunked, restarted calls at every N verify prefix equivalence.
+checks = []
+for n in ns:
+    p = np.random.default_rng(2026).random((int(n), 2))
+    count = int(np.count_nonzero(p[:, 0]**2+p[:, 1]**2 <= 1))
+    expected = int(hits[0, list(ns).index(n)])
+    assert count == expected
+    checks.append(dict(seed=2026, N=int(n), restarted_hits=count, nested_hits=expected))
+    del p
+mae = errors.mean(axis=0)
+mae_se = errors.std(axis=0, ddof=1)/math.sqrt(200)
+x = np.log(ns)
+y = np.log(mae)
+X = np.column_stack([np.ones(5), x])
+intercept, slope = np.linalg.lstsq(X, y, rcond=None)[0]
+residual = y-X @ np.array([intercept, slope])
+sxx = np.sum((x-x.mean())**2)
+se = math.sqrt(np.sum(residual**2)/3/sxx)
+ti = slope+np.array([-1, 1])*t.ppf(0.975, 3)*se
+# Bootstrap an entire run's five errors together; fixed random seeds independent
+# from the simulation seed range. Batching bounds memory, preserving RNG order.
+def bootstrap(seed, replicates=50000):
+    rng = np.random.default_rng(seed)
+    values = []
+    for offset in range(0, replicates, 1000):
+        ix = rng.integers(0, 200, size=(min(1000, replicates-offset), 200))
+        means = errors[ix].mean(axis=1)
+        values.append(np.log(means) @ ((x-x.mean())/sxx))
+    return np.concatenate(values)
+b1 = bootstrap(602026)
+b2 = bootstrap(602027)
+ci1 = np.quantile(b1, [.025, .975])
+ci2 = np.quantile(b2, [.025, .975])
+benchmark = np.sqrt(2/math.pi)*np.sqrt(4*math.pi-math.pi**2)/np.sqrt(ns)
+leave_one = [float(np.polyfit(np.delete(x,i), np.delete(y,i), 1)[0]) for i in range(5)]
+metadata = json.loads((root/'full/metadata.json').read_text())
+summary = dict(N=ns.tolist(), mae=mae.tolist(), mae_se=mae_se.tolist(),
+    run_error_p025=np.quantile(errors,.025,axis=0).tolist(),
+    run_error_p975=np.quantile(errors,.975,axis=0).tolist(), benchmark_mae=benchmark.tolist(),
+    ols=dict(intercept=float(intercept), slope=float(slope), slope_se=se,
+             t_interval_95=ti.tolist(), residual_df=3, log_base='natural',
+             contains_minus_half=bool(ti[0] <= -.5 <= ti[1])),
+    bootstrap=dict(interval_95=ci1.tolist(), replicates=50000, seed=602026,
+                   second_seed=602027, second_interval_95=ci2.tolist(),
+                   endpoint_absolute_difference=np.abs(ci1-ci2).tolist(),
+                   method='percentile; resample 200 complete run vectors with replacement',
+                   contains_minus_half=bool(ci1[0] <= -.5 <= ci1[1])),
+    provenance=dict(seed_convention=metadata['seed_convention'], draw_call=metadata['draw_call'],
+                    numpy_version=np.__version__, scipy_version=scipy.__version__,
+                    python_version=platform.python_version(), bit_generator=metadata['bit_generator'],
+                    source_files=['results/full/runs.csv', 'results/full/metadata.json'],
+                    raw_csv_sha256=hashlib.sha256(raw_path.read_bytes()).hexdigest(),
+                    simulation_code_commit=metadata['code_commit'],
+                    analysis_code_commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()))
+diagnostics = dict(restarted_equivalence=checks, validated_rows=1000,
+                   mae_to_benchmark=(mae/benchmark).tolist(),
+                   benchmark_difference_in_mae_se=((mae-benchmark)/mae_se).tolist(),
+                   log_fit_residuals=residual.tolist(),
+                   r_squared=float(1-np.sum(residual**2)/np.sum((y-y.mean())**2)),
+                   leave_one_N_out_slopes=leave_one,
+                   absolute_error_correlation=np.corrcoef(errors.T).tolist(),
+                   analysis_elapsed_seconds=time.perf_counter()-start)
+(root/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+(root/'diagnostics.json').write_text(json.dumps(diagnostics,indent=2)+'\n')
+np.savetxt(root/'bootstrap_slopes.csv', np.column_stack([b1,b2]), delimiter=',',
+           header='seed_602026,seed_602027', comments='')
+print(json.dumps(summary, indent=2), flush=True)
+print('Diagnostics complete in %.3f seconds' % diagnostics['analysis_elapsed_seconds'], flush=True)

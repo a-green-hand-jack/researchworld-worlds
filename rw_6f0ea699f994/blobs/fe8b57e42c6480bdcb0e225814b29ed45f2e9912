@@ -1,0 +1,26 @@
+"""High-precision check of delivered errors, fits and diagnostics (review working material)."""
+import mpmath as mp, numpy as np
+from scipy import stats
+mp.mp.dps = 60
+f = lambda x: mp.e**x * mp.sin(3*x)
+I = (mp.e**2*(mp.sin(6)-3*mp.cos(6))+3)/10
+print("I =", mp.nstr(I, 20))
+ns = [2**k for k in range(2, 13)]; T = []; S = []
+for n in ns:
+    h = mp.mpf(2)/n; y = [f(i*h) for i in range(n+1)]
+    T.append(abs(h*(y[0]/2+sum(y[1:-1])+y[-1]/2) - I))
+    S.append(abs(h/3*(y[0]+4*sum(y[1:-1:2])+2*sum(y[2:-1:2])+y[-1]) - I))
+for n, t, s in zip(ns, T, S): print(n, mp.nstr(t, 7), mp.nstr(s, 7))
+def fit(E, nmin=0):
+    p = [(n, float(e)) for n, e in zip(ns, E) if e > 1e-13 and n >= nmin]
+    r = stats.linregress(np.log([a for a, _ in p]), np.log([b for _, b in p]))
+    q = stats.t.ppf(.975, len(p)-2)*r.stderr
+    return len(p), round(r.slope, 6), round(r.slope-q, 6), round(r.slope+q, 6)
+for nm, E in (("trap", T), ("simp", S)):
+    print(nm, fit(E), "n>=16", fit(E, 16), "n>=64", fit(E, 64))
+    print("  local orders", [round(float(mp.log(E[i]/E[i+1], 2)), 8) for i in range(len(E)-1)])
+# Euler-Maclaurin leading terms
+fp = lambda x: mp.diff(f, x); f3 = lambda x: mp.diff(f, x, 3)
+for n, t, s in zip(ns[-2:], T[-2:], S[-2:]):
+    h = mp.mpf(2)/n
+    print(n, mp.nstr(h**2*(fp(2)-fp(0))/12/t, 8), mp.nstr(h**4*(f3(2)-f3(0))/180/s, 8))

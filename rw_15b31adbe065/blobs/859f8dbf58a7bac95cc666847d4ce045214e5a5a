@@ -1,0 +1,14 @@
+Software used for the numbers in results/ (Linux 7.0.0-38-generic, x86-64; interpreter /hutian/.venv/bin/python3)
+
+code/fit_line.py  (results/fit.json, results/data.csv)
+  Python 3.11.2 (main, Oct  7 2026, 12:35:07) [GCC 12.2.0]
+  numpy 2.4.6
+  scipy 1.17.1
+  Re-run on these versions from code/ reproduces fit.json and data.csv byte-for-byte.
+
+code/simulate.py  (results/results.json, results/simulate.log)
+  Python 3.11.2 (standard library only: argparse, json, math, random, statistics, time)
+  Run as a local-compute job, which shares the sandbox's research environment (same /hutian/.venv interpreter);
+  the job did not record its own version string.
+
+matplotlib 3.11.2 is installed in the same environment (figtab-repo's figure script; confirm against its own record).

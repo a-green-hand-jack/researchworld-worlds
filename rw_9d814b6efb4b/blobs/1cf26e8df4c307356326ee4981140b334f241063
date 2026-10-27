@@ -1,0 +1,23 @@
+# Research brief
+
+## Objective (verbatim)
+
+> Estimate π by Monte Carlo sampling.
+>
+> Draw 1,000,000 points uniformly in the unit square, count those inside the quarter circle of radius 1, and take 4 × (inside / total) as the estimate. Repeat with 20 independent seeds and report the mean estimate with a 95% confidence interval across the seeds, and its error against math.pi.
+>
+> Report: `report/report.md`, half a page: the estimate, the interval, the error and how many points were drawn in all.
+
+Source: Research objective, experiment-repo issue #1. No data files, attachments, or related papers were supplied; the study generates its own data. There are no additional supplied inputs to read.
+
+## Required study and reporting conventions
+
+Generate 20 independent pseudorandom streams, each drawing 1,000,000 pairs of independent uniform coordinates on [0,1). Count x²+y² ≤ 1. Preserve each stream's seed provenance and inside count; compute each estimate as four times its inside fraction. The required total is 20,000,000 points.
+
+Report the arithmetic mean of the 20 estimates and a two-sided Student t 95% confidence interval across seeds: mean ± t(0.975,19) × sample standard deviation / sqrt(20). Report signed error (mean − math.pi) and absolute error, clearly distinguished. The interval concerns Monte Carlo uncertainty; its nominal coverage is approximate under the normal approximation for each large binomial count. No data-dependent selection or stopping is needed.
+
+The analysis package will retain runnable code, seed-level results, package versions, and numerical aggregation checks. A binomial theoretical standard-error comparison is a diagnostic rather than a replacement for the requested across-seed interval. No figure is needed for this compact numerical result. The report owner will produce approximately half a page in Markdown with the four requested quantities and enough method detail to identify the experiment and interval.
+
+## Responsibilities agreed
+
+experiment-repo: brief, assignment, reproducible sampling and analysis, numerical evidence and checks supplied to both neighbors. paper-repo: final half-page report at report/report.md. internal-review-repo: independent validity review and release decision. No feasibility blocker is known; CPU sampling is sufficient.

@@ -1,0 +1,194 @@
+"""The drive-vs-decay mu count of arXiv 2610.02344 for the ViT of code/vit_jepa.py, at initialisation.
+
+Reimplemented (no code copied) from the definition of the paper's image estimator (its Sec. 3 factorisation applied to I-JEPA): the encoder
+is linearised at its input tokens, X = patch embedding + positional embedding, and the predictor at its linear part
+W_p = proj . embed (attention, MLP and norms ignored). With p the context ratio (share of tokens in the context):
+  Sigma_XX = E[x x^T] over tokens (uncentred), Sigma_11 = p diag(Sigma_XX) + p^2 offdiag(Sigma_XX), Sigma_X1 = p Sigma_XX;
+  decay  sigma_(i,j) = eig_i(Sigma_11) eig_j(W_p^T W_p),
+  drive  gamma_(i,j) = sv_i(Sigma_X1) (1 - p) sqrt(eig_j(W_p^T W_p)),
+both sorted descending over all (i, j) and paired by rank; mu = gamma / sigma; n_mu = #{mu > 1} (their count, out of
+width^2 modes). Two readings are added so that the count is comparable with the encoder's rank count (out of width):
+  n_mu_diag   modes paired index-wise (i = j after sorting each factor), #{gamma_k > sigma_k};
+  n_mu_wd     the same pairing with the decoupled weight decay as an additive floor, as in their linear criterion
+              (unstable iff drive - decay > lambda): #{(gamma_k - sigma_k) * g > wd}, g = 1/(1 - momentum) for SGD with
+              momentum (gradient steps are amplified by the momentum, the decoupled decay is not); undefined for AdamW.
+The paper's own count (registered as the mu baseline by amendment 2 of results/e7/prediction.json):
+  r_tight     their Eq. (31) singular-value form with gamma_(k,l) and sigma_(k,l) of the SAME (k, l) (App. A.4),
+              U = {(k,l): gamma > sigma}, r~_tight = min(|pi_k U|, |pi_l U|, d) (Cor. 3.3, Table 7);
+  r_tight_run the same with Prop. J.1's decay floor in the run's own step units: escape iff
+              (2/d) g (gamma - sigma) > wd. vit_jepa.py trains on F.mse_loss (mean over tokens and width d), whose
+              gradient is 2/d times that of the paper's 1/2 E||.||^2; g = 1/(1 - momentum) for SGD; AdamW: no floor
+              (r_tight_run = r_tight, stated);
+  r_tight_vitmu the floor without 2/d (the units of n_mu_wd), reported.
+A count we build on their App. K.2 drive (k2_reading; amendment 3 of results/e7/prediction.json). Their K.2 reads
+only the signed drive gamma_l = <r_l, b_l> with W_p replaced by the predictor block's input Jacobian, compares it
+between two predictors at matched initialisations, and claims no count and no estimator of mu on images. The decay
+side, the floor, the count and the input-token eigenbasis (the encoder taken as identity) below are ours, not theirs:
+K predictor-only steps from initialisation (encoder fixed at its initialisation and its own teacher, the run's
+optimiser and weight decay on the predictor, at the run's peak learning rate cfg lr x pred_lr_mult; k2_lr="schedule"
+uses the run's own schedule for steps 1..K instead, i.e. the warm-up for cosine rows), then the input Jacobian
+W_eff (d x d, finite differences of the mean predicted target token under a shift of every context token along each
+basis direction, on PROBE_N real masked images) replaces W_p; along each data eigenmode b_k of Sigma_XX the signed
+drive gamma_k = (1 - p) c_k b_k^T W_eff b_k (their K.2 quantity) and our decay sigma_k = a_k |W_eff b_k|^2 (c_k, a_k =
+Rayleigh quotients of Sigma_X1, Sigma_11), counted as #{(2/d) g (gamma_k - sigma_k) > wd} (SGD) or #{gamma_k > sigma_k}
+(AdamW; n_k2_wd adds the floor (2/d)(gamma_k - sigma_k) > wd, App. D's lambda = wd reading). The init-time quantities
+above are their Sec. 5 tabular estimator transferred, which their App. K.1 reports null on images. A headroom win over
+these rows therefore does not contradict 2610.02344, which makes no count claim on images.
+Everything is computed from the initial weights (and, for k2, K predictor-only steps) and the training images,
+never from training outcomes.
+Usage: python3 code/baselines/vit_mu.py DATA_DIR OUT.json CONFIG.json [CONFIG.json ...]   (CONFIG = a run's config.json)
+"""
+import sys, os, json
+import numpy as np, torch
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import vit_jepa as V
+
+N_IMG = 5000
+K2_STEPS = 10
+PROBE_N = 256
+
+
+def context_ratio(cfg, n_batches=50, seed=12345):
+    """Share of the G^2 tokens the encoder sees as context in a training batch (the masker truncates every sample's
+    context to the batch minimum), averaged over n_batches batches of the run's batch size."""
+    G = 32 // cfg["patch"]
+    m = V.MultiBlockMask(G, cfg["n_targets"], cfg["target_scale"], cfg["target_aspect"], cfg["context_scale"], cfg["min_keep"])
+    g = torch.Generator().manual_seed(seed)
+    return float(np.mean([m(cfg["batch"], g)[0].shape[1] for _ in range(n_batches)])) / G ** 2
+
+
+def mu_of(cfg, X, wds=None):
+    torch.manual_seed(cfg["seed"])
+    enc = V.ViT(cfg["width"], cfg["depth"], cfg["heads"], cfg["patch"])
+    pred = V.Predictor(cfg["width"], cfg["pred_width"], cfg["pred_depth"], cfg["pred_heads"], enc.G, cfg["pred_init_scale"],
+                       norm=bool(cfg["pred_norm"]))
+    with torch.no_grad():
+        Z = torch.cat([(enc.patch(X[i:i + 500]).flatten(2).transpose(1, 2) + enc.pos).reshape(-1, cfg["width"])
+                       for i in range(0, len(X), 500)]).double()
+    S = Z.T @ Z / Z.shape[0]
+    p = context_ratio(cfg)
+    D = torch.diag(torch.diag(S))
+    S11 = p * D + p * p * (S - D)
+    sv = torch.linalg.svdvals(p * S)                                   # singular values of Sigma_X1, descending
+    e11 = torch.linalg.eigvalsh(S11).flip(0).clamp(min=0)
+    Wp = (pred.proj.weight @ pred.embed.weight).detach().double()
+    ew = torch.linalg.eigvalsh(Wp.T @ Wp).flip(0).clamp(min=0)
+    sig = torch.outer(e11, ew).flatten().sort(descending=True).values
+    gam = torch.outer(sv, (1 - p) * ew.sqrt()).flatten().sort(descending=True).values
+    ok = sig > 1e-12
+    n_mu = int((gam[ok] / sig[ok] > 1).sum())
+    sig_d, gam_d = e11 * ew, sv * (1 - p) * ew.sqrt()
+    g = 1.0 / (1 - cfg["momentum"]) if cfg["opt"] == "sgd" else None
+    out = dict(context_ratio=p, n_mu=n_mu, n_modes=int(ok.sum()), n_mu_diag=int((gam_d > sig_d).sum()),
+               mu_diag_top=float(gam_d[0] / sig_d[0]) if sig_d[0] > 0 else None,
+               net_drive_diag=((gam_d - sig_d)[:16]).tolist())
+    gm = torch.outer(sv, (1 - p) * ew.sqrt()); sm = torch.outer(e11, ew); okm = sm > 1e-12
+    def tight(U):
+        return int(min(U.any(1).sum().item(), U.any(0).sum().item(), cfg["width"]))
+    out["r_tight"] = tight(okm & (gm > sm))
+    w0 = cfg["wd"][0]
+    if g is not None:
+        out["r_tight_run"] = tight(okm & ((gm - sm) * g * 2.0 / cfg["width"] > w0))
+        out["r_tight_vitmu"] = tight(okm & ((gm - sm) * g > w0))
+    else:
+        out["r_tight_run"] = out["r_tight_vitmu"] = out["r_tight"]
+        # AdamW with the decoupled decay as the floor (App. D reads their AdamW grid both with lambda = wd and without)
+        out["r_tight_run_wd"] = tight(okm & ((gm - sm) * 2.0 / cfg["width"] > w0))
+    if g is not None:
+        wds = wds if wds is not None else [cfg["wd"][0]]
+        out["n_mu_wd"] = {str(w): int((((gam_d - sig_d) * g) > w).sum()) for w in wds}
+    else:
+        out["n_mu_wd"] = None
+        out["n_mu_wd_note"] = "undefined for AdamW: the linearisation has no fixed step size against which a decoupled decay floor compares"
+    return out
+
+
+def k2_reading(cfg, X, K=K2_STEPS, eps=1e-3, seed=12345, k2_lr="peak"):
+    """Our count on their App. K.2 signed drive after K predictor-only steps (see the module docstring)."""
+    torch.manual_seed(cfg["seed"])
+    enc = V.ViT(cfg["width"], cfg["depth"], cfg["heads"], cfg["patch"]).double()
+    pred = V.Predictor(cfg["width"], cfg["pred_width"], cfg["pred_depth"], cfg["pred_heads"], enc.G, cfg["pred_init_scale"],
+                       norm=bool(cfg["pred_norm"])).double()
+    if cfg.get("enc_out_scale", 1.0) != 1.0:
+        with torch.no_grad():
+            enc.norm.weight.fill_(cfg["enc_out_scale"])
+    for q in enc.parameters():
+        q.requires_grad_(False)
+    m = V.MultiBlockMask(enc.G, cfg["n_targets"], cfg["target_scale"], cfg["target_aspect"], cfg["context_scale"], cfg["min_keep"])
+    gen = torch.Generator().manual_seed(seed)
+    dec = [q for n, q in pred.named_parameters() if not ((q.ndim == 1 or n.endswith("mask_token")) and not cfg["decay_norm"])]
+    if cfg["opt"] == "adamw":
+        opt = torch.optim.AdamW(pred.parameters(), lr=cfg["lr"] * cfg["pred_lr_mult"], betas=(0.9, 0.999), weight_decay=0.0)
+    else:
+        opt = torch.optim.SGD(pred.parameters(), lr=cfg["lr"] * cfg["pred_lr_mult"], momentum=cfg["momentum"], weight_decay=0.0)
+    w0 = cfg["wd"][0]
+    lr_peak = opt.param_groups[0]["lr"]
+    if k2_lr == "schedule":
+        tf = cfg["total_full"]; warm = int(cfg["warmup_frac"] * tf)
+        lr_sched = [lr_peak if cfg["sched"] == "const" or s >= warm else lr_peak * s / max(warm, 1) for s in range(K)]
+    else:
+        lr_sched = [lr_peak] * K
+
+    def tgt(x, tg):
+        with torch.no_grad():
+            h = enc(x)
+        if cfg["target_ln"]:
+            h = V.F.layer_norm(h, (h.shape[-1],))
+        return [torch.gather(h, 1, t[..., None].expand(-1, -1, h.shape[-1])) for t in tg]
+    for it in range(K):
+        opt.param_groups[0]["lr"] = lr_sched[it]
+        idx = torch.randint(0, X.shape[0], (cfg["batch"],), generator=gen)
+        x = X[idx].double(); ctx, tg = m(cfg["batch"], gen)
+        with torch.no_grad():
+            z = enc(x, ctx)
+        loss = sum(V.F.mse_loss(pred(z, ctx, t), h) for t, h in zip(tg, tgt(x, tg))) / len(tg)
+        opt.zero_grad(set_to_none=True); loss.backward()
+        with torch.no_grad():
+            for q in dec:
+                q.mul_(1 - opt.param_groups[0]["lr"] * w0)
+        opt.step()
+    x = X[:PROBE_N].double(); ctx, tg = m(PROBE_N, gen)
+    d = cfg["width"]; W = torch.zeros(d, d, dtype=torch.float64)
+    with torch.no_grad():
+        z = enc(x, ctx)
+        base = torch.cat([pred(z, ctx, t).reshape(-1, d) for t in tg]).mean(0)
+        for j in range(d):
+            zj = z.clone(); zj[..., j] += eps
+            W[:, j] = (torch.cat([pred(zj, ctx, t).reshape(-1, d) for t in tg]).mean(0) - base) / eps
+        Z = torch.cat([(enc.patch(X[i:i + 500].double()).flatten(2).transpose(1, 2) + enc.pos).reshape(-1, d)
+                       for i in range(0, len(X), 500)])
+    S = Z.T @ Z / Z.shape[0]; p = context_ratio(cfg)
+    D = torch.diag(torch.diag(S)); S11 = p * D + p * p * (S - D)
+    _, B = torch.linalg.eigh(S)
+    a = torch.einsum("ik,ij,jk->k", B, S11, B); c = torch.einsum("ik,ij,jk->k", B, p * S, B)
+    wb = W @ B
+    gam = (1 - p) * c * torch.einsum("ik,ik->k", B, wb); sig = a * (wb ** 2).sum(0)
+    if cfg["opt"] == "sgd":
+        n = int(((gam - sig) * (2.0 / d) / (1 - cfg["momentum"]) > w0).sum())
+    else:
+        n = int((gam > sig).sum())
+    n_wd = int(((gam - sig) * (2.0 / d) > w0).sum()) if cfg["opt"] != "sgd" else n
+    return dict(n_k2=n, n_k2_wd=n_wd, k2_steps=K, k2_lr=k2_lr, k2_lr_steps=[float(v) for v in lr_sched],
+                k2_positive_drive=int((gam > 0).sum()))
+
+
+def cfg_from_cli(seed, cli):
+    """A run's full configuration (vit_jepa defaults + the row's flags), without running it."""
+    return vars(V.get_args(["--out", "-", "--seed", str(seed)] + list(cli)))
+
+
+def main():
+    data, outp, cfgs = sys.argv[1], sys.argv[2], sys.argv[3:]
+    X, _ = V.load(data, "train")
+    X = X[:N_IMG]
+    res = {}
+    for c in cfgs:
+        cfg = json.load(open(c))
+        res[c] = dict(seed=cfg["seed"], wd=cfg["wd"], **mu_of(cfg, X), **k2_reading(cfg, X))
+        print(c, res[c]["n_mu"], res[c]["n_mu_diag"], res[c]["n_mu_wd"], res[c]["r_tight"], res[c]["r_tight_run"],
+              res[c]["n_k2"], flush=True)
+    json.dump(dict(definition=__doc__, n_images=N_IMG, runs=res), open(outp, "w"), indent=1)
+
+
+if __name__ == "__main__":
+    main()

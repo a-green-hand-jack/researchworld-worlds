@@ -1,0 +1,19 @@
+# Review pass 1: assembled delivery
+
+Inspected `ht-role delivery` at:
+- experiment-repo c13de7506c14e619ababe6358efdb826b05d7b89 (`data/`)
+- figtab-repo 60676a939e1f628abe5be9466fac05e73c55fdc8 (`report/figures/`)
+- paper-repo 19767576cd2e0ff05c22a9583e09687a275a1651 (`report/report.md`, `README.md`)
+
+## Checks that pass
+- **Provenance:** the delivered `data/co2_annmean_mlo.csv` hashes to `bdd956e8…1e0089b2b` and is 3134 bytes, matching `data/provenance.json` and the report. The report gives the URL, the fetch time 2026-10-20 01:17:51 UTC and the last year (2025).
+- **Numbers:** every number in the report matches my independent recomputation (`checks/recompute_c13de75.txt`): coefficients, residual SD, R², both rates, the OLS t(63) CIs, lag-1 0.82, DW 0.36 and the HAC lag-5 CIs. The ratio 2.436/0.935 = 2.61 supports "about 2.6-fold".
+- **Definitions:** the rate definition and the window years are explicit. The interval assumptions are stated, and the dependence caveat and HAC sensitivity are included. The rates are described as rates of the fitted trend.
+- **Figure:** I opened `co2_mlo_fits.png`. It shows the observed 1960–2025 means as points, the quadratic as a solid red line and the line as a dashed grey line. Both axes are labelled with units (Year; CO₂ annual mean (ppm)) and there is a legend. The text is readable at 6.5 in width. The report's link `figures/co2_mlo_fits.png` resolves. The PDF is one page, 6.5 × 3.2 in.
+- **Length:** the report is 348 words including the tables, about half a page.
+
+## Findings (revise)
+1. **experiment-repo (assignment):** the report says "All numbers come from `analysis/results.json` in `experiment-repo`". The delivered figure generator also defaults to `<delivery root>/analysis/results.json`. `analysis/` is not an assigned path, so neither reference resolves in the delivery, and the delivery cannot reproduce its numbers or its figure. Fix: add `analysis/` (analyze.py, fetch.py, results.json, annual_fits.csv, README.md) to experiment-repo's item in `assignment.json`.
+2. **paper-repo (caption):** the figure contains shaded 1960–1969 and 2016–2025 windows, gold tangent segments at the window midpoints, and a box printing the two conventional 95% CIs. The caption mentions only the points and the two fits. None of these other elements are in the legend or the caption, and the CIs in the box are not marked as the conditional (independent-error) intervals. Fix: extend the caption to name the shaded windows and the tangent segments (slope = the reported rate), and say that the printed intervals are the conventional OLS intervals discussed under Caveats. If finding 1 is not adopted, also make the `analysis/results.json` reference resolvable or reword it.
+
+Conclusion: revise. Approval follows once both findings are addressed.

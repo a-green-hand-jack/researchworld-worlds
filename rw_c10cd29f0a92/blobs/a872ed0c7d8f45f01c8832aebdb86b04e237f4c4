@@ -1,0 +1,8 @@
+#!/bin/sh
+# Robustness check beyond the objective: stage 3 repeated with runs long enough to equilibrate at L = 256.
+# Same 5 temperatures as stage 3 (from results/stage2_crossing.json), independent seeds 11-14, 100,000 measured
+# sweeps after 30,000 burn-in, series kept. One job per temperature: sh code/extra_long256.sh INDEX (0..4)
+set -e
+cd "$(dirname "$0")/.."
+T=$(python3 -c "import json,sys; print(json.load(open('results/stage2_crossing.json'))['stage3_temps'][int(sys.argv[1])])" $1)
+python3 -u code/run_points.py --L 256 --temps $T --seeds 11 12 13 14 --sweeps 100000 --burn 30000 --out data/extra_long256 --series --jobs 2

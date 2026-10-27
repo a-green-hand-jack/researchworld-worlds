@@ -1,0 +1,4 @@
+# Brief (paper_29, ICLR25, ALBAR)
+Task: reconstruct the paper from /workspace/input (overview, template, bib, figures, tables); write workspace/submission/manuscript.tex and compile manuscript.pdf; sections: abstract, intro, related work, method, experiments, limitations, conclusion; ~10 pages; cite only references.bib keys; ground claims in the overview.
+Key content: ALBAR (CE + adversarial negative CE on static clip + entropy max + gradient penalty), improved UCF101 SCUBA/SCUFO with tight SAM-Track masks; HMDB51 contrasted acc 27.84 -> 53.22 (StillMix 40.28); UCF101 17.53 -> 26.23; ablations, frame sampling, downstream.
+Unestablished: loss weights, seeds/variance, ARAS numbers, official iclr2025 .sty/.bst (not supplied; stand-ins used), bib keys for StillMix/FAME/SDN/BE (absent, not cited).

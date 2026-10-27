@@ -1,0 +1,87 @@
+"""OLS scaling fit; paired bootstrap retains dependence from reused seeds."""
+import hashlib
+import json
+import math
+import subprocess
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import scipy
+from scipy.stats import t
+
+ROOT = Path(__file__).resolve().parents[1]
+df = pd.read_csv(ROOT/'results/runs.csv', float_precision='round_trip')
+ns = np.array([1000, 10000, 100000, 1000000, 10000000])
+assert len(df) == 1000
+assert (df.seed == 2026 + df.run_index).all()
+assert (df.groupby('N').size().to_numpy() == 200).all()
+assert np.array_equal(np.sort(df.N.unique()), ns)
+assert not df.duplicated(['run_index', 'N']).any()
+assert ((df.inside >= 0) & (df.inside <= df.N)).all()
+assert np.array_equal(df.estimate.to_numpy(), 4*df.inside.to_numpy()/df.N.to_numpy())
+assert np.array_equal(df.absolute_error.to_numpy(), np.abs(df.estimate.to_numpy()-math.pi))
+counts = df.pivot(index='run_index', columns='N', values='inside').to_numpy()
+assert (np.diff(counts, axis=1) >= 0).all()
+assert (np.diff(counts, axis=1) <= np.diff(ns)).all()
+a = df.pivot(index='run_index', columns='N', values='absolute_error').to_numpy()
+x = np.log(ns)
+y = np.log(a.mean(axis=0))
+xc = x-x.mean()
+sxx = xc@xc
+slope = float(xc@y/sxx)
+intercept = float(y.mean()-slope*x.mean())
+fitted = intercept+slope*x
+residuals = y-fitted
+sigma2 = float(residuals@residuals/3)
+se = math.sqrt(sigma2/sxx)
+tcrit = float(t.ppf(.975, 3))
+tci = [slope-tcrit*se, slope+tcrit*se]
+
+def bootstrap(seed, B):
+    rng = np.random.default_rng(seed)
+    slopes = []
+    for start in range(0, B, 500):
+        indices = rng.integers(0, 200, size=(min(500, B-start), 200))
+        means = a[indices].mean(axis=1)
+        slopes.extend((np.log(means)@xc/sxx).tolist())
+    return np.array(slopes)
+
+B = 50000
+seed = 20261018
+bs = bootstrap(seed, B)
+ci = np.quantile(bs, [.025, .975]).tolist()
+check_ci = np.quantile(bootstrap(seed+1, 10000), [.025, .975]).tolist()
+means = a.mean(axis=0)
+sems = a.std(axis=0, ddof=1)/math.sqrt(200)
+p = math.pi/4
+coefficient = math.sqrt(32*p*(1-p)/math.pi)
+theory = coefficient/np.sqrt(ns)
+summary = pd.DataFrame(dict(N=ns, runs=200, mean_absolute_error=means,
+    standard_error=sems, fitted_error=np.exp(fitted), theoretical_error=theory,
+    theory_deviation_in_standard_errors=(means-theory)/sems))
+summary.to_csv(ROOT/'results/summary.csv', index=False, float_format='%.17g')
+loo = []
+for i in range(5):
+    keep = np.arange(5) != i
+    loo.append(dict(omitted_N=int(ns[i]), slope=float(np.polyfit(x[keep], y[keep], 1)[0])))
+result = dict(slope=slope, intercept=intercept, log_base='natural',
+    fit_method='Unweighted ordinary least squares of log(mean absolute error) on log(N)',
+    slope_ci95=ci, interval_method='Percentile paired run-vector nonparametric bootstrap; numpy quantile default linear interpolation',
+    bootstrap_replicates=B, bootstrap_seed=seed, bootstrap_slope_sd=float(bs.std(ddof=1)),
+    expected_slope=-.5, deviation_from_expected=slope+.5,
+    expected_slope_in_ci95=ci[0] <= -.5 <= ci[1],
+    regression_t_ci95=tci, regression_slope_se=se, regression_df=3,
+    regression_t_critical=tcrit, expected_slope_in_t_ci95=tci[0] <= -.5 <= tci[1],
+    r_squared=float(1-residuals@residuals/((y-y.mean())@(y-y.mean()))),
+    log_residuals=residuals.tolist(), leave_one_size_out=loo,
+    bootstrap_stability=dict(replicates=10000, seed=seed+1, ci95=check_ci),
+    asymptotic_mae_coefficient=coefficient,
+    limitations=['Bootstrap captures finite-run sampling uncertainty conditional on the five sizes, not general power-law model discrepancy.',
+      'Conventional t interval assumes independent homoscedastic normal log residuals; shared prefixes violate independence, so it is only a descriptive sensitivity check.',
+      'Five sizes and 200 runs per size support consistency, not proof of the exact asymptotic exponent.'],
+    provenance=dict(input='results/runs.csv', input_sha256=hashlib.sha256((ROOT/'results/runs.csv').read_bytes()).hexdigest(),
+      script='code/analyze.py', code_revision=subprocess.check_output(['git','rev-parse','HEAD'], cwd=ROOT,text=True).strip(),
+      simulation_script='code/simulate.py', numpy=np.__version__, scipy=scipy.__version__, pandas=pd.__version__))
+(ROOT/'results/fit.json').write_text(json.dumps(result, indent=2)+'\n')
+print(summary.to_string(index=False))
+print(json.dumps(result, indent=2))

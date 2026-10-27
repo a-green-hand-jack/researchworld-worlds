@@ -1,0 +1,76 @@
+# Theory draft: drive and decay near the collapsed solution (working note, paper-repo)
+
+Status: working material for the plan (story-repo #3) and for checking by experiment-repo (#3).
+Not a delivery of results; numbers below come from a toy pilot in `notes/pilot/` only.
+
+## Model
+Linear JEPA, loss L = 1/2 E || P W x_c - sg(Wbar x_t) ||^2, weight decay lambda on W and P,
+target Wbar = EMA of W (tau), Sigma_cc = E[x_c x_c^T], Sigma_tc = E[x_t x_c^T].
+Assume Sigma_cc and Sigma_tc are co-diagonalizable (true for exchangeable views / masking of a
+stationary signal): eigenpairs c_j (context variance) and s_j (context-target covariance) on a
+common basis u_j. Regression coefficient (predictability) rho_j = s_j / c_j.
+
+GD flow (stop-gradient, Wbar = W, i.e. tau -> 0):
+  dW/dt = P^T (W Sigma_tc - P W Sigma_cc) - lambda W
+  dP/dt = (W Sigma_tc - P W Sigma_cc) W^T - lambda P
+
+## Mode reduction
+If P is aligned with the modes (P u-modes have eigenvalue p_j; exact for P0 = p0 I with
+orthogonal mode columns, approximately for small random W0) the system decouples into
+2-D systems, one per direction j:
+
+  dw_j/dt = w_j [ p_j s_j  -  p_j^2 c_j  -  lambda ]        (drive  D_j = p_j s_j ;
+                                                              decay  K_j = p_j^2 c_j + lambda)
+  dp_j/dt = w_j^2 ( s_j - p_j c_j ) - lambda p_j
+
+Near collapse (w_j small) the predictor receives no signal (dp/dt is O(w^2)): p_j only decays,
+p_j(t) ~ p0 exp(-lambda t), while each direction grows or shrinks at rate r_j(p) = p s_j - p^2 c_j - lambda.
+
+Facts (to be proved in the appendix):
+1. Growth window: r_j(p) > 0 iff p in (p_-, p_+), roots of c_j p^2 - s_j p + lambda = 0; non-empty iff
+   s_j^2 / c_j > 4 lambda, i.e. rho_j s_j > 4 lambda. Same condition for existence of a non-collapsed
+   fixed point (w*^2 = p*^2, p* = p_+). This is an upper bound on rank.
+2. Collapse is decided early: (0,0) is stable for lambda > 0, so whether direction j survives is
+   whether its initial condition (w_j(0), p0) lies in the basin of the non-trivial fixed point;
+   the race is between the growth of w_j (rate r_j) and the drift of p out of the window
+   (rate lambda, and later towards rho_j where r_j = -lambda).
+3. Predicted rank = #{ j : (w0_j, p0) in basin_j } <= #{ j : s_j^2/c_j > 4 lambda }.
+4. No stop-gradient: the target branch adds w (c_t - p s) to the decay; by Cauchy-Schwarz
+   s^2 <= c c_t the rate is <= -lambda for all p: every direction collapses.
+5. EMA target (tau): drive uses wbar; during growth at rate g, wbar ~ w/(1+g/kappa),
+   kappa = (1-tau)/eta. The sign of r at g = 0 is unchanged, so EMA does not change the
+   fixed-point condition but slows growth of fast directions relative to the predictor's drift,
+   which moves basin boundaries (to be derived/tested).
+6. Predictor design: (a) scalar/shared predictor couples directions through one p -> competition,
+   directions with rho_j < p die; (b) bottleneck predictor of width k gives p_j = 0 outside its
+   range -> r_j = -lambda, rank <= k; (c) predictor init scale p0: too small -> drive too weak
+   vs lambda, too large -> decay p^2 c dominates (non-monotone rank in p0);
+   (d) predictor learning rate: a fast predictor reaches rho_j where r_j = -lambda before w_j grows.
+7. Masking ratio m: enters through (s_j(m), c_j(m)): higher masking lowers predictability of
+   short-range directions (rho_j small) -> they fall below threshold first. Needs a data model.
+
+## Pilot check (toy, not a result of the study)
+`notes/pilot/mode_ode_vs_full.py`: D = d = 20, latent spectrum logspace(0,-2), context noise 0.05,
+full-matrix GD on (W, P) vs the per-direction 2-D ODE above, 60k steps, eta = 0.01, w0 = 1e-3.
+Number of directions with ||w_j|| > 1e-2 agrees exactly between the full system and the 2-D ODE in
+all 12 settings of (p0, lambda) (`notes/pilot/mode_ode_vs_full.out`); the fixed-point bound (fact 1)
+over-predicts, and the naive "r_j(p0) > 0" rule fails for p0 >= 1 (the predictor's decay moves p into
+the window). So the theory must be the basin of the 2-D system, not the linear rate at init alone.
+
+## Open
+- Closed-form / asymptotic basin boundary (small w0 matched asymptotics: phase 1 p ~ p0 e^{-lambda t},
+  w grows by exp(int r dt); phase 2 dp/dt picks up once w^2 s ~ lambda p).
+- Deep (2-layer) encoder/predictor; nonlinear encoder via linearization; normalization layers.
+- Data model for masking; mapping to ViT I-JEPA hyperparameters (predictor depth/width, EMA tau, mask).
+- Positioning vs Tian et al. 2021 (they derive related fixed-point conditions for linear BYOL with
+  weight decay) — the novelty must be the early-time basin/rank prediction and the unified heuristic map.
+
+## Update (turn 3): early-time survival criterion — now drafted in sections/theory.tex
+Closed form (phase I: p = p0 e^{-alpha lambda_P t}; capture when w crosses the p-nullcline
+w^2 = lambda_P p/(s - p c)):  Phi_j = max_p [log eps_j + G_j(p) - 1/2 log(lambda_P p/(s_j - p c_j))],
+G_j(p) = [s_j(p0-p) - c_j(p0^2-p^2)/2 - lambda log(p0/p)] / (alpha lambda_P). Survive iff Phi_j > 0 and s_j^2/c_j > 4 lambda.
+Pilot vs integrating the 2-D ODE: 297/300 random settings (lambda_P = lambda, alpha = 1;
+`notes/pilot/survival_criterion_equal_decay.*`); 371/400 with lambda_P/lambda in [0.3,3], alpha in [0.3,3]
+(`survival_criterion_general.*`); failures concentrate at lambda_P > lambda and alpha > 1. Fixed-point bound alone: 183/300, 237/400.
+Masking: Bernoulli context mask (keep prob q), target = complement, stationary x with spectrum S_k, variance sigma^2:
+s_k = q(1-q)(S_k - sigma^2), c_k = q(q S_k + (1-q) sigma^2) -> only above-average-power Fourier directions can survive.

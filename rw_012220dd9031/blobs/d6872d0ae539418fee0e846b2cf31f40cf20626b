@@ -1,0 +1,130 @@
+"""10 x stratified 5-fold CV: multinomial logistic regression vs k-NN (k by inner CV) on Iris.
+
+Usage: python cv.py OUTDIR [--k-grid all]
+  --k-grid all  sensitivity run with every k in 1..30 instead of the default odd k in 1..31
+Writes OUTDIR/folds.csv (one row per outer fold), OUTDIR/predictions.csv (every test
+prediction) and OUTDIR/run_info.json (host, SLURM job, package versions, data checksum, timing).
+"""
+import os
+
+# single-threaded BLAS/OpenMP in every run, so local and Ibex runs do the same arithmetic
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ[_v] = "1"
+
+import hashlib
+import json
+import pathlib
+import platform
+import socket
+import sys
+import time
+import warnings
+
+import numpy as np
+import scipy
+import sklearn
+from scipy.io import arff
+from sklearn.exceptions import ConvergenceWarning
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
+HERE = pathlib.Path(__file__).resolve().parent
+DATA = HERE / "data" / "iris.arff"
+DATA_MD5 = "ad484452702105cbf3d30f8deaba39a9"  # OpenML md5_checksum of data id 61
+
+SEED = 20261017          # outer repeated stratified K-fold
+N_SPLITS, N_REPEATS = 5, 10
+INNER_SPLITS = 5         # inner stratified CV for choosing k
+K_GRID = list(range(1, 32, 2))  # odd k in 1..31 (main analysis)
+K_GRID_ALL = list(range(1, 31))  # every k in 1..30 (sensitivity run)
+
+
+def load():
+    raw = DATA.read_bytes()
+    if hashlib.md5(raw).hexdigest() != DATA_MD5:
+        raise SystemExit("data/iris.arff does not match OpenML md5; run fetch_data.py")
+    rows, meta = arff.loadarff(str(DATA))
+    names = meta.names()
+    X = np.column_stack([rows[n].astype(float) for n in names[:-1]])
+    y = np.array([v.decode() for v in rows[names[-1]]])
+    return X, y, names
+
+
+def cpu_model():
+    try:
+        for line in open("/proc/cpuinfo"):
+            if line.startswith("model name"):
+                return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return platform.processor()
+
+
+def logistic():
+    # lbfgs with >2 classes fits the multinomial (softmax) model in scikit-learn 1.5
+    return make_pipeline(StandardScaler(), LogisticRegression(C=1.0, solver="lbfgs", max_iter=10000))
+
+
+def knn(inner_seed, k_grid):
+    inner = StratifiedKFold(n_splits=INNER_SPLITS, shuffle=True, random_state=inner_seed)
+    pipe = make_pipeline(StandardScaler(), KNeighborsClassifier())
+    # ties in inner accuracy go to the smallest k (first in grid)
+    return GridSearchCV(pipe, {"kneighborsclassifier__n_neighbors": k_grid},
+                        cv=inner, scoring="accuracy", n_jobs=1)
+
+
+def main(outdir, k_grid=K_GRID):
+    out = pathlib.Path(outdir)
+    out.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+    X, y, names = load()
+    outer = RepeatedStratifiedKFold(n_splits=N_SPLITS, n_repeats=N_REPEATS, random_state=SEED)
+    folds = ["repeat,fold,n_train,n_test,correct_lr,correct_knn,acc_lr,acc_knn,k_knn,inner_acc_knn"]
+    preds = ["repeat,fold,index,y,pred_lr,pred_knn"]
+    n_conv_warn = 0
+    for i, (tr, te) in enumerate(outer.split(X, y)):
+        r, f = divmod(i, N_SPLITS)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always", ConvergenceWarning)
+            lr = logistic().fit(X[tr], y[tr])
+        n_conv_warn += sum(issubclass(w.category, ConvergenceWarning) for w in caught)
+        kn = knn(inner_seed=SEED + 1 + i, k_grid=k_grid).fit(X[tr], y[tr])
+        p_lr, p_kn = lr.predict(X[te]), kn.predict(X[te])
+        c_lr, c_kn = int((p_lr == y[te]).sum()), int((p_kn == y[te]).sum())
+        k = kn.best_params_["kneighborsclassifier__n_neighbors"]
+        folds.append(f"{r},{f},{len(tr)},{len(te)},{c_lr},{c_kn},{c_lr/len(te)!r},{c_kn/len(te)!r},"
+                     f"{k},{kn.best_score_!r}")
+        preds += [f"{r},{f},{j},{y[j]},{a},{b}" for j, a, b in zip(te, p_lr, p_kn)]
+        print(f"repeat {r} fold {f}: acc_lr={c_lr/len(te):.4f} acc_knn={c_kn/len(te):.4f} k={k}", flush=True)
+    (out / "folds.csv").write_text("\n".join(folds) + "\n")
+    (out / "predictions.csv").write_text("\n".join(preds) + "\n")
+    info = {
+        "hostname": socket.gethostname(),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "slurm_job_nodelist": os.environ.get("SLURM_JOB_NODELIST"),
+        "slurmd_nodename": os.environ.get("SLURMD_NODENAME"),
+        "slurm_cpus_on_node": os.environ.get("SLURM_CPUS_ON_NODE"),
+        "platform": platform.platform(),
+        "cpu_model": cpu_model(),
+        "threads": {v: os.environ.get(v) for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")},
+        "lr_convergence_warnings": n_conv_warn,
+        "python": platform.python_version(),
+        "numpy": np.__version__, "scipy": scipy.__version__, "scikit-learn": sklearn.__version__,
+        "data": str(DATA.relative_to(HERE)), "data_md5": DATA_MD5,
+        "n_samples": int(X.shape[0]), "features": names[:-1], "classes": sorted(set(y)),
+        "seed": SEED, "n_splits": N_SPLITS, "n_repeats": N_REPEATS,
+        "inner_splits": INNER_SPLITS, "k_grid": k_grid,
+        "wall_seconds": round(time.time() - t0, 2),
+        "finished_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    (out / "run_info.json").write_text(json.dumps(info, indent=2) + "\n")
+    print(json.dumps(info), flush=True)
+
+
+if __name__ == "__main__":
+    if sys.argv[2:] not in ([], ["--k-grid", "all"]):
+        raise SystemExit(__doc__)
+    main(sys.argv[1], K_GRID_ALL if sys.argv[2:] else K_GRID)

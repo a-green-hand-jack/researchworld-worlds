@@ -1,0 +1,25 @@
+# Review record
+
+## Pass 1 (2026-10-17)
+Revisions inspected: paper-repo `bbd16d05544f096032244c96ab9c2034b39ebeb4`, experiment-repo `741117527edc0c8785ebe5fdc886f4ea4d3888aa`, figtab-repo `c1862c13793de9440f317601e9f46981dbf8972e` (assembled with `ht-role delivery`).
+
+Checks:
+- `code/fit.py` re-run in a copy of the delivery: `results/fit.json` identical, `results/data.csv` byte-identical; `figures/data.csv` == `results/data.csv`; `figures/fit.json` == `results/fit.json`.
+- Values match the independent reference `review/reference_check.out`: slope 0.814013 [0.728336, 0.899690], intercept 1.914195 [-0.027286, 3.855675], R² 0.906848.
+- `figures/make_fit_figure.py` runs (the polyfit consistency assert passes) and regenerates `figures/fit.png`. I opened the figure: 40 points, OLS line, true line, CI band for the mean line, labelled axes, legend, readable. The caption's claim that most points lie outside the band holds (25 of 40).
+- Report: the numbers match fit.json; t(0.975,38) = 2.0244; the "borderline against zero" claim holds (p = 0.053); the caveats are appropriate; length is one page (~330 words).
+
+Findings (sent as `revise`, paper-repo#4):
+1. The report does not present the figure: it neither names nor embeds `figures/fit.png`.
+2. The report's provenance omits the figure code `figures/make_fit_figure.py`.
+
+Conclusion: not approved yet. Everything else meets `review/standard.md`.
+
+## Pass 2 (2026-10-17)
+Revisions inspected: paper-repo `52132b0bda7d47aebd3ab0951cb40883444be1b0`, experiment-repo `741117527edc0c8785ebe5fdc886f4ea4d3888aa`, figtab-repo `c1862c13793de9440f317601e9f46981dbf8972e`. The assembly has no errors.
+- Finding 1 fixed: `report/report.md` embeds `![Figure 1](../figures/fit.png)`, which resolves in the assembled delivery. The caption is accurate (band = CI for the mean line, dashed = true line). The figure is byte-identical to the one I inspected in pass 1.
+- Finding 2 fixed: the Reproduction section cites `figures/make_fit_figure.py` and its inputs.
+- Numbers and the other delivered files are unchanged from pass 1, which I verified.
+- Comment checks: paper-repo `comment-check.md` (steps 1 and 4), experiment-repo `comment-check.md`@741117527edc (step 2), and this repository's `comment-check.md` (step 3) are all present and factual.
+
+Conclusion: the delivery meets the objective and `review/standard.md`. Approved.

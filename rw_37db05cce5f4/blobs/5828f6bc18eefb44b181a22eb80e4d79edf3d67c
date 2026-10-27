@@ -1,0 +1,73 @@
+# Environment capability check: report
+
+This is a capability check, not research. Every result below is copied from `checks/` in `experiment-repo` at commit `c45142683f6b225b36c9f6b6e9cf70f839ec8d34` (data delivered in `2a7df9a00deb53ca2c9eb357b4b70aca0e39c93a`). Nothing is measured here by the report author. Failures and refusals are results and are listed as observed. The run time of each check (UTC, 2026-10-19, from the evidence files) is in the last column.
+
+## Summary table
+
+| Step | Check | Command | Result | Evidence | Run time (UTC, 2026-10-19) |
+|---|---|---|---|---|---|
+| 1 | Repeated `ht-role status` | `for i in $(seq 1 18); do date -u +%T; ht-role status > /dev/null 2> checks/status-err-$i.txt && echo ok || { echo failed; cat checks/status-err-$i.txt; }; sleep 10; done \| tee checks/status-loop.txt` (run once) | 18 of 18 iterations printed `ok`; 0 `failed`; all 18 stderr files empty. Deviation: it was not the literally first command of the first turn (the objective was read first), disclosed in `checks/status.md`. | `status-loop.txt`, `status-err-1..18.txt`, `status.md` | 21:29:14 (first iteration start) to 21:32:50 (last iteration start); evidence verified 21:33:32 |
+| 2 | Research-network sources | `curl -sS --connect-timeout 10 --max-time 30 -D checks/sources/<name>.headers -o <tmp body> -w '%{http_code}\n%{content_type}\n' <URL>`, run once per source (36 sources; `<name>`, `<URL>` per the table below; exact argv in `checks/sources/<name>.json`) | 36 requests, all curl exit 0. HTTP 200: 25; redirects 301/302/303: 4 (DOI, CVF, NeurIPS papers, Springer); 202: 1 (DBLP); 403: 4 (npm, ACM DL, ScienceDirect, SSRN); 418: 1 (IEEE Xplore); 429: 1 (Semantic Scholar). Per-source rows in the next table. | `sources.md`, `sources/*` | 21:30:14.297 to 21:30:17.888 (all 36 requests; per-source times in the Step 2 table) |
+| 3.1 | Plain HTTP to example.com | `curl -sS -D - http://example.com/` | exit 0; `HTTP/1.1 503 Service Unavailable` with an 8017-byte HTML page titled "The Website is Blocked" from an upstream URL filter (`urlfilter.kaust.edu.sa`); the request did not reach example.com and is not the proxy's JSON refusal. | `refusals.md` Check 3.1 | 21:30:27.709 to 21:30:27.904 |
+| 3.2 | HTTPS to example.org | `curl -sS -D - https://example.org/` | exit 56; `403 Forbidden: example.org is denied by research-network: a synthetic check of the deny list (#280)`; `curl: (56) CONNECT tunnel failed, response 403`. | Check 3.2 | 21:30:27.904 to 21:30:27.919 |
+| 3.3 | Plain HTTP to example.org | `curl -sS -D - http://example.org/` | exit 0; same 403 deny-list status line, JSON body `network-target-denied`. | Check 3.3 | 21:30:27.919 to 21:30:27.930 |
+| 3.4 | Cloud metadata address | `curl -sS -D - --noproxy '' -x "$HTTP_PROXY" http://169.254.169.254/latest/meta-data/` | exit 0; `403 Forbidden: 169.254.169.254 is not a public address`; JSON body `network-address-not-public`. | Check 3.4 | 21:30:27.930 to 21:30:27.948 |
+| 3.5 | HTTPS to localtest.me | `curl -sS -D - https://localtest.me/` | exit 56; `403 Forbidden: localtest.me is not a public address`; `CONNECT tunnel failed, response 403`. | Check 3.5 | 21:30:27.948 to 21:30:28.147 |
+| 4a | forge outside checkout | `forge api repos/world/experiment-repo/issues/1 -R world/experiment-repo` (from `/hutian`) | exit 0; returned issue #1 "Research objective". | `forge.md` | 21:30:49.195 to 21:30:49.234 |
+| 4b | 5 MB release upload | `head -c 5000000 /dev/urandom > /hutian/transfer-check/random-5MB.bin`; `forge release create -R world/experiment-repo --tag capability-check --title "Capability check: 5 MB transfer"`; `curl -fT /hutian/transfer-check/random-5MB.bin -X POST -u "$HT_FORGEJO_USER:$FORGEJO_TOKEN" "$HT_FORGEJO_URL/api/v1/repos/world/experiment-repo/releases/1/assets?name=random-5MB.bin"` | release created; asset uploaded, size 5000000, exit 0. | `forge.md` | 21:30:49.234 to 21:30:49.437 (file, release, upload) |
+| 4c | Download by curl | `curl -fLo /hutian/transfer-check/curl-download.bin -u "$HT_FORGEJO_USER:$FORGEJO_TOKEN" http://172.17.0.1:39937/world/experiment-repo/releases/download/capability-check/random-5MB.bin` | exit 0; sha256 `916aa60fd47f1db49ec0ab77a8db7c6e644029aa8f49f7668fc83fed0ef6d3a1`, identical to the original; `cmp` exit 0. | `forge.md` | 21:30:49.472 to 21:30:49.514 |
+| 4d | Download by `forge release download` | `forge release download capability-check random-5MB.bin -R world/experiment-repo -O /hutian/transfer-check/forge-download.bin` | **failed**, exit 1: `Error: releases is not supported by this forge`. No file, no hash; the comparison (`sha256sum` of the three files, `cmp` against the original) exited 1 and 2 on the missing file. | `forge.md` | 21:30:49.514 to 21:30:49.544 (hash/cmp to 21:30:49.613) |
+| 5a | 160 MiB random file | `head -c 167772160 /dev/urandom > data/large.bin`; `sha256sum data/large.bin > checks/large.sha256` | 167772160 bytes; sha256 `ab4dc034c0a4c00ba0f6c2a33ede656a17115f6149fccb64385fb0ea13bde0c0`; `sha256sum -c` printed `OK`. | `size.md`, `large.sha256` | 21:30:49.677 to 21:30:52.828 (generate, sha256, verify) |
+| 5b | 1,500 small files | `mkdir -p data/many`; `for i in $(seq 1 1500); do printf "%s\n" "$i" > "data/many/$(printf "f%04d.txt" "$i")"; done` | 1500 files; names and contents match 1..1500 (Python check: True). | `size.md` | 21:30:51.410 to 21:30:51.888 |
+| 5c | Single commit and push | one commit containing step 5a and 5b files, then push (commit and push logs kept) | both added in commit `2a7df9a00deb53ca2c9eb357b4b70aca0e39c93a`, pushed to `main` (`890f8a8..2a7df9a`). | `size-commit.txt`, `size-push.txt`, `size-remote.txt` | commit 21:31:14; push 21:31:14Z to 21:31:23Z |
+
+## Step 2 detail: one row per source
+
+HTTP status is that of the requested URL (redirects not followed). Times are UTC on 2026-10-19 (start and end of each request, from `checks/sources/<name>.json`). The last column is an excerpt of the first 200 body bytes (`checks/sources/<name>.first200`): the page `<title>` where it lies within those bytes, else the first 70 characters. A 2xx status does not show that the page is useful, and a 200-byte prefix may not reveal a challenge page.
+
+| Source | URL | Start | End | curl exit | HTTP status | Content type | First-200-bytes excerpt |
+|---|---|---|---|---|---|---|---|
+| PyPI | https://pypi.org/ | 21:30:14.297 | 21:30:14.679 | 0 | 200 | text/html; charset=UTF-8 | `<!DOCTYPE html> <html lang="en" dir="ltr"> <head> <meta charset="utf-8` |
+| PyTorch CPU | https://download.pytorch.org/whl/cpu/ | 21:30:14.297 | 21:30:15.150 | 0 | 200 | text/html | `<!DOCTYPE html> <html> <body> <a href="certifi/">certifi</a><br/> <a h` |
+| conda-forge | https://conda.anaconda.org/conda-forge/ | 21:30:14.298 | 21:30:15.632 | 0 | 200 | text/html | `title: conda-forge` |
+| CRAN | https://cran.r-project.org/ | 21:30:14.298 | 21:30:14.868 | 0 | 200 | text/html | `title: The Comprehensive R Archive Network` |
+| Bioconductor | https://bioconductor.org/ | 21:30:14.306 | 21:30:14.802 | 0 | 200 | text/html | `<!DOCTYPE html><html dir="ltr" lang="en-US"> <head><meta charset="utf-` |
+| npm | https://www.npmjs.com/ | 21:30:14.315 | 21:30:14.804 | 0 | 403 | text/html; charset=UTF-8 | `title: Just a moment...` |
+| GitHub | https://github.com/ | 21:30:14.316 | 21:30:15.026 | 0 | 200 | text/html; charset=utf-8 | ` <!DOCTYPE html> <html lang="en" data-color-mode="dark" data-dark-them` |
+| Hugging Face | https://huggingface.co/ | 21:30:14.316 | 21:30:15.017 | 0 | 200 | text/html; charset=utf-8 | `<!doctype html> <html class=""> <head> <meta charset="utf-8" /> <meta ` |
+| Zenodo | https://zenodo.org/ | 21:30:14.327 | 21:30:15.161 | 0 | 200 | text/html; charset=utf-8 | ` <!DOCTYPE html> <html lang="en" dir="ltr"> <head> <meta charset="utf-` |
+| NCBI | https://www.ncbi.nlm.nih.gov/ | 21:30:14.331 | 21:30:15.148 | 0 | 200 | text/html | `<!DOCTYPE html> <html lang="en"> <head> <meta http-equiv="Content-Type` |
+| EBI | https://www.ebi.ac.uk/ | 21:30:14.337 | 21:30:15.014 | 0 | 200 | text/html | `<!doctype html> <html lang="en" class="vf-no-js"> <head> <script> // D` |
+| arXiv | https://arxiv.org/ | 21:30:14.338 | 21:30:14.725 | 0 | 200 | text/html; charset=utf-8 | `title: arXiv.org e-Print archive` |
+| ar5iv | https://ar5iv.labs.arxiv.org/ | 21:30:14.680 | 21:30:15.277 | 0 | 200 | text/html; charset=utf-8 | `title: ar5iv – Articles from arXiv.org as responsive HTML5 web documents` |
+| OpenReview | https://api2.openreview.net/notes/search?term=transformer&limit=1 | 21:30:14.726 | 21:30:15.410 | 0 | 200 | application/json; charset=utf-8 | `{"notes":[{"content":{"venue":{"value":"IEEE J. Biomed. Health Informa` |
+| OpenAlex | https://api.openalex.org/works?search=transformer&per-page=1 | 21:30:14.803 | 21:30:15.587 | 0 | 200 | application/json | `{"meta": {"notice": "No API key, so this request shares one free daily` |
+| Crossref | https://api.crossref.org/works?query=transformer&rows=1 | 21:30:14.805 | 21:30:15.760 | 0 | 200 | application/json | `{"status":"ok","message-type":"work-list","message-version":"1.0.0","m` |
+| DOI | https://doi.org/ | 21:30:14.869 | 21:30:15.297 | 0 | 301 |  | (empty body) |
+| Unpaywall | https://unpaywall.org/ | 21:30:15.015 | 21:30:15.922 | 0 | 200 | text/html; charset=UTF-8 | `<!DOCTYPE html><html><head><meta charset=utf-8><meta http-equiv=X-UA-C` |
+| Semantic Scholar | https://api.semanticscholar.org/graph/v1/paper/arXiv:1706.03762?fields=title | 21:30:15.017 | 21:30:15.662 | 0 | 429 | application/json | `{"message": "Too Many Requests. Please wait and try again or apply for` |
+| PMLR | https://proceedings.mlr.press/ | 21:30:15.026 | 21:30:15.887 | 0 | 200 | text/html; charset=utf-8 | `<!DOCTYPE html> <html lang="en"> <head> <meta charset="utf-8"> <meta h` |
+| NeurIPS proceedings | https://proceedings.neurips.cc/ | 21:30:15.148 | 21:30:16.533 | 0 | 200 | text/html; charset=utf-8 | ` <!doctype html> <html lang="en"> <head> <!-- Required meta tags --> <` |
+| ACL Anthology | https://aclanthology.org/ | 21:30:15.151 | 21:30:16.611 | 0 | 200 | text/html; charset=utf-8 | `title: ACL Anthology` |
+| CVF | https://openaccess.thecvf.com/ | 21:30:15.162 | 21:30:15.978 | 0 | 302 | text/html; charset=iso-8859-1 | `title: 302 Found` |
+| ICLR accepted papers | https://iclr.cc/virtual/2025/papers.html | 21:30:15.277 | 21:30:17.549 | 0 | 200 | text/html; charset=utf-8 | ` <!DOCTYPE html> <html lang="en"> <head> <style>html { scroll-padding-` |
+| ICML accepted papers | https://icml.cc/virtual/2025/papers.html | 21:30:15.298 | 21:30:17.403 | 0 | 200 | text/html; charset=utf-8 | ` <!DOCTYPE html> <html lang="en"> <head> <style>html { scroll-padding-` |
+| NeurIPS accepted papers | https://neurips.cc/virtual/2025/papers.html | 21:30:15.411 | 21:30:16.489 | 0 | 302 | text/html; charset=utf-8 | (empty body) |
+| PubMed | https://pubmed.ncbi.nlm.nih.gov/ | 21:30:15.588 | 21:30:16.237 | 0 | 200 | text/html; charset=utf-8 | `<!DOCTYPE html> <html lang="en" > <head itemscope itemtype="http://sch` |
+| Europe PMC | https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=transformer&format=json&pageSize=1 | 21:30:15.635 | 21:30:16.102 | 0 | 200 | application/json;charset=UTF-8 | `{"version":"6.9","hitCount":81388,"nextCursorMark":"AoIIQEDM3Sg1NjcwOT` |
+| bioRxiv | https://www.biorxiv.org/ | 21:30:15.663 | 21:30:16.091 | 0 | 200 | text/html; charset=utf-8 | `<!DOCTYPE html> <html lang="en" dir="ltr" xmlns="http://www.w3.org/199` |
+| DBLP | https://dblp.org/ | 21:30:15.760 | 21:30:16.246 | 0 | 202 | text/html; charset=utf-8 | `title: Making sure you're not a bot!` |
+| Springer | https://link.springer.com/ | 21:30:15.888 | 21:30:16.388 | 0 | 303 |  | (empty body) |
+| IEEE Xplore | https://ieeexplore.ieee.org/ | 21:30:15.922 | 21:30:16.473 | 0 | 418 | text/html | `<script> var MEMBER_PROFILE_CHANGE_USERNAMEPASS_LINK = 'https://www.ie` |
+| ACM Digital Library | https://dl.acm.org/ | 21:30:15.979 | 21:30:16.384 | 0 | 403 | text/html; charset=UTF-8 | `title: Just a moment...` |
+| ScienceDirect | https://www.sciencedirect.com/ | 21:30:16.091 | 21:30:16.780 | 0 | 403 | text/html; charset=UTF-8 | `<!DOCTYPE html> <html lang='en-us'> <head> <meta content="text/html; c` |
+| SSRN | https://www.ssrn.com/ | 21:30:16.102 | 21:30:16.659 | 0 | 403 | text/html; charset=UTF-8 | `title: Just a moment...` |
+| Google Scholar | https://scholar.google.com/ | 21:30:16.237 | 21:30:17.888 | 0 | 200 | text/html; charset=ISO-8859-1 | `title: الباحث العلمي من Google` |
+
+## Reading the results
+
+- Reachable through the proxy: all 36 sources answered (no connection failures), but status alone is misleading. The first-200-byte excerpts show bot challenges behind four answers: DBLP (202, title "Making sure you're not a bot!"), and npm (403), ACM DL (403) and SSRN (403), each titled "Just a moment...". ScienceDirect (403) and IEEE Xplore (418) are refusals whose first 200 bytes do not show their nature; Semantic Scholar (429) returned a JSON "Too Many Requests" message.
+- Check 3.1 did not reach example.com: the 503 is an HTML page titled "The Website is Blocked" that links to `urlfilter.kaust.edu.sa`, i.e. an upstream URL filter, not the world proxy's JSON refusal that the other four checks show.
+- Refused by the world proxy: example.org (deny list) and the metadata and `localtest.me` addresses (not public) return 403.
+- `forge release download` is unsupported in this world; curl is the working download path.
+- Large payloads: a 160 MiB file and 1,500 small files were committed and pushed in one commit.

@@ -1,0 +1,21 @@
+{\footnotesize\setlength{\tabcolsep}{3pt}
+\newcolumntype{R}[1]{>{\raggedright\arraybackslash}p{#1}}
+\begin{tabular}{@{}R{0.12\linewidth}R{0.24\linewidth}R{0.30\linewidth}R{0.27\linewidth}@{}}
+\toprule
+Knob & Term of the race it moves & Prediction & Evidence \\
+\midrule
+weight decay $\lambda$ & narrows the window; shortens the clock $1/(\alpha\lambda_P)$ & $\downarrow$ rank; $\lambda_k^{\mathrm{race}}\ll c_k^2/4\sigma_k$ & E1 dev.: 6/6; E1b: $\lambda_c$ 4--16$\times$ below static; ViT: $2.6\times$ off \\
+pred. scale $p_0$ & start point relative to the window & non-monotone; at $\lambda=0$ lost once $p_0\ge c_k/\sigma_k$ & E1 dev.: 11/12; E1b: exact rank 89\%; ViT T$\times3$: rule 115, got 10 \\
+pred. lr ratio $\alpha$ & clock $1/(\alpha\lambda_P)$ & $\downarrow$ rank if $\lambda_P>0$; none if $\lambda_P=0$ & E1 dev.: 3/3; ViT: sign fails \\
+pred. depth $L$ & clock $1/(L\alpha\lambda_P)$, capture amplitude & $\downarrow$ rank (clock); capture also changes (post hoc, App.~\ref{app:more}) & E1 dev.: 2/3; E1b: over by 0.8; E1c (post hoc): MAE 0.19 vs 0.72 uncorrected; ViT P: fails \\
+random/wide pred. & non-normal $P_0$ (growth matrix) & scale, not width $d$, sets growing directions & E1b: MAE 0.69 (105 runs) \\
+EMA rate $\kappa$ & target lag; window unchanged & $\downarrow$ if $p_0$ in window; slight $\uparrow$ if $p_0>p_+^k$ & E1 dev.: 11/12; E1b: 13/14 signs (pre-reg.\ fails); ViT P: null fails \\
+initial scale $a_0$ & distance $\log(1/a_0)$ to cover & larger $a_0$ keeps more directions & E1 dev.: 2/2 \\
+mask ratio $r$ & data quantities $(\sigma_k,c_k)$ & set by $(\sigma_k,c_k)$; can peak in $r$ & E2: MAE 0.03; fall 2/3; ViT P: 4/4 nulls fail \\
+AdamW & preconditioned; same clock & less $p_0$-, more $\lambda$-dependence & E1b: partly (2.8\% conv.); ViT P: rule fails \\
+frozen target & no feedback (no exp.\ growth) & collapse if $\lambda>0$ unless $c_k|a_0|>\sqrt{\lambda_W\lambda_P}$; none at $\lambda=0$ & ViT (pred.\ none): T 11, fails; P 87, holds \\
+no stop-gradient & extra $\dot W$ term & all directions collapse \citep{tian2021understanding,halvagal2023implicit} & E1b: rank 0 in 20/20; ViT: no full collapse \\
+no predictor & $g_k=c_k-\sigma_k-\lambda_W$ & no growth if $c_k\le\sigma_k+\lambda_W$; can fail under heavy masking & E1b: rank 0 in 10/10; E2: grows 18/18 \\
+\bottomrule
+\end{tabular}
+}

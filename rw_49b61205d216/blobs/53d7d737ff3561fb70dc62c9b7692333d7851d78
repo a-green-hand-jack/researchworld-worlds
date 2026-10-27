@@ -1,0 +1,22 @@
+# Monte Carlo evidence
+
+Run `python3 code/monte_carlo.py` from the repository to regenerate the full study. Run `python3 code/check_results.py` to check saved counts and aggregation. Dependencies and source hashes are recorded in summary.json. Regeneration preserves counts and estimates, but per-seed wall times (and consequently the CSV hash) vary.
+
+The experiment used 20 child SeedSequences spawned from fixed root 20261020, with distinct spawn keys 0–19, initializing NumPy PCG64. These are reproducible statistically independent pseudorandom streams, not a mathematical claim of independence of a deterministic generator. Each draws 1,000,000 pairs on [0,1)² and counts x²+y² ≤ 1. All 20 streams were retained without selection.
+
+The first required stream served as the timed pilot (0.0701 s), projecting roughly 1.33 s sequential sampling for the remaining 19. The remaining streams ran with two worker threads, each having its own generator. The pilot is part of the 20,000,000 points, not an additional study run. Saved per-stream times include host scheduling effects and are not a performance benchmark. The tracked job completed successfully.
+
+## Checked results
+
+- Inside count: 15,709,409 of 20,000,000.
+- Arithmetic mean estimate: 3.1418818.
+- Across-seed sample SD (ddof=1): 0.001780051554546122.
+- Standard error of mean: 0.00039803162794193036.
+- Student t critical value, 19 df: 2.0930240544083087.
+- 95% interval: [3.1410487102283025, 3.142714889771698].
+- Signed error, mean minus math.pi: +0.0002891464102070529.
+- Absolute error: 0.0002891464102070529.
+
+Theoretical per-seed binomial SD is sqrt(pi(4−pi)/1,000,000) = 0.001642183367736324. Observed SD is 1.08395 times this value, a plausible variation for 20 seeds. The interval includes math.pi. This is one observed interval, not an empirical coverage study; nominal 95% coverage uses the near-normal large-binomial seed estimates. Its width was computed across seeds, not by substituting theoretical variance.
+
+Validation: code/check_results.py independently reaggregates the saved integer counts using NumPy and scipy.stats.t.interval, verifies the per-seed estimates, total, mean, interval, errors, seed metadata and source hashes. It passed. The production code also checked coordinate support, count totals, pooled-count/seed-mean equivalence and sample SD agreement. No external data or literature is used.

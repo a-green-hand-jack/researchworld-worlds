@@ -1,0 +1,40 @@
+"""Referee check: imbalance identity of the linear JEPA flow (paper setup eqs. 2-4).
+
+dW/dt = P^T G - lam W,  dP/dt = alpha (G W^T - lam P),  dWbar/dt = kappa (W - Wbar),
+G = Wbar S_tc - P W S_c.  For alpha = 1, independent of Wbar, S_c, S_tc:
+    d/dt (P^T P - W W^T) = -2 lam (P^T P - W W^T)
+so  P^T P - W W^T = exp(-2 lam t) (P0^T P0 - W0 W0^T)  exactly (not only near collapse).
+For alpha != 1 the combination does not close.  RK4 on random non-commuting statistics,
+a random (non-normal) predictor and a non-trivial EMA target.
+"""
+import numpy as np
+
+def run(alpha, lam=0.05, kappa=0.3, n=12, d=6, T=40.0, dt=1e-3, seed=0, w0=0.05):
+    rng = np.random.default_rng(seed)
+    A = rng.standard_normal((n, n)); Sc = A @ A.T / n + 0.1 * np.eye(n)
+    Stc = rng.standard_normal((n, n)) / np.sqrt(n)          # not symmetric, not commuting
+    W = w0 * rng.standard_normal((d, n)); Wb = W.copy()
+    P = rng.standard_normal((d, d)) / np.sqrt(d)            # O(1), non-normal
+    D0 = P.T @ P - W @ W.T
+    def f(W, P, Wb):
+        G = Wb @ Stc - P @ W @ Sc
+        return P.T @ G - lam * W, alpha * (G @ W.T - lam * P), kappa * (W - Wb)
+    t, worst, Wmax = 0.0, 0.0, 0.0
+    for _ in range(int(T / dt)):
+        k1 = f(W, P, Wb)
+        k2 = f(*(x + dt / 2 * k for x, k in zip((W, P, Wb), k1)))
+        k3 = f(*(x + dt / 2 * k for x, k in zip((W, P, Wb), k2)))
+        k4 = f(*(x + dt * k for x, k in zip((W, P, Wb), k3)))
+        W, P, Wb = (x + dt / 6 * (a + 2 * b + 2 * c + e)
+                    for x, a, b, c, e in zip((W, P, Wb), k1, k2, k3, k4))
+        t += dt
+        D, Dpred = P.T @ P - W @ W.T, np.exp(-2 * lam * t) * D0
+        worst = max(worst, np.linalg.norm(D - Dpred) / (np.linalg.norm(P.T @ P) + np.linalg.norm(W @ W.T)))
+        Wmax = max(Wmax, np.linalg.norm(W))
+    return worst, Wmax, np.linalg.norm(W)
+
+if __name__ == "__main__":
+    for alpha in (1.0, 0.5, 2.0):
+        worst, Wmax, Wend = run(alpha)
+        print(f"alpha={alpha}: max_t rel. deviation from exp(-2 lam t)(P0'P0-W0W0') = {worst:.2e}"
+              f"  (max ||W|| = {Wmax:.2f}, final ||W|| = {Wend:.2f})")

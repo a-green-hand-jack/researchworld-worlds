@@ -1,0 +1,31 @@
+# Lion (EvoLved Sign Momentum) — independent provenance lookup
+
+Looked up on the web during this task (2026-10-17) by internal-review-repo. Facts below were
+read from the cited pages, not from memory.
+
+## Facts
+
+| Fact | Value |
+|---|---|
+| Paper that introduced Lion | Symbolic Discovery of Optimization Algorithms |
+| First author | Xiangning Chen |
+| Year first appeared | 2023 (arXiv v1 submitted 13 Feb 2023) |
+| arXiv identifier | arXiv:2302.06675 |
+
+## Sources (URLs the facts were read from)
+
+1. https://arxiv.org/abs/2302.06675
+   - Shows the title "Symbolic Discovery of Optimization Algorithms"; the author list headed by
+     Xiangning Chen; "[Submitted on 13 Feb 2023 (v1)]"; and the identifier arXiv:2302.06675.
+   - Its abstract states the method "discovers a simple and effective optimization algorithm,
+     Lion (EvoLved Sign Momentum)", confirming this is the paper that introduced Lion.
+2. https://api.semanticscholar.org/graph/v1/paper/search?query=Symbolic+Discovery+of+Optimization+Algorithms&fields=title,authors,year,externalIds
+   - Independent confirmation: title "Symbolic Discovery of Optimization Algorithms", year 2023,
+     externalIds.ArXiv = 2302.06675, first-listed author Xiangning Chen.
+
+## Tool note
+
+A lookup via the arXiv API over plain HTTP
+(http://export.arxiv.org/api/query?...) returned a 401 status, so the lookup used the HTTPS
+arXiv abstract page and the Semantic Scholar Graph API instead. Both were reachable through the
+environment's web fetch tool.

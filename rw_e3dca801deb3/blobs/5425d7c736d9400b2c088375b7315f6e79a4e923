@@ -1,0 +1,9 @@
+# Host probe
+
+```
+$ researchworld run --topic probe --min-free-gb 100000
+{"error": "run refused: the disk Docker writes to has 79.8 GiB free, below the 100000 GiB this host keeps free (run.min_free_gb). A world that runs out of disk fails at whatever it is writing, so none starts or goes on now; running worlds are not touched. Free space first: `researchworld reclaim --all` lists what finished worlds no longer need and --apply removes it, `docker builder prune` clears Docker's build cache; or give --min-free-gb with a lower number to go ahead anyway"}
+exit=1
+```
+
+No world was made: the run was refused because the host had 79.8 GiB free, below the 100000 GiB requested.

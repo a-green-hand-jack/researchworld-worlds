@@ -1,0 +1,27 @@
+# Private-repo `from` worker check
+
+All commands were run from the `paper-repo` sandbox on the host shell; outputs below are verbatim.
+
+## 1. `researchworld worker list --repo a-green-hand-jack/HuTian-Workers`
+Exit status: 0. No error printed.
+
+```
+{"repository": "a-green-hand-jack/HuTian-Workers", "commit": "2df1b7b57f646495f7b739219f8a59c85aca22ed", "workers": [{"name": "cand-a-reviewer", "versions": ["v1"], "from": "a-green-hand-jack/HuTian-Workers:cand-a-reviewer@v1"}, {"name": "cand-a-writer", "versions": ["v1"], "from": "a-green-hand-jack/HuTian-Workers:cand-a-writer@v1"}, {"name": "incumbent", "versions": ["v3"], "from": "a-green-hand-jack/HuTian-Workers:incumbent@v3"}]}
+```
+
+(The same command was also submitted once through `ht-resource run worlds --`, which returned a tracked-job record without output; the listing above is from the direct run.)
+
+## 2. `researchworld continue rw_0ffd0bbe3d53 --config /initial-state/inputs/0/continue.json`
+Exit status: 0. No error printed (stderr carried only `export:` progress lines for the two repositories). New world id: **`rw_376be79217ba`** (status `waiting-for-execution`, not driven, stopped or finished). The continue.json named `roles.paper-repo.from = a-green-hand-jack/HuTian-Workers:cand-a-writer@v1`.
+
+## 3. `researchworld config show rw_376be79217ba`
+Exit status: 0. No error printed. Full output saved as `report/config_show.json`. The `from` record of the paper-repo worker, at `effective.worker.roles.paper-repo.from`:
+
+```json
+{"commit": "2df1b7b57f646495f7b739219f8a59c85aca22ed", "name": "cand-a-writer", "repository": "a-green-hand-jack/HuTian-Workers", "version": "v1"}
+```
+
+It resolved to the commit that the listing reports as the repository's head (`2df1b7b5...`), and the worker's asset `.claude/CLAUDE.md` (sha256 `7da63666...`) was attached from it.
+
+## Conclusion
+A published worker in the private repository `a-green-hand-jack/HuTian-Workers` can be named with `from` in a `researchworld continue` config run through the `worlds` resource: all three commands exited 0 with no errors.

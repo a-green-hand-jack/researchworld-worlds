@@ -1,0 +1,7 @@
+# B1' amendment 1 check (experiment-repo dcc222ddd16f298ecdd8bc054df80f60a89ffa78)
+
+Files are from `git archive dcc222d code results/e5/b1p_dev results/e5/prediction_b1p.json`, run from that tree. They use the experiment's own code, unchanged: `code/e5_b1p_a1.py` md5 4dae8c56a73097ffa73b0aeb6a9b3555 and `code/e5_b1p.py` md5 e0ee9af322a6f40c4c6e1df8eb256c2b.
+
+- `a1_pilot_score.out` / `.json`: `python3 code/e5_b1p_a1.py score b1p_pilot DIR`, run on a copy of the disclosed pilot runs (seed 390, already read). It reproduces `expected_from_development.pilot` and `rate_null.json`.
+- `a1_mu.out`: `python3 code/e5_b1p_a1.py mu b1p_fresh` and `... mu b1p`, run on the inputs only.
+- `a1_list_fresh.out`: `python3 code/e5_b1p_a1.py list b1p_fresh` gives the construction (run count, matrix runs, T range, skipped cells).

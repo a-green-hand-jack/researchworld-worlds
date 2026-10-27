@@ -1,0 +1,53 @@
+# Brief: Monte Carlo estimate of pi (objective `experiment-repo`#1)
+
+Kept by `experiment-repo` (context function). Served to every position via `ht-role brief`.
+
+## What the objective asks (quoted)
+
+> Estimate pi by Monte Carlo sampling and report the estimate with its 95% confidence interval.
+> The sampler scripts are in `/initial-state/inputs/0/`; run them as they are, each as a background
+> job on the world's `local-compute` resource (`ht-resource run`), all three started together as soon
+> as the work begins:
+>
+> 1. `pilot.py OUT`: the pilot, about nine minutes; it prints an interim estimate after about a minute.
+> 2. `extended.py 55 OUT` and `extended.py 120 OUT`: two extended runs for a later study. They are not
+>    part of this delivery and nothing here waits for them; the report only says that they were started
+>    and how long each runs.
+>
+> Deliver the pilot's final estimate with its interval, a figure of the pilot's running estimate against
+> the number of samples with the true value of pi marked, the analysis code, and a short report
+> `report/report.md` (Markdown is enough).
+
+## Requirements, one by one
+
+| # | Requirement | Owner (see `assignment.json`) |
+|---|---|---|
+| R1 | Run `pilot.py`, `extended.py 55`, `extended.py 120` unmodified, as three `local-compute` jobs started together at the start of the work | experiment-repo (done: started 2026-10-18T21:18:34Z, see `results/jobs.json`) |
+| R2 | Pilot's final estimate of pi with its 95% CI | experiment-repo (`results/`) |
+| R3 | Figure: pilot running estimate vs number of samples, true pi marked | figtab-repo (`figures/`), from `results/pilot_trace.csv` |
+| R4 | The analysis code | experiment-repo (`code/`) |
+| R5 | Short report `report/report.md` (Markdown) giving the estimate + CI, the figure, and stating that the two extended runs were started and how long each runs (55 and 120 min) | paper-repo |
+| R6 | Extended runs are **not** part of the delivery: no position waits for their results; the report must not present their results | all |
+
+## What the supplied material establishes
+
+- `pilot.py`: fixed seed `random.Random(20261019)`; draws (x, y) uniform on [0,1)^2 in batches of 100 000,
+  counts x²+y² ≤ 1; estimate = 4·inside/total. Runs for 540 s of wall-clock time (so the sample count
+  depends on CPU speed and host contention, not fixed in advance). Prints a `HUTIAN_WAKE:` interim
+  estimate after ~60 s. Records a trace point (elapsed s, cumulative samples, running estimate) about
+  every 10 s. Writes JSON `{samples, estimate, ci95, seconds, trace}`.
+- CI convention in the script: normal-approximation (Wald) binomial interval,
+  `4·p̂ ± 1.96·4·sqrt(p̂(1−p̂)/n)`. With n ~ 10⁹ the normal approximation is excellent; the analysis
+  recomputes it independently and cross-checks it with the Wilson score interval.
+- `extended.py MINUTES OUT`: seed `int(MINUTES·1000)`, same sampler, runs MINUTES minutes, prints every
+  5 min, writes `{minutes, samples, estimate, ci95}`.
+- The running-estimate trace points are cumulative (nested samples), so they are strongly correlated;
+  the convention for the figure is the running estimate with the true value pi as a horizontal line,
+  optionally the ±1.96σ(n) envelope around pi, samples on a log x-axis.
+
+## Not established / caveats
+
+- The exact sample count and estimate are known only when the pilot ends (~21:27:40Z).
+- Throughput depends on host load (the host was at ~22 load on 40 CPUs at start); this changes n, not
+  the validity of the interval.
+- No related prior work is supplied; the reference value is the true pi (math.pi).

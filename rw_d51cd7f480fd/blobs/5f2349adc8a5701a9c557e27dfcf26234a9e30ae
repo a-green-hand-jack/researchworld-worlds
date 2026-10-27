@@ -1,0 +1,33 @@
+"""Running pi estimate vs samples. Input: results/running_estimate.csv (experiment-repo). Output: figures/running_estimate.png"""
+import sys, math
+import pandas as pd
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+
+src = sys.argv[1] if len(sys.argv) > 1 else "results/running_estimate.csv"
+out = sys.argv[2] if len(sys.argv) > 2 else "figures/running_estimate.png"
+d = pd.read_csv(src)
+n = d["samples"].to_numpy(float)
+q = math.pi / 4
+half = 1.96 * 4 * np.sqrt(q * (1 - q) / n)
+
+fig, (a, b) = plt.subplots(2, 1, figsize=(7, 6), sharex=True, gridspec_kw={"height_ratios": [2, 1.4]})
+a.fill_between(n, math.pi - half, math.pi + half, color="0.85", label=r"$\pi \pm 1.96\,\sigma_n$ (expected envelope)")
+a.axhline(math.pi, color="C3", lw=1.2, label=r"true $\pi$ = 3.14159265")
+a.plot(n, d["estimate"], "o", ms=3, color="C0", label="pilot running estimate")
+a.set_ylim(3.1405, 3.1427)
+a.set_ylabel("estimate of $\\pi$")
+a.legend(fontsize=8, loc="upper right")
+sig = half / 1.96
+z = (d["estimate"] - math.pi) / sig
+b.axhspan(-1.96, 1.96, color="0.85")
+b.axhline(0, color="C3", lw=1)
+b.plot(n, z, "o", ms=3, color="C0")
+b.set_ylabel("(estimate $-\\ \\pi$) / $\\sigma_n$")
+b.set_xscale("log")
+b.set_xlabel("cumulative number of samples (log scale)")
+fig.suptitle("Monte Carlo pilot: running estimate of $\\pi$ vs sample count (bottom: error in units of $\\sigma_n$, band = $\\pm$1.96)", fontsize=9)
+fig.tight_layout()
+fig.savefig(out, dpi=160)

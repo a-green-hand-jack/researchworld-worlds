@@ -1,0 +1,19 @@
+{"assignment_schema": 1,
+ "items": [
+  {"owner": "paper-repo",
+   "work": "report: <=2-page NeurIPS 2026 submission-template paper compiled from LaTeX, one figure and one table included, every number traceable to report/code and report/results; LaTeX source next to the PDF",
+   "paths": ["report/report.pdf", "report/report.tex"]},
+  {"owner": "experiment-repo",
+   "work": "analysis: OpenML id 61 download with checksum; 10x stratified 5-fold CV of multinomial LR vs kNN (k by inner CV); per-method mean accuracy and paired difference with 95% intervals; full CV run locally and as an Ibex CPU job, Ibex node name, local-vs-Ibex identity check; all code, environment lock, job script and result files",
+   "paths": ["report/code/", "report/results/"]},
+  {"owner": "figtab-repo",
+   "work": "presentation: the one figure and the one table (booktabs fragment), each with the script that generates it from report/results",
+   "paths": ["report/figures/", "report/tables/"]},
+  {"owner": "venue-repo",
+   "work": "venue: official NeurIPS 2026 style file used to compile report.tex, and the format requirements (page limit, submission mode, anonymity)",
+   "paths": ["report/neurips_2026.sty"]},
+  {"owner": "idea-repo", "work": "context: brief of the objective and prior work/conventions (feeds plan, no delivered path)", "paths": []},
+  {"owner": "idea-review-repo", "work": "feasibility: independent judgement of the plan (feeds plan, no delivered path)", "paths": []},
+  {"owner": "story-repo", "work": "plan: study plan (plan.md) and this assignment (no delivered path)", "paths": []},
+  {"owner": "internal-review-repo", "work": "review: independent judgement of the assembled delivery against the objective; approval", "paths": []}
+ ]}

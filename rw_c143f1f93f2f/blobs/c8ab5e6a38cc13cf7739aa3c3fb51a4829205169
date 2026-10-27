@@ -1,0 +1,38 @@
+"""Download Iris (OpenML dataset id 61) from OpenML and record provenance.
+
+Writes results/data/iris.arff (the file as served by OpenML) and results/provenance.json
+(paths relative to report/). Run from report/: python code/fetch_data.py
+"""
+import hashlib, json, pathlib, urllib.request, datetime
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+DID = 61
+
+def get(url):
+    with urllib.request.urlopen(url, timeout=60) as r:
+        return r.read()
+
+desc = json.loads(get(f"https://www.openml.org/api/v1/json/data/{DID}"))["data_set_description"]
+url = desc["url"]
+raw = get(url)
+(ROOT / "results" / "data").mkdir(parents=True, exist_ok=True)
+(ROOT / "results" / "data" / "iris.arff").write_bytes(raw)
+md5 = hashlib.md5(raw).hexdigest()
+prov = {
+    "openml_dataset_id": DID,
+    "name": desc["name"],
+    "version": desc["version"],
+    "file_id": desc["file_id"],
+    "download_url": url,
+    "default_target_attribute": desc.get("default_target_attribute"),
+    "openml_md5_checksum": desc.get("md5_checksum"),
+    "downloaded_md5": md5,
+    "downloaded_sha256": hashlib.sha256(raw).hexdigest(),
+    "md5_matches_openml": md5 == desc.get("md5_checksum"),
+    "bytes": len(raw),
+    "downloaded_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+}
+(ROOT / "results").mkdir(exist_ok=True)
+(ROOT / "results" / "provenance.json").write_text(json.dumps(prov, indent=2) + "\n")
+print(json.dumps(prov, indent=2))
+assert prov["md5_matches_openml"], "checksum mismatch with OpenML metadata"

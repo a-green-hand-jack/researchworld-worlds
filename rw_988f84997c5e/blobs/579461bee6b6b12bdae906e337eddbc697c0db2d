@@ -1,0 +1,69 @@
+"""Time pure-Python insertion sort and merge sort on random int lists. Writes timings.csv."""
+import csv, platform, random, sys, time
+
+SIZES = [250, 500, 1000, 2000, 4000]
+REPS = 5
+SEED = 20261017
+
+
+def insertion_sort(a):
+    for i in range(1, len(a)):
+        x = a[i]
+        j = i - 1
+        while j >= 0 and a[j] > x:
+            a[j + 1] = a[j]
+            j -= 1
+        a[j + 1] = x
+    return a
+
+
+def merge_sort(a):
+    n = len(a)
+    if n <= 1:
+        return a
+    mid = n // 2
+    left, right = merge_sort(a[:mid]), merge_sort(a[mid:])
+    out = []
+    i = j = 0
+    while i < len(left) and j < len(right):
+        if left[i] <= right[j]:
+            out.append(left[i]); i += 1
+        else:
+            out.append(right[j]); j += 1
+    out.extend(left[i:])
+    out.extend(right[j:])
+    return out
+
+
+ALGOS = {"insertion": insertion_sort, "merge": merge_sort}
+
+
+def main(out="timings.csv"):
+    rng = random.Random(SEED)
+    print(f"python {platform.python_version()} {platform.machine()}", flush=True)
+    rows = []
+    # warm-up so first measurement is not penalised
+    for f in ALGOS.values():
+        f(rng.sample(range(10**6), 200))
+    for n in SIZES:
+        for rep in range(1, REPS + 1):
+            data = [rng.randrange(10**6) for _ in range(n)]
+            ref = sorted(data)
+            for name, f in ALGOS.items():
+                work = list(data)
+                t0 = time.perf_counter()
+                res = f(work)
+                dt = time.perf_counter() - t0
+                assert res == ref, f"{name} incorrect at n={n}"
+                rows.append((name, n, rep, dt))
+                print(f"{name} n={n} rep={rep} t={dt:.6f}s", flush=True)
+        print(f"HUTIAN_WAKE: finished size {n}", flush=True)
+    with open(out, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["algorithm", "n", "rep", "seconds"])
+        w.writerows(rows)
+    print("done", flush=True)
+
+
+if __name__ == "__main__":
+    main(*sys.argv[1:])

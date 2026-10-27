@@ -1,0 +1,34 @@
+# Analysis handoff
+
+The complete requested experiment is in `results/full/runs.csv` (1,000 rows: 200 independent runs at each of five N). All presentation values and intervals are in `results/summary.json`; checks are in `results/diagnostics.json`. No pilot values are included in the final averages. `results/bootstrap_slopes.csv` preserves both bootstrap slope samples.
+
+## Methods and reproducibility
+
+For zero-based run indices 0–199, use `numpy.random.default_rng(2026 + run_index)` (NumPy 2.4.6, PCG64). Draw `rng.random((m, 2))` in chunks of at most 250,000 rows; each row is an independent uniform (x,y) pair in [0,1)^2. Count x²+y² ≤ 1 and form pi_hat = 4*hits/N at N = 10³, 10⁴, 10⁵, 10⁶, 10⁷. Each run uses a contiguous nested stream. This gives the same first N pairs as restarting its specified seed at each N; it avoids generating identical prefixes repeatedly. Runs use different seeds, while the five errors within a run are dependent. Mean absolute error is the arithmetic mean of abs(pi_hat - math.pi) over the 200 runs.
+
+Fit y = a + b*x by unweighted least squares, with x = ln(N) and y = ln(mean absolute error), including the intercept. Primary 95% interval: percentile paired-run nonparametric bootstrap; sample 200 run indices with replacement, carry all five errors together, recompute the five means and OLS slope. There are 50,000 replicates with seed 602026. The second 50,000-replicate sample (seed 602027) is only an endpoint stability diagnostic. The fit uses all five N and was not selected using the result.
+
+Conventional OLS diagnostic: slope ± t_(0.975,3)*SE(slope), with SE² = (residual sum of squares/3)/sum((x-mean(x))²). This interval assumes independent, homoscedastic Gaussian log-scale regression errors. Reusing seeds induces cross-N dependence, which is why the paired-run interval is primary. Both intervals describe sampling uncertainty under their assumptions, not a proof of an exact asymptotic law.
+
+For each N, standard error of MAE = sample SD of absolute errors / sqrt(200). The individual-run 2.5th and 97.5th percentiles use NumPy's default linear quantiles; these describe run dispersion, **not** a 95% interval for the mean. The benchmark is the asymptotic normal approximation sqrt(2/pi)*sqrt(4*pi-pi²)/sqrt(N): a quarter-circle indicator has success probability pi/4, so the estimator variance is (4*pi-pi²)/N. The approximation is a theory comparison, not another fitted curve.
+
+Reproduce from the repository root with pinned `requirements.txt`:
+
+```
+python3 code/simulate.py --runs 200 --workers 2 --output results/full
+python3 code/analyze.py
+```
+
+Simulation source revision and analysis source revision, versions and input CSV SHA-256 are recorded in summary provenance. Source code is committed before execution; result publication commits can be identified from git history. Results/full/metadata.json gives timing and chunk settings. Pilot (4 streams) took 0.573 s; full study took 13.272 s; analysis took 1.359 s on the allocated resource. Timings are measurements in this environment, not performance guarantees.
+
+## Findings and checks
+
+Fitted exponent b = -0.5011584082 and intercept a = 0.3281259480. Primary 95% bootstrap interval [-0.5159688779, -0.4860621055]; conventional OLS-t interval [-0.5191719876, -0.4831448287]. **Both contain -0.5**, so the observed scaling is consistent with the expected Monte Carlo rate over this tested range. This is not evidence that finite-sample errors follow an exact power law at every N.
+
+All 1,000 rows passed seed, N, integer/count bounds, nested-increment bounds, estimate and absolute-error identity checks. For seed 2026, direct unchunked restarted draws at all five N exactly reproduced the nested counts (780, 7831, 78676, 785399, 7854198). The second bootstrap interval is [-0.5162687397, -0.4862083212]; endpoint changes are at most 0.000300, small compared with the primary width 0.029907. Reporting three decimals gives stable endpoints [-0.516, -0.486]. Leaving out one N gives slopes from -0.509633 to -0.495304; the trend is not driven by one sample size.
+
+MAEs are about 1.01–1.10 times the asymptotic benchmark. The largest excess is at N=10⁴ (9.95%, or 1.74 estimated MAE standard errors); all discrepancies are below two estimated standard errors. Those are descriptive comparisons, not independent simultaneous significance tests. Adjacent-N absolute-error correlations range from -0.0017 to 0.1946, supporting preservation of the run grouping in resampling. R²=0.999617 is descriptive of the five fitted points and should not be used as a test of the Monte Carlo theory.
+
+## Delivery guidance
+
+The report should take its five MAEs from `results/summary.json`, identify the primary bootstrap interval and diagnostic OLS-t interval, and compare both with -1/2. Figure/table ownership remains with figtab-repo and report ownership with paper-repo. The figure must distinguish an individual-run dispersion band from uncertainty of the mean. Full code and diagnostics are supporting repository material; the required final report remains one page.

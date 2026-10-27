@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH --partition=batch
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=2G
+#SBATCH --time=00:15:00
+#SBATCH --output=ibex-%j.out
+# A2: the full 10 x stratified 5-fold CV as one Ibex CPU job (plan.md D6).
+# Submit from a directory holding code/ (this folder), results/data/iris.arff and venv/
+# (Python 3.11 + code/requirements.lock), e.g.
+#   sbatch --job-name "$HT_RESOURCE_TAG-cv" code/ibex_job.sbatch
+set -euo pipefail
+unset PYTHONPATH
+export PYTHONNOUSERSITE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+cd "$SLURM_SUBMIT_DIR"
+echo "hostname=$(hostname) SLURMD_NODENAME=${SLURMD_NODENAME:-} SLURM_JOB_ID=$SLURM_JOB_ID"
+lscpu | grep -E "Model name" || true
+venv/bin/python -u code/run_cv.py --data results/data/iris.arff --out results/run_ibex

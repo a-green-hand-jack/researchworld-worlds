@@ -1,0 +1,17 @@
+# Presentation commitment
+
+The objective requires a single figure containing both measurement series and fitted lines, plus slope and intercept with 95% confidence intervals for the chosen method in each series. The figure will use a shared coordinate system, different marker shapes and accessible colors for A and B, and labelled selected-method lines. Near-coincident fits must remain distinguishable through line style and legend labels. Axes have no supplied physical units and will use x and y (arbitrary units). The caption will identify the seed and the analysis input paths, and distinguish fitted mean lines from uncertainty or prediction bands (neither is required).
+
+A compact parameter table will support the one-page report without forcing readers to estimate coefficients from a plot. It will be generated from committed analysis results. Analysis owns fitting, interval definitions, residual diagnostics and method selection. Presentation will not replace those judgements or rerun the analysis independently.
+
+Proposed delivered paths: figures/ (one figure in SVG and PNG, caption, generator and input provenance) and tables/ (parameter table and generator if separate). These paths await the analysis owner's assignment. The report owner chooses figure placement and page layout. Before rendering, require exact generated data, both OLS residual series or a usable residual-check result, selected fit coefficients and 95% intervals with their construction, and the analysis code path. Residual findings will guide whether a residual inset is valuable and compatible with the one-page constraint.
+
+No numeric results or final assets exist yet. After assignment and inputs arrive: generate from the committed result files; inspect every delivered rendering and table; check labels and rounded values against source; push the package and notify the report owner.
+
+## Report constraints accepted
+
+The report owner supplied constraints in paper-repo issue 2. Use one 7.0 by 3.2 inch landscape figure with two panels: (a) both series and selected fitted lines; (b) signed OLS residuals versus x for both series. Signed residuals retain curvature and outlier information while displaying changing spread. Use a zero reference line and one common residual scale. Render PNG at 250 dpi and retain SVG. No numerical diagnostic labels are needed inside the figure.
+
+Planned filenames are figures/series_and_residuals.png, figures/series_and_residuals.svg, figures/caption.md, figures/generate.py, tables/parameters.md and tables/parameters.csv. The table will contain two data rows with method, slope (95% CI), and intercept (95% CI). The caption will have at most two sentences, identifying seed 221, 40 observations per series, the generating line, and the meaning of each panel. These are planned outputs, not assets already delivered.
+
+The report request is answered. The analysis request remains open and final production awaits its assignment and committed inputs; the residual panel specifically needs OLS residuals for both series, even if the chosen method for a series is WLS.

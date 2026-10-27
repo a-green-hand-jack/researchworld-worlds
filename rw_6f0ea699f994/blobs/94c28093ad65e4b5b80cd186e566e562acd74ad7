@@ -1,0 +1,27 @@
+# Task brief
+
+Source: Research objective, experiment-repo issue #1, read in full on 2026-10-19. The issue is the complete supplied material; no attached data or related publications are provided.
+
+## Objective (verbatim)
+
+> How the error of the trapezoidal rule and Simpson's rule scales with the number of intervals.
+>
+> Integrate f(x) = exp(x) * sin(3x) over [0, 2] with the composite trapezoidal rule and the composite Simpson's rule, for n = 4, 8, 16, ..., 4096 intervals (powers of two). The exact value is known in closed form; compute it and record the absolute error of each rule at each n.
+>
+> For each rule, fit log(absolute error) against log(n) by least squares over the n where the error is above 1e-13, and give the exponent with a 95% interval; compare it with the -2 expected for the trapezoidal rule and the -4 expected for Simpson's rule.
+>
+> Report: `report/report.md`, one page with the table of n and both errors, the two fitted exponents with their intervals, and one log-log figure of both errors with their fits.
+
+## Analysis and reporting implications
+
+There are 11 even interval counts, 2^2 through 2^12 inclusive. Use uniform nodes and the standard composite weights. The antiderivative is exp(x)(sin(3x)-3cos(3x))/10, giving I = [exp(2)(sin(6)-3cos(6))+3]/10. Evaluate this without treating a numerical quadrature as ground truth.
+
+Fit a separate intercept and slope for each rule using natural logarithms and the strict error > 1e-13 condition. Report retained counts, the ordinary least squares slope, and a two-sided Student-t 95% slope interval with residual degrees of freedom m-2. The errors are deterministic; these are regression-model intervals, not uncertainty in the exact integral or independently sampled experimental errors. Finite-grid curvature can make the global fitted exponent differ from the asymptotic order. Check this with local convergence orders and fits restricted to finer eligible grids, without replacing the required fits.
+
+Check floating-point sensitivity against higher-precision quadrature and exact evaluation. Provide reproducible code, input definitions, versions, error values, fit coefficients and diagnostics to the presentation, reporting and review owners. The figure must display both error sequences and their fitted power laws, identify the threshold or fitted domain, and use logarithmic axes. The report must contain the full error table and the two intervals, and compare to the expected exponents without overstating deterministic regression intervals.
+
+## Responsibilities proposed
+
+Experiment owns context, the assignment, exact-value derivation, computations, fits and numerical robustness. Figtab owns the final error table formatting and log-log figure. Paper owns report/report.md and the one-page layout. Internal review owns independent validation and approval. There is no feasibility uncertainty requiring an additional owner: this is a small deterministic computation.
+
+No missing supplied inputs were identified. The completed analysis and numerical validation are documented in results/methods.md, with all eleven error pairs in results/errors.csv, required and sensitivity fits in results/fits.json, and precision checks in results/validation.json. The trapezoidal global-fit interval narrowly excludes -2; Simpson’s contains -4. Fine-grid diagnostics approach the expected orders; the report must preserve this distinction.

@@ -1,0 +1,35 @@
+"""Error-vs-n figure. Usage: make_figure.py ESTIMATES_CSV ENSEMBLE_CSV OUT_PREFIX [RATE_JSON]"""
+import sys, csv
+import numpy as np
+import matplotlib; matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+est = list(csv.DictReader(open(sys.argv[1])))
+ens = list(csv.DictReader(open(sys.argv[2])))
+out = sys.argv[3]
+import json
+ra = json.load(open(sys.argv[4])) if len(sys.argv) > 4 else None
+n = np.array([float(r["samples"]) for r in est]); err = np.array([float(r["abs_error"]) for r in est])
+grid = np.logspace(1.7, 8.3, 100)
+S = np.sqrt(np.pi*(4-np.pi)); C = np.sqrt(2/np.pi)*S
+
+fig, ax = plt.subplots(figsize=(6.4, 4.6))
+ax.fill_between(grid, 0.0627*S/np.sqrt(grid), 1.960*S/np.sqrt(grid), color="0.88", label="5-95% range of |error| (single run)")
+ax.plot(grid, C/np.sqrt(grid), "k-", lw=1.5, label=r"expected $|\mathrm{error}|$: $1.310/\sqrt{n}$")
+ax.plot(grid, S/np.sqrt(grid), "k--", lw=1, label=r"$\sigma=1.642/\sqrt{n}$")
+en = np.array([float(r["samples"]) for r in ens]); rms = np.array([float(r["rms_error"]) for r in ens])
+se = np.array([float(r["rms_error_se"]) for r in ens])
+ax.errorbar(en, rms, yerr=se, fmt="s", mfc="none", color="tab:gray", ms=5, capsize=2,
+            label="replicate RMS error (off-cluster, 20-4000 runs; vs. $\\sigma$)")
+ax.plot(n, err, "o", color="tab:blue", ms=8, label="cluster runs (one seed each)")
+for x, y, r in zip(n, err, est):
+    ax.annotate(f"{y:.1e}", (x, y), textcoords="offset points", xytext=(6, 6), fontsize=8, color="tab:blue")
+ax.set_xscale("log"); ax.set_yscale("log")
+ax.set_xlabel("samples n"); ax.set_ylabel(r"absolute error $|\hat\pi-\pi|$")
+ax.set_title("Monte Carlo pi: error vs. samples", fontsize=10)
+ax.legend(fontsize=7, loc="lower left"); ax.grid(True, which="major", alpha=0.3)
+if ra:
+    lo, hi = ra["null_slope_interval95"]
+    ax.text(0.97, 0.97, f"4-point log-log slope {ra['ols_slope']:.2f}\n(95% range if exactly $n^{{-1/2}}$: {lo:.2f} to {hi:.2f})",
+            transform=ax.transAxes, ha="right", va="top", fontsize=8, bbox=dict(fc="w", ec="0.7"))
+fig.tight_layout(); fig.savefig(out+".png", dpi=200); fig.savefig(out+".pdf")

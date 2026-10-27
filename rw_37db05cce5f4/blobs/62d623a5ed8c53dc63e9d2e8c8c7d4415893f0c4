@@ -1,0 +1,26 @@
+{
+  "source": "CRAN",
+  "url": "https://cran.r-project.org/",
+  "start_utc": "2026-10-19T21:30:14.298505+00:00",
+  "end_utc": "2026-10-19T21:30:14.868763+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/cran.headers",
+    "-o",
+    "/tmp/tmph4u8ncwj/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://cran.r-project.org/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html\n",
+  "stderr": "",
+  "first200": "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Frameset//EN\" \"http://www.w3.org/TR/html4/frameset.dtd\">\n<html lang=en>\n<head>\n<title>The Comprehensive R Archive Network</title>\n<META HTTP-EQUIV=\"content",
+  "body_bytes": 866
+}

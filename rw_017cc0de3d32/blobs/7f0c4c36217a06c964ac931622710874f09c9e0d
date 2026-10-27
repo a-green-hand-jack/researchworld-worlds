@@ -1,0 +1,644 @@
+\PassOptionsToPackage{table, dvipsnames}{xcolor}
+\documentclass{article} 
+\usepackage{draftwatermark}
+\SetWatermarkText{AI-Generated}
+\SetWatermarkScale{0.5}
+\SetWatermarkColor[gray]{0.6}
+\usepackage{iclr2025_conference,times}
+
+
+
+\usepackage{amsmath,amsfonts,bm}
+
+\newcommand{\figleft}{{\em (Left)}}
+\newcommand{\figcenter}{{\em (Center)}}
+\newcommand{\figright}{{\em (Right)}}
+\newcommand{\figtop}{{\em (Top)}}
+\newcommand{\figbottom}{{\em (Bottom)}}
+\newcommand{\captiona}{{\em (a)}}
+\newcommand{\captionb}{{\em (b)}}
+\newcommand{\captionc}{{\em (c)}}
+\newcommand{\captiond}{{\em (d)}}
+
+\newcommand{\newterm}[1]{{\bf #1}}
+
+
+\def\figref#1{figure~\ref{#1}}
+\def\Figref#1{Figure~\ref{#1}}
+\def\twofigref#1#2{figures \ref{#1} and \ref{#2}}
+\def\quadfigref#1#2#3#4{figures \ref{#1}, \ref{#2}, \ref{#3} and \ref{#4}}
+\def\secref#1{section~\ref{#1}}
+\def\Secref#1{Section~\ref{#1}}
+\def\twosecrefs#1#2{sections \ref{#1} and \ref{#2}}
+\def\secrefs#1#2#3{sections \ref{#1}, \ref{#2} and \ref{#3}}
+\def\eqref#1{equation~\ref{#1}}
+\def\Eqref#1{Equation~\ref{#1}}
+\def\plaineqref#1{\ref{#1}}
+\def\chapref#1{chapter~\ref{#1}}
+\def\Chapref#1{Chapter~\ref{#1}}
+\def\rangechapref#1#2{chapters\ref{#1}--\ref{#2}}
+\def\algref#1{algorithm~\ref{#1}}
+\def\Algref#1{Algorithm~\ref{#1}}
+\def\twoalgref#1#2{algorithms \ref{#1} and \ref{#2}}
+\def\Twoalgref#1#2{Algorithms \ref{#1} and \ref{#2}}
+\def\partref#1{part~\ref{#1}}
+\def\Partref#1{Part~\ref{#1}}
+\def\twopartref#1#2{parts \ref{#1} and \ref{#2}}
+
+\def\ceil#1{\lceil #1 \rceil}
+\def\floor#1{\lfloor #1 \rfloor}
+\def\1{\bm{1}}
+\newcommand{\train}{\mathcal{D}}
+\newcommand{\valid}{\mathcal{D_{\mathrm{valid}}}}
+\newcommand{\test}{\mathcal{D_{\mathrm{test}}}}
+
+\def\eps{{\epsilon}}
+
+
+\def\reta{{\textnormal{$\eta$}}}
+\def\ra{{\textnormal{a}}}
+\def\rb{{\textnormal{b}}}
+\def\rc{{\textnormal{c}}}
+\def\rd{{\textnormal{d}}}
+\def\re{{\textnormal{e}}}
+\def\rf{{\textnormal{f}}}
+\def\rg{{\textnormal{g}}}
+\def\rh{{\textnormal{h}}}
+\def\ri{{\textnormal{i}}}
+\def\rj{{\textnormal{j}}}
+\def\rk{{\textnormal{k}}}
+\def\rl{{\textnormal{l}}}
+\def\rn{{\textnormal{n}}}
+\def\ro{{\textnormal{o}}}
+\def\rp{{\textnormal{p}}}
+\def\rq{{\textnormal{q}}}
+\def\rr{{\textnormal{r}}}
+\def\rs{{\textnormal{s}}}
+\def\rt{{\textnormal{t}}}
+\def\ru{{\textnormal{u}}}
+\def\rv{{\textnormal{v}}}
+\def\rw{{\textnormal{w}}}
+\def\rx{{\textnormal{x}}}
+\def\ry{{\textnormal{y}}}
+\def\rz{{\textnormal{z}}}
+
+\def\rvepsilon{{\mathbf{\epsilon}}}
+\def\rvtheta{{\mathbf{\theta}}}
+\def\rva{{\mathbf{a}}}
+\def\rvb{{\mathbf{b}}}
+\def\rvc{{\mathbf{c}}}
+\def\rvd{{\mathbf{d}}}
+\def\rve{{\mathbf{e}}}
+\def\rvf{{\mathbf{f}}}
+\def\rvg{{\mathbf{g}}}
+\def\rvh{{\mathbf{h}}}
+\def\rvu{{\mathbf{i}}}
+\def\rvj{{\mathbf{j}}}
+\def\rvk{{\mathbf{k}}}
+\def\rvl{{\mathbf{l}}}
+\def\rvm{{\mathbf{m}}}
+\def\rvn{{\mathbf{n}}}
+\def\rvo{{\mathbf{o}}}
+\def\rvp{{\mathbf{p}}}
+\def\rvq{{\mathbf{q}}}
+\def\rvr{{\mathbf{r}}}
+\def\rvs{{\mathbf{s}}}
+\def\rvt{{\mathbf{t}}}
+\def\rvu{{\mathbf{u}}}
+\def\rvv{{\mathbf{v}}}
+\def\rvw{{\mathbf{w}}}
+\def\rvx{{\mathbf{x}}}
+\def\rvy{{\mathbf{y}}}
+\def\rvz{{\mathbf{z}}}
+
+\def\erva{{\textnormal{a}}}
+\def\ervb{{\textnormal{b}}}
+\def\ervc{{\textnormal{c}}}
+\def\ervd{{\textnormal{d}}}
+\def\erve{{\textnormal{e}}}
+\def\ervf{{\textnormal{f}}}
+\def\ervg{{\textnormal{g}}}
+\def\ervh{{\textnormal{h}}}
+\def\ervi{{\textnormal{i}}}
+\def\ervj{{\textnormal{j}}}
+\def\ervk{{\textnormal{k}}}
+\def\ervl{{\textnormal{l}}}
+\def\ervm{{\textnormal{m}}}
+\def\ervn{{\textnormal{n}}}
+\def\ervo{{\textnormal{o}}}
+\def\ervp{{\textnormal{p}}}
+\def\ervq{{\textnormal{q}}}
+\def\ervr{{\textnormal{r}}}
+\def\ervs{{\textnormal{s}}}
+\def\ervt{{\textnormal{t}}}
+\def\ervu{{\textnormal{u}}}
+\def\ervv{{\textnormal{v}}}
+\def\ervw{{\textnormal{w}}}
+\def\ervx{{\textnormal{x}}}
+\def\ervy{{\textnormal{y}}}
+\def\ervz{{\textnormal{z}}}
+
+\def\rmA{{\mathbf{A}}}
+\def\rmB{{\mathbf{B}}}
+\def\rmC{{\mathbf{C}}}
+\def\rmD{{\mathbf{D}}}
+\def\rmE{{\mathbf{E}}}
+\def\rmF{{\mathbf{F}}}
+\def\rmG{{\mathbf{G}}}
+\def\rmH{{\mathbf{H}}}
+\def\rmI{{\mathbf{I}}}
+\def\rmJ{{\mathbf{J}}}
+\def\rmK{{\mathbf{K}}}
+\def\rmL{{\mathbf{L}}}
+\def\rmM{{\mathbf{M}}}
+\def\rmN{{\mathbf{N}}}
+\def\rmO{{\mathbf{O}}}
+\def\rmP{{\mathbf{P}}}
+\def\rmQ{{\mathbf{Q}}}
+\def\rmR{{\mathbf{R}}}
+\def\rmS{{\mathbf{S}}}
+\def\rmT{{\mathbf{T}}}
+\def\rmU{{\mathbf{U}}}
+\def\rmV{{\mathbf{V}}}
+\def\rmW{{\mathbf{W}}}
+\def\rmX{{\mathbf{X}}}
+\def\rmY{{\mathbf{Y}}}
+\def\rmZ{{\mathbf{Z}}}
+
+\def\ermA{{\textnormal{A}}}
+\def\ermB{{\textnormal{B}}}
+\def\ermC{{\textnormal{C}}}
+\def\ermD{{\textnormal{D}}}
+\def\ermE{{\textnormal{E}}}
+\def\ermF{{\textnormal{F}}}
+\def\ermG{{\textnormal{G}}}
+\def\ermH{{\textnormal{H}}}
+\def\ermI{{\textnormal{I}}}
+\def\ermJ{{\textnormal{J}}}
+\def\ermK{{\textnormal{K}}}
+\def\ermL{{\textnormal{L}}}
+\def\ermM{{\textnormal{M}}}
+\def\ermN{{\textnormal{N}}}
+\def\ermO{{\textnormal{O}}}
+\def\ermP{{\textnormal{P}}}
+\def\ermQ{{\textnormal{Q}}}
+\def\ermR{{\textnormal{R}}}
+\def\ermS{{\textnormal{S}}}
+\def\ermT{{\textnormal{T}}}
+\def\ermU{{\textnormal{U}}}
+\def\ermV{{\textnormal{V}}}
+\def\ermW{{\textnormal{W}}}
+\def\ermX{{\textnormal{X}}}
+\def\ermY{{\textnormal{Y}}}
+\def\ermZ{{\textnormal{Z}}}
+
+\def\vzero{{\bm{0}}}
+\def\vone{{\bm{1}}}
+\def\vmu{{\bm{\mu}}}
+\def\vtheta{{\bm{\theta}}}
+\def\va{{\bm{a}}}
+\def\vb{{\bm{b}}}
+\def\vc{{\bm{c}}}
+\def\vd{{\bm{d}}}
+\def\ve{{\bm{e}}}
+\def\vf{{\bm{f}}}
+\def\vg{{\bm{g}}}
+\def\vh{{\bm{h}}}
+\def\vi{{\bm{i}}}
+\def\vj{{\bm{j}}}
+\def\vk{{\bm{k}}}
+\def\vl{{\bm{l}}}
+\def\vm{{\bm{m}}}
+\def\vn{{\bm{n}}}
+\def\vo{{\bm{o}}}
+\def\vp{{\bm{p}}}
+\def\vq{{\bm{q}}}
+\def\vr{{\bm{r}}}
+\def\vs{{\bm{s}}}
+\def\vt{{\bm{t}}}
+\def\vu{{\bm{u}}}
+\def\vv{{\bm{v}}}
+\def\vw{{\bm{w}}}
+\def\vx{{\bm{x}}}
+\def\vy{{\bm{y}}}
+\def\vz{{\bm{z}}}
+
+\def\evalpha{{\alpha}}
+\def\evbeta{{\beta}}
+\def\evepsilon{{\epsilon}}
+\def\evlambda{{\lambda}}
+\def\evomega{{\omega}}
+\def\evmu{{\mu}}
+\def\evpsi{{\psi}}
+\def\evsigma{{\sigma}}
+\def\evtheta{{\theta}}
+\def\eva{{a}}
+\def\evb{{b}}
+\def\evc{{c}}
+\def\evd{{d}}
+\def\eve{{e}}
+\def\evf{{f}}
+\def\evg{{g}}
+\def\evh{{h}}
+\def\evi{{i}}
+\def\evj{{j}}
+\def\evk{{k}}
+\def\evl{{l}}
+\def\evm{{m}}
+\def\evn{{n}}
+\def\evo{{o}}
+\def\evp{{p}}
+\def\evq{{q}}
+\def\evr{{r}}
+\def\evs{{s}}
+\def\evt{{t}}
+\def\evu{{u}}
+\def\evv{{v}}
+\def\evw{{w}}
+\def\evx{{x}}
+\def\evy{{y}}
+\def\evz{{z}}
+
+\def\mA{{\bm{A}}}
+\def\mB{{\bm{B}}}
+\def\mC{{\bm{C}}}
+\def\mD{{\bm{D}}}
+\def\mE{{\bm{E}}}
+\def\mF{{\bm{F}}}
+\def\mG{{\bm{G}}}
+\def\mH{{\bm{H}}}
+\def\mI{{\bm{I}}}
+\def\mJ{{\bm{J}}}
+\def\mK{{\bm{K}}}
+\def\mL{{\bm{L}}}
+\def\mM{{\bm{M}}}
+\def\mN{{\bm{N}}}
+\def\mO{{\bm{O}}}
+\def\mP{{\bm{P}}}
+\def\mQ{{\bm{Q}}}
+\def\mR{{\bm{R}}}
+\def\mS{{\bm{S}}}
+\def\mT{{\bm{T}}}
+\def\mU{{\bm{U}}}
+\def\mV{{\bm{V}}}
+\def\mW{{\bm{W}}}
+\def\mX{{\bm{X}}}
+\def\mY{{\bm{Y}}}
+\def\mZ{{\bm{Z}}}
+\def\mBeta{{\bm{\beta}}}
+\def\mPhi{{\bm{\Phi}}}
+\def\mLambda{{\bm{\Lambda}}}
+\def\mSigma{{\bm{\Sigma}}}
+
+\DeclareMathAlphabet{\mathsfit}{\encodingdefault}{\sfdefault}{m}{sl}
+\SetMathAlphabet{\mathsfit}{bold}{\encodingdefault}{\sfdefault}{bx}{n}
+\newcommand{\tens}[1]{\bm{\mathsfit{#1}}}
+\def\tA{{\tens{A}}}
+\def\tB{{\tens{B}}}
+\def\tC{{\tens{C}}}
+\def\tD{{\tens{D}}}
+\def\tE{{\tens{E}}}
+\def\tF{{\tens{F}}}
+\def\tG{{\tens{G}}}
+\def\tH{{\tens{H}}}
+\def\tI{{\tens{I}}}
+\def\tJ{{\tens{J}}}
+\def\tK{{\tens{K}}}
+\def\tL{{\tens{L}}}
+\def\tM{{\tens{M}}}
+\def\tN{{\tens{N}}}
+\def\tO{{\tens{O}}}
+\def\tP{{\tens{P}}}
+\def\tQ{{\tens{Q}}}
+\def\tR{{\tens{R}}}
+\def\tS{{\tens{S}}}
+\def\tT{{\tens{T}}}
+\def\tU{{\tens{U}}}
+\def\tV{{\tens{V}}}
+\def\tW{{\tens{W}}}
+\def\tX{{\tens{X}}}
+\def\tY{{\tens{Y}}}
+\def\tZ{{\tens{Z}}}
+
+
+\def\gA{{\mathcal{A}}}
+\def\gB{{\mathcal{B}}}
+\def\gC{{\mathcal{C}}}
+\def\gD{{\mathcal{D}}}
+\def\gE{{\mathcal{E}}}
+\def\gF{{\mathcal{F}}}
+\def\gG{{\mathcal{G}}}
+\def\gH{{\mathcal{H}}}
+\def\gI{{\mathcal{I}}}
+\def\gJ{{\mathcal{J}}}
+\def\gK{{\mathcal{K}}}
+\def\gL{{\mathcal{L}}}
+\def\gM{{\mathcal{M}}}
+\def\gN{{\mathcal{N}}}
+\def\gO{{\mathcal{O}}}
+\def\gP{{\mathcal{P}}}
+\def\gQ{{\mathcal{Q}}}
+\def\gR{{\mathcal{R}}}
+\def\gS{{\mathcal{S}}}
+\def\gT{{\mathcal{T}}}
+\def\gU{{\mathcal{U}}}
+\def\gV{{\mathcal{V}}}
+\def\gW{{\mathcal{W}}}
+\def\gX{{\mathcal{X}}}
+\def\gY{{\mathcal{Y}}}
+\def\gZ{{\mathcal{Z}}}
+
+\def\sA{{\mathbb{A}}}
+\def\sB{{\mathbb{B}}}
+\def\sC{{\mathbb{C}}}
+\def\sD{{\mathbb{D}}}
+\def\sF{{\mathbb{F}}}
+\def\sG{{\mathbb{G}}}
+\def\sH{{\mathbb{H}}}
+\def\sI{{\mathbb{I}}}
+\def\sJ{{\mathbb{J}}}
+\def\sK{{\mathbb{K}}}
+\def\sL{{\mathbb{L}}}
+\def\sM{{\mathbb{M}}}
+\def\sN{{\mathbb{N}}}
+\def\sO{{\mathbb{O}}}
+\def\sP{{\mathbb{P}}}
+\def\sQ{{\mathbb{Q}}}
+\def\sR{{\mathbb{R}}}
+\def\sS{{\mathbb{S}}}
+\def\sT{{\mathbb{T}}}
+\def\sU{{\mathbb{U}}}
+\def\sV{{\mathbb{V}}}
+\def\sW{{\mathbb{W}}}
+\def\sX{{\mathbb{X}}}
+\def\sY{{\mathbb{Y}}}
+\def\sZ{{\mathbb{Z}}}
+
+\def\emLambda{{\Lambda}}
+\def\emA{{A}}
+\def\emB{{B}}
+\def\emC{{C}}
+\def\emD{{D}}
+\def\emE{{E}}
+\def\emF{{F}}
+\def\emG{{G}}
+\def\emH{{H}}
+\def\emI{{I}}
+\def\emJ{{J}}
+\def\emK{{K}}
+\def\emL{{L}}
+\def\emM{{M}}
+\def\emN{{N}}
+\def\emO{{O}}
+\def\emP{{P}}
+\def\emQ{{Q}}
+\def\emR{{R}}
+\def\emS{{S}}
+\def\emT{{T}}
+\def\emU{{U}}
+\def\emV{{V}}
+\def\emW{{W}}
+\def\emX{{X}}
+\def\emY{{Y}}
+\def\emZ{{Z}}
+\def\emSigma{{\Sigma}}
+
+\newcommand{\etens}[1]{\mathsfit{#1}}
+\def\etLambda{{\etens{\Lambda}}}
+\def\etA{{\etens{A}}}
+\def\etB{{\etens{B}}}
+\def\etC{{\etens{C}}}
+\def\etD{{\etens{D}}}
+\def\etE{{\etens{E}}}
+\def\etF{{\etens{F}}}
+\def\etG{{\etens{G}}}
+\def\etH{{\etens{H}}}
+\def\etI{{\etens{I}}}
+\def\etJ{{\etens{J}}}
+\def\etK{{\etens{K}}}
+\def\etL{{\etens{L}}}
+\def\etM{{\etens{M}}}
+\def\etN{{\etens{N}}}
+\def\etO{{\etens{O}}}
+\def\etP{{\etens{P}}}
+\def\etQ{{\etens{Q}}}
+\def\etR{{\etens{R}}}
+\def\etS{{\etens{S}}}
+\def\etT{{\etens{T}}}
+\def\etU{{\etens{U}}}
+\def\etV{{\etens{V}}}
+\def\etW{{\etens{W}}}
+\def\etX{{\etens{X}}}
+\def\etY{{\etens{Y}}}
+\def\etZ{{\etens{Z}}}
+
+\newcommand{\pdata}{p_{\rm{data}}}
+\newcommand{\ptrain}{\hat{p}_{\rm{data}}}
+\newcommand{\Ptrain}{\hat{P}_{\rm{data}}}
+\newcommand{\pmodel}{p_{\rm{model}}}
+\newcommand{\Pmodel}{P_{\rm{model}}}
+\newcommand{\ptildemodel}{\tilde{p}_{\rm{model}}}
+\newcommand{\pencode}{p_{\rm{encoder}}}
+\newcommand{\pdecode}{p_{\rm{decoder}}}
+\newcommand{\precons}{p_{\rm{reconstruct}}}
+
+\newcommand{\laplace}{\mathrm{Laplace}} 
+
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Ls}{\mathcal{L}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\emp}{\tilde{p}}
+\newcommand{\lr}{\alpha}
+\newcommand{\reg}{\lambda}
+\newcommand{\rect}{\mathrm{rectifier}}
+\newcommand{\softmax}{\mathrm{softmax}}
+\newcommand{\sigmoid}{\sigma}
+\newcommand{\softplus}{\zeta}
+\newcommand{\KL}{D_{\mathrm{KL}}}
+\newcommand{\Var}{\mathrm{Var}}
+\newcommand{\standarderror}{\mathrm{SE}}
+\newcommand{\Cov}{\mathrm{Cov}}
+\newcommand{\normlzero}{L^0}
+\newcommand{\normlone}{L^1}
+\newcommand{\normltwo}{L^2}
+\newcommand{\normlp}{L^p}
+\newcommand{\normmax}{L^\infty}
+
+\newcommand{\parents}{Pa} 
+
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+\DeclareMathOperator{\sign}{sign}
+\DeclareMathOperator{\Tr}{Tr}
+\let\ab\allowbreak
+ 
+\usepackage[utf8]{inputenc} \usepackage[T1]{fontenc}    \usepackage{hyperref}       \usepackage{url}            \usepackage{booktabs}       \usepackage{amsfonts}       \usepackage{nicefrac}       \usepackage{microtype}      
+
+\usepackage{amsmath}
+\usepackage{xspace}
+\usepackage{tabularx} \usepackage{multirow} \usepackage{makecell}
+\usepackage{colortbl}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\captionsetup[subfigure]{justification=centering}
+\usepackage{wrapfig}
+\usepackage{pifont}
+\usepackage[switch,columnwise]{lineno}
+
+
+\newcommand{\venue}[1]{{$_{\text{#1}}$}}
+
+\newcommand{\supp}[1]{{\color{blue}  #1}}
+\newcommand{\todo}[1]{{\color{red}#1}}
+\newcommand{\onedot}[1]{\ifx\@let@token.\else.\null\fi\xspace}
+\newcommand{\etal}[1]{\emph{et al}\onedot}
+\newcommand{\xmark}{\ding{55}}
+\newcommand{\cmark}{\ding{51}}
+\newcommand{\perimp}[1]{\textcolor{ForestGreen}{\footnotesize{\textbf{$\uparrow$#1\%}}}}
+\newcommand{\perdec}[1]{\textcolor{ForestGreen}{\footnotesize{\textbf{$\downarrow$#1\%}}}}
+\newcommand{\highlightcell}{\cellcolor{cyan!12}}
+\newcommand{\cellfontcolor}{\color{gray}}
+\newcommand{\approachname}{ALBAR}
+
+
+\title{ALBAR: Adversarial Learning approach to mitigate Biases in Action Recognition}
+
+
+
+\author{Anonymous Author}
+
+
+
+\newcommand{\fix}{\marginpar{FIX}}
+\newcommand{\new}{\marginpar{NEW}}
+
+\iclrfinalcopy 
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Action recognition models often rely on static spatial content, such as background scenes and subject appearance, instead of motion. Background bias has received attention, but foreground bias remains underexplored, and evaluation protocols may leak background cues. We propose ALBAR, a simple end-to-end adversarial training method that discourages reliance on static cues without auxiliary labels or critic networks. Each motion clip is paired with a static clip built by stacking one of its frames; a shared encoder is trained with cross-entropy on the motion clip, a negative cross-entropy (adversarial) loss and an entropy-maximization loss on the static clip, and a gradient penalty on the static input. We also show that the widely used UCF101 SCUBA/SCUFO protocol leaks background through bounding-box masks, and release an improved protocol with tight segmentation masks. With a Swin-T backbone pretrained on Kinetics-400, ALBAR raises contrasted accuracy on HMDB51 from 27.84\% to 53.22\%, 12.9 points above the previous best (StillMix, 40.28\%), and from 17.53\% to 26.23\% on the improved UCF101 protocol. It also yields gains on downstream anomaly detection and temporal action localization.
+\end{abstract}
+
+\section{Introduction}
+Video action recognition models frequently exploit spurious correlations with static content instead of motion \citep{choi2019can,li2018resound,li2019repair,li2023mitigating}. Two failure modes follow: \emph{background bias}, e.g., predicting ``Playing Soccer'' on a soccer field regardless of the motion, and \emph{foreground bias}, i.e., predicting from the attire, skin tone or other static appearance of the subject. Background bias has received some attention, whereas foreground bias remains underexplored despite its implications for safety and fairness in surveillance, assisted living and autonomous systems.
+
+Existing debiasing approaches require extra supervision such as scene or object labels or attribute classifiers, rely on complex pipelines such as optical flow or decoupled spatial and temporal encoders, or use augmentations that mainly target background bias \citep{choi2019can,wang2021removing,ding2022motion,li2023mitigating}. Moreover, evaluation protocols can contain shortcuts: the SCUBA/SCUFO protocol of \citet{li2023mitigating} on UCF101 builds actor masks from bounding boxes, which let background leak around the actor and can inflate perceived robustness.
+
+We address both issues. Our key insight is that if a model cannot confidently predict the action from a motionless clip, it must rely on motion to succeed. We therefore build an adversarial loop with a single 3D encoder: it is trained to predict correctly on normal clips while being discouraged from confident predictions on the corresponding static clips. To avoid the trivial solution of being confidently wrong on static clips, we maximize the entropy of static predictions, and we stabilize training with a gradient penalty on the static inputs.
+
+Our contributions are:
+\begin{itemize}
+\item \textbf{ALBAR}, a simple end-to-end adversarial framework requiring no auxiliary attribute labels or critic networks, which jointly discourages static-cue reliance (negative cross-entropy), maximizes static uncertainty (entropy) and stabilizes training (gradient penalty).
+\item A study of foreground and background biases with state-of-the-art results on SCUBA/SCUFO, including $+12.9$ points of contrasted accuracy over the prior best on HMDB51.
+\item The identification and correction of background leakage in the UCF101 SCUBA/SCUFO protocol through tight actor segmentation masks, and a public release of the improved protocol.
+\item Evidence of downstream benefits on anomaly detection and temporal action localization.
+\end{itemize}
+
+\section{Related Works}
+\paragraph{Static bias in action recognition.} Action datasets contain strong scene and object correlations \citep{li2018resound,li2019repair,byvshev20223d}. Prior work mitigates background bias with an adversarial scene classifier (SDN) \citep{choi2019can}, by adding backgrounds to videos \citep{wang2021removing}, by foreground--background merging \citep{ding2022motion}, with resampling \citep{li2019repair}, or with scene-debiased open-set recognition \citep{zhai2023soar}. Data augmentation methods such as Mixup \citep{zhang2017mixup} and VideoMix \citep{yun2020videomix}, and actor-based mixing \citep{zou2023learning}, add invariances. StillMix \citep{li2023mitigating} mixes in static frames from a bias-only model and introduced the SCUBA/SCUFO protocols for background and foreground bias. In contrast, ALBAR needs no bias-model or extra labels and directly penalizes the static prediction of the same encoder.
+
+\paragraph{Adversarial debiasing.} Adversarial learning has been used to remove protected or nuisance attributes from representations \citep{zhang2018mitigating,xie2017controllable,elazar2018adversarial,beutel2017data,wu2020privacy}, typically with a separate critic or attribute labels. We instead use the main encoder itself to produce the adversarial signal from a static version of the input, and add entropy maximization and a gradient penalty \citep{gulrajani2017improved} for stability.
+
+\paragraph{Bias evaluation.} SCUBA replaces the background of a test video, and SCUFO stacks a single frame to remove motion \citep{li2023mitigating}. We keep this design but fix the mask quality using segmentation and tracking \citep{cheng2023segment,kirillov2023segment,yang2021aot,yang2022deaot}.
+
+\section{Method}
+\subsection{Overview}
+ALBAR pairs each motion clip with a matched static clip created from a single frame. The same encoder processes both (Figure~\ref{fig:arch}). The objective combines a supervised cross-entropy on the motion clip, an adversarial negative cross-entropy on the static clip, entropy maximization on the static prediction, and a gradient penalty on the static input.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/main_architecture.png}
+\caption{Overview of ALBAR. Given video clip $\mathbf{x}^{(i)}_{t}$, we sample a frame and stack it to create the static clip $\mathbf{\bar{x}}^{(i)}_{\bar{t}}$. Both clips are processed by the same encoder.}
+\label{fig:arch}
+\end{figure}
+
+\subsection{Static adversarial loss}
+Given a clip $x^{(i)}_t$ with label $y^{(i)}$, we sample a frame at time $\bar t$ and stack it $F$ times to form a static clip $\bar x^{(i)}_{\bar t}$. With the shared encoder $F(\cdot)$ we compute $p^{(i)}_t=F(x^{(i)}_t)$ and $\bar p^{(i)}_{\bar t}=F(\bar x^{(i)}_{\bar t})$. The supervised loss on the motion clip is
+\begin{equation}
+\mathcal{L}^{(i)}_{CE} = -\sum_{c=1}^{N_C} y^{(i)}_c \log p^{(i)}_c .
+\end{equation}
+The adversarial loss maximizes the cross-entropy on the static clip (implemented through gradient reversal):
+\begin{equation}
+\mathcal{L}^{(i)}_{adv} = -\mathcal{L}_{CE}\big(\bar p^{(i)}_{\bar t}, y^{(i)}\big).
+\end{equation}
+This pushes the model not to align static predictions with labels, forcing reliance on motion.
+
+\subsection{Entropy maximization on static clips}
+Without a constraint the model may learn to be confidently wrong on static inputs. To avoid this we maximize the entropy of $\bar p$:
+\begin{equation}
+\mathcal{L}^{(i)}_{ent} = \sum_c \bar p^{(i)}_{\bar t,c}\log \bar p^{(i)}_{\bar t,c}.
+\end{equation}
+Minimizing $\mathcal{L}_{ent}$ maximizes the entropy $H(p)=-\sum_c p_c\log p_c$, encouraging uniform predictions on static clips.
+
+\subsection{Gradient penalty on static inputs}
+Adversarial signals can make training unstable. We regularize the sensitivity of the model to static inputs:
+\begin{equation}
+\mathcal{L}^{(i)}_{gp} = \big\|\nabla_{\bar x^{(i)}_{\bar t}} F(\bar x^{(i)}_{\bar t})\big\|_2 .
+\end{equation}
+
+\subsection{Combined objective}
+The overall per-sample loss is
+\begin{equation}
+\mathcal{L}^{(i)} = \mathcal{L}^{(i)}_{CE} + \omega_{adv}\mathcal{L}^{(i)}_{adv} + \omega_{ent}\mathcal{L}^{(i)}_{ent} + \omega_{gp}\mathcal{L}^{(i)}_{gp}.
+\end{equation}
+
+\subsection{Improved UCF101 SCUBA/SCUFO protocol}
+SCUBA/SCUFO evaluate background and foreground bias \citep{li2023mitigating}. SCUBA replaces the background of UCF101 test videos using Places365 images \citep{zhou2017places}, VQGAN-CLIP generated images \citep{crowson2022vqgan}, or sinusoidal stripe patterns, preserving the actor through a mask. SCUFO stacks a single frame of a SCUBA video to obtain a static foreground-only clip. The original UCF101 protocol uses THUMOS-14 \citep{THUMOS14} bounding boxes as masks, which let background leak (e.g., snow around a skier, Figure~\ref{fig:scuba}a). We instead initialize from the THUMOS-14 boxes and segment and track the actor with SAMTrack \citep{cheng2023segment} (built on SAM, AOT and DeAOT), obtaining tight actor masks (Figure~\ref{fig:scuba}b). Masks are generated automatically and then manually checked for every test video so that no residual background remains. No external attribute labels are required, and splits and class counts are inherited from the original design.
+
+\begin{figure}[t]
+\centering
+\begin{subfigure}[t]{0.48\linewidth}\includegraphics[width=\linewidth]{figures/orig_scuba.png}\caption{Previous protocol}\end{subfigure}\hfill
+\begin{subfigure}[t]{0.48\linewidth}\includegraphics[width=\linewidth]{figures/new_scuba.png}\caption{Improved protocol}\end{subfigure}
+\caption{Example clip from the UCF101-SCUBA-Sinusoid protocol, class ``Skiing''. (a) Frames from the previous protocol, where snow is visible in the background. (b) Our improved protocol uses tight segmentation masks to eliminate the background.}
+\label{fig:scuba}
+\end{figure}
+
+\section{Experiments}
+\subsection{Setup}
+\paragraph{Evaluation.} We report Top-1 accuracy on the IID test set; on SCUBA (higher is better, reduced background bias) averaged over background types; on SCUFO (lower is better, reduced foreground/static bias); on Confl-FG, where a conflicting foreground is inserted on a sinusoid SCUBA background to isolate foreground effects (higher is better); and the \emph{contrasted accuracy}, where a prediction counts as correct iff the model is correct on a SCUBA clip and incorrect on its SCUFO counterpart, capturing simultaneous background and foreground debiasing. We use HMDB51 \citep{kuehne2011hmdb} and UCF101 \citep{soomro2012ucf101} (with our improved protocol), and the ARAS rare-scene OOD benchmark.
+
+\paragraph{Implementation.} The backbone is Video Swin-T \citep{liu2022video} pretrained on Kinetics-400 \citep{carreira2017quo}, with 32 frames per clip at stride 2 and $224\times224$ resolution. Augmentations are random resized crop and horizontal flip. We use AdamW \citep{loshchilov2017decoupled} ($\beta_1=0.9$, $\beta_2=0.999$), weight decay 0.01, base learning rate $10^{-4}$ at batch size 64, 5 warmup epochs and a cosine schedule. We compare with Mixup \citep{zhang2017mixup}, VideoMix \citep{yun2020videomix}, SDN \citep{choi2019can}, BE \citep{wang2021removing}, ActorCutMix \citep{zou2023learning}, FAME \citep{ding2022motion} and StillMix \citep{li2023mitigating}.
+
+\subsection{Main results}
+\input{tables/table_qy.tex}
+Table~\ref{tab:hmdb_scuba_small} shows results on HMDB51. The baseline reaches 27.84\% contrasted accuracy, and the best prior method, StillMix, 40.28\%. ALBAR reaches 53.22\%, i.e., $+25.4$ points over the baseline and $+12.9$ over StillMix. Its average SCUFO accuracy drops to 1.50\% (StillMix: 13.39\%), showing a much lower reliance on static foreground, while average SCUBA (53.53\% vs.\ 51.81\%) and Confl-FG (48.13\% vs.\ 47.38\%) also improve. IID accuracy is slightly lower (72.81\% vs.\ 73.92\% for the baseline). Combining ALBAR with StillMix augmentation gives 53.68\% contrasted accuracy.
+
+\input{tables/table_bb.tex}
+Table~\ref{tab:ucf_scuba_small} reports the improved UCF101 protocol. Contrasted accuracy rises from 17.53\% (baseline) and 24.40\% (StillMix) to 26.23\% for ALBAR, and 31.14\% when combined with StillMix augmentation. ALBAR attains the lowest average SCUFO (0.14\% vs.\ 0.36\% for StillMix) and the best average SCUBA (26.25\% vs.\ 24.68\%), while StillMix is slightly better on IID (96.14\% vs.\ 94.98\%) and Confl-FG (55.03\% vs.\ 54.02\%). On ARAS, ALBAR improves robustness to rare backgrounds; we report this qualitatively only.
+
+\subsection{Ablations}
+\input{tables/table_kv.tex}
+Table~\ref{tab:abl_framework} ablates the loss components on HMDB51. Using $\mathcal{L}_{adv}$ alone (b) collapses to confidently wrong static predictions (average SCUFO $0.00\%$), with unstable learning and 42.29\% contrasted accuracy. $\mathcal{L}_{ent}$ alone (c) reduces static reliance modestly (44.30\%), less than $\mathcal{L}_{adv}$ in terms of SCUFO. Combining $\mathcal{L}_{adv}$ and $\mathcal{L}_{ent}$ (e) prevents the trivial solution and improves stability and accuracy (46.72\%). Adding $\mathcal{L}_{gp}$ to all components (h) gives the best result, 53.22\%. $\mathcal{L}_{gp}$ alone (d) gives only 29.24\%.
+
+\input{tables/table_gx.tex}
+Table~\ref{tab:frame_sampling} studies which frame forms the static clip. The middle frame is best (53.22\%), followed by random (53.02\%), first (50.91\%) and last (49.40\%). A plausible explanation is that middle frames most likely contain both the actor and the scene during the action, giving strong adversarial negatives.
+
+\subsection{Downstream transfer}
+\input{tables/table_ox.tex}
+Table~\ref{tab:downstream} shows that the debiased model transfers: AUC on UCF-Crime anomaly detection \citep{sultani2018real,chen2023mgfn} improves from 82.39\% to 84.91\%, and mAP on THUMOS14 temporal action localization \citep{THUMOS14,shi2023tridet} from 54.89\% to 55.20\%. The THUMOS14 gain is small.
+
+\subsection{Qualitative analysis}
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/qualitative_examples.png}
+\caption{Qualitative examples from the HMDB51 test set showing the baseline model choosing an incorrect action label due to spatial context.}
+\label{fig:qual}
+\end{figure}
+Figure~\ref{fig:qual} shows Integrated Gradients attributions \citep{sundararajan2017axiomatic} on HMDB51 test clips. The baseline focuses on spurious cues such as uniforms or camera angle and misclassifies, whereas ALBAR's predictions align better with action-relevant motion and appearance context.
+
+\section{Limitations}
+Our evaluation targets scene- and appearance-induced static biases; broader demographic and real-world fairness dimensions remain unexplored. The assumption that static information is uniformly unhelpful may be too strict for actions where static cues are legitimately discriminative; future work could retain beneficial spatial cues while suppressing spurious ones. ALBAR also slightly lowers IID accuracy on HMDB51. Finally, static-frame selection could use learned indicators such as action saliency to create stronger adversarial negatives without heavy inductive bias or external detectors.
+
+\section{Conclusion}
+We presented ALBAR, a label-free, single-encoder adversarial framework that breaks the correlation between labels and static cues by combining negative cross-entropy, entropy maximization and a gradient penalty on static clips. Together with a corrected UCF101 SCUBA/SCUFO protocol free of background leakage, ALBAR sets new results on bias benchmarks (53.22\% contrasted accuracy on HMDB51, $+12.9$ points over the prior best) and benefits downstream tasks, supporting more robust, motion-based video understanding.
+
+\section{Acknowledgments}
+Acknowledgments are omitted for anonymous review.
+
+\bibliographystyle{iclr2025_conference}
+\bibliography{references}
+
+\end{document}

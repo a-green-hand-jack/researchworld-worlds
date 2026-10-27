@@ -1,0 +1,65 @@
+# Review standard for the delivery (internal-review-repo)
+
+Source: the `Research objective` issue (internal-review-repo#1). The brief (`idea-repo`) and the
+work assignment (`story-repo`) were not yet published when this was written; the standard will be
+re-checked against them and against the venue requirements from `venue-repo` once they exist.
+Every item below is checked on the assembled delivery (`ht-role delivery`) at the exact revisions
+it is assembled from. I re-run the code and re-compile the LaTeX myself; I do not take numbers or
+figures on trust.
+
+## R1 Data
+- Iris, OpenML dataset id 61, downloaded from OpenML by the delivered code (not sklearn's bundled
+  copy, not a hand-made CSV). The download URL/API call, dataset version and a checksum of the file
+  used are recorded. 150 instances, 4 numeric features, 3 classes of 50 each is verified in code
+  output.
+
+## R2 Methods
+- Multinomial logistic regression: genuinely multinomial (softmax) loss, not one-vs-rest; solver,
+  regularisation (C), iterations and any feature scaling stated. Convergence warnings, if any, are
+  addressed.
+- k-NN with k chosen by inner cross-validation: nested inside each outer training fold only
+  (no tuning on outer test data); the k grid, inner CV scheme and tie rule are stated; the k chosen
+  in each outer fold is recorded and summarised. Any scaling sits in a pipeline fitted on training
+  data only (same rule for LR).
+
+## R3 Evaluation design
+- 10 repetitions x stratified 5-fold = 50 outer folds, the same splits for both methods (paired),
+  seeds fixed and recorded. Per-fold accuracies for both methods are saved to a results file.
+
+## R4 Uncertainty and claims
+- Each method: mean accuracy with a 95% interval; paired difference (with sign convention stated)
+  with a 95% interval. The interval method is named and justified. Folds of repeated CV share
+  training data, so a naive t-interval over 50 folds treated as independent understates the
+  uncertainty; the report must use a method that accounts for this (e.g. the Nadeau-Bengio
+  corrected resampled t, or an interval over the 10 repetition means) or state clearly why its
+  choice is adequate and what it ignores. Ties/discreteness of accuracy on 30-sample test folds
+  are handled sensibly (e.g. zero-variance difference cases).
+- Every claim in the text is supported by the interval it cites; no conclusion is required in
+  advance (a difference that is not distinguishable from zero must be reported as such).
+
+## R5 Ibex vs local
+- The full cross-validation is run once as a CPU job on Ibex (SLURM) and once locally, with the same
+  code. Evidence delivered: job id, the SLURM output/log, the node name as reported by the job
+  itself (e.g. `$SLURMD_NODENAME`/`hostname`) or by `sacct`, software versions on both sides, and the
+  per-fold result files of both runs.
+- The claim "identical" or "not identical" is backed by a comparison of the full per-fold outputs
+  (exact equality or hash), not just rounded summaries; any difference is quantified and explained.
+
+## R6 Paper
+- `report/report.pdf`, at most two pages, built with the official NeurIPS 2026 style file in
+  submission (anonymous) mode, compiled from the delivered LaTeX source (I re-compile it and compare).
+  Page counting follows `venue-repo`'s stated interpretation; absent one, the whole PDF must fit in
+  two pages.
+- Exactly one figure and one table. The figure is opened and inspected: not blank or placeholder,
+  axes labelled with units, legible at print size, and showing what the text says it shows. The
+  table matches the results files to the printed precision.
+- The LaTeX source and the code that produced every number sit next to the PDF (under `report/`
+  or paths the assignment declares), with instructions to run them. Every number in the PDF traces
+  to a code output; I re-run the code locally and check the numbers reproduce.
+- The report states the method, the evaluation design, the interval methods, the Ibex node name
+  and the identical/not-identical result, and the limitations (small data, single dataset).
+
+## Verdict
+- Approve only when every item holds on the inspected revision. Findings go as `revise` decisions to
+  the owning position (analysis -> experiment-repo, figure/table -> figtab-repo via a neighbour,
+  report and layout -> paper-repo, format -> venue-repo).

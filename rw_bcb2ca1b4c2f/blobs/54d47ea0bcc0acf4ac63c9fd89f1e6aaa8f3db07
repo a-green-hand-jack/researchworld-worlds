@@ -1,0 +1,67 @@
+"""B1b composition on the same seeded sample as checks/e5_b1_early.py: how many measured events (debounced, as
+registered) occur before the first schedule knot (the race at the initial hyperparameters, which the delivered
+constant-lambda race already predicts) and after it (the schedule-induced events B's claims are about), and the
+registered timing error |ln| of the stage model and of 'capture+static' (stage capture times, losses/regains exactly
+at the crossings lam_W(t) = c^2/(4s)) on each group.
+Usage: python3 checks/e5_b1_events.py EXPERIMENT_CHECKOUT NPER > checks/e5_b1_events.json"""
+import sys, os, json
+import numpy as np
+from multiprocessing import Pool
+EXP = sys.argv[1]; NPER = int(sys.argv[2]) if len(sys.argv) > 2 else 2
+sys.path.insert(0, os.path.join(EXP, "code"))
+import e5_b1 as B, e5_theory as th
+
+
+def capture_static_events(cfg, c, s, tc, dt=0.1):
+    N = int(round(cfg["T"] / dt)); t = np.arange(N + 1) * dt
+    al = (t[:, None] >= tc[None, :]) & (th.static_threshold(c, s)[None, :] >= th.lam_of(cfg["kW"], t)[:, None])
+    ev = []
+    for j, k in zip(*np.nonzero(al[1:] != al[:-1])):
+        ev.append((int(k), "gain" if al[j + 1, k] else "loss", float(t[j + 1])))
+    return ev
+
+
+def one(cfg):
+    G = B.GRIDS[cfg["grid"]]; c, s = B.stats(G); n = c.size
+    tr = B.truth(cfg); w0 = np.linalg.norm(B.init_amp(cfg, n), axis=0)
+    st = th.stage_model(c, s, w0, cfg["p0"], cfg["kW"], cfg["kP"], cfg["alpha"], cfg["kappa"], cfg["T"], dt=B.ETA)
+    tc = np.where(np.isnan(st["tc"]), np.inf, st["tc"])
+    meas = B.debounce(tr["trans"])
+    out = dict(id=cfg["id"], kind=cfg["kind"], variant=cfg["variant"], ts=cfg["ts"])
+    for name, ev in (("stage", st["events"]), ("capture_static", capture_static_events(cfg, c, s, tc))):
+        pred = B.debounce([tuple(e) for e in ev])
+        for grp in ("pre", "post"):
+            keep = (lambda e: e[2] < cfg["ts"]) if grp == "pre" else (lambda e: e[2] >= cfg["ts"])
+            m = {k: [e for e in v if keep(e)] for k, v in meas.items()}
+            p = {k: [e for e in v if keep(e)] for k, v in pred.items()}
+            errs, adt, unm, nev = B.match_events(m, p, cfg["kW"], cfg["kP"])
+            out[f"{name}_{grp}"] = dict(errs=errs, unmatched=unm, n_events=nev)
+    return out
+
+
+if __name__ == "__main__":
+    cfgs = [c for c in B.configs("dev") if not c["kind"].startswith("const")]
+    rng = np.random.default_rng(20261018); cells = {}
+    allc = B.configs("dev")
+    for cfg in allc:
+        cells.setdefault((cfg["kind"], cfg["variant"]), []).append(cfg)
+    pick = []
+    for key in sorted(cells):            # same draw order as e5_b1_early.py, then drop the constant schedules
+        L = cells[key]; idx = rng.choice(len(L), size=min(NPER, len(L)), replace=False)
+        pick += [L[i] for i in sorted(idx)]
+    pick = [c for c in pick if not c["kind"].startswith("const")]
+    with Pool(8) as pool:
+        rows = pool.map(one, pick, chunksize=1)
+    res = dict(sample_ids=[c["id"] for c in pick], groups={})
+    for name in ("stage", "capture_static"):
+        for grp in ("pre", "post"):
+            E = np.concatenate([r[f"{name}_{grp}"]["errs"] for r in rows]); nev = sum(r[f"{name}_{grp}"]["n_events"] for r in rows)
+            un = sum(r[f"{name}_{grp}"]["unmatched"] for r in rows)
+            res["groups"][f"{name}_{grp}"] = dict(events=nev, matched=int(E.size), unmatched_share=un / max(nev, 1),
+                                                  median=float(np.median(E)) if E.size else None, p90=float(np.quantile(E, 0.9)) if E.size else None)
+    res["by_kind_post"] = {k: {nm: dict(events=sum(r[f"{nm}_post"]["n_events"] for r in rows if r["kind"] == k),
+                                        unmatched=sum(r[f"{nm}_post"]["unmatched"] for r in rows if r["kind"] == k),
+                                        median=(float(np.median(np.concatenate([r[f"{nm}_post"]["errs"] for r in rows if r["kind"] == k]))) if sum(len(r[f"{nm}_post"]["errs"]) for r in rows if r["kind"] == k) else None))
+                               for nm in ("stage", "capture_static")} for k in B.KINDS if not k.startswith("const")}
+    res["rows"] = rows
+    print(json.dumps(res, indent=1))

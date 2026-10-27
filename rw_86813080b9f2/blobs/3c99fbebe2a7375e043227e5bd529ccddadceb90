@@ -1,0 +1,18 @@
+"""Independent reference fit used by internal-review-repo to check delivered numbers.
+
+Not a delivery: reviewer's working material.
+"""
+import numpy as np
+import scipy
+from scipy import stats
+
+rng = np.random.default_rng(217)
+x = np.arange(40, dtype=float)
+y = 2.5 + 0.8 * x + rng.normal(0.0, 3.0, size=40)
+
+fit = stats.linregress(x, y)
+t = stats.t.ppf(0.975, df=len(x) - 2)
+print(f"numpy {np.__version__}, scipy {scipy.__version__}")
+print(f"slope     {fit.slope:.6f}  95% CI [{fit.slope - t*fit.stderr:.6f}, {fit.slope + t*fit.stderr:.6f}]  SE {fit.stderr:.6f}")
+print(f"intercept {fit.intercept:.6f}  95% CI [{fit.intercept - t*fit.intercept_stderr:.6f}, {fit.intercept + t*fit.intercept_stderr:.6f}]  SE {fit.intercept_stderr:.6f}")
+print(f"R^2       {fit.rvalue**2:.6f}")

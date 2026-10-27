@@ -1,0 +1,101 @@
+"""Main study: multinomial logistic regression vs k-NN (k by inner CV) on Iris,
+10 repetitions of stratified 5-fold cross-validation.
+
+Usage (from report/): python code/cv_compare.py OUTDIR
+Writes OUTDIR/per_fold.csv (one row per outer fold), OUTDIR/predictions.csv (every
+outer test prediction) and OUTDIR/run_info.json (host, SLURM job, versions).
+"""
+import csv
+import datetime
+import hashlib
+import json
+import os
+import pathlib
+import platform
+import socket
+import sys
+import time
+
+import numpy as np
+import scipy
+import sklearn
+from threadpoolctl import threadpool_info
+
+import common
+
+
+def cpu_model():
+    try:
+        for line in open("/proc/cpuinfo"):
+            if line.startswith("model name"):
+                return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return platform.processor()
+
+
+def main(outdir):
+    out = pathlib.Path(outdir)
+    out.mkdir(parents=True, exist_ok=True)
+    X, y, classes = common.load_iris()
+    t0 = time.time()
+    fold_rows, pred_rows = [], []
+    for i, (tr, te) in enumerate(common.outer_cv().split(X, y)):
+        rep, fold = divmod(i, common.N_SPLITS)
+        lr = common.make_lr().fit(X[tr], y[tr])
+        knn = common.make_knn(rep, fold).fit(X[tr], y[tr])
+        p_lr, p_knn = lr.predict(X[te]), knn.predict(X[te])
+        est = lr.named_steps["lr"]
+        coef_bytes = np.ascontiguousarray(est.coef_).tobytes() + np.ascontiguousarray(est.intercept_).tobytes()
+        logloss = float(-np.mean(np.log(lr.predict_proba(X[te])[np.arange(len(te)), y[te]])))
+        n_lr, n_knn = int((p_lr == y[te]).sum()), int((p_knn == y[te]).sum())
+        fold_rows.append({
+            "repetition": rep, "fold": fold, "n_train": len(tr), "n_test": len(te),
+            "correct_lr": n_lr, "correct_knn": n_knn,
+            "acc_lr": repr(n_lr / len(te)), "acc_knn": repr(n_knn / len(te)),
+            "diff_lr_minus_knn": repr(n_lr / len(te) - n_knn / len(te)),
+            "k_knn": knn.best_params_["knn__n_neighbors"],
+            "inner_acc_chosen_k": repr(float(knn.best_score_)),
+            "lr_n_iter": int(est.n_iter_[0]),
+            "lr_test_logloss_hex": logloss.hex(),
+            "lr_coef_sha256": hashlib.sha256(coef_bytes).hexdigest(),
+            "test_idx_sha256": hashlib.sha256(te.astype(np.int64).tobytes()).hexdigest(),
+        })
+        for j, a, b in zip(te, p_lr, p_knn):
+            pred_rows.append({"repetition": rep, "fold": fold, "row": int(j), "y": int(y[j]),
+                              "pred_lr": int(a), "pred_knn": int(b)})
+        print(f"rep {rep} fold {fold}: LR {n_lr}/{len(te)}  kNN {n_knn}/{len(te)} (k={fold_rows[-1]['k_knn']})", flush=True)
+    for name, rows in (("per_fold.csv", fold_rows), ("predictions.csv", pred_rows)):
+        with open(out / name, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0]), lineterminator="\n")
+            w.writeheader()
+            w.writerows(rows)
+    info = {
+        "hostname": socket.gethostname(),
+        "slurm_job_id": os.environ.get("SLURM_JOB_ID"),
+        "slurmd_nodename": os.environ.get("SLURMD_NODENAME"),
+        "slurm_job_nodelist": os.environ.get("SLURM_JOB_NODELIST"),
+        "slurm_partition": os.environ.get("SLURM_JOB_PARTITION"),
+        "cpu_model": cpu_model(),
+        "started_utc": datetime.datetime.fromtimestamp(t0, datetime.timezone.utc).isoformat(),
+        "wall_seconds": round(time.time() - t0, 2),
+        "python": sys.version.split()[0], "platform": platform.platform(),
+        "numpy": np.__version__, "scipy": scipy.__version__, "sklearn": sklearn.__version__,
+        "blas": [{k: d.get(k) for k in ("internal_api", "version", "num_threads", "architecture")}
+                 for d in threadpool_info()],
+        "env_threads": {k: os.environ.get(k) for k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")},
+        "data": {"openml_id": 61, "name": "iris", "version": 1, "file": "results/openml_61/iris_openml_61.arff",
+                 "url": "https://openml.org/data/v1/download/61/iris.arff", "md5": common.ARFF_MD5,
+                 "sha256": hashlib.sha256(common.ARFF.read_bytes()).hexdigest(), "n": int(len(y)),
+                 "n_features": int(X.shape[1]), "classes": classes,
+                 "class_counts": [int((y == c).sum()) for c in range(len(classes))]},
+        "settings": common.SETTINGS,
+        "design": {"seed": common.SEED, "n_splits": common.N_SPLITS, "n_repeats": common.N_REPEATS,
+                   "inner_splits": common.INNER_SPLITS, "k_grid": common.K_GRID},
+    }
+    (out / "run_info.json").write_text(json.dumps(info, indent=1) + "\n")
+    print(json.dumps(info), flush=True)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1])

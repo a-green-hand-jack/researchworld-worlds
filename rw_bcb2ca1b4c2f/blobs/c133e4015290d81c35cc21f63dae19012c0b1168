@@ -1,0 +1,160 @@
+# Direction A (b), A4 / N2: rank under a layer-normalised target in the linear JEPA — working note
+
+Owner: `experiment-repo`. Status (2026-10-18): theory, numerical checks and development grid done. The held-out
+grid is registered in `results/e4/prediction_a4.json`. Code: `code/e4_a4.py`. Checks: `code/checks/e4_a4_theory.py` →
+`results/e4/a4_theory_checks.json`, on configurations outside every A4 grid (seeds 79xxx). Labels as in
+`theory/derivations.md`: *exact*, *approximation (validated)*, *located failure*. **Scope: gradient descent
+only.** AdamW with an LN target is not covered here (`ext_A_adamw.md` covers AdamW with the plain target).
+
+## Setting
+Linear encoder $W\in\mathbb R^{d\times n}$ ($n=8$ input directions), predictor $P\in\mathbb R^{d\times d}$ with
+$P_0=p_0I$, target under stop-gradient, weight decay $\lambda$ on $W$ and $P$, GD with step $\eta$:
+$$L=\tfrac12\,\mathbb E\,|PWx_1-\mathrm{sg}\,\mathrm{LN}(Wx_2)|^2+\tfrac\lambda2(|W|^2+|P|^2),\qquad
+\mathrm{LN}(y)=\frac{\Pi y}{\sqrt{|\Pi y|^2/d+\epsilon}},\quad \Pi=I-\tfrac1d\mathbf 1\mathbf 1^\top,\ \epsilon=10^{-5}.$$
+This is I-JEPA's target normalisation (`F.layer_norm` without affine). Data: $x_2\sim N(0,\mathrm{diag}\,\tau)$ and
+$x_1=\rho x_2+$ independent noise, so $S_{21}=\mathrm{diag}(c)$ and $S_{11}=\mathrm{diag}(s)$, with $c=\rho\tau$ and
+$s=\rho^2\tau+\sigma^2$. The plain model (identity target) has the target term $WS_{21}$; everything below concerns
+how LN changes that term.
+
+## N2-i. The LN target is the plain model with a state-dependent gain (exact)
+$\mathbb E[f(x_2)x_1^\top]=\mathbb E[f(x_2)x_2^\top]S_{22}^{-1}S_{21}$ because $x_1\mid x_2$ is linear-Gaussian.
+Stein's lemma gives $\mathbb E[f(x_2)x_2^\top]=\mathbb E[\nabla f(x_2)]S_{22}$. With $f(x_2)=\mathrm{LN}(Wx_2)$,
+$\nabla f=J_{\mathrm{LN}}(Wx_2)\,W$, so
+$$\mathbb E[\mathrm{LN}(Wx_2)\,x_1^\top]=G(W)\,W\,S_{21},\qquad G(W)=\mathbb E\,J_{\mathrm{LN}}(Wx_2),\qquad
+J_{\mathrm{LN}}(y)=\frac1r\Big(\Pi-\frac{\Pi yy^\top\Pi}{d\,r^2}\Big),\ r^2=\frac{|\Pi y|^2}d+\epsilon .$$
+The gradients are those of the plain model with $WS_{21}$ replaced by $G(W)WS_{21}$:
+$\nabla_W L=P^\top(PWS_{11}-GWS_{21})+\lambda W$ and $\nabla_PL=(PWS_{11}-GWS_{21})W^\top+\lambda P$.
+($J_{\mathrm{LN}}$ is smooth for $\epsilon>0$, so Stein applies.)
+*Check:* both sides by Monte Carlo ($4\times10^5$ joint draws each) for a random $W$ at scales $1$, $10^{-2}$ and
+$10^{-4}$. The relative Frobenius difference is 0.0063 / 0.0060 / 0.0061. An independent replicate of the left
+side differs from the first by 0.0088 / 0.0079 / 0.0090, so the residual is Monte Carlo noise.
+
+## N2-ii. Exact consequences of the gain
+1. **The constant direction carries no target.** $J_{\mathrm{LN}}\mathbf 1=0$ and $\mathbf 1^\top J_{\mathrm{LN}}=0$,
+   so the target term has no component along $\mathbf 1$. Rank is counted on $\Pi W$, which has rank $\le d-1$. With
+   $d\ge12>n=8$ this never binds. The code records $|\mathbf 1^\top W(T)|$ in every run (`one_norm_T`).
+2. **The drive is scale-free.** For $\epsilon\to0$, $J_{\mathrm{LN}}(\beta y)=J_{\mathrm{LN}}(y)/\beta$, so
+   $G(\beta W)\beta W=G(W)W$. The target drive has degree 0 in $W$, where the plain model's has degree 1. With
+   $\epsilon>0$ this holds while $|\Pi y|^2/d\gg\epsilon$; below that scale the gain saturates at $1/\sqrt\epsilon$
+   and the drive becomes linear again.
+   *Check* (relative change of $G(W)W S_{21}$ under $W\to bW$): $5.8\times10^{-4}$ at
+   $\mathrm{rms}(y)/\sqrt\epsilon=34$, 0.051 at 3.4, 0.67 at 0.34.
+3. **The last direction cannot collapse.** Take a single active direction, $W=a\,u e_i^\top$ with $u\perp\mathbf 1$
+   a unit vector. Then $\mathrm{LN}(Wx_2)=\sqrt d\,\mathrm{sign}(a\xi)u$ (for $\epsilon\to0$), and
+   $\mathbb E[\mathrm{LN}(Wx_2)x_{1,i}]=D\,u$ with $D=c_i\sqrt{2d/(\pi\tau_i)}$, independent of $a$. The pair
+   $(a,p)$ then obeys $\dot a=pD-p^2s_ia-\lambda a$ and $\dot p=Da-ps_ia^2-\lambda p$. For $\epsilon\to0$ the
+   eigenvalues at the origin are $-\lambda\pm D$, so the origin is a saddle whenever $D>\lambda$. **For
+   $\epsilon>0$ this holds only above the $\epsilon$ scale.** Below it the drive is linear in $a$ (item 2), so the
+   term $p\,g_\epsilon c_i a$ is second order at $(a,p)=0$. The origin is then a stable node (eigenvalues
+   $-\lambda,-\lambda$) with a basin of size set by $\epsilon$. The statement is therefore conditional: **final rank
+   $\ge1$** for starts outside that basin, whenever $\max_iD_i>\lambda$. That holds in every A4 family at $d\ge12$
+   ($\max_iD_i\ge2.3$ against $\lambda\le0.25$), and every A4 grid starts outside the basin ($p_0\ge0.6$).
+   *Independent check (internal review, decay family, $i=7$, $d=12$):* the start $(a_0,p_0)=(10^{-4},10^{-4})$ decays
+   to 0 at $\lambda=0.06$ and $0.25$, while every $p_0\ge0.6$ survives at $a=p\approx2.15$ and $1.91$. Label: exact
+   for $\epsilon\to0$; for $\epsilon>0$, exact given a start outside the node's basin. In the plain model, rank 0 is
+   the generic outcome at large $\lambda$.
+   *Check:* MC $D=2.490$ against theory 2.488 at $a=1$; 2.445 at $a=0.1$ (the $\epsilon$ correction starts).
+4. **The other directions can still collapse.** Suppose $k\ge2$ directions are active and direction $i$ is
+   small. Its gain tends to $\Gamma_0=\mathbb E[1/r]=\sqrt d\,\mathbb E[1/|\Pi y|]$, which is finite for $k\ge2$
+   (for $k=1$ it is logarithmically large, cut off by $\epsilon$). Linearised at $a_i=0$:
+   $\dot a_i=(p_ic_i\Gamma_0-p_i^2s_i-\lambda)a_i$ and $\dot p_i=-\lambda p_i+O(a_i^2)$. The origin is linearly
+   stable once $p_i$ has left the window $p_ic_i\Gamma_0-p_i^2s_i>\lambda$. This is the plain model's race with
+   $c_i$ replaced by $\Gamma_0c_i$, and $\Gamma_0$ grows like $\sqrt d$ over the scale of the active amplitudes.
+
+## N2-iii. Reduced mean-field flow (exact for an orthogonal init; approximation otherwise)
+Let $W_0=U\mathrm{diag}(a_0)$ with $U$ having orthonormal columns $\perp\mathbf 1$, and let $P_0=p_0I$ with diagonal
+$S$. Then $y=U\mathrm{diag}(a\sqrt\tau)\xi$, and the off-diagonal terms $\mathbb E[y_iy_j/r^3]$ vanish by the sign
+symmetry of $\xi$. So $G=U\mathrm{diag}(\Gamma)U^\top+\mathbb E[1/r](\Pi-UU^\top)$, and the ansatz
+$W=U\mathrm{diag}(a)$, $P=U\mathrm{diag}(p)U^\top+q(I-UU^\top)$ is preserved by every GD step. Per direction:
+$$a_i\leftarrow a_i+\eta\,(p_ic_i\Gamma_ia_i-p_i^2s_ia_i-\lambda a_i),\qquad
+p_i\leftarrow p_i+\eta\,(c_i\Gamma_ia_i^2-p_is_ia_i^2-\lambda p_i),\qquad
+\Gamma_i=\mathbb E\Big[\frac{1-y_i^2/(d r^2)}{r}\Big],$$
+with $y_j=a_j\sqrt{\tau_j}\,\xi_j$, $r^2=|y|^2/d+\epsilon$. The $\Gamma_i$ couple the directions; this coupling is
+the only difference from the plain per-mode reduction. The flow is exact up to the Monte Carlo of $\Gamma$
+($M=2048$ draws, fixed per run; the truth uses its own fixed sample of 4096).
+*Check (orthogonal init, exact GD vs the flow, 20 checks):* final counts 7 / 7, 8 / 8 and 5 / 5. The median
+relative error on alive amplitudes is 1.4–3.0%. The largest errors (0.19, 0.05, 1.23) occur at single checks during
+the collapse of a direction, where the timing shifts by a few steps. $|\mathbf 1^\top W(T)|\approx10^{-15}$.
+
+*For a Gaussian init* (A4's registered init: $W_0=w_0N(0,1)/\sqrt n$), the columns of $\Pi W_0$ overlap at
+$O(d^{-1/2})$. The flow is then applied with $a_i(0)=|(\Pi W_0)_{:,i}|$, and it is an **approximation**: the overlaps
+let a weak column fold into the span of the strong ones. A smoke run at $d=12$ (seed 799, outside every grid) gives
+truth 6 against flow 7. The development grid ($d=12$ and 32) measures how large this error is; the registered
+tolerance is set from it.
+
+**Balance (exact, continuous time).** $\frac{d}{dt}(a_i^2-p_i^2)=-2\lambda(a_i^2-p_i^2)$.
+
+**First step.** Since the drive has degree 0 (N2-ii.2), one GD step moves every direction by
+$\eta p_0c_i\Gamma_ia_i=O(\eta p_0c_i\sqrt{d/\tau_i})$, independently of $w_0$. For $w_0\ll\eta p_0c\sqrt d$ the
+initial scale is forgotten after one step. This is unlike the plain model, where $w_0$ sets the escape time.
+
+## N2-iv. Fixed points and the outcome mechanism (exact for the flow)
+At a fixed point with $a_i\neq0$, the two equations give $a_i^2=p_i^2$ and $p_i^2s_i-\Gamma_ic_ip_i+\lambda=0$.
+This has a real root iff $\Gamma_ic_i\ge2\sqrt{\lambda s_i}$, and $\Gamma_i$ depends on the whole active set.
+`ln_static` is the self-consistent active set reached by iterating this condition from the all-alive start. It
+ignores the dynamics.
+
+What the fixed points decide and what they do not:
+- **Existence is necessary.** A direction can survive only if a fixed point exists for it given the others.
+- **Selection is dynamic.** Several self-consistent sets can exist, because $\Gamma_i$ grows as other directions
+  collapse. Which one the run reaches is set by the race (N2-ii.4): a direction whose $p_i$ starts above the window
+  ($p_0>\Gamma c_i/s_i$) shrinks while $p_i$ relaxes. It survives only if $p_i$ enters the window before $a_i$ has
+  collapsed below the $\epsilon$ scale.
+
+The flow (N2-iii) contains both; `ln_static` contains only existence, from the all-alive start. *Development (below)
+corrects an earlier version of this note.* That version expected `ln_static` to suffice at large $\lambda$. On dev
+its error is instead largest there: MAE 0.92 at $\lambda=0.25$ against 0.17 at $\lambda=0.004$, bias $+0.49$ pooled,
+so it over-counts. On the held-out inputs (no truth) the flow's count differs from `ln_static` in 50% / 71% / 70% /
+94% of runs at $\lambda$ = 0.01 / 0.04 / 0.15 / 0.4.
+
+**Candidate sign predictions** (from N2-ii and N2-iv), checked on the development grid before registration:
+- the final rank is non-increasing in $\lambda$;
+- it is non-decreasing in $d$ (the $\sqrt d$ gain);
+- it depends only weakly on $w_0$ (first step);
+- it is non-increasing in $p_0$ (the window $p<\Gamma c/s$). **Contradicted on dev**; see below;
+- it is $\ge1$ for starts outside the $\epsilon$-node basin, as every A4 grid is (N2-ii.3).
+
+## Development grid (`results/e4/a4_dev/`; code at a972088, md5 f9ea05a0)
+96 runs: families `flat` and `decay`, $d\in\{12,32\}$, $p_0\in\{0.6,1.2,2.0\}$, $\lambda\in\{0.004,0.015,0.06,0.25\}$,
+$w_0\in\{10^{-3},3\times10^{-2}\}$, seed replicate 700, $\eta=0.05$. Cost: 0.86 CPU-h. All 96 runs are settled
+(last 4 checks equal), and none diverges. The truth spans ranks 3–8 (43 runs at 8).
+
+**N2 with the Gaussian init.** MAE 0.10, within-1 1.00, bias +0.04 (10 runs off by exactly 1). By $d$ the MAE is
+0.125 at $d=12$ and 0.083 at $d=32$, so the column overlap costs little at these sizes. The rivals:
+- `early_count` MAE 0.26 (a measurement at 10% of $T$);
+- `ln_static` 0.49;
+- `all_alive` 1.18;
+- `static_bound` 1.41;
+- `delivered_race` 4.29;
+- `window` and every $\mu$ variant 5.0–5.2.
+
+The plain-target criteria (`window`, $\mu$, `delivered_race`) predict near-total collapse, because they lack the
+gain $\Gamma$. The registration therefore adds the $\mu$ variants on the LN-effective cross-covariance $\Gamma c$
+(`mu_ln_*`) as the fair form of 2610.02344's count under a normalised target.
+
+**Signs** (adjacent pairs differing in one factor):
+- $\lambda$: 0 increases in 72 pairs;
+- $d$: 0 decreases in 48;
+- $w_0$: 8 increases and 1 decrease in 48, none by more than 1;
+- rank $\ge1$: in every run.
+- $p_0$: **13 increases and 6 decreases in 64.** The candidate sign is contradicted.
+
+A post hoc reading of the $p_0$ result (not tested): after the first step $a=O(1)$ (N2-iii), so $p$'s drive
+$a^2(c\Gamma-ps)$ relaxes $p$ into the window within $O(1/(sa^2))$ steps rather than on the $1/\lambda$ clock. The
+window argument for $p_0$ is short-circuited, and the larger first step at larger $p_0$ helps weak directions. The
+flow contains this; the heuristic sign did not. No $p_0$ sign is registered.
+
+**The constant direction.** $|\mathbf 1^\top W(T)|/\sqrt d$ reaches 0.048 under the Gaussian init (against
+$10^{-15}$ for the orthogonal init). It receives no target (N2-ii.1) but is coupled through the predictor. Rank is
+counted on $\Pi W$ as registered, so this does not enter the truth.
+
+## Baselines registered beside N2
+All are inputs-only, except the early count:
+- `ln_static` (N2-iv);
+- `static_bound` $\#\{c^2\ge4\lambda s\}$ and `delivered_race` (`linjepa.escape_score`), both without LN;
+- `window` = `dvd_signed`;
+- the $\mu$ variants of arXiv 2610.02344 (`code/baselines/dvd_mu.py`), on $c$ (`mu_*`) and on the LN-effective
+  $\Gamma c$ with $\Gamma$ at the all-alive state $a=c/s$ (`mu_ln_*`);
+- `all_alive` ($n$; the rank at step 0);
+- `dev_median` (7, the dev truth median);
+- `early_count` (the exact run's rank at 10% of $T$; a measurement).

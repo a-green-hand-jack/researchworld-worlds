@@ -1,0 +1,26 @@
+{
+  "source": "ACL Anthology",
+  "url": "https://aclanthology.org/",
+  "start_utc": "2026-10-19T21:30:15.151044+00:00",
+  "end_utc": "2026-10-19T21:30:16.611362+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/acl-anthology.headers",
+    "-o",
+    "/tmp/tmpu15jnqdt/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://aclanthology.org/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html; charset=utf-8\n",
+  "stderr": "",
+  "first200": "<!doctype html><html lang=en-us><head><meta charset=utf-8><meta name=viewport content=\"width=device-width,initial-scale=1,shrink-to-fit=no\"><title>ACL Anthology</title><meta name=generator content=\"Hu",
+  "body_bytes": 739351
+}

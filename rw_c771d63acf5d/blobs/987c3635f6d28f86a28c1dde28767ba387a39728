@@ -1,0 +1,11 @@
+# Provenance (measured 2026-10-19)
+
+- Command: `python -I scripts/run.py <dest>` in a fresh venv with `pip install huggingface_hub` (default deps), nothing else set; `HF_HUB_DISABLE_XET` unset (asserted in script).
+- Versions (importlib.metadata): huggingface_hub 2.2.0, hf_xet 1.7.0.
+- Repository `Systran/faster-whisper-tiny`, resolved revision `d90ca5fe260221311c53c58e660288d3deb8d356`; unauthenticated.
+- Files: the 6 files returned by `HfApi.model_info(files_metadata=True)`; `snapshot_download` produced exactly these 6 (no extras).
+- Sizes: bytes of the downloaded file; equal to API-reported size for all 6.
+- SHA-256: computed locally (hashlib) on the downloaded files. The API reports a SHA-256 (`lfs.sha256`) only for LFS/Xet-tracked files: here only `model.bin`, and it MATCHES. The other 5 files are plain git blobs; the API gives only the git blob SHA-1 (`blob_id`), so there is no API SHA-256 to compare. For those, the git blob SHA-1 recomputed locally (`blob <size>\0` + content) equals the API `blob_id` for all 5 (secondary check, not a SHA-256 comparison). For `model.bin` the API `blob_id` is the SHA-1 of the LFS pointer, so the local blob SHA-1 is not comparable (left blank).
+- Xet: Xet transfer was on. Only `model.bin` is Xet-backed (HEAD metadata carries an Xet file hash `95d70651…24dc2c`); the hub client logged "Xet Storage is enabled for this repo. Downloading file from Xet Storage.." once and requested an `xet-read-token`; the other 5 files were fetched via ordinary HTTP resolve (they are not Xet-backed). Log excerpt: `log_xet_lines` in summary.json.
+- Files: `files.csv`, `summary.json`, `run.log` (filtered client log of the final run), script `../scripts/run.py`.
+- Non-LFS API hash: the API `blob_id` is the git blob SHA-1 (40 hex), not SHA-256.

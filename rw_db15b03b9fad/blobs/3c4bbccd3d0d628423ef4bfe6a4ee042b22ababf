@@ -1,0 +1,25 @@
+import json, sys, numpy as np, pandas as pd
+import matplotlib; matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+R = sys.argv[1] if len(sys.argv) > 1 else "/hutian/exp/results"
+df = pd.read_csv(f"{R}/timings.csv"); fits = json.load(open(f"{R}/fits.json"))
+g = df.groupby(["algorithm","n"]).seconds.agg(["mean","std","count"]).reset_index()
+rows = []
+for n in sorted(g.n.unique()):
+    i = g[(g.algorithm=="insertion")&(g.n==n)].iloc[0]; m = g[(g.algorithm=="merge")&(g.n==n)].iloc[0]
+    rows.append(dict(n=n, insertion_mean_s=i["mean"], insertion_sd_s=i["std"], merge_mean_s=m["mean"], merge_sd_s=m["std"], repeats=int(i["count"])))
+t = pd.DataFrame(rows); t.to_csv("tables/timings.csv", index=False)
+md = ["| n | Insertion sort, mean ± sd (s) | Merge sort, mean ± sd (s) |", "|---:|---:|---:|"]
+for r in rows:
+    md.append(f"| {r['n']} | {r['insertion_mean_s']:.4f} ± {r['insertion_sd_s']:.4f} | {r['merge_mean_s']:.5f} ± {r['merge_sd_s']:.5f} |")
+open("tables/timings.md","w").write("\n".join(md)+f"\n\nWall-clock seconds, pure-Python implementations, random integers; mean ± sample sd (ddof=1) of {rows[0]['repeats']} repeats per n.\nLog-log slope (95% CI): insertion {fits['insertion']['slope']:.2f} ({fits['insertion']['slope_ci95'][0]:.2f}–{fits['insertion']['slope_ci95'][1]:.2f}); merge {fits['merge']['slope']:.2f} ({fits['merge']['slope_ci95'][0]:.2f}–{fits['merge']['slope_ci95'][1]:.2f}).\n")
+n = t.n.values.astype(float); fig, ax = plt.subplots(figsize=(6,4.5))
+for k, c, lab, ref, rl in [("insertion","#c0392b","Insertion sort",n**2,"$\\propto n^2$"),("merge","#1f6fb5","Merge sort",n*np.log(n),"$\\propto n\\log n$")]:
+    y = t[f"{k}_mean_s"].values; sd = t[f"{k}_sd_s"].values; f = fits[k]
+    ax.errorbar(n, y, yerr=sd, fmt="o-", color=c, capsize=3, label=f"{lab} (slope {f['slope']:.2f}, 95% CI {f['slope_ci95'][0]:.2f}–{f['slope_ci95'][1]:.2f})")
+    s = np.exp(np.mean(np.log(y) - np.log(ref)))
+    ax.plot(n, s*ref, "--", color=c, alpha=.6, lw=1, label=f"reference {rl}")
+ax.set_xscale("log", base=2); ax.set_yscale("log"); ax.set_xticks(n); ax.set_xticklabels([str(int(v)) for v in n])
+ax.set_xlabel("input size n (random integers)"); ax.set_ylabel("running time (s)")
+ax.set_title("Sorting time vs n; mean ± sd, 5 repeats", fontsize=10); ax.grid(alpha=.3, which="both"); ax.legend(fontsize=7.5)
+fig.tight_layout(); fig.savefig("figures/loglog_timing.png", dpi=200); fig.savefig("figures/loglog_timing.pdf")

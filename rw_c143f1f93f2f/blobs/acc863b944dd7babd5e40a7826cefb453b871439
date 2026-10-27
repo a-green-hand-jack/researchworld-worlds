@@ -1,0 +1,32 @@
+# Venue requirements (from the Research objective, issue #1)
+
+Audience: reviewers/readers of a short NeurIPS 2026-style paper; the objective is the standard.
+
+| # | Requirement | Verifiable check | Source |
+|---|---|---|---|
+| V1 | Deliver `report/report.pdf` | file exists, nonempty (declared in `venue-artifacts.json`) | objective |
+| V2 | At most 2 pages | `pdfinfo report/report.pdf` -> Pages <= 2 (whole PDF, references included; objective is stricter than NeurIPS's 9 content pages, so the objective wins) | objective |
+| V3 | NeurIPS 2026 submission template | `\usepackage{neurips_2026}` with NO `final`/`preprint` option (anonymous submission mode); unmodified margins, fonts, no `fullpage`, no font-size changes. Files in `venue/` (from media.neurips.cc Formatting_Instructions_For_NeurIPS_2026.zip, checksums in `venue/SHA256SUMS`) | objective + template |
+| V4 | Compiled from LaTeX | `report/report.tex` delivered; builds with TeX Live 2026 (`latexmk -pdf`) | objective |
+| V5 | Exactly one figure, one table | `grep -c` of figure/table environments in report.tex = 1 each (`figure`, `table`; no `figure*`/`table*` extras) | objective |
+| V6 | Code that produced every number, delivered next to the PDF | code directory with scripts reproducing all reported numbers (CV results, intervals, paired difference, Ibex job script, figure and table generators); exact path to be fixed by the work assignment | objective |
+| V7 | LaTeX source delivered next to the PDF | `report/report.tex` plus any `.bib`, `.sty`, figure files needed to rebuild | objective |
+| V8 | Report data source | Iris = OpenML dataset id 61, downloaded from OpenML | objective |
+| V9 | Report content (study-side) | mean accuracy + 95% interval per method; paired difference + 95% interval; 10x stratified 5-fold CV; kNN k chosen by inner CV; Ibex CPU job node name; whether Ibex and local runs give identical numbers | objective |
+
+## Anonymity
+Template default is anonymous with line numbers; do not name authors/affiliations. Acknowledgments only via the `ack` environment.
+
+## Cannot be established / ambiguities (recorded honestly)
+- The NeurIPS checklist (`venue/checklist.tex`) is mandatory for a real NeurIPS submission but cannot fit inside a 2-page PDF alongside content. The objective's 2-page limit governs; the checklist is omitted from `report.pdf`. This is a template-vs-objective conflict, resolved in favor of the objective.
+- Whether "two pages" excludes references is not stated; we take the strict reading (total PDF <= 2 pages). Keep references minimal (e.g. a handful of entries) or inline.
+- Delivered layout per assignment.json: report/report.{pdf,tex} (paper-repo), report/code/ and report/results/ (experiment-repo), report/figures/ and report/tables/ (figtab-repo), report/neurips_2026.sty (venue-repo). Only exact file names that exist are declared in venue-artifacts.json; directory contents (code, results, figure, table) are checked by the reviewer (V5, V6).
+- No license is declared.
+
+## Format rules from the 2026 template (neurips_2026.tex / .sty, read in full)
+- Preamble: `\usepackage{neurips_2026}` (default = `main` track, anonymous, line numbers). Do not use `final` (accepted papers only) or `preprint`; `nonanonymous` exists but is not warranted. Template loads natbib (`nonatbib` only on clash); also use `inputenc`, `fontenc T1`, `booktabs`, `hyperref`, `microtype` as in the sample.
+- Margins/fonts fixed by the style (10 pt text, 5.5in x 9in text block, 1.5in left margin); do not load `fullpage`, change `\textwidth`/font sizes or squeeze with `\vspace` hacks; abstract is one paragraph.
+- Figure caption goes below the figure, table caption above the table; captions lower case except first word/proper nouns; booktabs, no vertical rules; legible in B/W.
+- Authors: keep anonymous (`\author{Anonymous Author(s)}` style block as in the sample).
+- Official limit is 9 content pages, with acknowledgments, references, checklist and appendices not counted. The objective's tighter "at most two pages" governs: total `report.pdf` <= 2 pages, references included, checklist not included.
+- Style file source: `venue/neurips_2026.sty` (unmodified); `report/` should hold a copy (`report/neurips_2026.sty`) so the source rebuilds.

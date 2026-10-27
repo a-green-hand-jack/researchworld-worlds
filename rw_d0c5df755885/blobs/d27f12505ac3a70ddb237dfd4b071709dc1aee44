@@ -1,0 +1,30 @@
+usage: ht-role [-h]
+               {self,neighbors,inputs,dependents,execution,evidence,assignment,brief,approve,commitment,status,delivery,environment,describe}
+               ...
+
+positional arguments:
+  {self,neighbors,inputs,dependents,execution,evidence,assignment,brief,approve,commitment,status,delivery,environment,describe}
+    execution           your activation as of this turn's start (what your
+                        position owes, what changed since your last turn) and,
+                        live, what you owe that changed since the turn started
+    evidence            build evidence references or paper provenance
+                        deterministically
+    assignment          show the world's work assignment, your package first
+    brief               show the world's brief of what the objective asks: its
+                        owner, the commit it was read at and its full text
+    approve             review owner: approve the current delivery for
+                        release; the system binds every position's current
+                        revision, verifies the delivery and records the
+                        approval, or says why it cannot
+    commitment          show your recorded commitment, or record it in your
+                        own words with --file
+    status              show the system-computed state of the whole world:
+                        owners, requirements and their providers, assignment,
+                        brief, assembly errors, review, release, activity, and
+                        every commitment
+    delivery            list or write the delivery assembled from current
+                        revisions
+    environment         install or reuse dependencies in the private workspace
+
+options:
+  -h, --help            show this help message and exit

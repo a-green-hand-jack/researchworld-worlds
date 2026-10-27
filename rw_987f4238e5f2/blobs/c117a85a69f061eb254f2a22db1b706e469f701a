@@ -1,0 +1,50 @@
+# Task brief and proposed work split
+
+The sole supplied material is Research objective, experiment-repo issue #1 (ht-admin); no external papers or data accompany it. The complete substantive objective is quoted below.
+
+> Photon burst in simulated arrival times: a small study whose large data file must pass between positions as a release.
+>
+> Data. Generate exactly 30,000,000 photon arrival times in seconds with `numpy.random.default_rng(205)`: 24,000,000 background photons uniform on [0, 1200) and 6,000,000 burst photons from a normal distribution with mean 600 and standard deviation 30; concatenate, sort, and write them as raw little-endian float32 with no header, `photons.f32` (120,000,000 bytes). Do not commit this file to any repository.
+>
+> Release. The position that generates the data publishes it as a release of its own repository, with these files:
+> - `photons.f32`, and `photons.sha256` holding its SHA-256;
+> - `preview.png`: the histogram of arrival times in 1 s bins;
+> - `burst.mp4`: an H.264 MP4 of a few seconds showing the histogram filling up as time advances;
+> - `explorer.html`: one self-contained HTML page (no external requests) that draws the light curve and lets a reader change the bin width.
+>
+> Analysis. The figures and the fit are computed from `photons.f32` as downloaded from that release, by a position other than the one that generated it. Fit the light curve with a constant background plus a Gaussian burst, by Poisson maximum likelihood on 1 s bins, and give the background rate, the burst's total photon count, centre and width with 95% intervals.
+>
+> Report. `report/report.md`, one page: the release tag, the SHA-256 of the file as downloaded and whether it matches `photons.sha256`, the fit table, and one figure of the light curve with the fit.
+
+## Interpretation and analysis standard
+
+The generator must differ from both the fitting and figure-producing positions. Proposed allocation: paper-repo generates and publishes data and checksum first; experiment-repo and figtab-repo independently download that release. Experiment fits and verifies bytes/checksum; figtab makes release media and final light-curve figure from its downloaded data, and paper adds the media to its original release. This staged upload satisfies the direction of provenance without circular input dependencies.
+
+Use 1200 one-second bins spanning [0,1200]. Record any out-of-range observations and actual extrema; do not silently discard unexpected data. Model expected bin counts as background rate times bin duration plus total Gaussian count times the normal CDF difference across bin edges. Optimize positive rate, count and width with a Poisson likelihood. Report parameter units and 95% likelihood-profile intervals, with a curvature cross-check if feasible. Check convergence, residuals and goodness-of-fit; compare fitted parameters against the generating values (20000 photons/s, 6000000 photons, 600 s, 30 s). Fixed component counts make Poisson intervals model-based, not exact repeated-sampling coverage under the fixed-total simulator; explain this distinction to the report owner. Quantization to float32 is part of the required input, and all fits and plots must use the downloaded bytes.
+
+Required presentation: visible constant baseline and localized burst; overlay the integrated-bin fit on the light curve, with axes in seconds and photons/s (equal to counts per 1 s bin). Preview is the empirical 1 s histogram. Animation must show cumulative revealed time bins, not imply repeated simulated realizations. Explorer rebinning must be self-contained; retain sufficiently fine histogram data for supported bin widths and state supported widths.
+
+## Ownership proposal
+
+- experiment-repo: context brief, assignment, fit code/results, download integrity record and diagnostics; feasibility of fitting.
+- paper-repo: generation, primary data release and adding supplied media (requested agreement), report and report layout; feasibility of data publication.
+- figtab-repo: all release media and delivered fit figure, computed from independently downloaded release bytes; media feasibility.
+- internal-review-repo: independent verification of objective, provenance, likelihood and intervals, media and report; approval.
+
+No measured results exist yet. Numerical precision, goodness-of-fit and media functionality remain to be established. No literature comparison is requested or supplied.
+
+## Split clarification after incoming proposals
+
+Internal-review-repo requested delivery of its independent review under `review/`; assignment records that package. Figtab proposed generating data itself with another position executing its figure scripts. The preferred allocation remains paper generation plus experiment fitting plus figtab figure computation: this preserves each specialist role and makes all figures (including release media) unambiguously computed by a non-generator. Paper acceptance is requested in paper-repo#3; figtab acceptance in figtab-repo#2. Data release can initially contain only data/checksum and receive downloaded-data media afterward. Review evidence will include bin counts, integrated means, exact download provenance, optimization and uncertainty diagnostics, and generator code from paper.
+
+## Reviewed endpoint convention
+
+Independent review (internal-review-repo `review/split-review.md`, revision 625be6641957282e695f21ca09fe958fe06fc51b) endorses the proposed split and likelihood standard. Float32 conversion can round a time to exactly 1200 s. Use NumPy histogram's last-bin inclusive-right convention: bins [0,1), ..., [1199,1200]. Record the number exactly at 1200 separately from genuine times >1200 or <0. All required photons remain accounted for. This quantization endpoint effect is negligible for parameter inference but must not silently lose observations. Review assignment request is resolved by the existing review/ allocation; final evidence remains pending.
+
+## Presentation handoff compatibility
+
+Figtab scripts at revision dd9f793e779d were offered under an alternative generator split, which is not adopted: release figures must also be computed by a non-generator, not only the report figure. Paper generation remains the requested allocation. Its acceptance is still pending. To use the existing figure renderer without translation, analysis will expose `results/fit.json` with `params.background_rate`, `params.burst_counts`, `params.centre`, `params.width`, each carrying `value` and `ci95` ([lower, upper]); explicit units, interval method, release provenance and diagnostics accompany these fields. `results/lightcurve.csv` will expose bin edges, observed counts, fitted integrated counts and residuals.
+
+## Settled split and completed analysis
+
+Paper and figtab accepted the split in their recorded commitments; paper hosts `photons-v1` and figtab computes all media from its own download. Experiment independently downloaded both data and checksum from that release. Analysis and provenance are now in `analysis/` and `results/`; the full file hash matches, all 30,000,000 observations are binned, and the one value equal to 1200 is retained. Three-start optimization, likelihood profiles, curvature checks and a separate deviance-residual solver establish numerical agreement. Primary fitted values and intervals are in `results/fit.json`, not the planning values above. No external prior work was supplied or necessary for this explicitly specified simulation.

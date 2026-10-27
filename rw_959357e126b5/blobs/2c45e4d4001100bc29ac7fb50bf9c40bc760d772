@@ -1,0 +1,51 @@
+"""Development only (A3 mechanism): for a few development-grid v2 configurations, re-run the float64 matrix AdamW of
+code/e4_a3.py and, at checkpoints in [T/2, T], measure per data direction k (w_k = W u_k):
+  amplitude |w_k|, effective predictor gain g_k = w_k' P w_k / |w_k|^2, window curvature h_k = g_k (c_k - g_k s_k),
+  and the cosine of w_k with the direction P w_k (alignment of w_k with an eigendirection of P).
+Prints, per run, the time-averaged medians per direction against c/s. Not scored.
+Usage: python3 code/checks/e4_a3_gain.py > results/e4/a3dev2/gain.txt"""
+import sys, os, json, itertools
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+import e4_a3 as a3
+
+
+def run(cfg):
+    c, s, U, V, a0 = a3.problem(cfg)
+    S11, S21 = U @ np.diag(s) @ U.T, U @ np.diag(c) @ U.T
+    W, P = V @ np.diag(a0) @ U.T, cfg["p0"] * np.eye(s.size)
+    eta, lam, b1, b2, eps = (cfg[k] for k in ("eta", "lam", "b1", "b2", "eps"))
+    m = [np.zeros_like(W), np.zeros_like(P)]; v = [np.zeros_like(W), np.zeros_like(P)]
+    T = cfg["T"]; cks = set(np.linspace(T / 2, T, 26).astype(int)); out = []
+    for t in range(1, T + 1):
+        R = P @ W @ S11 - W @ S21
+        g = (P.T @ R, R @ W.T); x = [W, P]
+        for i in range(2):
+            m[i] = b1 * m[i] + (1 - b1) * g[i]; v[i] = b2 * v[i] + (1 - b2) * g[i] * g[i]
+            x[i] = x[i] * (1 - eta * lam) - eta * (m[i] / (1 - b1 ** t)) / (np.sqrt(v[i] / (1 - b2 ** t)) + eps)
+        W, P = x
+        if t in cks:
+            Wk = W @ U; amp = np.linalg.norm(Wk, axis=0)
+            gk = np.einsum("ik,ij,jk->k", Wk, P, Wk) / amp ** 2
+            PW = P @ Wk; cos = np.einsum("ik,ik->k", Wk, PW) / (amp * np.linalg.norm(PW, axis=0))
+            out.append((amp, gk, gk * (c - gk * s), cos, np.linalg.svd(W, compute_uv=False), np.linalg.eigvals(P)))
+    return cfg, c, s, out
+
+
+if __name__ == "__main__":
+    base = dict(a3.DEV_BASE, stats="e1b", a0=1e-4, p0=0.5, seed=1)
+    cfgs = [dict(base, id=i, theta=th, side="both", lam=lam) for i, (th, lam) in
+            enumerate(itertools.product([0.0, 0.25, 1.0], [0.005, 0.05]))]
+    with Pool(6) as pool:
+        res = pool.map(run, cfgs)
+    np.set_printoptions(linewidth=200)
+    for cfg, c, s, out in res:
+        amp, gk, hk, cos, sv, ev = (np.array([o[i] for o in out]) for i in range(6))
+        print(f"\ntheta {cfg['theta']} lam {cfg['lam']}: SV rank (>0.05) mean {np.mean((sv > 0.05).sum(1)):.1f}")
+        print(" c/s     ", np.round((c / s), 2))
+        print(" |w_k|   ", np.round(np.median(amp, 0), 2))
+        print(" g_k     ", np.round(np.median(gk, 0), 2))
+        print(" h_k     ", np.round(np.median(hk, 0), 3))
+        print(" cos     ", np.round(np.median(cos, 0), 2))
+        print(" eig P (real, sorted)", np.round(np.sort(np.median(np.sort(ev.real, 1), 0))[::-1], 2))

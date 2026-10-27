@@ -1,0 +1,5 @@
+# Brief
+Objective (quoted): "Estimate pi by Monte Carlo sampling and report the estimate with its 95% confidence interval. The sampler script is in /initial-state/inputs/0/; run `extended.py 90 OUT` as it is, as a background job on `local-compute` (`ht-resource run`), about ninety minutes. Deliver its final estimate with its interval, the analysis code, and a short report `report/report.md` that gives the estimate and how many samples it used."
+Input: extended.py (single CPU, seeded rng 90000, prints every 5 min, writes JSON {minutes,samples,estimate,ci95}; CI = Wald binomial, 1.96*4*sqrt(p(1-p)/n)).
+Deliverables: run output JSON, analysis code, report/report.md (estimate, interval, sample count).
+Unknown: sample count until the run ends. Check: estimate vs pi, whether CI covers pi.

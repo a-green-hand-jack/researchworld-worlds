@@ -1,0 +1,12 @@
+#!/bin/bash
+# Off-cluster checks, run as one local-compute job from the repository root:
+# exact seed reproduction of the five cluster runs, then the replicate ensemble.
+set -euo pipefail
+mkdir -p results/offcluster
+for t in 0 1 2 3 long; do
+  python3 -u code/reproduce_seeds.py "$t" > "results/offcluster/reproduce_$t.json" &
+done
+python3 -u code/ensemble.py results/ensemble.csv
+wait
+cat results/offcluster/reproduce_*.json
+echo "HUTIAN_WAKE: off-cluster checks done"

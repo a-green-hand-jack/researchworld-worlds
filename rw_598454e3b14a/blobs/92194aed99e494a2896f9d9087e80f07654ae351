@@ -1,0 +1,8 @@
+\section{Limitations and conclusion}
+\label{sec:discussion}
+
+With weight decay collapse is an attractor, escaped by outgrowing the predictor's decay; the race predicts held-out linear JEPAs' rank, also under masking, and \cref{sec:ext} gives its limits.
+Limitations: the theory treats linear models under population gradient flow; the predictor-depth correction is post hoc, the closed form needs \cref{ass:aligned}, one EMA sign and the predicted fall at high $r$ fail, and a tanh and a two-layer encoder are mispredicted under random masks.
+The AdamW law is derived in an aligned basis with full batches (under rotation only signs are tested), the deep-encoder closed form fails with generic factors, the post-capture account of schedules fails, and minibatch noise~\citep{chen2023stochastic} shifts a linear model's count with a sign set by $p_0$ that no account predicts (B3, \cref{app:ext}, \cref{tab:ext-tests}).
+The ViT results come from one small ViT on CIFAR-10, where the step-0 rule misplaces the transition and fails its predictor, EMA and mask signs; the switch study has 5 seeds per row, hardware confounded with row; we claim no ViT race.
+On the tabular grid of \citet{demelocosta2026drive} the race reduces to the window and orders the rank worse than their $\mu$ count (\cref{app:related}); their identity-biased predictor is not tested, and we recommend no predictor design.

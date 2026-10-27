@@ -1,0 +1,8 @@
+# Review working notes
+
+## experiment-repo c13de75 (numerical handoff), checked 2026-10-20
+- `checks/recompute.py` was written independently of `analysis/analyze.py`: own CSV parser, own design matrix, lstsq, its own Newey–West, and a raw-year `np.polyfit` cross-check. Run on `data/co2_annmean_mlo.csv` at c13de75. Output is in `checks/recompute_c13de75.txt`.
+- SHA-256 bdd956e8…89b2b and 3134 bytes match `data/provenance.json`. Years run 1959–2025; the fit sample is 1960–2025, n=66.
+- The line and quadratic coefficients, SEs, residual SDs, R², lag-1 correlations, both rates, the OLS t(63) CIs and the HAC lag 1/3/5/10 CIs all reproduce `analysis/results.json` to ≥6 significant figures.
+- `analysis/fetch.py` is a reconstruction of the interactive fetch, not the executed script. The SHA, byte count and timestamp in provenance.json are consistent with the kept file. The report must not say the file was produced by running fetch.py as committed.
+- Open for the report: the conventional intervals must be labelled as conditional on independent errors (quadratic residual lag-1 = 0.82, DW = 0.36), with the HAC sensitivity mentioned.

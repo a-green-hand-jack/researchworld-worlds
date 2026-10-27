@@ -1,0 +1,10 @@
+| n | Insertion sort, mean ± sd (s) | Merge sort, mean ± sd (s) |
+|---:|---:|---:|
+| 1000 | 0.0150 ± 0.0004 | 0.00129 ± 0.00005 |
+| 2000 | 0.0621 ± 0.0010 | 0.00280 ± 0.00008 |
+| 4000 | 0.2510 ± 0.0056 | 0.00591 ± 0.00009 |
+| 8000 | 1.0889 ± 0.0543 | 0.01389 ± 0.00158 |
+| 16000 | 4.2520 ± 0.1165 | 0.02806 ± 0.00109 |
+
+Wall-clock seconds, pure-Python implementations, random integers; mean ± sample sd (ddof=1) of 5 repeats per n.
+Log-log slope (95% CI): insertion 2.04 (2.01–2.08); merge 1.12 (1.07–1.17).

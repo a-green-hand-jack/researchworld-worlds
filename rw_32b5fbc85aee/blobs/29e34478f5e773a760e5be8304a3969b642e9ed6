@@ -1,0 +1,23 @@
+# What two web pages say
+
+Both pages were requested on 2026-10-17 with `curl -sS -L` over HTTPS from the sandbox; the NeurIPS page was then converted from HTML to text (tags, scripts and styles removed) and searched for the requested items.
+
+## 1. NeurIPS 2026 Call for Papers — https://neurips.cc/Conferences/2026/CallForPapers
+
+**How I read it:** fetched successfully (HTTP 200, no redirect, 53,570 bytes) and read in full as text.
+
+**Deadline for full papers** (quoted exactly):
+
+> Full paper submission deadline, including all supplementary materials: May 6, 2026 AOE
+
+The same list also says "Abstract submission deadline: May 4, 2026 (AOE). All authors must have an OpenReview profile when submitting" and "Author notification: September 24, 2026 AoE".
+
+**Page limit of a submission:** this page does not state one. The words "page"/"pages" occur only in "Successful Page Load" and in navigation, and no length limit appears anywhere in the text. The page only points elsewhere: "MainTrackHandbook, including our policies regarding reciprocal reviewing, dual submissions and LLMs" and a "Paper template" link. I did not read those pages, so I give no page limit rather than guess one.
+
+## 2. https://www.example.com/
+
+**How I read it:** I could not read it. Every attempt (`https://www.example.com/`, `https://example.com/`) failed at the proxy tunnel with:
+
+> curl: (56) CONNECT tunnel failed, response 403
+
+(The proxy's reply was `HTTP/1.1 403 Forbidden`.) A plain `http://www.example.com/` request returned `{"error":"unauthorized"}`, which is not page content. So I have no first paragraph to quote and do not quote one from memory.

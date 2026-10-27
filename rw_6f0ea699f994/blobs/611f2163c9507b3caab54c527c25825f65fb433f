@@ -1,0 +1,33 @@
+# Review standard (internal-review-repo)
+
+Judged against the `Research objective` (issue #1), the brief and assignment of
+`experiment-repo` once they exist, and each owner's recorded commitment.
+
+## What the assembled delivery must show
+1. **Exact value** in closed form, stated and evaluated:
+   I = ∫₀² eˣ sin 3x dx = [eˣ(sin 3x − 3 cos 3x)/10]₀² = (e²(sin 6 − 3 cos 6) + 3)/10.
+2. **Both composite rules** (trapezoidal, Simpson) at n = 4, 8, …, 4096 (11 values,
+   powers of two); absolute error |Q_n − I| for each rule at each n, in one table
+   in `report/report.md`, with enough digits to be checked.
+3. **Fits**: least-squares of log|err| on log n, per rule, using only the n with
+   err > 1e-13 (the report must say which n were used/excluded); slope with a 95%
+   interval whose construction is stated (t-quantile with N−2 dof on the OLS
+   standard error, or an equivalent stated method).
+4. **Comparison** with −2 (trapezoid) and −4 (Simpson): whether each interval
+   contains the expected value, and, if not, why (e.g. pre-asymptotic higher-order
+   terms at small n, round-off near 1e-13) — stated from evidence, not asserted.
+   No predetermined conclusion is required; the stated conclusion must follow
+   from the numbers.
+5. **One log-log figure**: both error series as points, both fitted lines, labelled
+   axes, legend, the 1e-13 threshold or excluded points identifiable; readable and
+   consistent with the table and fitted values.
+6. **One page**: report concise; the figure exists at the path the report links
+   and renders.
+7. **Provenance**: the numbers in the report trace to a committed script and its
+   output in the delivering repository; table, fits and figure agree with each other.
+
+## How I check
+- Independent recomputation in `check/independent_check.py` (output in
+  `check/independent_check.out`); delivered numbers must agree to displayed precision.
+- Open and inspect the delivered figure image itself, at the delivered revision.
+- Assemble the delivery with `ht-role delivery` and check every link resolves.

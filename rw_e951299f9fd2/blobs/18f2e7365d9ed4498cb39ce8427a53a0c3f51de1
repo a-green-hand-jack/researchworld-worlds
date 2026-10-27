@@ -1,0 +1,40 @@
+"""Independent verification: python3 reviews/verify_numbers.py ANALYSIS_REPO."""
+import csv, hashlib, json, math, sys
+from pathlib import Path
+import numpy as np
+root = Path(sys.argv[1])
+rows = list(csv.DictReader((root/'results/runs.csv').open()))
+assert len(rows) == 150
+ns = [1000, 10000, 100000]
+errors = np.empty((50, 3))
+for j, n in enumerate(ns):
+    group = [r for r in rows if int(r['N']) == n]
+    assert len(group) == 50
+    assert sorted(int(r['run_index']) for r in group) == list(range(50))
+    for r in group:
+        i = int(r['run_index'])
+        assert int(r['seed']) == 2026+i
+        points = np.random.default_rng(2026+i).uniform(size=(n, 2))
+        count = sum(np.sum(points*points, axis=1) <= 1)
+        assert count == int(r['inside_count'])
+        value = 4*int(count)/n
+        assert value == float(r['pi_estimate'])
+        errors[i,j] = abs(value-math.pi)
+        assert errors[i,j] == float(r['absolute_error'])
+means = [math.fsum(errors[:,j])/50 for j in range(3)]
+summary = list(csv.DictReader((root/'results/summary.csv').open()))
+assert [int(r['N']) for r in summary] == ns
+for j,r in enumerate(summary):
+    assert int(r['runs']) == 50
+    assert math.isclose(float(r['mean_absolute_error']), means[j], abs_tol=1e-16)
+slope = (math.log(means[2])-math.log(means[0]))/math.log(100)
+fit = json.loads((root/'results/fit.json').read_text())
+assert abs(slope-fit['slope']) < 1e-14
+indices = np.random.default_rng(92026).integers(0,50,size=(10000,50))
+boot_means = errors[indices].mean(axis=1)
+boot_slopes = np.log(boot_means[:,2]/boot_means[:,0])/np.log(100)
+interval = np.quantile(boot_slopes,[.025,.975])
+assert np.allclose(interval, fit['paired_bootstrap']['slope_percentile_95'], atol=1e-14, rtol=0)
+meta = json.loads((root/'results/provenance.json').read_text())
+assert hashlib.sha256((root/'analysis/estimate_pi.py').read_bytes()).hexdigest() == meta['code_sha256']
+print(json.dumps(dict(checked_rows=len(rows), mean_absolute_errors=means, slope=slope, bootstrap_interval=interval.tolist(), numpy=np.__version__, status='PASS'), indent=2))

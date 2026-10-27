@@ -1,0 +1,41 @@
+{
+ "revisions": {
+  "paper-repo": "771f5a90e56b872ea56fb740053c38cbd327eb9c",
+  "figtab-repo": "924ea5af4d203a5978b042b425e0e672f1356f44",
+  "experiment-repo": "4207193fc02e1452f057141115ec50dea17b0788"
+ },
+ "assembled_delivery": "ht-role delivery: errors [], not_delivered [], 504 files (paper 29, figtab 68, experiment 407)",
+ "build": {
+  "source": "delivered paper/ with main.pdf moved away, latexmk -pdf -g, TeX Live 2026",
+  "exit": 0,
+  "pages": 47,
+  "undefined_refs": 0
+ },
+ "numbers_tex": "python3 paper/tools/make_numbers.py from the delivery root regenerates paper/numbers.tex byte for byte",
+ "text": "pdftotext of the fresh build equals pdftotext of the committed paper/main.pdf",
+ "venue_checker": "venue-repo tools/check_submission.py: RESULT PASS; one WARN (statements run onto page 10; main text ends on page 9)",
+ "table8_regen": {
+  "command": "python3 code/figures/tab_ext_tests.py on a copy of the delivery",
+  "tab_ext_tests.tex": "identical (md5 800bd750)",
+  "tab_ext_tests.inputs.json": "differs only in the sha256 of e6/r4_heldout/posthoc/floor_bracket.json: the record holds the file at experiment bdf81f8/07e9e06 (3075bb83...), the delivered file is 4207193's (45377440...), which adds within1_plain and changes none of the 319 earlier leaves; the other 39 input hashes match"
+ },
+ "pages_viewed": [
+  1,
+  9,
+  37,
+  38,
+  43,
+  44
+ ],
+ "rung4_macros": "54 ExtRfour* macros in numbers.tex: 50 recomputed independently from r4_heldout_score_a1.json and floor_bracket.json (at 4207193) and equal, except ExtRfourLrLnInit 1.08/0.62 where the exact within-1 is 0.625 (plain formatting; ties-away gives 0.63); the 4 dev/diag macros were checked in the 10:35 entry. The 4 new ExtAthree* macros (48/48, 31/32) equal a3h_score.json by_factor.",
+ "findings": {
+  "P-R4": "resolved",
+  "P-n1": "resolved",
+  "E6R4-W1": "resolved"
+ },
+ "nits_not_blocking": [
+  "Table 8 inputs record carries floor_bracket.json at 07e9e06 (the file it was rendered from); body regenerates identically from 4207193",
+  "Exact ties print both ways: Table 8 n2_meas 7.22 (7.225) and ExtRfourLrLnInit within-1 0.62 (0.625) against the ties-away 0.13 (0.125); both are valid roundings, not claims",
+  "App. F calls the three registered statements 'on how the criterion fails', then calls R4-a the premise failure"
+ ]
+}

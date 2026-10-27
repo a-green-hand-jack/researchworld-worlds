@@ -1,0 +1,210 @@
+{
+ "rescore": {
+  "runs": 192,
+  "converged": 121,
+  "model_mae_conv": 0.01652892561983471,
+  "model_within1_conv": 1.0,
+  "model_within1_strict": 0.6302083333333334
+ },
+ "floor_subset": {
+  "runs": 24,
+  "stats": [
+   "a2a",
+   "a2b"
+  ],
+  "lam": [
+   0.0045,
+   0.009,
+   0.016,
+   0.028
+  ],
+  "a0": [
+   0.0006
+  ],
+  "eta": [
+   0.013
+  ],
+  "b2": [
+   0.996
+  ],
+  "grid": {
+   "a0": [
+    0.0006,
+    0.004
+   ],
+   "eta": [
+    0.013,
+    0.027
+   ],
+   "b2": [
+    0.996,
+    0.9992
+   ]
+  },
+  "nonconverged_in_floor_cells": 1,
+  "nonconverged_outside": 70
+ },
+ "closed_form_count": {
+  "what": "#{c/s > thr} (A-iv' settled law alone, lambda-independent)",
+  "mae_conv": 0.23140495867768596,
+  "within1_conv": 0.9834710743801653,
+  "equals_model_conv": 0.9834710743801653,
+  "scope_lam_cs_lt_1_binding": false,
+  "differs_from_model_conv": [
+   [
+    59,
+    20,
+    8,
+    7
+   ],
+   [
+    95,
+    20,
+    6,
+    5
+   ]
+  ]
+ },
+ "lam_split": {
+  "a2a lam=0.0045": {
+   "runs": 24,
+   "converged": 12,
+   "closed": 20,
+   "static_bound": 14,
+   "truth_at_Th_mean": 20.166666666666668,
+   "truth_conv_mean": 20.0,
+   "gd_mean": 3.3333333333333335,
+   "race_mean": 3.3333333333333335
+  },
+  "a2a lam=0.009": {
+   "runs": 24,
+   "converged": 9,
+   "closed": 20,
+   "static_bound": 12,
+   "truth_at_Th_mean": 20.375,
+   "truth_conv_mean": 20.0,
+   "gd_mean": 3.25,
+   "race_mean": 3.1666666666666665
+  },
+  "a2a lam=0.016": {
+   "runs": 24,
+   "converged": 6,
+   "closed": 20,
+   "static_bound": 10,
+   "truth_at_Th_mean": 18.208333333333332,
+   "truth_conv_mean": 20.0,
+   "gd_mean": 3.0,
+   "race_mean": 3.0
+  },
+  "a2a lam=0.028": {
+   "runs": 24,
+   "converged": 7,
+   "closed": 20,
+   "static_bound": 9,
+   "truth_at_Th_mean": 15.458333333333334,
+   "truth_conv_mean": 16.0,
+   "gd_mean": 2.1666666666666665,
+   "race_mean": 2.1666666666666665
+  },
+  "a2b lam=0.0045": {
+   "runs": 24,
+   "converged": 24,
+   "closed": 32,
+   "static_bound": 32,
+   "truth_at_Th_mean": 32.0,
+   "truth_conv_mean": 32.0,
+   "gd_mean": 15.333333333333334,
+   "race_mean": 15.333333333333334
+  },
+  "a2b lam=0.009": {
+   "runs": 24,
+   "converged": 24,
+   "closed": 32,
+   "static_bound": 32,
+   "truth_at_Th_mean": 32.0,
+   "truth_conv_mean": 32.0,
+   "gd_mean": 14.166666666666666,
+   "race_mean": 14.208333333333334
+  },
+  "a2b lam=0.016": {
+   "runs": 24,
+   "converged": 21,
+   "closed": 32,
+   "static_bound": 32,
+   "truth_at_Th_mean": 32.0,
+   "truth_conv_mean": 32.0,
+   "gd_mean": 12.833333333333334,
+   "race_mean": 12.833333333333334
+  },
+  "a2b lam=0.028": {
+   "runs": 24,
+   "converged": 18,
+   "closed": 32,
+   "static_bound": 32,
+   "truth_at_Th_mean": 31.25,
+   "truth_conv_mean": 32.0,
+   "gd_mean": 11.083333333333334,
+   "race_mean": 11.125
+  }
+ },
+ "gd_vs_race": {
+  "race_equals_gd": 0.9479166666666666,
+  "race_mae_on_gd": 0.052083333333333336,
+  "static_mae_on_gd": 13.479166666666666,
+  "static_mae_on_gd_conv": 15.223140495867769
+ },
+ "flicker": {
+  "direction_patterns": {
+   "late_birth": 142,
+   "late_death": 4,
+   "dies_returns": 1
+  },
+  "run_patterns": {
+   "late_birth": 36,
+   "late_death": 3,
+   "dies_returns+late_birth": 1
+  },
+  "late_birth_first_alive_after_Th_half": 118,
+  "their_min_log10_absa_quantiles": [
+   -255.6,
+   -156.6,
+   -80.4,
+   -50.4,
+   -1.4
+  ]
+ },
+ "settled_after_capture": {
+  "eta_lam_(t-t_c)>=1": {
+   "pairs": 36888,
+   "dead": 273,
+   "directions_by_cell": {
+    "a2a lam=0.009 eta=0.027 b2=0.9992": 4,
+    "a2a lam=0.016 eta=0.027 b2=0.9992": 6,
+    "a2a lam=0.028 eta=0.027 b2=0.9992": 8,
+    "a2a lam=0.0045 eta=0.027 b2=0.9992": 2,
+    "a2a lam=0.009 eta=0.013 b2=0.9992": 1,
+    "a2b lam=0.016 eta=0.027 b2=0.9992": 12,
+    "a2b lam=0.028 eta=0.027 b2=0.9992": 17,
+    "a2b lam=0.028 eta=0.013 b2=0.9992": 1
+   }
+  },
+  "eta_lam_(t-t_c)>=2": {
+   "pairs": 32813,
+   "dead": 153,
+   "directions_by_cell": {
+    "a2a lam=0.016 eta=0.027 b2=0.9992": 6,
+    "a2a lam=0.028 eta=0.027 b2=0.9992": 8,
+    "a2b lam=0.016 eta=0.027 b2=0.9992": 12,
+    "a2b lam=0.028 eta=0.027 b2=0.9992": 17
+   }
+  },
+  "eta_lam_(t-t_c)>=3": {
+   "pairs": 19798,
+   "dead": 50,
+   "directions_by_cell": {
+    "a2a lam=0.028 eta=0.027 b2=0.9992": 8,
+    "a2b lam=0.028 eta=0.027 b2=0.9992": 17
+   }
+  }
+ }
+}

@@ -1,0 +1,15 @@
+# experiment-repo — analysis (Iris: multinomial LR vs kNN, 10x stratified 5-fold CV)
+
+Delivered paths: `report/code/` (all code, pins, Ibex job script) and `report/results/` (all result files). See
+`report/results/README.md` for what each file holds and how the intervals are computed.
+
+Reproduce, from `report/`:
+```
+pip install -r code/requirements.txt                # Python 3.11.2
+python code/fetch_data.py                           # results/data/iris.arff, results/provenance.json
+python code/cv_compare.py results/local             # local full CV
+bash code/setup_ibex_env.sh; mkdir -p results/ibex; sbatch --job-name cv code/ibex_job.sbatch   # on Ibex
+python code/compare_runs.py                         # results/reproducibility.json
+python code/export_flat.py                          # results/fold_results.csv, results/summary.json
+python code/robustness.py                           # results/robustness.json
+```

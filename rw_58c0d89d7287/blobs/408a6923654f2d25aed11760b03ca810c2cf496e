@@ -1,0 +1,16 @@
+# Brief
+
+Objective (quoted): "Integrate exp(-x^2) and x^(1/3) on [0, 1] with the composite trapezoid rule, the composite Simpson rule and 4-node Gauss-Legendre panels, for n = 2^k panels, k = 1..10, and record the absolute error." References from `mpmath.quad` at `mp.dps = 40` (not closed form), mpmath installed via pip. Error sweep must run as a job via `ht-resource run local-compute`, writing a CSV. For each function and rule, fit log(error) vs log(n) over points with error > 1e-14, give the convergence order.
+Report: `report/report.md`, at most one page: reference values with the mpmath version, a table of fitted orders, one log-log figure per function.
+
+No supplied data or related material beyond the issue.
+
+Expected: smooth f -> trapezoid order 2, Simpson 4, Gauss4 order 8 (but hits the 1e-14 floor almost at once, so likely too few points to fit); x^(1/3) singular at 0 -> all rules limited to order 4/3 (error ~ n^(-4/3)), Gauss may be ~4/3 too.
+Gauss4 on exp(-x^2) has only 2 points above 1e-14: its order is a two-point slope (n=2,4), with caveat, no R^2.
+Results: results/errors.csv, results/reference.csv, results/fits.csv; code sweep.py.
+
+## Extension (objective #4): Romberg
+Objective (quoted): "Extend the quadrature study with Romberg integration. For exp(-x^2) and x^(1/3) on [0, 1], add Romberg integration (`scipy.integrate.romb` or your own, up to 2^10 + 1 points) to the error sweep against the same 40-digit mpmath references, run as a job with `ht-resource run local-compute`, and add its fitted order to the report's table and figures. Keep the report at one page."
+Done: rule `romberg` in sweep.py (scipy.integrate.romb, n+1 samples, n=2^k, k=1..10); 20 rows in results/errors.csv, fits in results/fits.csv; job job-75f8449da6, code at 19ef54b. The three original rules are unchanged.
+Interpretation: Romberg's effective order rises with extrapolation depth, so the fitted order is an empirical slope over the eligible range, not a fixed theoretical order. exp(-x^2): 7.68 over n=2..32 (5 points, R^2 0.98, pre-asymptotic, floor from n>=64); x^(1/3): 1.3465 (R^2 0.99986, near 4/3).
+Ownership: figures (report/figures/, now including a Romberg curve per function) by figtab-repo; table/report by paper-repo; results/ and sweep.py by experiment-repo.

@@ -1,0 +1,15 @@
+# Presentation review: revision required
+
+Objective reread from issue #1. Inspected assembled delivery from paper-repo `63b21d58fd3d286f7b57bfb4ce5a07029d31fa34`, figtab-repo `cdd579e454925494c2e24c82a6b9f97847541885`, assignment experiment-repo `4145ade0ca947bf686224c79c48f56a2c834052d`. All required files assemble, with no missing figure target. Earlier numerical and generator reviews remain applicable.
+
+Downloaded all three media assets from paper release photons-v1. Preview PNG and report fit PNG were visually opened; PDF figure was independently rasterized and opened. Axes, legends, data/fit and residual panels are readable, consistent with the tabulated values. Movie fully decodes without errors (H.264 High, yuv420p, 960×544, 30 fps, 270 frames, 9 seconds). A nine-frame contact sheet was visually opened and confirms increasing time, growing observed count, emergence of the burst and final 30-million count.
+
+Explorer was opened in Chromium 153 via Playwright. Its curve and labels were visually inspected; rebin and rate/count toggle executed with no JavaScript errors and no requests beyond the local HTML. Embedded counts exactly equal NumPy histogram(raw downloaded float32, bins=12000, range=(0,1200)); aggregating groups of ten equals the 1 s counts. (Explicit float64 decimal edges differ slightly from NumPy's float32 uniform-bin convention; this is insignificant for the displayed exploration and does not affect the 1 s fit.)
+
+Actionable findings, sent to paper-repo#8:
+
+1. Report is two A4 pages at 11 pt Arial, 1.25 line height, 18 mm margins and figure max-width 100%; page 1 holds prose/table, page 2 figure/caption. Both rendered pages were opened visually. Condense to a readable one-page report and specify its rendering convention.
+2. Diagnostic sentence says all scaled gradients are below 1e-7, but maximum profile gradient is 1.849984982982278e-7. Distinguish final MLE from nuisance profile gradients, or omit this unnecessary precision claim.
+3. Explorer advertises 0.1 s, but HTML range min=1 excludes widths[0], whose value represents 0.1 s. Browser attempts to set index 0 are clamped to index 1 (0.2 s). Set min=0 through figtab, update generator-hosted asset and checksum/provenance.
+
+Also requested media-generation code/provenance through paper because direct reviewer access to figtab is denied by the repository graph. No overall approval. Rendering/testing dependencies: Python Markdown, PyMuPDF, Playwright, npm @sparticuz/chromium 153.0.0 and imageio-ffmpeg. The usual Playwright browser download was denied by the network; the Chromium package from the permitted npm resource supplied the test browser. Missing fontconfig environment was corrected before interpreting render results.

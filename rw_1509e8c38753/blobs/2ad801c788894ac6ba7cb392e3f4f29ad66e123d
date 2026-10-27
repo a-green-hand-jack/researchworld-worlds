@@ -1,0 +1,26 @@
+"""Shared statistics for the figure and table scripts (read per-fold results, compute intervals)."""
+import numpy as np, pandas as pd
+from scipy import stats
+
+N_TEST, N_TRAIN = 30, 120  # stratified 5-fold on 150 samples
+
+
+def load(path):
+    df = pd.read_csv(path)
+    return df
+
+
+def wide(df, run):
+    d = df[df["run"] == run]
+    w = d.pivot_table(index=["repetition", "fold"], columns="method", values="accuracy")
+    return w.sort_index()
+
+
+def interval(x, corrected=True):
+    """Mean and 95% interval over J fold scores; corrected resampled t (Nadeau & Bengio 2003)."""
+    x = np.asarray(x, float)
+    J = len(x)
+    m, s2 = x.mean(), x.var(ddof=1)
+    factor = 1.0 / J + (N_TEST / N_TRAIN if corrected else 0.0)
+    half = stats.t.ppf(0.975, J - 1) * np.sqrt(factor * s2)
+    return m, m - half, m + half

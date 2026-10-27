@@ -1,0 +1,28 @@
+import numpy as np
+import json
+from scipy import stats
+
+x = np.linspace(0, 10, 40)
+rng = np.random.RandomState(0)
+y = 2*x + 1 + rng.normal(0, 0.5, 40)
+
+n = len(x)
+X = np.column_stack([np.ones(n), x])
+beta, _, _, _ = np.linalg.lstsq(X, y, rcond=None)
+resid = y - X @ beta
+s2 = resid @ resid / (n - 2)
+cov = s2 * np.linalg.inv(X.T @ X)
+se = np.sqrt(np.diag(cov))
+tcrit = stats.t.ppf(0.975, n - 2)
+ci = [(beta[i] - tcrit*se[i], beta[i] + tcrit*se[i]) for i in range(2)]
+
+out = {
+    "n": n, "df": n-2, "sigma2_hat": s2, "t_crit_975": tcrit,
+    "intercept": beta[0], "intercept_se": se[0], "intercept_ci95": ci[0],
+    "slope": beta[1], "slope_se": se[1], "slope_ci95": ci[1],
+    "x": x.tolist(), "y": y.tolist(),
+    "method": "OLS y~1+x, two-sided Student-t 95% CI, sigma2 estimated, df=38",
+    "rng": "numpy RandomState(0), noise N(0, 0.5^2)",
+}
+json.dump(out, open("analysis/fit_results.json","w"), indent=1)
+print(out["intercept"], out["slope"], ci)

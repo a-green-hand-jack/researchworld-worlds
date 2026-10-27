@@ -1,0 +1,108 @@
+#!/usr/bin/env python3
+"""Compute the frozen-probe accuracy at initialization for completed ViT runs."""
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import random
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import torch
+from sklearn.linear_model import RidgeClassifier
+
+import run_vit_experiments as runner
+
+
+def read_csv(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def write_csv(path: Path, rows: list[dict[str, str]], fields: list[str]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+
+def initial_probe_accuracy(config: runner.Config, seed: int, data: tuple[torch.Tensor, ...]) -> float:
+    set_seed(seed)
+    model = runner.JEPA(config)
+    train_images, test_images, train_labels, test_labels = data
+    train_embeddings = runner.frozen_embeddings(model, train_images)
+    test_embeddings = runner.frozen_embeddings(model, test_images)
+    probe = RidgeClassifier(alpha=1.0)
+    probe.fit(train_embeddings, train_labels.numpy())
+    return float(np.mean(probe.predict(test_embeddings) == test_labels.numpy()))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run-root", type=Path, default=Path("results/raw/vit_runs"))
+    parser.add_argument("--data-root", type=Path, default=Path("data/cifar10"))
+    parser.add_argument("--output", type=Path, default=Path("results/derived/vit_init_probe.csv"))
+    parser.add_argument("--force", action="store_true")
+    args = parser.parse_args()
+    torch.set_num_threads(min(4, __import__("os").cpu_count() or 1))
+    torch.set_num_interop_threads(1)
+    data: tuple[torch.Tensor, ...] | None = None
+    rows: list[dict[str, str]] = []
+    output_by_key: dict[tuple[str, int], dict[str, str]] = {}
+    if args.output.exists() and not args.force:
+        output_by_key = {
+            (row["config_id"], int(row["seed"])): row
+            for row in read_csv(args.output)
+        }
+    for summary_path in sorted(args.run_root.glob("*/summary_seed*.csv")):
+        summary_rows = read_csv(summary_path)
+        if len(summary_rows) != 1:
+            raise RuntimeError(f"expected one summary row: {summary_path}")
+        summary = summary_rows[0]
+        config_id = summary["config_id"]
+        seed = int(summary["seed"])
+        key = (config_id, seed)
+        if summary["tier"] != "C_real_cifar10":
+            value = "nan"
+            source = "not_applicable_to_tier_b"
+        elif key in output_by_key and not args.force:
+            value = output_by_key[key]["probe_accuracy_init"]
+            source = output_by_key[key]["source"]
+        else:
+            config_path = summary_path.with_name(f"config_seed{seed}.json")
+            with config_path.open(encoding="utf-8") as handle:
+                config_record: dict[str, Any] = json.load(handle)
+            config = runner.Config(**config_record["config"])
+            if data is None:
+                data = runner.cifar_data(args.data_root)[:4]
+            value = f"{initial_probe_accuracy(config, seed, data):.12g}"
+            source = f"code/add_init_probe.py; {config_path.as_posix()}"
+        summary["probe_accuracy_init"] = value
+        fields = list(summary_rows[0].keys())
+        if "probe_accuracy_init" not in fields:
+            fields.append("probe_accuracy_init")
+        write_csv(summary_path, [summary], fields)
+        row = {
+            "config_id": config_id,
+            "seed": str(seed),
+            "probe_accuracy_init": value,
+            "source": source,
+            "protocol": "RidgeClassifier(alpha=1.0), frozen mean-pooled untrained online encoder on full images, all train/test rows",
+        }
+        rows.append(row)
+    rows.sort(key=lambda row: (row["config_id"], int(row["seed"])))
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    write_csv(args.output, rows, ["config_id", "seed", "probe_accuracy_init", "source", "protocol"])
+    print(json.dumps({"runs": len(rows), "tier_c_computed": sum(row["probe_accuracy_init"] != "nan" for row in rows), "status": "PASS"}, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

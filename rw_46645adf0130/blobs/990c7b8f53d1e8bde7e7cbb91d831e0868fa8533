@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Supplementary to stage 3 (not part of the specified design): the same L=256 temperatures and seeds,
+# but 50000 burn-in and 50000 measured sweeps, because the specified 2000 + 10000 sweeps were found
+# not to equilibrate L=256 (|m| still rising through the runs; tau_int ~ 1e3 sweeps).
+# Arguments: the temperatures for this job. One process per seed. Run from the repository root.
+set -euo pipefail
+mkdir -p data/stage3_long/raw data/stage3_long/series_raw
+tag=$(echo "$*" | tr ' ' '_')
+for s in 1 2; do
+  python3 -u code/ising.py --L 256 --temps "$@" --seeds $s --sweeps 50000 --burn 50000 \
+    --out data/stage3_long/raw/L256-T$tag-s$s.json --series data/stage3_long/series_raw \
+    > data/stage3_long/raw/L256-T$tag-s$s.log 2>&1 &
+done
+wait
+echo "HUTIAN_WAKE: stage 3 long-run supplement for T = $* finished"

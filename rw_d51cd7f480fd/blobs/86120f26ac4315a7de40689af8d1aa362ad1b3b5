@@ -1,0 +1,22 @@
+# Results: pilot Monte Carlo estimate of pi
+
+Made by `python3 analysis/analyze.py results/pilot.json results/` from `results/pilot.json`, the unmodified output of `/initial-state/inputs/0/pilot.py` (job-c703b04670, exit 0; see `jobs.md`).
+
+| quantity | value |
+|---|---|
+| samples n | 1 759 200 000 |
+| hits in quarter disc k | 1 381 655 410 |
+| sampling time | 540.0 s |
+| estimate 4k/n | 3.1415539 (3.1415539108685766) |
+| standard error 4·sqrt(p(1−p)/n) | 3.92e-5 |
+| 95% CI (Wald, z=1.95996) | [3.1414772, 3.1416307], half-width 7.67e-5 |
+| 95% CI (Wilson) | [3.1414772, 3.1416306] (agrees with Wald to <3e-9) |
+| 95% CI as printed by pilot.py (z=1.96) | [3.1414772, 3.1416307] (agrees to <2e-9) |
+| error vs true pi | −3.87e-5 (z = −0.99) |
+| true pi inside 95% CI | yes |
+
+Running estimate (`running_estimate.csv`, 55 checkpoints, ~10 s apart, 1e5 to 1.76e9 samples): every checkpoint lies within the ±1.96σ_n band around pi (|z| ≤ 1.40, max at an intermediate checkpoint). Checkpoints are cumulative estimates over nested samples, so they are strongly correlated and not independent tests.
+
+Files: `pilot.json` (raw), `estimate.json` (final estimate and intervals), `running_estimate.csv` (per-checkpoint estimate, Wald 95% CI, ±1.96σ_n band around true pi with σ_n = 4·sqrt(q(1−q)/n), q = pi/4, and z vs pi).
+
+The extended run (`extended.py 40`, job-3c3878b497) is for a later study and not part of this delivery.

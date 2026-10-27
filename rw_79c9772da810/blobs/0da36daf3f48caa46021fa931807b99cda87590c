@@ -1,0 +1,11 @@
+# Review record
+
+Inspected: paper-repo 480f7733956dff85de113c1bc49b6cf1ef61f2a1, report/note.md (225 words, one page), brief.md, assignment.json.
+
+Checks:
+- NeurIPS CFP deadline quote ("May 6, 2026 AOE"), plus abstract deadline and notification date, match the raw page fetched independently by me (curl and WebFetch).
+- The CFP states no page limit (only the unrelated "Successful Page Load" hit for "page"); the note says so and makes no claim about linked documents.
+- example.com: WebFetch failed with "proxy refused the connection" (reproduced by me), curl got "CONNECT tunnel failed, response 403" (reproduced). The note gives the exact errors, names the tools, and does not guess the content.
+- Each page states which tool read it; WebFetch was tried first.
+
+Conclusion: meets the objective; no open findings. Approved.

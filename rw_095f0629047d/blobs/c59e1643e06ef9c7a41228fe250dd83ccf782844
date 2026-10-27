@@ -1,0 +1,39 @@
+"""Validate saved counts and inference without drawing additional points."""
+import csv
+import hashlib
+import json
+import math
+from pathlib import Path
+import numpy as np
+from scipy.stats import t
+
+root = Path(__file__).resolve().parents[1]
+s = json.loads((root / 'results/summary.json').read_text())
+rows = list(csv.DictReader((root / 'results/per_seed.csv').open()))
+assert len(rows) == 20
+assert [int(r['stream']) for r in rows] == list(range(20))
+assert [int(r['spawn_key']) for r in rows] == list(range(20))
+assert all(int(r['root_seed']) == s['root_seed'] == 20261020 for r in rows)
+assert all(int(r['points']) == 1_000_000 for r in rows)
+counts = np.array([int(r['inside']) for r in rows])
+assert np.all((counts >= 0) & (counts <= 1_000_000))
+x = 4 * counts / 1_000_000
+assert np.array_equal(x, [float(r['estimate']) for r in rows])
+mean = float(x.mean())
+sd = float(x.std(ddof=1))
+se = sd / math.sqrt(20)
+half = float(t.ppf(.975, 19)) * se
+expected = {'mean_estimate': mean, 'sample_sd_ddof1': sd,
+            'standard_error': se, 'half_width': half,
+            'ci_lower': mean-half, 'ci_upper': mean+half,
+            'signed_error': mean-math.pi, 'absolute_error': abs(mean-math.pi)}
+for key, value in expected.items():
+    assert math.isclose(value, s[key], rel_tol=0, abs_tol=1e-14), key
+assert s['total_points'] == 20_000_000
+assert s['total_inside'] == int(counts.sum())
+for path, key in [('code/monte_carlo.py', 'source_script_sha256'),
+                  ('results/per_seed.csv', 'source_counts_sha256')]:
+    assert hashlib.sha256((root / path).read_bytes()).hexdigest() == s[key]
+print('PASS: 20 seed identities, sample sizes, counts, estimates, summary statistics, errors, totals, and source hashes.')
+print(f'Observed/theoretical per-seed SD: {sd / math.sqrt(math.pi * (4-math.pi)/1_000_000):.6f}')
+print(f'math.pi in interval: {mean-half <= math.pi <= mean+half}')

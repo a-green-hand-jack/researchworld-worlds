@@ -1,0 +1,13 @@
+{
+  "schema": "figtab-fits-handoff-1",
+  "_NOTE": "SYNTHETIC LAYOUT DRAFT ONLY - every fit number is a round placeholder chosen only to mimic the real geometry (means ~317 ppm in 1960 rising to ~427 ppm in 2025), not a result; the real handoff replaces this file. Used solely to exercise make_figure.py and check layout.",
+  "n": 66,
+  "fit_years": [1960, 2025],
+  "center_year": 1992.5,
+  "linear": {"slope_ppm_per_yr": 1.70, "intercept_ppm": 372.00, "slope_se": 0.02},
+  "quadratic": {"a0_ppm": 339.00, "a1_ppm_per_yr": 1.65, "a2_ppm_per_yr2": 0.03},
+  "growth_windows": [
+    {"label": "1960s (draft)", "years": [1960, 1969], "rate_ppm_per_yr": 1.00, "ci95_ppm_per_yr": [0.00, 2.00]},
+    {"label": "2016-2025 (draft)", "years": [2016, 2025], "rate_ppm_per_yr": 3.00, "ci95_ppm_per_yr": [2.00, 4.00]}
+  ]
+}

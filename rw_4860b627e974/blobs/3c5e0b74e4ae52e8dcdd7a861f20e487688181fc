@@ -1,0 +1,85 @@
+# Feasibility judgement: minimal synthetic line-fit study
+
+Position: idea-review-repo (feasibility). Requested by story-repo in idea-review-repo#3.
+Judged against the objective (idea-review-repo#1): fit a straight line to 40 synthetic
+noisy points (y = 2x + 1 + Gaussian noise SD 0.5, x evenly spaced on [0,10], numpy seed 0);
+report slope and intercept with 95% confidence intervals; one figure.
+
+## Verdict
+
+FEASIBLE as planned. The plan — 40 observations from legacy `np.random.seed(0)`
+(RandomState(0)) with one `normal(0, 0.5, 40)` draw, `x = np.linspace(0, 10, 40)`;
+OLS with intercept; two-sided Student-t 95% intervals on slope and intercept with
+s^2 = RSS/38, df = 38; one scatter-plus-fit figure — satisfies every requirement of
+the objective. No revision is required to meet the objective. Resources are far below
+what the world provides. The draft assignment (report.md -> experiment-repo,
+figure.png -> figtab-repo) leaves no objective requirement unowned.
+
+## Requirement coverage
+
+- Data generation: fully specified by the objective plus the settled seed convention
+  (idea-repo brief.md at a53aec2f). Deterministic; verified reproducible (probe below).
+- Slope/intercept with 95% CIs: OLS with t intervals (estimated residual variance,
+  df = n - 2 = 38) is the standard exact method under the true generative model
+  (Gaussian noise, linear mean). Appropriate; no change.
+- One figure: assigned and, per story-repo planning-decisions.md, already delivered
+  by figtab-repo (be914dab) using the agreed recipe.
+- Venue: none required by the objective. No gap.
+
+## Resources and costs
+
+- Compute: closed-form OLS; smoke run of the full recipe + intervals took ~1 s wall
+  on this 2-CPU sandbox. No GPU, negligible memory. No local-compute job needed.
+- Tooling: numpy 2.4.6 and scipy 1.17.1 installed from research-network (PyPI)
+  into /hutian/.venv without issue. Fallback exists (numpy-only fit + tabulated
+  t critical 2.0244 for df=38), so tooling is not a risk even if scipy were blocked.
+- Time: minutes of one turn; well within the shared budget.
+
+## Feasibility probe (smoke run, NOT the study's result)
+
+Purpose: confirm the recipe executes deterministically and yields well-defined,
+informative intervals. Provenance: recipe from idea-repo brief.md; executed here with
+python3, numpy 2.4.6, scipy 1.17.1; no input files. The study's numbers belong to
+experiment-repo's report.md.
+
+- Design matrix full rank; df = 38; t_crit(0.975, 38) = 2.0244.
+- Residual SD ~ 0.53 (true 0.5); slope ~ 1.95 with half-width ~ 0.06;
+  intercept ~ 1.40 with half-width ~ 0.33. Intervals are informative and, for this
+  realization, are expected to cover the true 2 and 1.
+- Probe values match the figure's displayed 1.952 / 1.399 reported by story-repo,
+  so report/figure numerical consistency is achievable with care.
+- Rerunning after reseeding reproduces the data exactly (deterministic).
+
+## Risks and bounds (all low; none blocking)
+
+1. Report/figure numerical mismatch (same realization, same coefficients). Bound:
+   story-repo's assignment note already requires consistency; experiment-repo should
+   check its final estimates against the delivered figure (or recompute the figure's
+   values). Probe shows the recipe reproduces the figure's numbers.
+2. Interval-method drift (z instead of t, wrong df, software defaults). Bound: the
+   report must state the method explicitly: t, df = 38, s^2 = RSS/38, two-sided 95%.
+3. Reproducibility drift: report must state the RNG API (legacy RandomState via
+   np.random.seed(0)) and single draw order; already required by the brief. Keep.
+4. Environment: `ht-role status` / `ht-role delivery` currently fail here with
+   HTTP 422/400 (invalid control request); also seen by story-repo. Does not block
+   the study (repos, issues, pushes work) but weakens delivery verification.
+   Environment issue, not a study defect; routed to the system by recording it here.
+
+## Scope limits (state in the report; not deficiencies)
+
+- The two intervals are marginal per-coefficient 95% intervals, not a simultaneous
+  region; the objective asks for marginal intervals. Do not claim joint coverage.
+- They are coefficient intervals, not prediction intervals; none are requested.
+- Coverage of the true 2 and 1 by this realization's intervals is a descriptive
+  observation, not a validation of the method (per the brief); report it as such.
+- One realization, one seed: no sensitivity analysis over RNG streams is required.
+
+## Release governance
+
+Objective needs no venue, report-review, or external review deliverable; the
+otherwise unowned report function is already routed to experiment-repo by the
+assignment. No position holds review/approval, and none is requested; nothing in
+the study plan depends on it. I hold feasibility and do not approve releases.
+Residual operational note only: if the world requires an `ht-role approve` to
+release and no owner is designated, that is a world-configuration matter outside
+every research position, not a defect of this study.

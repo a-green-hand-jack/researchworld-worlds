@@ -1,0 +1,79 @@
+# report/figures — the one log-log figure of the study
+
+This directory is figtab-repo's package in the work assignment
+(`assignment.json` in world/story-repo): exactly one figure,
+`mae_loglog.png`, the log-log plot of the error with the fit that the
+research objective requires for `report/report.md`.
+
+## The claim the figure supports
+
+The mean absolute error (MAE) of the Monte Carlo pi estimate falls with
+the sample count N like N^b, and the fitted exponent b is consistent with
+the -1/2 expected for Monte Carlo methods.
+
+## What is drawn
+
+- Points: MAE = mean of |pi_hat - pi| over the 200 independent runs at each
+  required N (10^3 .. 10^7), with +/-1 SE error bars from the table's
+  `se_mean_absolute_error` column.
+- Solid line: the OLS fit of ln(MAE) vs ln(N) taken from experiment-repo's
+  committed `analysis/fit.json` (never recomputed here); the slope b is in
+  the legend, and the line is cross-checked against the committed
+  `fit_mae` column before rendering.
+- Dashed line: the asymptotic (large-N) theoretical expectation,
+  `normal_approximation_mae` = sqrt(2(4-pi)) * N^(-1/2), drawn from the
+  CSV column (an analytic prediction, not fitted; the normal approximation
+  of the exact binomial MAE, which is the `exact_binomial_mae` column and
+  the table's "analytic expectation").
+- Annotation box: b, the headline 95% interval (residual OLS Student-t,
+  df=3, the settled primary), the dependence-aware check (paired bootstrap
+  over runs, shown side by side), whether -1/2 lies inside, and the method
+  facts (200 runs per N, seeds `default_rng(2026 + run_index)`).
+
+## Inputs (all numbers come from these, nothing is recomputed)
+
+From experiment-repo at a recorded commit:
+
+- `analysis/mae_table.csv` — columns N, mean_absolute_error,
+  se_mean_absolute_error, normal_approximation_mae, exact_binomial_mae,
+  fit_mae (aliases are matched case-insensitively; see the key lists at
+  the top of `plot_mae_loglog.py`).
+- `analysis/fit.json` — the OLS slope and intercept, and the two 95%
+  intervals under the settled priority: `headline_interval` (residual OLS
+  Student-t) and `paired_bootstrap` (dependence-aware check); legacy key
+  names (primary_interval / ols_t_sensitivity) still map onto these roles.
+
+If a key name is not recognized the script warns on stderr and lists what
+it found; extend the aliases in one place rather than editing data.
+
+## Rendering
+
+    python3 plot_mae_loglog.py --inputs <experiment-repo checkout> \
+        [--outdir <this directory>]
+
+This writes `mae_loglog.png` plus two files beside it:
+
+- `caption.md` — an embeddable figure caption with the actual numbers,
+  for paper-repo to use in `report/report.md`.
+- `provenance.json` — the input repo, commit, paths and SHA256 of each
+  input file, the values used, the environment versions and the command.
+
+Pipeline self-test (synthetic data, stamped SELF-TEST, never for
+delivery):
+
+    python3 plot_mae_loglog.py --selftest /tmp/selftest.png
+
+The rendering is inspected programmatically with `check_render.py` in this
+repository's root (log-log axes, the five points' values checked exactly
+against the CSV, error bars, line slopes against fit.json and the theory
+column, legend, annotation content and placement, no overlaps, PNG size
+and ink coverage, provenance commit/SHA256). This session's model cannot
+view images, so artist- and pixel-level inspection is the recorded method.
+
+## Status
+
+Delivered. `mae_loglog.png` was rendered from world/experiment-repo at
+commit 6cb94ccdef05 (request world/experiment-repo#3, rendering request
+world/figtab-repo#5) and inspected with `check_render.py --real`: all
+checks pass. The rendered table is `../tables/table_mae.md`, verified by
+`check_table.py`.

@@ -1,0 +1,33 @@
+# Venue and format requirements
+
+Source: the `Research objective` issue (venue-repo#1) and the NeurIPS 2026 formatting kit
+(`https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip`,
+fetched 2026-10-17; `template/neurips_2026.sty` sha256 `c3fc2894e83d2517ca18b66741d6c595986d97957dc08ec08bb2125a7ec4555a`,
+style version 2026-01-29). The kit contains `neurips_2026.tex`, `neurips_2026.sty`, `checklist.tex`.
+
+## Audience
+Readers of a short, NeurIPS-formatted comparison paper (reviewers/user); not an external submission.
+
+## Requirements from the objective (verbatim sense) and how each is checked
+| # | Requirement | Check |
+|---|---|---|
+| V1 | Delivered file `report/report.pdf` | file exists, nonempty (declared in `venue-artifacts.json`) |
+| V2 | At most two pages, **whole PDF** (objective states total length; references and any other material included) | `pdfinfo report/report.pdf` -> `Pages: 1` or `2` |
+| V3 | NeurIPS 2026 submission template: `\usepackage{neurips_2026}` with no `final`/`preprint` option (anonymous, line numbered, main track); kit's `neurips_2026.sty` unmodified | `report/neurips_2026.sty` sha256 equals the value above; `report.tex` loads it without options |
+| V4 | Compiled from LaTeX | `report/report.tex` delivered and compiles with pdflatex (TeX Live 2026) to the delivered PDF |
+| V5 | Exactly one figure and one table | one `figure` and one `table` environment in `report.tex` (no `figure*`/`table*` additions, no appendix floats) |
+| V6 | Code that produced every number delivered next to the PDF | code in `report/code/` (experiment-repo, per `assignment.json`), run outputs in `report/results/`, figure/table script in `report/figures/`, number map in `report/README.md`, with numbers in the paper traceable to script outputs |
+| V7 | LaTeX source delivered next to the PDF | `report/report.tex` plus any `.bib`, figure source files used |
+
+## Content the objective puts in the paper (owned by other positions, listed for review)
+Dataset: OpenML id 61 downloaded from OpenML; multinomial logistic regression vs kNN (k by inner CV); 10x repeated stratified 5-fold CV; mean accuracy with 95% interval for each method; paired difference with 95% interval; one Ibex CPU job and one local run of the full CV; Ibex node name; statement whether the two runs give identical numbers.
+
+## Decisions and what cannot be established
+- The NeurIPS 9-page content limit does not apply; the objective's 2-page limit is stricter and governs. It is counted on the entire PDF.
+- The NeurIPS paper checklist (`checklist.tex`) is NOT included: it would add pages beyond the objective's cap and the objective does not ask for it.
+- Anonymous author block is used (template default); no acknowledgments section.
+- No license, publisher acceptance or external submission is claimed.
+- Not establishable by venue: the Ibex node name, run identity and numbers (analysis owner); the code path (plan owner). `venue-artifacts.json` therefore declares only the PDF, the LaTeX source and the style file; the code directory will be added once `assignment.json` fixes its path.
+
+## Code and result paths declared (2026-10-17, names fixed in story-repo `plan.md` §3)
+`venue-artifacts.json` requires the code entry point and scripts in `report/code/` and `report/results/{numbers.tex,summary.json,data_provenance.json}`. `report/results/identity.json` (local-vs-Ibex identity verdict, produced with the Ibex replicate) did not exist yet and is not declared until pushed; the identity verdict and node name are checked through `numbers.tex` and the paper text meanwhile.

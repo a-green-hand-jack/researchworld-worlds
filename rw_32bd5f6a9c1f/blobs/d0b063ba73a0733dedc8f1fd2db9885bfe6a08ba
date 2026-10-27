@@ -1,0 +1,52 @@
+import json, hashlib
+import numpy as np
+from scipy import stats
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+SRC = "/initial-state/inputs/0/points.csv"
+d = np.genfromtxt(SRC, delimiter=",", names=True)
+x, y = d["x"], d["y"]
+n = len(x)
+X = np.column_stack([np.ones(n), x])
+XtXi = np.linalg.inv(X.T @ X)
+beta = XtXi @ X.T @ y
+res = y - X @ beta
+dof = n - 2
+s2 = res @ res / dof
+s = np.sqrt(s2)
+cov = s2 * XtXi
+se = np.sqrt(np.diag(cov))
+t = stats.t.ppf(0.975, dof)
+ci = [[beta[i] - t * se[i], beta[i] + t * se[i]] for i in range(2)]
+
+# residual diagnostics
+sw = stats.shapiro(res)
+dw = np.sum(np.diff(res) ** 2) / np.sum(res ** 2)
+bp_r = stats.spearmanr(x, np.abs(res))
+r2 = 1 - res @ res / np.sum((y - y.mean()) ** 2)
+ref = stats.linregress(x, y)  # cross-check
+
+out = {
+    "source": SRC, "sha256": hashlib.sha256(open(SRC, "rb").read()).hexdigest(),
+    "n": n, "dof": dof, "t_crit_975": t,
+    "a": beta[0], "a_se": se[0], "a_ci95": ci[0],
+    "b": beta[1], "b_se": se[1], "b_ci95": ci[1],
+    "resid_sd": s, "r2": r2,
+    "shapiro_p": sw.pvalue, "durbin_watson": dw,
+    "spearman_absres_vs_x_p": bp_r.pvalue,
+    "crosscheck_scipy": {"a": ref.intercept, "b": ref.slope, "b_se": ref.stderr},
+}
+json.dump(out, open("results/fit.json", "w"), indent=2, default=float)
+
+xg = np.linspace(x.min(), x.max(), 200)
+Xg = np.column_stack([np.ones_like(xg), xg])
+fit = Xg @ beta
+half = t * np.sqrt(np.einsum("ij,jk,ik->i", Xg, cov, Xg))
+fig, ax = plt.subplots(figsize=(6, 4), dpi=150)
+ax.fill_between(xg, fit - half, fit + half, color="#4C78A8", alpha=0.3, label="95% CI of fitted line")
+ax.plot(xg, fit, color="#4C78A8", lw=2, label=f"OLS fit: y = {beta[0]:.3f} + {beta[1]:.3f} x")
+ax.scatter(x, y, s=18, color="k", zorder=3, label=f"data (n={n})")
+ax.set_xlabel("x"); ax.set_ylabel("y"); ax.legend(frameon=False, fontsize=8)
+fig.tight_layout(); fig.savefig("figures/fit.png")

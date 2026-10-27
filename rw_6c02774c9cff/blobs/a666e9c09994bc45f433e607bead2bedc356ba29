@@ -1,0 +1,220 @@
+{
+ "source": "results/local/per_fold.csv",
+ "interval_method": "corrected repeated-CV t interval (Nadeau & Bengio 2003): mean +- t_{0.975,49} * sqrt((1/50 + 30/120) * s^2), s^2 = sample variance of the 50 outer-fold values",
+ "n_folds": 50,
+ "n_repetitions": 10,
+ "n_test": 30.0,
+ "n_train": 120.0,
+ "lr": {
+  "mean": 0.9540000000000001,
+  "ci_low": 0.9155545619880852,
+  "ci_high": 0.992445438011915,
+  "se_corrected": 0.019131126469708985,
+  "sd_folds": 0.03681787005729086,
+  "n_folds": 50,
+  "ci_naive_t": [
+   0.9435364771036676,
+   0.9644635228963325
+  ],
+  "ci_repetition_means_t": [
+   0.9512928690797093,
+   0.9567071309202908
+  ],
+  "sd_repetition_means": 0.003784308081316998,
+  "repetition_means": [
+   0.9466666666666667,
+   0.9533333333333335,
+   0.9533333333333335,
+   0.9533333333333334,
+   0.9533333333333334,
+   0.9600000000000002,
+   0.96,
+   0.9533333333333334,
+   0.9533333333333334,
+   0.9533333333333334
+  ]
+ },
+ "knn": {
+  "mean": 0.9506666666666668,
+  "ci_low": 0.9055079923744144,
+  "ci_high": 0.9958253409589192,
+  "se_corrected": 0.022471750973983635,
+  "sd_folds": 0.04324690491330562,
+  "n_folds": 50,
+  "ci_naive_t": [
+   0.9383760322803825,
+   0.9629573010529511
+  ],
+  "ci_repetition_means_t": [
+   0.9473321215440816,
+   0.9540012117892519
+  ],
+  "sd_repetition_means": 0.004661372658533998,
+  "repetition_means": [
+   0.9466666666666667,
+   0.96,
+   0.9466666666666669,
+   0.9533333333333334,
+   0.9466666666666667,
+   0.9533333333333335,
+   0.9466666666666667,
+   0.9466666666666667,
+   0.9533333333333334,
+   0.9533333333333334
+  ]
+ },
+ "diff": {
+  "mean": 0.0033333333333333327,
+  "ci_low": -0.02908280842535791,
+  "ci_high": 0.03574947509202458,
+  "se_corrected": 0.016130842558051736,
+  "sd_folds": 0.031043820977155467,
+  "n_folds": 50,
+  "ci_naive_t": [
+   -0.005489222970946627,
+   0.012155889637613292
+  ],
+  "ci_repetition_means_t": [
+   -0.0007195764696975309,
+   0.007386243136364197
+  ],
+  "sd_repetition_means": 0.005665577237325315,
+  "repetition_means": [
+   0.0,
+   -0.006666666666666665,
+   0.006666666666666665,
+   0.0,
+   0.006666666666666665,
+   0.006666666666666665,
+   0.01333333333333333,
+   0.006666666666666665,
+   0.0,
+   0.0
+  ],
+  "definition": "accuracy(LR) - accuracy(kNN), paired by outer fold",
+  "corrected_t": 0.20664347329268884,
+  "corrected_p_two_sided": 0.8371445981385642,
+  "ci_excludes_zero": false,
+  "wins_lr": 13,
+  "ties": 25,
+  "wins_knn": 12
+ },
+ "k_knn": {
+  "median": 7.0,
+  "min": 1,
+  "max": 21,
+  "q25": 5.0,
+  "q75": 11.0,
+  "mode": 5,
+  "counts": {
+   "1": 2,
+   "3": 3,
+   "5": 15,
+   "7": 6,
+   "9": 9,
+   "11": 9,
+   "13": 4,
+   "15": 1,
+   "21": 1
+  }
+ },
+ "pooled_correct": {
+  "lr": 1431,
+  "knn": 1426,
+  "n_predictions": 1500
+ },
+ "run_info": {
+  "hostname": "be21b01cd327",
+  "slurm_job_id": null,
+  "slurmd_nodename": null,
+  "slurm_job_nodelist": null,
+  "slurm_partition": null,
+  "cpu_model": "Intel(R) Xeon(R) Gold 6230 CPU @ 2.10GHz",
+  "started_utc": "2026-10-17T12:25:27.482692+00:00",
+  "wall_seconds": 24.67,
+  "python": "3.11.2",
+  "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.36",
+  "numpy": "2.4.6",
+  "scipy": "1.17.1",
+  "sklearn": "1.9.1",
+  "blas": [
+   {
+    "internal_api": "openblas",
+    "version": "0.3.31.188.0",
+    "num_threads": 1,
+    "architecture": "SkylakeX"
+   },
+   {
+    "internal_api": "openmp",
+    "version": null,
+    "num_threads": 1,
+    "architecture": null
+   },
+   {
+    "internal_api": "openblas",
+    "version": "0.3.30",
+    "num_threads": 1,
+    "architecture": "SkylakeX"
+   }
+  ],
+  "env_threads": {
+   "OMP_NUM_THREADS": "1",
+   "OPENBLAS_NUM_THREADS": "1",
+   "MKL_NUM_THREADS": "1"
+  },
+  "data": {
+   "openml_id": 61,
+   "name": "iris",
+   "version": 1,
+   "file": "results/openml_61/iris_openml_61.arff",
+   "url": "https://openml.org/data/v1/download/61/iris.arff",
+   "md5": "ad484452702105cbf3d30f8deaba39a9",
+   "sha256": "38110f3fd3cef003ca4909038a4d6b235f36a85d036dc7eedeff67c5925e826c",
+   "n": 150,
+   "n_features": 4,
+   "classes": [
+    "Iris-setosa",
+    "Iris-versicolor",
+    "Iris-virginica"
+   ],
+   "class_counts": [
+    50,
+    50,
+    50
+   ]
+  },
+  "settings": {
+   "outer_cv": "RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=20261017)",
+   "lr": "StandardScaler + LogisticRegression(multinomial/softmax, L2, C=1.0, solver='lbfgs', max_iter=10000, tol=1e-8); not tuned",
+   "knn": "StandardScaler + KNeighborsClassifier(uniform weights, Euclidean, algorithm='auto'); k chosen from odd k = 1..31 by GridSearchCV(accuracy) on each outer training set",
+   "inner_cv": "StratifiedKFold(n_splits=5, shuffle=True, random_state=20261017 + 1000*repetition + fold)",
+   "k_tie_break": "smallest k among equal inner-CV accuracy (GridSearchCV keeps the first best)",
+   "vote_tie_break": "lowest class index among tied classes (scikit-learn); odd k still allows 3-class ties, e.g. 1-1-1 at k=3",
+   "threads": "OMP/OPENBLAS/MKL_NUM_THREADS=1, n_jobs=1"
+  },
+  "design": {
+   "seed": 20261017,
+   "n_splits": 5,
+   "n_repeats": 10,
+   "inner_splits": 5,
+   "k_grid": [
+    1,
+    3,
+    5,
+    7,
+    9,
+    11,
+    13,
+    15,
+    17,
+    19,
+    21,
+    23,
+    25,
+    27,
+    29,
+    31
+   ]
+  }
+ }
+}

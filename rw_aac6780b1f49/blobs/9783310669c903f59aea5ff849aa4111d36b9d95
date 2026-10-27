@@ -1,0 +1,48 @@
+"""OLS fit y = a + b x with 95% CIs, residual SD and a 95% confidence band for the mean line."""
+import json, hashlib, sys
+import numpy as np
+from scipy import stats
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+SRC = sys.argv[1] if len(sys.argv) > 1 else "/initial-state/inputs/0/points.csv"
+d = np.genfromtxt(SRC, delimiter=",", names=True)
+x, y = d["x"], d["y"]
+n = len(x)
+X = np.column_stack([np.ones(n), x])
+beta, *_ = np.linalg.lstsq(X, y, rcond=None)
+a, b = beta
+res = y - X @ beta
+dof = n - 2
+s = np.sqrt(res @ res / dof)
+XtXi = np.linalg.inv(X.T @ X)
+se = s * np.sqrt(np.diag(XtXi))
+t = stats.t.ppf(0.975, dof)
+r2 = 1 - (res @ res) / ((y - y.mean()) ** 2).sum()
+out = {
+    "source": SRC, "sha256": hashlib.sha256(open(SRC, "rb").read()).hexdigest(), "n": n, "dof": dof,
+    "a": a, "a_se": se[0], "a_ci95": [a - t * se[0], a + t * se[0]],
+    "b": b, "b_se": se[1], "b_ci95": [b - t * se[1], b + t * se[1]],
+    "resid_sd": s, "r2": r2, "t_crit": t,
+    "shapiro_p_resid": float(stats.shapiro(res).pvalue),
+    "durbin_watson": float(np.sum(np.diff(res) ** 2) / np.sum(res ** 2)),
+}
+# cross-check with scipy
+lr = stats.linregress(x, y)
+assert np.allclose([lr.intercept, lr.slope, lr.stderr, lr.intercept_stderr], [a, b, se[1], se[0]])
+out["scipy_crosscheck"] = "ok"
+json.dump(out, open("results/ols_results.json", "w"), indent=2)
+
+xg = np.linspace(x.min(), x.max(), 200)
+Xg = np.column_stack([np.ones_like(xg), xg])
+fit = Xg @ beta
+half = t * s * np.sqrt(np.einsum("ij,jk,ik->i", Xg, XtXi, Xg))
+fig, ax = plt.subplots(figsize=(6, 4.2), dpi=150)
+ax.fill_between(xg, fit - half, fit + half, color="#9ecae1", alpha=0.6, label="95% confidence band (mean line)")
+ax.plot(xg, fit, color="#08519c", lw=1.8, label=f"OLS fit: y = {a:.3f} + {b:.3f} x")
+ax.scatter(x, y, s=18, color="#222222", zorder=3, label=f"data (n={n})")
+ax.set_xlabel("x"); ax.set_ylabel("y"); ax.legend(frameon=False, fontsize=8, loc="upper left")
+ax.spines[["top", "right"]].set_visible(False)
+fig.tight_layout(); fig.savefig("figures/fit.png")
+print(json.dumps(out, indent=2))

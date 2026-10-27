@@ -1,0 +1,230 @@
+"""E6 / rungs 2 and 3 of direction C, held-out (plan Sec. 3 C, items 2-3; registration results/e6/prediction_r23.json).
+The model, truth, criteria and baselines are code/e6_r2.py's, imported unchanged (md5 recorded in the registration);
+this file adds only the held-out grids, the truth-floor re-runs, the settledness classes and the registered scoring.
+
+Rung 2 (GD, eta 0.1): criterion r_decay (N1-general on the statistics of W1(t) = (1 - eta lam)^step W1(0)), chosen on
+development (results/e6/r2_dev, r2_dev2). Rung 3 (AdamW, eta 0.002, the stable step size of code/checks/e6_r3_adam_eta.py):
+criterion the static bound #{c^2 >= 4 lam s} (A2's exit); v4 and cs_thr = #{c/s > THR} are extra rows, never criteria.
+
+Truth (both arms): the median of the embedding rank #sv((Z - mean Z)/sqrt N) > THR over the last 4 of the 20 checks
+(the last is at T). Each base run is classed from its 20 checked ranks:
+  settled   max - min of the last 4 checks <= 1;
+  cycling   not settled, and max - min of the last 10 checks >= 10 (the periodic collapse and regrowth of development);
+  drifting  neither.
+The rank at T alone is scored as a sensitivity.
+Truth floor: every base run has re-runs that perturb W2(0)'s rows by 1 + U(-1e-3, 1e-3) ('w2', both arms) and, under GD
+only, lam by x 1.005 at the base run's T ('lam'). A base run is fragile if a re-run's truth differs from its own by more
+than 1. Re-runs record the truth only (no criterion is computed for them).
+Usage: python3 code/e6_r23.py list GRID | run GRID OUTDIR [NPROC] | score GRID OUTDIR"""
+import sys, os, json, time, itertools, gzip, hashlib
+os.environ.setdefault("OMP_NUM_THREADS", "1"); os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+import e6_r2 as R
+
+GRIDS = {
+    # held-out values: s1, lam, p0 and seeds disjoint from dev / dev2 (s1 0.5-4, lam 0.0025-0.02, p0 0.5 / 1.0,
+    # seeds 600-603)
+    "r2_heldout": dict(data=["field", "latent"], act=["tanh", "relu"], s1=[0.7, 1.4, 2.8], lam=[0.0035, 0.007, 0.014],
+                       p0=[0.7, 1.3], r=[0.5], w0=[1e-3], opt=["gd"], eta=0.1, horizon=8.0, seeds=[610, 611],
+                       floors=["w2", "lam"]),
+    # disjoint from dev_adam / dev_adam2 (s1 0.5-2, lam 0.01 / 0.03, p0 0.5 / 1.0, seed 604)
+    "r3_heldout": dict(data=["field", "latent"], act=["tanh", "relu"], s1=[0.7, 1.4], lam=[0.015, 0.04],
+                       p0=[0.7, 1.3], r=[0.5], w0=[1e-3], opt=["adamw"], eta=0.002, horizon=8.0, seeds=[612, 613],
+                       floors=["w2"]),
+    # scorer smoke test only (seed outside every grid; outputs discarded)
+    "r23_smoke": dict(data=["field", "latent"], act=["tanh", "relu"], s1=[0.7], lam=[0.04], p0=[0.7], r=[0.5],
+                      w0=[1e-3], opt=["gd", "adamw"], eta=0.1, horizon=1.0, seeds=[695], floors=["w2", "lam"]),
+}
+PRIMARY = {"gd": "r_decay", "adamw": "static"}
+LAM_FLOOR = 1.005
+SETTLED_RANGE, CYCLE_RANGE = 1, 10
+TOL = dict(gd=dict(within1=0.70, mae=1.5), adamw=dict(within1=0.60, mae=2.0))
+MUST_BEAT = dict(gd=["r_init", "window"] + R.MU, adamw=[])
+B_BOOT = 2000
+
+
+def configs(grid):
+    g = GRIDS[grid]; base = []
+    for data, act, s1, lam, p0, r, w0, opt, seed in itertools.product(g["data"], g["act"], g["s1"], g["lam"], g["p0"],
+                                                                     g["r"], g["w0"], g["opt"], g["seeds"]):
+        eta = g["eta"] if opt == "gd" or grid != "r23_smoke" else 0.002
+        T = int(round(g["horizon"] / (eta * lam)))
+        base.append(dict(data=data, act=act, s1=s1, lam=lam, p0=p0, r=r, w0=w0, opt=opt, seed=seed, eta=eta, T=T))
+    out = []
+    for c in base:
+        c["id"] = len(out); out.append(c)
+        for f in g["floors"]:
+            if f == "lam" and c["opt"] != "gd":
+                continue
+            fc = dict(c, id=None, floor=f, floor_of=c["id"])
+            if f == "lam":
+                fc["lam"] = c["lam"] * LAM_FLOOR      # T stays the base run's
+            out.append(fc)
+    for i, c in enumerate(out):
+        c["id"] = i
+    return out
+
+
+_init0 = R.init
+
+
+def _init_floor(cfg):
+    W1, W2, P = _init0(cfg)
+    if cfg.get("floor") == "w2":
+        rng = np.random.default_rng(7 * 10 ** 6 + 1000 * cfg["seed"] + cfg["floor_of"])
+        W2 = W2 * (1 + rng.uniform(-1e-3, 1e-3, W2.shape[0]))[:, None]
+    return W1, W2, P
+
+
+R.init = _init_floor
+
+
+def run_one(cfg):
+    if "floor" not in cfg:
+        return R.run_one(cfg)
+    t0 = time.time()
+    Xc, Xt = R.sample(cfg)
+    tr = R.truth(cfg, Xc, Xt); tr.pop("snaps", None)
+    return dict(cfg=cfg, truth=tr, pred={}, seconds_truth=time.time() - t0, seconds_pred=0.0)
+
+
+def md5(path):
+    return hashlib.md5(open(path, "rb").read()).hexdigest()
+
+
+def cmd_run(grid, outdir, nproc=8):
+    os.makedirs(outdir, exist_ok=True); cf = configs(grid); t0 = time.time()
+    here = os.path.dirname(os.path.abspath(__file__))
+    fn = os.path.join(outdir, f"r23_{grid}_runs.jsonl.gz"); done = 0
+    with Pool(int(nproc)) as pool, gzip.open(fn, "wt") as f:
+        for r in pool.imap_unordered(run_one, sorted(cf, key=lambda r: -r["T"]), chunksize=1):
+            f.write(json.dumps(r) + "\n"); f.flush(); done += 1
+            if done % 20 == 0:
+                print(f"{done}/{len(cf)} {time.time() - t0:.0f}s", flush=True)
+    meta = dict(grid=grid, runs=len(cf), seconds=time.time() - t0, numpy=np.__version__,
+                md5={p: md5(os.path.join(here, p)) for p in ["e6_r23.py", "e6_r2.py", "linjepa.py", "baselines/dvd_mu.py",
+                                                             "e4_theory.py"]},
+                config=GRIDS[grid], command="code/e6_r23.py run " + grid)
+    json.dump(meta, open(os.path.join(outdir, f"r23_{grid}_meta.json"), "w"), indent=1)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), f"E6 {grid}: {len(cf)} runs in {time.time() - t0:.0f} s", flush=True)
+
+
+# --------------------------------------------------------------------------------------------- scoring
+def finite(r):
+    return r["truth"].get("emb_counts") is not None and r["truth"].get("counts") is not None
+
+
+def truth_of(r):
+    e = r["truth"]["emb_counts"]
+    return float(np.median(e[-4:]))
+
+
+def klass(r):
+    e = r["truth"]["emb_counts"]
+    if max(e[-4:]) - min(e[-4:]) <= SETTLED_RANGE:
+        return "settled"
+    return "cycling" if max(e[-10:]) - min(e[-10:]) >= CYCLE_RANGE else "drifting"
+
+
+def value(r, k):
+    return r["truth"]["early"] if k == "early" else r["pred"][k]
+
+
+def cluster_key(r):
+    c = r["cfg"]; return (c["data"], c["act"], c["s1"], c["lam"], c["p0"])
+
+
+def cluster_ci(rows, err_b, err_p, seed=0):
+    """Paired bootstrap of mean(err_b - err_p), resampling configurations (each with its seeds) as the unit."""
+    groups = {}
+    for i, r in enumerate(rows):
+        groups.setdefault(cluster_key(r), []).append(i)
+    G = list(groups.values()); d = np.asarray(err_b, float) - np.asarray(err_p, float)
+    rng = np.random.default_rng(seed); bs = []
+    for _ in range(B_BOOT):
+        pick = rng.integers(0, len(G), len(G))
+        bs.append(float(np.concatenate([d[G[i]] for i in pick]).mean()))
+    return [float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))]
+
+
+def summarize(rows, opt, tfun=truth_of, nonfinite=0):
+    """rows: finite base runs; nonfinite: base runs without a finite truth (each counted as a miss in within-1)."""
+    if not rows:
+        return dict(runs=0)
+    prim = PRIMARY[opt]
+    tru = np.array([tfun(r) for r in rows])
+    keys = [k for k in rows[0]["pred"]] + ["early"]
+    err = {k: np.abs(np.array([value(r, k) for r in rows], float) - tru) for k in keys}
+    cls = [klass(r) for r in rows]
+    out = dict(runs=len(rows), nonfinite=int(nonfinite), truth_mean=float(tru.mean()),
+               zero_share=float((tru == 0).mean()), full_share=float((tru >= R.d).mean()),
+               classes={c: int(cls.count(c)) for c in ("settled", "cycling", "drifting")}, rows={})
+    for k in keys:
+        pk = np.array([value(r, k) for r in rows], float)
+        w1 = float(((err[k] <= 1).sum()) / (len(rows) + nonfinite))
+        out["rows"][k] = dict(mae=float(err[k].mean()), within1=w1, bias=float((pk - tru).mean()))
+        if k != prim:
+            out["rows"][k]["minus_primary_ci_cluster"] = cluster_ci(rows, err[k], err[prim])
+    p = out["rows"][prim]; tol = TOL[opt]
+    beat = {k: bool(out["rows"][k]["minus_primary_ci_cluster"][0] > 0) for k in MUST_BEAT[opt] if k in out["rows"]}
+    out["verdict"] = dict(criterion=prim, within1=p["within1"], mae=p["mae"], tol=tol,
+                          within1_pass=bool(p["within1"] >= tol["within1"]), mae_pass=bool(p["mae"] <= tol["mae"]),
+                          beats=beat)
+    out["verdict"]["pass_"] = bool(out["verdict"]["within1_pass"] and out["verdict"]["mae_pass"] and all(beat.values()))
+    return out
+
+
+def cmd_score(grid, outdir):
+    allr = [json.loads(l) for l in gzip.open(os.path.join(outdir, f"r23_{grid}_runs.jsonl.gz"), "rt")]
+    base = sorted([r for r in allr if "floor" not in r["cfg"]], key=lambda r: r["cfg"]["id"])
+    fl = [r for r in allr if "floor" in r["cfg"]]
+    bt = {r["cfg"]["id"]: (truth_of(r) if finite(r) else None) for r in base}
+    frag = set()
+    for r in fl:
+        b = bt[r["cfg"]["floor_of"]]
+        if b is None:
+            continue
+        if not finite(r) or abs(truth_of(r) - b) > 1:
+            frag.add(r["cfg"]["floor_of"])
+    out = dict(grid=grid, base_runs=len(base), floor_runs=len(fl), fragile=sorted(frag),
+               nonfinite=[r["cfg"]["id"] for r in base if not finite(r)], scorer="code/e6_r23.py",
+               md5={p: md5(os.path.join(os.path.dirname(os.path.abspath(__file__)), p)) for p in ["e6_r23.py", "e6_r2.py"]})
+    for opt in sorted({r["cfg"]["opt"] for r in base}):
+        B = [r for r in base if r["cfg"]["opt"] == opt]; F = [r for r in B if finite(r)]; nnf = len(B) - len(F)
+        res = dict(all=summarize(F, opt, nonfinite=nnf),
+                   settled=summarize([r for r in F if klass(r) == "settled"], opt),
+                   not_fragile=summarize([r for r in F if r["cfg"]["id"] not in frag], opt),
+                   rank_at_T=summarize(F, opt, tfun=lambda r: float(r["truth"]["emb_rank"]), nonfinite=nnf),
+                   cells={})
+        for data, act in itertools.product(GRIDS[grid]["data"], GRIDS[grid]["act"]):
+            S = [r for r in F if r["cfg"]["data"] == data and r["cfg"]["act"] == act]
+            nf = sum(1 for r in B if r["cfg"]["data"] == data and r["cfg"]["act"] == act and not finite(r))
+            res["cells"][f"{data}_{act}"] = summarize(S, opt, nonfinite=nf)
+            fr = [r["cfg"]["id"] for r in S if r["cfg"]["id"] in frag]
+            res["cells"][f"{data}_{act}"]["floor"] = dict(fragile=len(fr), share=len(fr) / max(len(S), 1),
+                                                          ill_posed=bool(len(fr) > 0.05 * max(len(S), 1)))
+        res["floor"] = dict(fragile=sum(1 for r in F if r["cfg"]["id"] in frag),
+                            share=sum(1 for r in F if r["cfg"]["id"] in frag) / max(len(F), 1))
+        # verdict: on all finite base runs; a non-finite base run counts as a miss in within-1 (above) and the MAE is
+        # on finite runs; the verdict word is 'undetermined' if it differs between all runs and the not-fragile subset
+        va, vn = res["all"]["verdict"]["pass_"], res["not_fragile"].get("verdict", {}).get("pass_")
+        res["verdict_word"] = ("pass" if va else "fail") if (vn is None or va == vn) else "undetermined"
+        out[opt] = res
+    json.dump(out, open(os.path.join(outdir, f"r23_{grid}_score.json"), "w"), indent=1, allow_nan=False)
+    return out
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1]
+    if cmd == "list":
+        cf = configs(sys.argv[2]); b = [c for c in cf if "floor" not in c]
+        print(len(cf), "runs;", len(b), "base; base steps", sum(c["T"] for c in b), "; all steps", sum(c["T"] for c in cf))
+    elif cmd == "run":
+        cmd_run(sys.argv[2], sys.argv[3], *(sys.argv[4:5] or [8]))
+    elif cmd == "score":
+        o = cmd_score(sys.argv[2], sys.argv[3])
+        print(json.dumps({k: (v if k not in ("gd", "adamw") else dict(word=v["verdict_word"], all=v["all"].get("verdict"),
+                                                                     classes=v["all"].get("classes"), floor=v["floor"]))
+                          for k, v in o.items() if k != "md5"}, indent=1))

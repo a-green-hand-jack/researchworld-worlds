@@ -1,0 +1,106 @@
+{
+ "local_run": "results/local",
+ "ibex_run": "results/ibex",
+ "files": {
+  "per_fold.csv": {
+   "local_sha256": "e485c7a7d7c62e3e007fa94bf8d1a808d867867ecdc2b5515c37ff2b74e66bc9",
+   "ibex_sha256": "e485c7a7d7c62e3e007fa94bf8d1a808d867867ecdc2b5515c37ff2b74e66bc9",
+   "identical": true
+  },
+  "predictions.csv": {
+   "local_sha256": "a6977911f0090a4e5f15ad24be54c7e94957f2edb83a301831ec6af201c69a5a",
+   "ibex_sha256": "a6977911f0090a4e5f15ad24be54c7e94957f2edb83a301831ec6af201c69a5a",
+   "identical": true
+  }
+ },
+ "fields_differing": {},
+ "predictions_differing": 0,
+ "summary_values_differing": [],
+ "local_info": {
+  "hostname": "be21b01cd327",
+  "slurm_job_id": null,
+  "slurmd_nodename": null,
+  "slurm_job_nodelist": null,
+  "slurm_partition": null,
+  "cpu_model": "Intel(R) Xeon(R) Gold 6230 CPU @ 2.10GHz",
+  "python": "3.11.2",
+  "platform": "Linux-7.0.0-38-generic-x86_64-with-glibc2.36",
+  "numpy": "2.4.6",
+  "scipy": "1.17.1",
+  "sklearn": "1.9.1",
+  "blas": [
+   {
+    "internal_api": "openblas",
+    "version": "0.3.31.188.0",
+    "num_threads": 1,
+    "architecture": "SkylakeX"
+   },
+   {
+    "internal_api": "openmp",
+    "version": null,
+    "num_threads": 1,
+    "architecture": null
+   },
+   {
+    "internal_api": "openblas",
+    "version": "0.3.30",
+    "num_threads": 1,
+    "architecture": "SkylakeX"
+   }
+  ],
+  "env_threads": {
+   "OMP_NUM_THREADS": "1",
+   "OPENBLAS_NUM_THREADS": "1",
+   "MKL_NUM_THREADS": "1"
+  },
+  "wall_seconds": 24.67,
+  "started_utc": "2026-10-17T12:25:27.482692+00:00"
+ },
+ "ibex_info": {
+  "hostname": "cn504-26",
+  "slurm_job_id": "53910855",
+  "slurmd_nodename": "cn504-26",
+  "slurm_job_nodelist": "cn504-26",
+  "slurm_partition": "batch",
+  "cpu_model": "AMD EPYC 9655 96-Core Processor",
+  "python": "3.11.17",
+  "platform": "Linux-5.14.0-427.20.1.el9_4.0.1.x86_64-x86_64-with-glibc2.34",
+  "numpy": "2.4.6",
+  "scipy": "1.17.1",
+  "sklearn": "1.9.1",
+  "blas": [
+   {
+    "internal_api": "openblas",
+    "version": "0.3.30",
+    "num_threads": 1,
+    "architecture": "SkylakeX"
+   },
+   {
+    "internal_api": "openblas",
+    "version": "0.3.31.188.0",
+    "num_threads": 1,
+    "architecture": "SkylakeX"
+   },
+   {
+    "internal_api": "openmp",
+    "version": null,
+    "num_threads": 1,
+    "architecture": null
+   }
+  ],
+  "env_threads": {
+   "OMP_NUM_THREADS": "1",
+   "OPENBLAS_NUM_THREADS": "1",
+   "MKL_NUM_THREADS": "1"
+  },
+  "wall_seconds": 10.75,
+  "started_utc": "2026-10-17T12:26:56.574110+00:00"
+ },
+ "same_data_sha256": true,
+ "same_design_and_settings": true,
+ "ibex_node": "cn504-26",
+ "ibex_job_id": "53910855",
+ "max_abs_diff": 0.0,
+ "identical": true,
+ "definition_of_identical": "per_fold.csv and predictions.csv are byte-identical, every per-fold field is equal as written (accuracies at full float precision, chosen k, inner-CV score, LR iteration count, LR test log-loss as an exact float hex, LR coefficient hash), and the summaries' numbers are equal exactly."
+}

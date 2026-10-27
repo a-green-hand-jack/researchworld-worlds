@@ -1,0 +1,523 @@
+"""Independent check of the E8 production result (experiment-repo 34a943e: results/e8/grid/summary.json, counts.csv and
+results/README.md "E8 production result"; registration results/e8/prediction.json 'statistic', 'readings',
+'predictions', 'baselines', 'amendment_1'). Raw runs: release ext-runs-1 asset e8__grid__runs_grid.tar.gz
+(57,878,668 bytes, sha256 e03acc9a...), unpacked as runs8/<row>/s<seed>/.
+
+1. Inventory: rows x seeds, finiteness, provenance (code commit, vit_jepa md5, torch, GPU, SLURM array), each
+   config.json against the grid of prediction.json, the logged wd/lr at the logged steps against the schedule,
+   and the pre-switch agreement of every switched row with its start-level row (same seed).
+2. Recount the online-token count (eigenvalues >= 1e-3 x the largest, statistic.rank) at every epoch from the logged
+   spectrum; compare with the logged count_1e3 and with counts.csv; RankMe recomputed from the spectrum.
+3. My own scoring written from the registration text (Welch via scipy, set-based D rule, my bootstrap with 20000
+   resamples and a different seed, plus a Fieller interval for f at df = 4): gap, informativeness, TOST, difference
+   test, D, reading, f(e), verdicts, B2, and the registered sensitivities (margins, horizons 30/40, centred RankMe,
+   without unconverged runs, non-finite as collapsed).
+4. Comparison with summary.json and with the README numbers; then (only as a cross-check, afterwards) the delivered
+   code/e8_analyze.py re-run on the same runs into a temporary directory and compared with summary.json.
+5. Referee context (descriptive, not registered): post-switch decay dose, sub-threshold spectrum of hi->lo rows,
+   count ceiling, zero-variance rows, threshold sensitivity, probe-based f, GPU per row, still-moving rows.
+Usage: python3 checks/e8_grid_check.py /tmp/e8grid/runs8 /tmp/exp_34a/results/e8/grid [TARBALL] > checks/e8_grid_check.json
+"""
+import sys, os, json, csv, hashlib, math, io, contextlib, tempfile, itertools, collections
+import numpy as np
+from scipy import stats
+
+RUNS, DELIV = sys.argv[1], sys.argv[2]
+TARBALL = sys.argv[3] if len(sys.argv) > 3 else "/tmp/e8grid.tar.gz"
+REGP = os.path.join(DELIV, "..", "prediction.json")
+CODE = os.path.join(DELIV, "..", "..", "..", "code")
+README = os.path.join(DELIV, "..", "..", "README.md")
+EXPECT_SHA, EXPECT_BYTES = "e03acc9a5742a75dff34ec5bf6b5239bf13ff981a002eaf2ab92039c0fdc83f9", 57878668
+SW = [2, 5, 10, 20]
+SPE, TOT = 195, 9750
+reg = json.load(open(REGP))
+LEV = {a: (reg["grid"]["levels"][a]["lo"], reg["grid"]["levels"][a]["hi"]) for a in "TP"}
+out = collections.OrderedDict()
+
+# ----------------------------------------------------------------------------- 0. tarball
+if os.path.exists(TARBALL):
+    h = hashlib.sha256(open(TARBALL, "rb").read()).hexdigest()
+    out["tarball"] = dict(path=TARBALL, bytes=os.path.getsize(TARBALL), sha256=h,
+                          matches_expected=bool(h == EXPECT_SHA and os.path.getsize(TARBALL) == EXPECT_BYTES))
+
+# ----------------------------------------------------------------------------- 1. load
+def expected_config(row):
+    if row.startswith("PR_"):
+        arm, wd, sw, after = "P", ([0.04, 0.4] if row == "PR_ramp" else [0.4, 0.4]), -1.0, 0.0
+    else:
+        arm, rest = row.split("_", 1)
+        lo, hi = LEV[arm]
+        if rest == "lo":
+            wd, sw, after = [lo, lo], -1.0, 0.0
+        elif rest == "hi":
+            wd, sw, after = [hi, hi], -1.0, 0.0
+        else:
+            d, e = rest.split("_e")
+            s, t = (lo, hi) if d == "lo2hi" else (hi, lo)
+            wd, sw, after = [s, s], float(e), t
+    # grid.arms text: T = SGD momentum 0.9, lr 0.05 constant, copy target, no target LN, no predictor norms, decay on
+    # every parameter; P = AdamW, warmup + cosine lr, EMA 0.996 -> 1, target LN (E3 Arm P = vit_jepa defaults,
+    # lr 3e-4, warm-up 40/300, predictor norms on, no decay on 1-D parameters)
+    rec = (dict(opt="sgd", momentum=0.9, lr=0.05, sched="const", target="copy", target_ln=0, pred_norm=0, decay_norm=1)
+           if arm == "T" else
+           dict(opt="adamw", lr=3e-4, sched="cosine", target="ema", ema=[0.996, 1.0], target_ln=1, pred_norm=1,
+                decay_norm=0, warmup_frac=40 / 300))
+    return dict(rec, wd=wd, wd_switch_epoch=sw, wd_after=after, epochs=50.0, full_epochs=50.0,
+                steps_per_epoch=reg["grid"]["steps_per_epoch"], total_steps=TOT, instrument=1, probe_every=10.0,
+                width=128, batch=256, probe_n_full=10000)
+
+
+def sched(c, k):
+    """lr, wd of update index k as vit_jepa.hyper (re-implemented)."""
+    if c["sched"] == "const":
+        lr = c["lr"]
+    else:
+        warm = int(c["warmup_frac"] * TOT)
+        lr = c["lr"] * k / max(warm, 1) if k < warm else c["lr"] * 0.5 * (1 + math.cos(math.pi * min((k - warm) / (TOT - warm), 1.0)))
+    w0, w1 = c["wd"]
+    wd = w1 + (w0 - w1) * 0.5 * (1 + math.cos(math.pi * min(k / TOT, 1.0)))
+    if c["wd_switch_epoch"] >= 0 and k >= int(round(c["wd_switch_epoch"] * SPE)):
+        wd = c["wd_after"]
+    return lr, wd
+
+
+def rankme_from_eig(ev):
+    s = np.sqrt(np.clip(ev, 0, None)); p = s / s.sum() + 1e-7
+    return float(np.exp(-(p * np.log(p)).sum()))
+
+
+runs = {}
+inv_bad = collections.defaultdict(list)
+sched_checks = sched_bad = 0
+recount_mism, rankme_maxdiff, nonfinite_spectra = 0, 0.0, 0
+max_last_rel, max_count = 0.0, 0
+for row in sorted(os.listdir(RUNS)):
+    if not os.path.isdir(os.path.join(RUNS, row)):
+        continue
+    for sd in sorted(os.listdir(os.path.join(RUNS, row))):
+        d = os.path.join(RUNS, row, sd)
+        if not os.path.isdir(d):
+            continue
+        c = json.load(open(os.path.join(d, "config.json")))
+        pv = json.load(open(os.path.join(d, "provenance.json")))
+        fin = json.load(open(os.path.join(d, "final.json"))) if os.path.exists(os.path.join(d, "final.json")) else None
+        L = [json.loads(l) for l in open(os.path.join(d, "log.jsonl"))]
+        full = {int(round(r["epoch"])): r for r in L if r.get("full")}
+        ok = fin is not None and fin.get("steps") == TOT and sorted(full) == list(range(51)) and not any(r.get("nonfinite") for r in L)
+        R = dict(row=row, seed=int(sd[1:]), cfg=c, prov=pv, eig={}, count={}, logged_count={}, rankme={}, rankme_re={},
+                 probe=None, gpu=pv.get("gpu"))
+        for e, r in full.items():
+            ev = np.asarray(r["online_tok"]["eig"], float)
+            fin_ev = bool(np.all(np.isfinite(ev))) and math.isfinite(r["online_tok"]["total_var"])
+            nonfinite_spectra += int(not fin_ev); ok = ok and fin_ev
+            evs = np.sort(ev)[::-1]
+            R["eig"][e] = evs
+            R["count"][e] = int((evs >= 1e-3 * evs[0]).sum()) if evs[0] > 0 else 0
+            R["logged_count"][e] = r["online_tok"]["count_1e3"]
+            recount_mism += int(R["count"][e] != R["logged_count"][e])
+            R["rankme"][e] = r["online_tok"]["rankme_c"]; R["rankme_re"][e] = rankme_from_eig(evs)
+            rankme_maxdiff = max(rankme_maxdiff, abs(R["rankme"][e] - R["rankme_re"][e]))
+            max_last_rel = max(max_last_rel, float(evs[-1] / evs[0])); max_count = max(max_count, R["count"][e])
+            if r.get("online_probe"):
+                R["probe_epoch"], R["probe"] = e, r["online_probe"]["probe_acc"]
+        R["ok"] = ok
+        # config vs registration grid
+        exp = expected_config(row)
+        for k, v in exp.items():
+            if isinstance(v, float) or (isinstance(v, list) and v and isinstance(v[0], float)):
+                good = np.allclose(np.asarray(c.get(k), float), np.asarray(v, float), rtol=1e-12, atol=0)
+            else:
+                good = c.get(k) == v
+            if not good:
+                inv_bad["config"].append([row, sd, k, c.get(k), v])
+        if c.get("seed") != R["seed"] or not c.get("out", "").endswith(f"{row}/{sd}"):
+            inv_bad["config"].append([row, sd, "seed/out", c.get("seed"), c.get("out")])
+        # logged lr / wd at the logged steps (record at step s carries the hyper of update index s - 1)
+        for r in L:
+            if not r.get("full") and "wd" in r:
+                lr, wd = sched(c, r["step"] - 1)
+                sched_checks += 1
+                if abs(r["wd"] - wd) > 1e-12 * max(1.0, wd) or abs(r["lr"] - lr) > 1e-15:
+                    sched_bad += 1; inv_bad["schedule"].append([row, sd, r["step"], r["wd"], wd, r["lr"], lr])
+        runs.setdefault(row, []).append(R)
+
+grid_rows = [r for r in runs if not r.startswith("PR_")]
+torch_pf = collections.Counter(tuple(x for x in R["prov"]["pip_freeze"] if x.startswith("torch==")) for v in runs.values() for R in v)
+pip_sha = collections.Counter(hashlib.sha256("\n".join(R["prov"]["pip_freeze"]).encode()).hexdigest()[:16] for v in runs.values() for R in v)
+e3env = json.load(open(os.path.join(DELIV, "..", "..", "e3", "cluster_env.json")))["packages"]
+e3set = sorted(f"{k}=={v['version']}" for k, v in e3env.items())
+pip_equal_e3 = all(sorted(R["prov"]["pip_freeze"]) == e3set for v in runs.values() for R in v)
+gpu_short = lambda g: {"Tesla P100-PCIE-16GB": "P100", "NVIDIA GeForce GTX 1080 Ti": "1080Ti", "NVIDIA A100-SXM4-80GB": "A100",
+                       "NVIDIA GeForce RTX 2080 Ti": "2080Ti", "Tesla V100-SXM2-32GB": "V100"}.get(g, g)
+gpus_grid = collections.Counter(gpu_short(R["gpu"]) for r in grid_rows for R in runs[r])
+gpus_e8r = collections.Counter(gpu_short(R["gpu"]) for r in runs if r.startswith("PR_") for R in runs[r])
+out["inventory"] = dict(
+    rows_total=len(runs), grid_rows=len(grid_rows), e8r_rows=sorted(r for r in runs if r.startswith("PR_")),
+    seeds_per_row={r: sorted(R["seed"] for R in v) for r, v in runs.items()},
+    grid_runs=sum(len(runs[r]) for r in grid_rows), e8r_runs=sum(len(v) for r, v in runs.items() if r.startswith("PR_")),
+    all_finite_and_complete=all(R["ok"] for v in runs.values() for R in v), nonfinite_spectra=nonfinite_spectra,
+    code_commits=dict(collections.Counter(R["prov"]["code_commit"] for v in runs.values() for R in v)),
+    vit_jepa_md5=dict(collections.Counter(R["prov"]["vit_jepa_md5"] for v in runs.values() for R in v)),
+    torch_in_pip_freeze={",".join(k): n for k, n in torch_pf.items()},
+    torch_in_config=dict(collections.Counter(R["cfg"]["torch"] for v in runs.values() for R in v)),
+    provenance_has_torch_field=any("torch" in R["prov"] for v in runs.values() for R in v),
+    pip_freeze_sha256_prefixes=dict(pip_sha), pip_freeze_equals_e3_cluster_env=pip_equal_e3,
+    gpu_provenance_equals_config=all(R["prov"]["gpu"] == R["cfg"]["gpu"] for v in runs.values() for R in v),
+    gpus_grid=dict(gpus_grid), gpus_e8r=dict(gpus_e8r),
+    gpu_per_row={r: [gpu_short(R["gpu"]) for R in sorted(v, key=lambda x: x["seed"])] for r, v in runs.items()},
+    slurm_arrays=dict(collections.Counter(R["prov"]["array"] for v in runs.values() for R in v)),
+    grid_array_tasks=sorted({int(R["prov"]["task"]) for r in grid_rows for R in runs[r]}),
+    config_mismatches=inv_bad["config"], schedule_checks=sched_checks, schedule_mismatches=sched_bad,
+    schedule_mismatch_examples=inv_bad["schedule"][:5])
+
+# pre-switch agreement: a switched row runs the start-level schedule through epoch e (the epoch-e spectrum is logged
+# after update e*195 - 1, the switch acts from update e*195)
+pre = {}
+for r in grid_rows:
+    if "2" not in r.split("_")[1]:
+        continue
+    arm, d, e = r.split("_")[0], r.split("_")[1], int(r.split("_e")[1])
+    ref = {R["seed"]: R for R in runs[f"{arm}_{d[:2]}"]}
+    rr = []
+    for R in runs[r]:
+        S = ref[R["seed"]]
+        rr.append(dict(seed=R["seed"], same_gpu_model=R["gpu"] == S["gpu"],
+                       bitwise_identical_spectra=all(np.array_equal(R["eig"][t], S["eig"][t]) for t in range(e + 1)),
+                       max_rel_eig_diff=float(max(np.max(np.abs(R["eig"][t] - S["eig"][t])) / S["eig"][t][0] for t in range(e + 1))),
+                       max_abs_count_diff=int(max(abs(R["count"][t] - S["count"][t]) for t in range(e + 1)))))
+    pre[r] = rr
+out["pre_switch_vs_start_row"] = dict(
+    rows=pre, any_bitwise_identical=any(x["bitwise_identical_spectra"] for v in pre.values() for x in v),
+    runs_with_count_diff=[[r, x["seed"], x["max_abs_count_diff"], x["same_gpu_model"]] for r, v in pre.items() for x in v if x["max_abs_count_diff"]])
+
+# ----------------------------------------------------------------------------- 2. recount vs logged vs counts.csv
+csv_mism, csv_probe_mism, csv_rows = 0, 0, 0
+for r in csv.DictReader(open(os.path.join(DELIV, "counts.csv"))):
+    csv_rows += 1
+    R = next(x for x in runs[r["row"]] if x["seed"] == int(r["seed"][1:]))
+    csv_mism += sum(int(r[f"ep{e}"]) != R["count"][e] for e in range(51))
+    csv_probe_mism += int(abs(float(r["probe_last"]) - R["probe"]) > 0)
+out["recount"] = dict(rule="count = #eigenvalues >= 1e-3 x the largest of the logged online-token spectrum (online_tok.eig), every epoch 0..50",
+                      spectra=sum(len(R["eig"]) for v in runs.values() for R in v), recount_vs_logged_mismatches=recount_mism,
+                      csv_rows=csv_rows, csv_vs_recount_mismatches=csv_mism, csv_probe_last_vs_log_mismatches=csv_probe_mism,
+                      rankme_c_recomputed_from_eig_max_abs_diff=rankme_maxdiff, max_count=max_count,
+                      eigenvalues_per_spectrum=128, max_relative_smallest_eigenvalue=max_last_rel,
+                      note="the 128th eigenvalue is <= %.1e x the largest in every spectrum (one exact null direction: the encoder's "
+                           "final LayerNorm makes the token features satisfy one linear constraint), so the count ceiling is 127" % max_last_rel)
+
+# ----------------------------------------------------------------------------- 3. own scoring
+def welch(x, y, level):
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    m = float(x.mean() - y.mean())
+    if x.var(ddof=1) + y.var(ddof=1) == 0:
+        return [m, m, m, "degenerate: zero variance in both rows"]
+    ci = stats.ttest_ind(x, y, equal_var=False).confidence_interval(level)
+    return [m, float(ci.low), float(ci.high)]
+
+
+RNG = np.random.default_rng(20261018)
+NB = 20000
+
+
+def fstat(a, b, c):
+    return (np.mean(a) - np.mean(b)) / (np.mean(c) - np.mean(b))
+
+
+def boot_f(re, rn, rz):
+    re, rn, rz = (np.asarray(v, float) for v in (re, rn, rz))
+    ia, ib, ic = (RNG.integers(0, v.size, (NB, v.size)) for v in (re, rn, rz))
+    a, b, c = re[ia].mean(1), rn[ib].mean(1), rz[ic].mean(1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        bs = (a - b) / (c - b)
+    bs = bs[np.isfinite(bs)]
+    return [float(fstat(re, rn, rz)), float(np.quantile(bs, 0.025)), float(np.quantile(bs, 0.975))]
+
+
+def fieller_f(re, rn, rz, df=4, level=0.95):
+    """Fieller interval for f = X / Y, X = mean(re) - mean(rn), Y = mean(rz) - mean(rn) (independent rows), t at df."""
+    re, rn, rz = (np.asarray(v, float) for v in (re, rn, rz))
+    va, vb, vc = (v.var(ddof=1) / v.size for v in (re, rn, rz))
+    X, Y = re.mean() - rn.mean(), rz.mean() - rn.mean()
+    Vx, Vy, Cxy = va + vb, vc + vb, vb
+    t2 = stats.t.ppf(0.5 + level / 2, df) ** 2
+    A, B, C = Y * Y - t2 * Vy, -2 * (X * Y - t2 * Cxy), X * X - t2 * Vx
+    if A <= 0:
+        return [float(X / Y), None, None]
+    disc = B * B - 4 * A * C
+    if disc < 0:
+        return [float(X / Y), None, None]
+    r1, r2 = (-B - math.sqrt(disc)) / (2 * A), (-B + math.sqrt(disc)) / (2 * A)
+    return [float(X / Y), float(min(r1, r2)), float(max(r1, r2))]
+
+
+def value(R, metric, ep):
+    if not R["ok"]:
+        return 0.0
+    return {"count": R["count"], "rankme": R["rankme"], "rankme_re": R["rankme_re"]}[metric][ep] if metric in ("count", "rankme", "rankme_re") \
+        else int((R["eig"][ep] >= metric * R["eig"][ep][0]).sum())
+
+
+def cell_rows(arm, d):
+    s, e_ = ("lo", "hi") if d == "lo2hi" else ("hi", "lo")
+    rows = {"N": runs[f"{arm}_{s}"], 0: runs[f"{arm}_{e_}"]}
+    for e in SW:
+        rows[e] = runs[f"{arm}_{d}_e{e}"]
+    return rows
+
+
+def score(rows, margin=0.2, metric="count", ep=50, drop=None, f_ci=True):
+    V = {k: [value(R, metric, ep) for R in v if (drop is None or (R["row"], R["seed"]) not in drop)] for k, v in rows.items()}
+    res = dict(n={str(k): len(v) for k, v in V.items()}, means={str(k): float(np.mean(v)) for k, v in V.items()})
+    if len(V["N"]) < 4 or len(V[0]) < 4:
+        return dict(res, D="undetermined", reading="undetermined")
+    gap = welch(V[0], V["N"], 0.95)
+    inf = bool((gap[1] > 0 or gap[2] < 0) and abs(gap[0]) >= 5)
+    delta = margin * abs(gap[0])
+    res.update(gap=gap, informative=inf, delta=delta, rows={})
+    for e in SW:
+        if len(V[e]) < 4:
+            res["rows"][str(e)] = None; continue
+        c90, c95 = welch(V[e], V["N"], 0.90), welch(V[e], V["N"], 0.95)
+        row = dict(values=V[e], diff90=c90, equivalent=bool(c90[1] > -delta and c90[2] < delta),
+                   tost_slack=float(min(c90[1] + delta, delta - c90[2])), diff95=c95, different=bool(c95[1] > 0 or c95[2] < 0))
+        if f_ci:
+            row["f_boot"] = boot_f(V[e], V["N"], V[0]); row["f_fieller_df4"] = fieller_f(V[e], V["N"], V[0])
+        else:
+            row["f"] = float(fstat(V[e], V["N"], V[0]))
+        res["rows"][str(e)] = row
+    if any(res["rows"][str(e)] is None for e in SW):
+        D = "undetermined"
+    else:
+        cand = [e for e in SW if all(res["rows"][str(e2)]["equivalent"] for e2 in SW if e2 >= e)]
+        D = min(cand) if cand else ">20"
+    if not inf:
+        D = "uninformative"
+    res["D"] = D
+    r20 = res["rows"].get("20")
+    res["reading"] = ("early" if D in (2, 5) else "intermediate" if D in (10, 20) else
+                      ("late" if r20["different"] else "inconclusive at n=5") if D == ">20" else D)
+    res["difference_at_20_demonstrated"] = bool(r20 and r20["different"])
+    return res
+
+
+def verdict(res):
+    if res["D"] in ("undetermined", "uninformative"):
+        return "not scored: " + res["D"]
+    f20 = res["rows"]["20"]["f_boot"]
+    if res["reading"] == "late" and f20[0] >= 0.5:
+        return "holds (strong)" if f20[1] >= 0.5 else "holds"
+    why = ([] if res["reading"] == "late" else ["reading %r, not 'late'" % res["reading"]]) + \
+          ([] if f20[0] >= 0.5 else ["f(20) = %.3f < 0.5" % f20[0]])
+    return "fails: " + "; ".join(why)
+
+
+cells = {}
+for arm in "TP":
+    for d in ("lo2hi", "hi2lo"):
+        rows = cell_rows(arm, d)
+        prim = score(rows)
+        c = dict(primary=prim, verdict=verdict(prim))
+        nfz = score(rows, f_ci=False)  # all runs finite: rank-0 scoring of non-finite runs is the same data
+        c["nonfinite_as_collapsed_D"] = nfz["D"]
+        c["D_final"] = prim["D"] if nfz["D"] == prim["D"] else "undetermined"
+        c["margins"] = {str(m): score(rows, margin=m, f_ci=False)["D"] for m in (0.1, 0.2, 0.3)}
+        c["margin_readings"] = {str(m): score(rows, margin=m, f_ci=False)["reading"] for m in (0.1, 0.2, 0.3)}
+        c["tost_slack_by_margin"] = {str(m): {e: round(v["tost_slack"], 3) for e, v in score(rows, margin=m, f_ci=False)["rows"].items()}
+                                     for m in (0.1, 0.2, 0.3)}
+        c["horizons"] = {}
+        for ep in (30, 40):
+            h = score(rows, ep=ep, f_ci=False)
+            c["horizons"][str(ep)] = dict(D=h["D"], reading=h["reading"], gap=h["gap"], f={e: v["f"] for e, v in h["rows"].items()})
+        c["rankme_c_logged_D"] = score(rows, metric="rankme", f_ci=False)["D"]
+        c["rankme_c_recomputed_D"] = score(rows, metric="rankme_re", f_ci=False)["D"]
+        flagged = sorted((R["row"], R["seed"], R["count"][45], R["count"][50]) for v in rows.values() for R in v
+                         if abs(R["count"][50] - R["count"][45]) > prim["delta"] / 2)
+        c["unconverged_flagged"] = flagged
+        wo = score(rows, drop={(a, b) for a, b, _, _ in flagged}, f_ci=False)
+        c["without_unconverged"] = dict(D=wo["D"], reading=wo["reading"], n=wo["n"])
+        c["threshold_sensitivity_unregistered"] = {
+            str(t): (lambda s_: dict(D=s_["D"], reading=s_["reading"], gap=round(s_["gap"][0], 2),
+                                     f={e: round(v["f"], 3) for e, v in s_["rows"].items()}))(score(rows, metric=t, f_ci=False))
+            for t in (5e-4, 2e-3)}
+        cells[f"{arm}_{d}"] = c
+b2 = {}
+for arm in "TP":
+    rr = cells[f"{arm}_lo2hi"]["primary"]["rows"]
+    low = [e for e in SW if rr[str(e)]["f_boot"][0] < 0.5]
+    low_ci = [e for e in SW if rr[str(e)]["f_boot"][1] < 0.5]
+    b2[arm] = dict(f={e: rr[str(e)]["f_boot"] for e in SW}, verdict_point="holds" if not low else "fails at e = %s" % low,
+                   below_0p5_by_ci_lower_bound=low_ci)
+out["constant_rows_epoch50"] = {arm: dict(lo=cells[f"{arm}_lo2hi"]["primary"]["means"]["N"], hi=cells[f"{arm}_lo2hi"]["primary"]["means"]["0"],
+                                          lo_seeds=[value(R, "count", 50) for R in runs[f"{arm}_lo"]],
+                                          hi_seeds=[value(R, "count", 50) for R in runs[f"{arm}_hi"]],
+                                          gap_hi_minus_lo=cells[f"{arm}_lo2hi"]["primary"]["gap"],
+                                          informative=cells[f"{arm}_lo2hi"]["primary"]["informative"]) for arm in "TP"}
+out["cells"] = cells
+out["B2_warmup"] = b2
+out["near_collapse_premise_D_le_5"] = {k: [m for m, D in c["margins"].items() if D in (2, 5)] for k, c in cells.items()}
+
+# ----------------------------------------------------------------------------- 4a. comparison with summary.json
+S = json.load(open(os.path.join(DELIV, "summary.json")))
+cmp_ = {}
+for k, c in cells.items():
+    s, p = S[k], c["primary"]
+    rows_cmp = {}
+    for e in SW:
+        a, b = p["rows"][str(e)], s["primary"]["rows"][str(e)]
+        rows_cmp[str(e)] = dict(
+            diff90_max_abs=float(np.max(np.abs(np.array(a["diff90"][:3]) - np.array(b["diff"])))),
+            diff95_max_abs=float(np.max(np.abs(np.array(a["diff95"][:3]) - np.array(b["diff95"])))),
+            equivalent_same=a["equivalent"] == b["equivalent"], different_same=a["different"] == b["different"],
+            f_point_abs=abs(a["f_boot"][0] - b["f"][0]), f_ci_delivered=b["f"][1:], f_ci_mine_boot=a["f_boot"][1:],
+            f_ci_mine_fieller_df4=a["f_fieller_df4"][1:])
+    cmp_[k] = dict(
+        gap_max_abs=float(np.max(np.abs(np.array(p["gap"][:3]) - np.array(s["primary"]["gap"])))),
+        delta_abs=abs(p["delta"] - s["primary"]["delta"]), D=[c["D_final"], s["D_final"]], reading=[p["reading"], s["primary"]["reading"]],
+        verdict=[c["verdict"], s["prediction"]["verdict"]],
+        margins=[c["margins"], {k_: v for k_, v in s["margins"].items()}],
+        horizons=[{e: v["D"] for e, v in c["horizons"].items()}, s["horizons"]],
+        rankme=[c["rankme_c_logged_D"], s["rankme_c"]], without_unconverged=[c["without_unconverged"]["D"], s.get("without_unconverged")],
+        rows=rows_cmp)
+    # regrowth spectrum at the hi->lo switch
+    if k.endswith("hi2lo"):
+        arm = k[0]; hi_f, lo_f = p["means"]["N"], p["means"]["0"]
+        mism = 0
+        for e in SW:
+            for R, sr in zip(sorted(runs[f"{arm}_hi2lo_e{e}"], key=lambda x: x["seed"]), s["regrowth_at_switch"][str(e)]):
+                rel = R["eig"][e] / R["eig"][e][0]
+                k0, k1 = int(round(hi_f)), int(round(lo_f))
+                seg = rel[k0:k1] if k1 > k0 else rel[k0:k0 + 1]
+                mine = dict(count_1e3=int((rel >= 1e-3).sum()), count_1e5=int((rel >= 1e-5).sum()), count_1e7=int((rel >= 1e-7).sum()),
+                            median_log10_regrow=float(np.median(np.log10(np.maximum(seg, 1e-30)))))
+                mism += int(any(mine[q] != sr[q] for q in ("count_1e3", "count_1e5", "count_1e7")) or abs(mine["median_log10_regrow"] - sr["median_log10_regrow"]) > 1e-9)
+        cmp_[k]["regrowth_at_switch_mismatches"] = mism
+cmp_["prediction_verdicts_delivered"] = S["prediction_verdicts"]
+cmp_["B2_mine"] = {a: b2[a]["verdict_point"] for a in "TP"}
+cmp_["nonfinite_delivered"] = S["nonfinite"]
+out["vs_summary_json"] = cmp_
+
+# ----------------------------------------------------------------------------- 4b. README numbers
+def r_(x, n):
+    return round(float(x) + 0.0, n)
+
+
+claims = dict(
+    constant=dict(T=dict(lo=39.0, hi=4.0, gap=[35.0, 31.3, 38.7]), P=dict(lo=127.0, hi=43.6, gap=[83.4, 81.3, 85.5])),
+    table={"T_lo2hi": (">20", "late", [1.01, 1.02, 1.03, 1.00], [1.00, 1.00], "holds (strong)", 2),
+           "T_hi2lo": (10, "intermediate", [0.50, 0.26, 0.06, 0.006], [0.000, 0.017], "fails", 3),
+           "P_lo2hi": (">20", "late", [0.99, 0.94, 0.85, 0.45], [0.38, 0.51], "fails", 2),
+           "P_hi2lo": (20, "intermediate", [0.99, 0.83, 0.26, 0.07], [0.05, 0.10], "fails", 2)})
+rd = {}
+for arm in "TP":
+    cl, me = claims["constant"][arm], out["constant_rows_epoch50"][arm]
+    # README reports the gap as lo - hi (positive)
+    g = [-me["gap_hi_minus_lo"][0], -me["gap_hi_minus_lo"][2], -me["gap_hi_minus_lo"][1]]
+    rd[f"constant_{arm}"] = dict(claimed=cl, mine=dict(lo=r_(me["lo"], 1), hi=r_(me["hi"], 1), gap=[r_(x, 1) for x in g]),
+                                 reproduced=bool(r_(me["lo"], 1) == cl["lo"] and r_(me["hi"], 1) == cl["hi"] and [r_(x, 1) for x in g] == cl["gap"]))
+for k, (D, rdg, fs, ci, vd, nd) in claims["table"].items():
+    p = cells[k]["primary"]; s = S[k]["primary"]
+    mf = [p["rows"][str(e)]["f_boot"][0] for e in SW]
+    f_ok = all(r_(m, 2 if e < 20 else nd) == c_ for m, c_, e in zip(mf, fs, SW))
+    ci_deliv = [r_(x, nd) for x in s["rows"]["20"]["f"][1:]]
+    ci_mine = [r_(x, nd) for x in p["rows"]["20"]["f_boot"][1:]]
+    rd[k] = dict(claimed=dict(D=D, reading=rdg, f=fs, f20_ci=ci, verdict=vd),
+                 mine=dict(D=cells[k]["D_final"], reading=p["reading"], f=[r_(m, 4) for m in mf], f20_ci_boot=ci_mine,
+                           f20_ci_fieller_df4=[None if x is None else r_(x, 3) for x in p["rows"]["20"]["f_fieller_df4"][1:]],
+                           verdict=cells[k]["verdict"]),
+                 D_reading_verdict_reproduced=bool(cells[k]["D_final"] == D and p["reading"] == rdg and cells[k]["verdict"].startswith(vd)),
+                 f_points_reproduced=f_ok, f20_ci_delivered_rounded=ci_deliv, f20_ci_delivered_matches_claim=ci_deliv == ci)
+T_hi_m = lambda e: float(np.mean([R["count"][e] for R in runs["T_hi"]]))
+rd["T_hi_epoch10_vs_50_and_T_hi2lo_e10_end"] = dict(claimed=[8.8, 4.0, 6.0],
+                                                    mine=[T_hi_m(10), T_hi_m(50), float(np.mean([R["count"][50] for R in runs["T_hi2lo_e10"]]))])
+pm = {r: float(np.mean([R["probe"] for R in v])) for r, v in runs.items()}
+pr = {r: [min(R["probe"] for R in v), max(R["probe"] for R in v)] for r, v in runs.items()}
+Prow = [r for r in grid_rows if r.startswith("P_")]
+Thl = [r for r in grid_rows if r.startswith("T_hi2lo")]
+rd["probe_epoch50"] = dict(claimed=dict(T_lo=0.457, T_hi=0.170, T_hi2lo="0.33-0.41", P="0.48-0.53"),
+                           row_means=pm, row_min_max=pr,
+                           T_hi2lo_row_mean_range=[min(pm[r] for r in Thl), max(pm[r] for r in Thl)],
+                           T_hi2lo_run_range=[min(pr[r][0] for r in Thl), max(pr[r][1] for r in Thl)],
+                           P_grid_row_mean_range=[min(pm[r] for r in Prow), max(pm[r] for r in Prow)],
+                           P_grid_run_range=[min(pr[r][0] for r in Prow), max(pr[r][1] for r in Prow)])
+rd["reading_percentages"] = dict(claimed=dict(P_lo2hi_e10=0.85, P_lo2hi_e20=0.45, T_hi2lo_e10=0.06, T_hi2lo_e20=0.006,
+                                              P_hi2lo_e10=0.26, P_hi2lo_e20=0.07),
+                                 mine={f"{k}_e{e}": cells[k]["primary"]["rows"][str(e)]["f_boot"][0] for k in ("P_lo2hi", "T_hi2lo", "P_hi2lo") for e in (10, 20)})
+rd["inventory_claims"] = dict(claimed="100 grid runs (20 rows x 5 seeds), all finite; every provenance.json gives code fabd62c, torch 2.5.1+cu124 and a V100",
+                              grid_runs=out["inventory"]["grid_runs"], all_finite=out["inventory"]["all_finite_and_complete"],
+                              gpus_grid=dict(gpus_grid), v100_grid_runs=gpus_grid.get("V100", 0),
+                              provenance_torch_field=out["inventory"]["provenance_has_torch_field"])
+out["vs_readme"] = rd
+
+# ----------------------------------------------------------------------------- 4c. delivered code re-run (cross-check only)
+sys.path.insert(0, os.path.abspath(CODE))
+try:
+    import e8_analyze
+    tmp = tempfile.mkdtemp(prefix="e8_rerun_")
+    with contextlib.redirect_stdout(io.StringIO()):
+        e8_analyze.main(RUNS, tmp)
+    S2 = json.load(open(os.path.join(tmp, "summary.json")))
+
+    def leaves(o, p=""):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                yield from leaves(v, f"{p}/{k}")
+        elif isinstance(o, list):
+            for i, v in enumerate(o):
+                yield from leaves(v, f"{p}[{i}]")
+        else:
+            yield p, o
+    A, B = dict(leaves(S)), dict(leaves(S2))
+    diff = [k for k in set(A) | set(B) if not k.startswith("/command") and A.get(k) != B.get(k)]
+    out["delivered_code_rerun"] = dict(leaves=len(A), differing_leaves=len(diff), examples=sorted(diff)[:10],
+                                       note="code/e8_analyze.py of 34a943e re-run on the unpacked runs (temporary directory); 0 means summary.json is what this code produces from these runs")
+except Exception as ex:  # pragma: no cover
+    out["delivered_code_rerun"] = dict(error=repr(ex))
+
+# ----------------------------------------------------------------------------- 5. referee context (descriptive)
+def lr_of(arm, k):
+    c = runs[f"{arm}_lo"][0]["cfg"]
+    return sched(c, k)[0]
+
+
+ctx = {}
+for arm in "TP":
+    lo, hi = LEV[arm]
+    tot_lr = sum(lr_of(arm, k) for k in range(TOT))
+    ctx[arm] = dict(
+        relaxation_steps_at_peak_lr={"lo": 1 / (max(lr_of(arm, k) for k in range(TOT)) * lo), "hi": 1 / (max(lr_of(arm, k) for k in range(TOT)) * hi)},
+        post_switch={str(e): dict(lr_budget_fraction_left=sum(lr_of(arm, k) for k in range(e * SPE, TOT)) / tot_lr,
+                                  decay_efolds_left_at_hi=hi * sum(lr_of(arm, k) for k in range(e * SPE, TOT)),
+                                  decay_efolds_left_at_lo=lo * sum(lr_of(arm, k) for k in range(e * SPE, TOT))) for e in SW + [0]})
+    ctx[arm]["relaxation_epochs_at_peak_lr"] = {k: v / SPE for k, v in ctx[arm]["relaxation_steps_at_peak_lr"].items()}
+out["context_decay_dose"] = dict(note="sum over the remaining updates of lr x wd (decoupled decay multiplies decayed weights by 1 - lr wd per "
+                                      "update): e-folds of weight-decay shrinkage available after the switch; lr_budget_fraction_left = "
+                                      "share of the run's integrated lr after epoch e (Arm P: warm-up + cosine to 0 at epoch 50)", **ctx)
+sub = {}
+for arm in "TP":
+    for r in [f"{arm}_hi", f"{arm}_lo"] + [f"{arm}_hi2lo_e{e}" for e in SW]:
+        sub[r] = {str(ep): [float(np.mean([int((R["eig"][ep] >= t * R["eig"][ep][0]).sum()) for R in runs[r]])) for t in (1e-3, 1e-5, 1e-7)]
+                  for ep in (2, 5, 10, 20, 30, 40, 50)}
+out["context_subthreshold_counts_1e3_1e5_1e7"] = sub
+curves = {r: [float(np.mean([R["count"][e] for R in v])) for e in range(51)] for r, v in runs.items()}
+out["context_curves_mean_count"] = curves
+out["context_still_moving_rows"] = {r: dict(R45=curves[r][45], R50=curves[r][50], change_45_50=curves[r][50] - curves[r][45],
+                                            argmin_epoch=int(np.argmin(curves[r])), argmax_epoch=int(np.argmax(curves[r])))
+                                    for r in grid_rows}
+out["context_zero_variance_rows_epoch50"] = {r: v[0]["count"][50] for r in grid_rows for v in [runs[r]]
+                                             if len({R["count"][50] for R in v}) == 1}
+out["context_ceiling"] = dict(ceiling=127, rows_with_a_seed_at_127_epoch50=sorted(r for r in grid_rows if any(R["count"][50] == 127 for R in runs[r])),
+                              P_lo_first_epoch_all_seeds_127=next((e for e in range(51) if all(R["count"][e] == 127 for R in runs["P_lo"])), None),
+                              max_f_possible_P_hi2lo=(127 - curves["P_hi"][50]) / (curves["P_lo"][50] - curves["P_hi"][50]))
+fp = {}
+for k in cells:
+    arm, d = k.split("_")
+    rows = cell_rows(arm, d)
+    pN, pZ = np.mean([R["probe"] for R in rows["N"]]), np.mean([R["probe"] for R in rows[0]])
+    fp[k] = {str(e): float((np.mean([R["probe"] for R in rows[e]]) - pN) / (pZ - pN)) for e in SW}
+out["context_probe_gap_fraction_unregistered"] = fp
+out["context_bootstrap"] = dict(n_per_row=5, distinct_resamples_per_row=math.comb(9, 5), resamples=NB, rng_seed=20261018,
+                                delivered="2000 resamples, default_rng(0) re-seeded in every gap_frac call, percentile CI")
+out["context_linear_reference_amendment_1"] = dict(
+    text=reg["amendment_1"]["delivered_account_expectation"],
+    f20={k: cells[k]["primary"]["rows"]["20"]["f_boot"] for k in cells})
+print(json.dumps(out, indent=1, default=lambda o: o.item() if hasattr(o, "item") else str(o)))

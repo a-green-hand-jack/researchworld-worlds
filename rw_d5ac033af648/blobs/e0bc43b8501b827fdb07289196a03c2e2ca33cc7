@@ -1,0 +1,25 @@
+{
+ "started_utc": "2026-10-19T10:24:32Z",
+ "resource": "local-compute",
+ "note": "all three started together at the start of work, scripts run unmodified from /initial-state/inputs/0/",
+ "jobs": [
+  {
+   "ref": "job-e8840f36bf",
+   "command": "python3 -u /initial-state/inputs/0/pilot.py /hutian/runs/pilot.json",
+   "planned_duration": "about 9 minutes (540 s sampling)",
+   "part_of_delivery": true
+  },
+  {
+   "ref": "job-5c50e4619c",
+   "command": "python3 -u /initial-state/inputs/0/extended.py 55 /hutian/runs/extended_55.json",
+   "planned_duration": "55 minutes",
+   "part_of_delivery": false
+  },
+  {
+   "ref": "job-bd378b7b72",
+   "command": "python3 -u /initial-state/inputs/0/extended.py 120 /hutian/runs/extended_120.json",
+   "planned_duration": "120 minutes",
+   "part_of_delivery": false
+  }
+ ]
+}

@@ -1,0 +1,40 @@
+# Review standard for the extension (internal-review-repo#4)
+
+Judged against the `Research objective` internal-review-repo#4, on top of R1-R4 in
+`review/standard.md`, which the delivered results must still meet unchanged.
+Baseline: the released delivery, `paper-repo` 7f8c5f7a5f08ad84c2746a9d559d724547c1d0e8.
+
+## E1 Quadratic fit
+- Same 40 points as R1 (x = 0..39, `default_rng(227)`, `rng.normal(0, 3, 40)`), not redrawn
+  differently; OLS on [1, x, x^2], 95% t-intervals with df = 37 (t = 2.0262), SEs from the
+  residual variance; method stated.
+- Independent reference (numpy 2.4.6, scipy 1.17.1):
+  a = 4.97158 [2.39471, 7.54844]; b = 0.58626 [0.28057, 0.89195];
+  c = 0.0041569 [-0.00342, 0.01173]; RSS = 293.470 (line: 303.272).
+  Reported values must agree to the stated precision, or the difference must be explained.
+- Statements about the true values (2.5, 0.8, 0) relative to the intervals are correct if made
+  (c's interval contains 0).
+
+## E2 AIC comparison
+- Gaussian maximum-likelihood AIC for both models on the same 40 points, the convention
+  stated (with or without the sigma parameter, constant terms or not; the difference is the
+  same either way): delta AIC (quadratic - line) = +0.686. With sigma counted:
+  AIC line 200.545, quadratic 201.231 (n ln(RSS/n) + 2p form: 85.030 / 85.716).
+- Conclusion matches the numbers: the line has the lower AIC, but by < 2, so the data do not
+  meaningfully distinguish them / give no support for the curvature. "By how much" is stated
+  quantitatively (delta AIC; optionally Akaike weights ~0.58/0.42, AICc delta 1.16, or the
+  nested F-test p = 0.27 as corroboration). Overclaiming ("strongly prefers the line") or
+  claiming support for the quadratic is a finding.
+
+## E3 Figure
+- The existing figure keeps the data points and the fitted line and adds the quadratic curve,
+  distinguishable from the line (style/colour) and identified in the legend or caption; axes
+  labelled; readable; embedded in the report, link resolves in the assembled delivery; any
+  annotated numbers match E1. Opened and inspected, not only its provenance.
+
+## E4 Report and code
+- `report/report.md` extended, still about one page; the line-fit and pi results are kept as
+  delivered (numbers identical to the release); pi simulation not rerun (results.json and
+  log unchanged from the release).
+- New numbers (a, b, c, CIs, AIC values, delta) traceable to delivered code and output files
+  next to the report; the code runs as given and reproduces them; versions recorded.

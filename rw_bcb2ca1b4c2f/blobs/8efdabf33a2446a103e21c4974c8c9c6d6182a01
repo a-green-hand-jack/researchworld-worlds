@@ -1,0 +1,419 @@
+{
+ "registration": "E4 / direction A held-out predictions. Each section is committed before its grid runs and is scored once.",
+ "A1": {
+  "claim": "Aligned-basis AdamW near collapse: (A1a) the matrix flow from W = diag(a0_k), P = p0 I equals n independent scalar maps; (A1b, A1c) the event-driven phase model predicts per-direction burst times and the alive state over time from the exact state at step K = 300.",
+  "frozen_model": {
+   "commit": "ebc17db61082664b4c8f64e9012815d5b6774517",
+   "file": "code/e4_theory.py",
+   "function": "phase_model_hybrid (v3), default arguments",
+   "md5": "2f894944f71ad618955363ea8e8fe8dd"
+  },
+  "tolerance": "results/e4/a1_tolerance_v2.json (supersedes a1_tolerance.json; revised after internal review, before any held-out result)",
+  "grid": {
+   "driver": "code/e4_a1.py (configs())",
+   "runs": 384,
+   "stats": {
+    "ho1": "n = 32, s = linspace(1.2, 0.3, 32), c/s = 0.93^k",
+    "ho2": "n = 32, s = linspace(2.5, 0.8, 32), c/s = 0.90^k"
+   },
+   "p0": [
+    0.75,
+    1.5,
+    2.5
+   ],
+   "lam": [
+    0.003,
+    0.007,
+    0.015,
+    0.03
+   ],
+   "a0": [
+    0.0003,
+    0.003
+   ],
+   "eta": [
+    0.015,
+    0.03
+   ],
+   "b1": [
+    0.9,
+    0.85
+   ],
+   "b2": [
+    0.995,
+    0.9995
+   ],
+   "eps": "1e-8 (A1 is scoped to this eps; see tolerance scope)",
+   "a0_per_direction": "a0 * exp(0.1 xi_k), xi ~ N(0,1), numpy default_rng(seed + id), seed = 11",
+   "T": 60000,
+   "K": 300,
+   "record_every": 10,
+   "thr": 0.05,
+   "burst": 0.001,
+   "checkpoints": "30 log-spaced from K + 50 to T",
+   "disjoint_from_dev": "every statistics set, p0, lam, a0, eta, b2 and T value differs from code/e4_dev.py; b1 = 0.85 was never used in development; per-direction initial amplitudes are new",
+   "A1a_subset": "a0 = 3e-4, eta = 0.03, lam in {0.003, 0.03}: 48 runs, float64 full-matrix AdamW (W and P dense 32 x 32) vs float64 scalar maps",
+   "ground_truth": "np.longdouble scalar maps, per-step first crossings"
+  },
+  "metrics": "see results/e4/a1_tolerance_v2.json: A1a reduction, A1b burst wait on the collapse set, A1c return wait on the dead-at-K set, A1d alive state at log-spaced checkpoints with four baselines and a margin",
+  "outcome_reporting": "results/e4/a1/a1_score.json and a1_runs.jsonl.gz, whatever the outcome; a failed part is reported as failed; the model is not refit on this grid",
+  "environment": "python 3.11, numpy 2.4.6, CPU (local machine)",
+  "registration_history": "first registered in 511249d; that job was stopped after about a minute with no output written or read; this revision changes the metrics, the ground-truth precision and the checkpoints, not the grid or the frozen model"
+ },
+ "A2": {
+  "claim": "Held-out AdamW rank at the horizon (plan v2.4 A2): the derived criterion (frozen phase model v4 with the settled law A-iv', from the exact state at K = 300) predicts the number of alive directions at a horizon set by the derived time scale, with a smaller rank error than every baseline and within a registered tolerance.",
+  "frozen_model": {
+   "commit": "4327b3d35b86935d161b5c968c0d794c5a78e064",
+   "file": "code/e4_theory.py",
+   "function": "phase_model_v4, default arguments",
+   "md5": "72f6b4245a46a2a34c773052e5a5e160"
+  },
+  "driver": {
+   "file": "code/e4_a2.py",
+   "md5": "00b78894c250476229d711ea3c2f2848",
+   "baselines_code": {
+    "code/linjepa.py": "cba62312978c3f0ee12d967becca717e",
+    "code/baselines/dvd_mu.py": "65a99066066e0fe489713e8dda1137ff"
+   }
+  },
+  "horizon": "T_h = K + ceil(5 / (eta lam)): A-iv' relaxation rate >= 0.8 eta lam per step (measured 0.8-4.0 eta lam), so at most e^-4 of the settling offset remains; T_h 6914-85771 on this grid",
+  "convergence": "true alive count constant over the 8 log-spaced checkpoints in [T_h/2, T_h] (code/e4_a2.py checks())",
+  "grid": {
+   "runs": 192,
+   "stats": {
+    "a2a": "n = 32, s = linspace(1.6, 0.4, 32), c/s = 0.86^k (c/s > thr for k <= 19)",
+    "a2b": "n = 32, s = linspace(3.0, 0.9, 32), c/s = 0.97^k (all c/s > thr)"
+   },
+   "p0": [
+    0.65,
+    1.3,
+    2.2
+   ],
+   "lam": [
+    0.0045,
+    0.009,
+    0.016,
+    0.028
+   ],
+   "a0": [
+    0.0006,
+    0.004
+   ],
+   "eta": [
+    0.013,
+    0.027
+   ],
+   "b1": [
+    0.92
+   ],
+   "b2": [
+    0.996,
+    0.9992
+   ],
+   "eps": 1e-08,
+   "a0_per_direction": "a0 * exp(0.1 xi_k), xi ~ N(0,1), numpy default_rng(seed + id), seed = 53",
+   "K": 300,
+   "thr": 0.05,
+   "ground_truth": "exact scalar AdamW maps in np.longdouble (80-bit), code/e4_a1.py truth() run to T_h",
+   "disjoint": "statistics ratios 0.86, 0.97 and every p0, lam, a0, eta, b1, b2 value and the seed differ from development grids 1-3, A1's held-out grid, H2 and H3 (python3 code/e4_a2.py list: empty intersections)"
+  },
+  "baselines": {
+   "static_bound": "#{c^2 >= 4 lam s}",
+   "delivered_race": "escape_score (code/linjepa.py), lam_W = lam_P = lam, alpha = 1, p0, log a0_k, t_end = eta T_h, escape iff score >= 0 (as code/e1b.py applies it to Adam rows)",
+   "window_mu_wd": "#{p0 c - p0^2 s - lam > 0}",
+   "mu_count": "2610.02344 count, dvd_exact of code/baselines/dvd_mu.py variants(diag s, diag c, p0 I, lam); all variants recorded per run; also read as a bound with its exceedance share",
+   "dev_median": "round(n x median alive fraction at the last checkpoint over development grids 2 and 3) = n (median fraction 1.0 over 768 finite dev runs, computed before registration; so it coincides with all_alive)",
+   "persistence_K": "#{|a_K| > thr} (early reading at K)",
+   "all_alive": "n"
+  },
+  "metric": "per run |predicted rank - true rank| at T_h; scorings: strict (non-finite or non-converged runs count as misses, i.e. failures, for every predictor) and converged-only; both reported",
+  "tolerance": {
+   "within1": "model rank-within-1 share under strict scoring >= 0.90 - f_floor, f_floor = rank-within-1 failure of the 1e-15-perturbed truth on every 8th run (24 runs) (the tolerance stated against the truth's floor, internal review)",
+   "baselines": "for every baseline, the paired bootstrap 95% CI (2000 resamples over converged runs, seed 0) of MAE(baseline) - MAE(model) lies above 0",
+   "pass": "both"
+  },
+  "reported_without_tolerance": {
+   "gd_vs_adamw": "GD survivors (code/linjepa.py reduced_flow, same eta and T_h, same a0_k, p0, lam) against the AdamW truth on the same configs: mean difference with CI, shares, and the static bound's MAE on the GD rank",
+   "splits": "per statistics set, b2, eta, p0",
+   "mu_count_bound_exceedance": "share of converged runs with true rank above the mu count"
+  },
+  "exit": "if A2 fails, the AdamW rung of direction C uses the static bound (plan v2.4); a failed A2 is reported as failed and v4 is not refit on this grid",
+  "outcome_reporting": "results/e4/a2/a2_score.json and a2_runs.jsonl.gz, whatever the outcome",
+  "pilot": "one run (id 0, the longest horizon, with its floor run) timed at 9.1 s before registration; its outputs were not printed or kept",
+  "environment": "python 3.11, numpy 2.4.6, CPU (local machine)",
+  "outcome": "scored after registration: fails (strict rank-within-1 0.630 < 0.90; 71/192 runs non-converged); model beats every baseline on converged runs (results/e4/a2/a2_score.json); exit rule applies"
+ },
+ "A3": {
+  "registered": "A3s_mech of results/e4/a3_tolerance.json v3, before any held-out A3 run; A3r and v2's model-derived A3s are not registered (no derived level model; open)",
+  "driver": {
+   "file": "code/e4_a3h.py",
+   "md5": "31e16681fa81b086cbe60c78dcbe54ee",
+   "truth_code": {
+    "code/e4_a3.py": "2827e8ab1607ca4e7990de68bc958094"
+   }
+  },
+  "predicted_signs": "code/e4_a3h.py predicted(): theta '-'; lam '+' at theta > 0, '0' at theta = 0; a0 '0'",
+  "grid": {
+   "truth_runs": 480,
+   "stats": {
+    "h1": "n = 24, s = linspace(1.8, 0.6, 24), c/s = 0.925^k (all c/s > thr)",
+    "h2": "n = 24, s = linspace(2.4, 0.5, 24), c/s = 0.86^k (c/s > thr for k <= 19)"
+   },
+   "rotations": "theta 0 (long double), 0.5 both, 1 both, 1 out, 1 in",
+   "lam": [
+    0.003,
+    0.012,
+    0.035
+   ],
+   "a0": [
+    0.0003,
+    0.003
+   ],
+   "p0": [
+    1.0
+   ],
+   "seeds": "11-18",
+   "eta": 0.02,
+   "b1": 0.9,
+   "b2": 0.999,
+   "eps": 1e-08,
+   "T": 100000,
+   "precision_subset": "precision_jobs_stratified(cfgs, 424242): one seed per theta > 0 cell, 48 cells, each re-run f64 with a 1e-15 perturbation and in long double",
+   "disjoint": "lam, a0, p0, seeds and c/s ratios differ from development (python3 code/e4_a3h.py list)"
+  },
+  "cells": "theta 2 x 3 x 2 x 4 = 48; lam 2 x 5 x 2 x 2 = 40 (8 at theta = 0); a0 2 x 5 x 3 = 30 (6 at theta = 0)",
+  "outcome_reporting": "results/e4/a3h/a3h_score.json (signs, baselines, separation, per-cell CIs, the precision switch, rank_tavg per cell), whatever the outcome",
+  "pilot": "timing only: one f64 run (10k steps, 0.66 s) and one long double run (5k steps, 1.6 s); outputs not read",
+  "environment": "python 3.11, numpy 2.4.6, scipy, CPU (local machine)"
+ },
+ "A1_v4": {
+  "claim": "Aligned-basis AdamW near collapse, second held-out test: the phase model v4 predicts per-direction burst times (A1b), return waits (A1c) and the alive state over time (A1d) from the exact state at step K = 300.",
+  "why": "A1 (held-out grid 1) failed A1d on rank (0.808 < 0.90). v4 was developed after that result on development grids 2 and 3 only (theory/ext_A_adamw.md A-iv' and 'Phase model v4'); A1's held-out grid informed the diagnosis, so v4 is scored on a new grid. A1's registered result stands as failed whatever H2 shows.",
+  "frozen_model": {
+   "commit": "4327b3d35b86935d161b5c968c0d794c5a78e064",
+   "file": "code/e4_theory.py",
+   "function": "phase_model_v4, default arguments (seg 600, seg_eos 1500, seg_post 600, max_events 12, seed_amp 1e-6)",
+   "md5": "72f6b4245a46a2a34c773052e5a5e160"
+  },
+  "tolerance": "results/e4/a1_tolerance_v2.json, parts A1b, A1c and A1d, unchanged (A1a concerns the reduction, not the model, and is not repeated)",
+  "grid": {
+   "driver": "code/e4_a1h2.py (configs())",
+   "runs": 384,
+   "stats": {
+    "h2a": "n = 32, s = linspace(2.2, 0.45, 32), c/s = 0.88^k",
+    "h2b": "n = 32, s = linspace(1.4, 0.6, 32), c/s = 0.95^k"
+   },
+   "p0": [
+    0.6,
+    1.25,
+    2.25
+   ],
+   "lam": [
+    0.004,
+    0.012,
+    0.025,
+    0.04
+   ],
+   "a0": [
+    0.0005,
+    0.005
+   ],
+   "eta": [
+    0.025,
+    0.04
+   ],
+   "b1": [
+    0.87,
+    0.93
+   ],
+   "b2": [
+    0.997,
+    0.9993
+   ],
+   "eps": 1e-08,
+   "a0_per_direction": "a0 * exp(0.1 xi_k), xi ~ N(0,1), numpy default_rng(seed + id), seed = 31",
+   "T": 60000,
+   "K": 300,
+   "thr": 0.05,
+   "burst": 0.001,
+   "checkpoints": "as A1 (code/e4_a1.py CHECKS)",
+   "ground_truth": "exact scalar AdamW maps in np.longdouble (80-bit), as code/e4_a1.py truth()",
+   "disjoint": "every statistics set (c/s ratios 0.88, 0.95), p0, lam, a0, eta, b1, b2 value and the seed differ from development grids 1-3 (code/e4_dev.py, e4_dev2.py, e4_dev3.py) and from A1's held-out grid (code/e4_a1.py); checked by set intersection before this registration"
+  },
+  "reported_without_tolerance": {
+   "truth_floor": "every 8th run (48) re-run with each a0_k multiplied by 1 +- 1e-15 (signs from default_rng(77777 + id)); state error and rank-within-1 failure of the perturbed truth against the truth, reported as the truth's own sensitivity next to the model's",
+   "splits": "A1b/A1c/A1d per b1, b2 and statistics set"
+  },
+  "outcome_reporting": "results/e4/a1h2/a1h2_score.json and a1h2_runs.jsonl.gz, whatever the outcome; a failed part is reported as failed; v4 is not refit on this grid",
+  "pilot": "one run (id 0, with its floor run) timed at 5.5 s before registration; its outputs are not kept and are not scores",
+  "environment": "python 3.11, numpy 2.4.6, CPU (local machine)"
+ },
+ "A1_v4_scope": {
+  "claim": "Scope of the settled law in the frozen phase model v4: v4 uses |a| = c/s from the first crossing on, which A-iv' derives only for eta lam (t - t_c) >> 1 (internal review point 3). H2 had eta lam T >= 6 in every cell and did not test it. H3 crosses eta lam T from 0.54 to 25.2 on one grid.",
+  "registered": "before any H3 run; one timing pilot run (id 0, 5.7 s with its floor run), outputs not kept. H2's registration and score (A1_v4) are unchanged; this is a separate scope test, not a re-score of v4.",
+  "frozen_model": {
+   "commit": "4327b3d35b86935d161b5c968c0d794c5a78e064",
+   "file": "code/e4_theory.py",
+   "function": "phase_model_v4, default arguments (seg 600, seg_eos 1500, seg_post 600, max_events 12, seed_amp 1e-6)",
+   "md5": "72f6b4245a46a2a34c773052e5a5e160"
+  },
+  "grid": {
+   "driver": "code/e4_a1h3.py (configs())",
+   "runs": 128,
+   "stats": {
+    "h3a": "n = 32, s = linspace(1.9, 0.5, 32), c/s = 0.87^k",
+    "h3b": "n = 32, s = linspace(2.6, 0.7, 32), c/s = 0.96^k"
+   },
+   "p0": [
+    0.8,
+    1.8
+   ],
+   "lam": [
+    0.0015,
+    0.0035,
+    0.006,
+    0.035
+   ],
+   "a0": [
+    0.0008,
+    0.002
+   ],
+   "eta": [
+    0.006,
+    0.012
+   ],
+   "b1": [
+    0.88
+   ],
+   "b2": [
+    0.9975,
+    0.9985
+   ],
+   "seed": 41,
+   "T": 60000,
+   "K": 300,
+   "thr": 0.05,
+   "eta_lam_T": {
+    "unsettled_le_2.52": [
+     0.54,
+     1.08,
+     1.26,
+     2.16,
+     2.52
+    ],
+    "intermediate_4.32": [
+     4.32
+    ],
+    "settled_ge_12.6": [
+     12.6,
+     25.2
+    ]
+   },
+   "ground_truth": "as A1_v4 (80-bit exact scalar AdamW maps), metrics of a1_tolerance_v2.json A1b-A1d, 1e-15 truth floor on every 8th run",
+   "disjoint": "every statistics ratio, p0, lam, a0, eta, b1, b2 and the seed differ from development grids 1-3, A1's held-out grid and H2 (python3 code/e4_a1h3.py list prints the empty intersections)"
+  },
+  "reading": {
+   "primary": "A1d rank-within-1 failure of v4 in the unsettled bin (eta lam T <= 2.52, 80 runs) against A1d's tolerance (failure <= 0.10) and against the settled bin (eta lam T >= 12.6, 32 runs).",
+   "binding": "the condition is binding for the count if the unsettled bin's failure is > 0.10 and > 2 x the settled bin's",
+   "not_binding": "the condition is not binding for the count at these values if the unsettled bin's failure is <= 0.10 (v4 meets A1d there); the settled law is then stated as an end state whose relaxation does not move the alive count across thr at eta lam T >= 0.54",
+   "otherwise": "intermediate: stated with both numbers",
+   "control": "if the settled bin itself fails A1d (> 0.10), v4 fails on H3 independently of eta lam, and that is the result",
+   "mechanism_reported": "wrong pairs with model alive, truth dead, on directions with c/s > thr (an amplitude still below c/s), share per bin; the relaxation predicts a larger share in the unsettled bin",
+   "expectation_stated_before": "A-iv' predicts amplitudes below c/s when eta lam (t - t_c) is O(1) (0.75-0.98 x c/s at eta lam T = 1.2, review check e4_aiv_balance.json), which can only move directions with c/s just above thr. Development evidence points the other way for the count: dev2 includes eta lam T = 0.8-2.0 cells and v4 scores 0.985 there. No direction is claimed; the grid decides."
+  },
+  "outcome_reporting": "results/e4/a1h3/a1h3_score.json (all, per bin, per eta lam T cell, the mechanism share, truth floor per bin) and a1h3_runs.jsonl.gz, whatever the outcome; v4 is not refit on H3",
+  "environment": "python 3.11, numpy 2.4.6, CPU (local machine)",
+  "code_md5": {
+   "e4_a1h3.py": "af819cc590e891003ad7226de560322f",
+   "e4_a1h2.py": "a2b044e9562c234361fad1ff60839c23"
+  }
+ },
+ "A2p": {
+  "claim": "A2' (plan v2.9 section A, 'A2 outcome', addition 4): the frozen phase model v4 predicts the number of alive directions at a fixed, registered horizon T_h = K + ceil(5/(eta lam)), with no convergence requirement, with a smaller rank error than every baseline and within the registered tolerance. A pass supports a fixed-horizon count claim for linear AdamW, not a converged-rank claim. A2 stays failed whatever A2' shows; neither gets a further test; rung 3 of direction C keeps the static bound either way.",
+  "registered_before_run": "this section and code/e4_a2p.py are committed before any A2' run; one pilot (id 0, the longest horizon, with its floor run) was timed at 13.1 s and its outputs were not printed or kept",
+  "frozen_model": {
+   "commit": "4327b3d35b86935d161b5c968c0d794c5a78e064",
+   "file": "code/e4_theory.py",
+   "function": "phase_model_v4, default arguments",
+   "md5": "72f6b4245a46a2a34c773052e5a5e160"
+  },
+  "driver": {
+   "file": "code/e4_a2p.py",
+   "md5": "ac712f929f9f7798aa8cb7cb6237a2d2",
+   "reuses": {
+    "code/e4_a2.py": "00b78894c250476229d711ea3c2f2848",
+    "code/e4_a1.py": "aad44f8e6a793cb142711abaf394bade",
+    "code/linjepa.py": "cba62312978c3f0ee12d967becca717e",
+    "code/baselines/dvd_mu.py": "65a99066066e0fe489713e8dda1137ff"
+   }
+  },
+  "horizon": "T_h = K + ceil(5/(eta lam)), A2's rule unchanged; T_h 7981-53776 on this grid",
+  "grid": {
+   "runs": 216,
+   "stats": {
+    "a2pa": "n = 32, s = linspace(1.5, 0.45, 32), c/s = 0.85^k (weak: c/s > thr for 19 directions)",
+    "a2pb": "n = 32, s = linspace(2.0, 0.5, 32), c/s = 0.875^k (weak: c/s > thr for 23 directions)",
+    "a2pc": "n = 32, s = linspace(2.8, 0.8, 32), c/s = 0.965^k (strong control: all c/s >= 0.33)"
+   },
+   "p0": [
+    0.7,
+    1.4,
+    2.3
+   ],
+   "lam": [
+    0.0055,
+    0.013,
+    0.021
+   ],
+   "a0": [
+    0.0009,
+    0.006
+   ],
+   "eta": [
+    0.017,
+    0.031
+   ],
+   "b1": [
+    0.915
+   ],
+   "b2": [
+    0.9965,
+    0.9988
+   ],
+   "eps": 1e-08,
+   "K": 300,
+   "thr": 0.05,
+   "a0_per_direction": "a0 * exp(0.1 xi_k), xi ~ N(0,1), numpy default_rng(seed + id), seed = 59",
+   "failing_regime_included": "two weak statistics sets whose c/s crosses thr (as A2's a2a, where 62/96 runs did not converge) and eta = 0.031 >= 0.027 in half the runs",
+   "ground_truth": "exact scalar AdamW maps in np.longdouble (80-bit), code/e4_a1.py truth(), continued to 4 T_h",
+   "disjoint": "statistics ratios and every p0, lam, a0, eta, b1, b2 value and the seed differ from development grids 1-3, A1's held-out grid, H2, H3 and A2 (python3 code/e4_a2p.py list: every intersection empty)"
+  },
+  "baselines": {
+   "static_bound": "#{c^2 >= 4 lam s}",
+   "delivered_race": "escape_score (code/linjepa.py), lam_W = lam_P = lam, alpha = 1, p0, log a0_k, t_end = eta T_h, escape iff score >= 0 (as code/e1b.py applies it to Adam rows)",
+   "window_mu_wd": "#{p0 c - p0^2 s - lam > 0}",
+   "mu_count": "2610.02344 count, dvd_exact of code/baselines/dvd_mu.py variants(diag s, diag c, p0 I, lam); all variants recorded per run; also read as a bound with its exceedance share",
+   "dev_median": "round(n x median alive fraction at the last checkpoint over development grids 2 and 3) = n (median fraction 1.0 over 768 finite dev runs, computed before registration; so it coincides with all_alive)",
+   "persistence_K": "#{|a_K| > thr} (early reading at K)",
+   "all_alive": "n"
+  },
+  "primary_scoring": "per run |predicted rank - true rank| at T_h on every run; a non-finite run is a miss for every predictor; no convergence requirement",
+  "tolerance": {
+   "within1": "model rank-within-1 share over all 216 runs >= 0.90 - f_floor, f_floor = rank-within-1 failure at T_h of the 1e-15-perturbed truth (a0_k (1 +- 1e-15), as H2) on every 8th run (27 runs)",
+   "baselines": "for every baseline, the paired bootstrap 95% CI (2000 resamples over finite runs, seed 0) of MAE(baseline) - MAE(model) at T_h lies above 0",
+   "pass": "both",
+   "well_posed": "if f_floor > 0.10 the count at T_h is not determined to within 1 by the truth itself at this resolution; A2' is then reported as 'not well posed' (neither pass nor fail), with the floor's number (study plan point 4)"
+  },
+  "reported_without_tolerance": {
+   "per_checkpoint": "v4 rank-within-1 at each of the 8 log-spaced checkpoints in [T_h/2, T_h], and at all 8 at once",
+   "convergence_and_flicker": "share of runs with a constant true count over [T_h/2, T_h] (A2's convergence); share with a direction whose alive state changes at least twice over [T_h/2, 4 T_h]; share with a captured direction of c/s > 2 thr that dies and returns; by statistics set and eta (splits_stats_eta)",
+   "v4_marks": "v4 marks a run as not settling if its predicted count changes over the 8 checkpoints in [T_h/2, T_h] or a predicted toggle falls in [T_h/2, T_h]; its recall on the non-converged runs and its false-mark rate on the converged ones",
+   "late_truth": "share of runs with a constant true count over [2 T_h, 4 T_h] (9 log-spaced checkpoints in [T_h, 4 T_h]); among A2-style non-converged runs, the share that is constant late (slow settling) against still changing (sustained flicker)",
+   "gd_vs_adamw": "GD survivors at T_h, as A2",
+   "splits": "stats, eta, lam, b2, p0, stats x eta",
+   "mu_count_bound_exceedance": "share of finite runs with true rank above the mu count"
+  },
+  "outcome_reporting": "results/e4/a2p/a2p_score.json and a2p_runs.jsonl.gz, whatever the outcome",
+  "environment": "python 3.11, numpy 2.4.6, CPU (local machine)"
+ }
+}

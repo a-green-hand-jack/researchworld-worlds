@@ -1,0 +1,132 @@
+"""Referee check of E2's results against its pre-registration and against my exact reduced-flow forecast.
+Inputs: experiment-repo results/e2/{prediction.json, e2_runs.jsonl, summary.json} at the delivered commit, and my
+checks/e2_prereg.json (forecast made before any E2 result, pushed in 47259a3).
+  1. prediction.json byte-identical to the pre-registered one (sha256 given on the command line);
+  2. cyclic pop runs: measured per-frequency multiplicities (surv_freq) against my forecast labels at t_end
+     (forecast_configs[].labels_t_end; the flow is seed-independent), run by run;
+  3. every registered criterion rescored from e2_runs.jsonl and prediction.json alone (diverged runs excluded), to
+     compare with summary.json's pass/fail;
+  4. horizon: measured rank at t_end against my forecast rank at t = 40000 (rank_T_long) per lam.
+Usage: python3 checks/e2_results.py E2_DIR PREREG_SHA256 [checks/e2_prereg.json]
+"""
+import sys, os, json, hashlib
+import numpy as np
+
+d = sys.argv[1]; sha_expected = sys.argv[2]
+mine = json.load(open(sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(__file__), "e2_prereg.json")))
+raw = open(os.path.join(d, "prediction.json"), "rb").read()
+P = json.loads(raw)
+M = {r["id"]: r for r in map(json.loads, open(os.path.join(d, "e2_runs.jsonl")))}
+S = json.load(open(os.path.join(d, "summary.json"))) if os.path.exists(os.path.join(d, "summary.json")) else None
+n = 64
+FREQ = []
+for f in range(n // 2 + 1):
+    FREQ.append(f)
+    if 0 < f < n // 2:
+        FREQ.append(f)
+FREQ = np.array(FREQ)
+
+
+def fcount(lab):
+    v = np.asarray(lab, int)
+    return np.array([int(v[FREQ == f].sum()) for f in range(n // 2 + 1)])
+
+
+out = dict(prediction_sha256=hashlib.sha256(raw).hexdigest())
+out["prediction_unchanged"] = out["prediction_sha256"] == sha_expected
+runs = []
+for p in P["runs"]:
+    m = M.get(p["id"])
+    r = dict(p); r["measured"] = m
+    runs.append(r)
+out["runs_registered"] = len(runs); out["runs_measured"] = sum(r["measured"] is not None for r in runs)
+ok = [r for r in runs if r["measured"] is not None and r["measured"].get("rank_meas") is not None]
+out["runs_scored"] = len(ok)
+out["runs_diverged_or_failed"] = [r["id"] for r in runs if r["measured"] is not None and r["measured"].get("rank_meas") is None]
+
+# 2. cyclic pop vs my forecast
+fc = {(c["fam"], c["r"], c["lam"], c["p0"]): c for c in mine["forecast_configs"]}
+cyc = [r for r in ok if r["exp"] == "pop" and r["fam"] in ("bern", "block", "multiblock")]
+fr_agree = run_agree = 0; diffs = []
+for r in cyc:
+    c = fc[(r["fam"], r["r"], r["lam"], r["p0"])]
+    fcst = fcount([int(ch) for ch in c["labels_t_end"]]); meas = np.asarray(r["measured"]["surv_freq"])
+    fr_agree += int((fcst == meas).sum())
+    same = bool((fcst == meas).all()) and int(fcst.sum()) == r["measured"]["rank_meas"]
+    run_agree += same
+    if not same:
+        diffs.append(dict(id=r["id"], cfg=[r["fam"], r["r"], r["lam"], r["p0"], r["seed"]],
+                          forecast_rank=int(fcst.sum()), measured_rank=r["measured"]["rank_meas"],
+                          freqs=np.flatnonzero(fcst != meas).tolist()))
+out["pop_cyclic_vs_forecast"] = dict(runs=len(cyc), freq_agree=fr_agree, freqs=len(cyc) * (n // 2 + 1),
+                                     runs_agree=run_agree, disagreements=diffs[:40])
+
+
+def mae(rr, key):
+    e = np.array([rr_["measured"]["rank_meas"] - rr_[key] for rr_ in rr if rr_.get(key) is not None], float)
+    return dict(n=int(e.size), mae=float(np.abs(e).mean()) if e.size else None,
+                exact=float((e == 0).mean()) if e.size else None, over=int((e < 0).sum()), under=int((e > 0).sum()))
+
+
+crit = {}
+# pop cyclic (N1)
+acc = []
+for r in cyc:
+    acc += (fcount(r["pred"]) == np.asarray(r["measured"]["surv_freq"])).tolist()
+a, b, w = mae(cyc, "rank_pred"), mae(cyc, "rank_bound"), mae(cyc, "rank_window")
+crit["pop cyclic (N1)"] = dict(freq_acc=float(np.mean(acc)), pred=a, bound=b, window=w,
+                              passed=bool(np.mean(acc) >= 0.95 and a["mae"] <= 1.0 and a["mae"] < b["mae"] and a["mae"] < w["mae"]))
+# pop peak (seed-mean measured rank; predicted rank_pred of seed 0 -- seed-independent for pop)
+prof = {}
+for r in cyc:
+    prof.setdefault((r["fam"], r["lam"], r["p0"]), {}).setdefault(r["r"], dict(pred=[], meas=[]))
+    prof[(r["fam"], r["lam"], r["p0"])][r["r"]]["pred"].append(r["rank_pred"])
+    prof[(r["fam"], r["lam"], r["p0"])][r["r"]]["meas"].append(r["measured"]["rank_meas"])
+n_el = n_ok = n_nm = n_nm_ok = 0; misses = []; nm = []
+for k, rows in sorted(prof.items()):
+    rs = sorted(rows); pr = np.array([np.mean(rows[x]["pred"]) for x in rs]); mr = np.array([np.mean(rows[x]["meas"]) for x in rs])
+    if pr.max() >= 2:
+        n_el += 1
+        Pm = set(np.flatnonzero(pr == pr.max())); Mm = set(np.flatnonzero(mr == mr.max()))
+        good = bool(Pm & Mm) or min(abs(i - j) for i in Pm for j in Mm) <= 1
+        n_ok += good
+        if not good:
+            misses.append(dict(profile=list(k), pred=pr.tolist(), meas=mr.tolist()))
+    if pr.max() - pr[0] >= 2 and pr.max() - pr[-1] >= 2:
+        n_nm += 1; got = bool(mr.max() - mr[0] >= 2 and mr.max() - mr[-1] >= 2); n_nm_ok += got
+        nm.append(dict(profile=list(k), r=rs, pred=pr.tolist(), meas=mr.tolist(), nonmonotone=got))
+crit["pop peak"] = dict(eligible=n_el, ok=n_ok, pred_nonmonotone=n_nm, measured_nonmonotone_of_those=n_nm_ok,
+                        passed=bool(n_ok >= 0.8 * n_el and n_nm_ok == n_nm), misses=misses, nonmonotone_profiles=nm)
+for name, sel, lim, need_bound in [("pop block_nc (N1-general)", lambda r: r["exp"] == "pop" and r["fam"] == "block_nc", 1.5, True),
+                                   ("sgd (mask/sample noise)", lambda r: r["exp"] == "sgd", 1.5, False),
+                                   ("tanh (decided near collapse)", lambda r: r["exp"] == "tanh", 1.5, True),
+                                   ("mlp (exploratory)", lambda r: r["exp"] == "mlp", 2.0, True)]:
+    rr = [r for r in ok if sel(r)]
+    a, b = mae(rr, "rank_pred"), mae(rr, "rank_bound")
+    crit[name] = dict(pred=a, bound=b, passed=bool(a["n"] and a["mae"] <= lim and (not need_bound or a["mae"] < b["mae"])))
+rr = [r for r in ok if r["exp"] == "nopred"]
+fa = []; wrong_uncorr = 0; grow_cfg = 0
+for r in rr:
+    pg = np.asarray(r["pred_grow_freq"]); mg = np.asarray(r["measured"]["surv_freq"])
+    fa += (pg == mg).tolist()
+    if pg.sum() > 0:
+        grow_cfg += 1; wrong_uncorr += int(r["measured"]["rank_meas"] > 0)
+crit["nopred (Prop. 6 under masks)"] = dict(runs=len(rr), freq_acc=float(np.mean(fa)) if fa else None,
+                                            configs_pred_growth=grow_cfg, uncorrected_wrong=wrong_uncorr,
+                                            passed=bool(fa and np.mean(fa) >= 0.99 and wrong_uncorr == grow_cfg))
+out["criteria_rescored"] = crit
+if S is not None:
+    out["summary_criteria"] = S.get("criteria")
+
+# 4. horizon: measured t_end rank vs my forecast long-horizon rank
+hz = {}
+for r in cyc:
+    c = fc[(r["fam"], r["r"], r["lam"], r["p0"])]
+    h = hz.setdefault(str(r["lam"]), dict(runs=0, measured_ne_long=0, pred_mae_vs_measured=[], pred_mae_vs_long=[]))
+    h["runs"] += 1; h["measured_ne_long"] += int(r["measured"]["rank_meas"] != c["rank_T_long"])
+    h["pred_mae_vs_measured"].append(abs(r["rank_pred"] - r["measured"]["rank_meas"]))
+    h["pred_mae_vs_long"].append(abs(r["rank_pred"] - c["rank_T_long"]))
+for h in hz.values():
+    h["pred_mae_vs_measured"] = float(np.mean(h["pred_mae_vs_measured"])); h["pred_mae_vs_long"] = float(np.mean(h["pred_mae_vs_long"]))
+out["horizon_by_lam"] = hz
+print(json.dumps(out, indent=1))

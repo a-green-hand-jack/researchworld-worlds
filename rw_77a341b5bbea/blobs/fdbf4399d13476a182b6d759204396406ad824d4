@@ -1,0 +1,4 @@
+# Results
+
+1. `researchworld continue rw_fb7877809dad --checkpoint c0 --config work/config.json` succeeded (rc=0), creating world `rw_91a5aa9d326a`. The config is the `effective` object of `researchworld config show rw_fb7877809dad`, unchanged except `"resources": []` (it was already empty). Full output: `work/continue.out`; the config-show output: `work/config_show.out`. The new world was stopped with `researchworld stop rw_91a5aa9d326a` (output: `work/stop.out`); it was not driven.
+2. `sleep 900` as one foreground command with timeout 900000 ms did NOT return: the tool reported "Command timed out after 10m 0s" (exit 143). The foreground timeout was capped at 600000 ms (10 min), not the 15 requested.

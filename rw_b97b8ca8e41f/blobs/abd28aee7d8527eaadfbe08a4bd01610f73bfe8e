@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+"""Measure numerical-resolution and eigenspace-alignment sensitivity in ViT rates."""
+from __future__ import annotations
+
+import argparse
+import csv
+import math
+import statistics
+from pathlib import Path
+
+
+def read_csv(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def diagnose(summary_path: Path) -> dict[str, str | int | float]:
+    summaries = read_csv(summary_path)
+    if len(summaries) != 1 or summaries[0]["status"] != "final":
+        raise ValueError(f"expected one final run in {summary_path}")
+    summary = summaries[0]
+    seed = int(summary["seed"])
+    trajectory_path = summary_path.with_name(f"trajectory_seed{seed}.csv")
+    first_step = int(summary["early_window_first_step"])
+    last_step = int(summary["early_window_last_step"])
+    first: dict[int, dict[str, str]] = {}
+    overlaps: dict[int, list[float]] = {}
+    last_directions: set[int] = set()
+    last_training_step = -1
+    for row in read_csv(trajectory_path):
+        if row["status"] != "final" or row["run_id"] != summary["run_id"]:
+            raise ValueError(f"non-final or mismatched trajectory in {trajectory_path}")
+        step = int(row["step"])
+        direction = int(row["direction_index"])
+        last_training_step = max(last_training_step, step)
+        if step == first_step:
+            first[direction] = row
+        if first_step < step <= last_step:
+            overlap = float(row["eigenvector_alignment_overlap"])
+            if not math.isfinite(overlap) or not 0 <= overlap <= 1:
+                raise ValueError(f"invalid eigenvector overlap in {trajectory_path}")
+            overlaps.setdefault(direction, []).append(overlap)
+        if step == last_step:
+            last_directions.add(direction)
+    if not first or set(first) != set(overlaps) or set(first) != last_directions:
+        raise ValueError(f"missing early checkpoint directions in {trajectory_path}")
+    late_checkpoint = int(summary.get("late_checkpoint_step", summary["steps"]))
+    if last_training_step != late_checkpoint or last_training_step != int(summary["steps"]):
+        raise ValueError(f"missing final checkpoint in {trajectory_path}")
+    initial_values = {direction: float(row["representation_eigenvalue"]) for direction, row in first.items()}
+    largest = max(initial_values.values())
+    if not math.isfinite(largest) or largest <= 0:
+        raise ValueError(f"invalid early spectrum in {trajectory_path}")
+    positive = {direction for direction, row in first.items() if float(row["measured_growth_rate"]) > 0}
+    if len(positive) != int(summary["early_predicted_rank"]):
+        raise ValueError(f"early rate count disagrees with summary in {trajectory_path}")
+    minimum_overlap = {direction: min(values) for direction, values in overlaps.items()}
+    resolved_1e3 = {direction for direction in first if initial_values[direction] >= 0.001 * largest}
+    resolved_1e2 = {direction for direction in first if initial_values[direction] >= 0.01 * largest}
+    aligned_05 = {direction for direction in first if minimum_overlap[direction] >= 0.5}
+    aligned_08 = {direction for direction in first if minimum_overlap[direction] >= 0.8}
+    return {
+        "tier": summary["tier"],
+        "config_id": summary["config_id"],
+        "seed": seed,
+        "early_first_step": first_step,
+        "early_last_step": last_step,
+        "late_step": last_training_step,
+        "n_directions": len(first),
+        "early_positive_unfiltered": len(positive),
+        "early_positive_above_1e3_floor": len(positive & resolved_1e3),
+        "early_positive_above_1e2_floor": len(positive & resolved_1e2),
+        "early_positive_overlap_ge_0p5": len(positive & aligned_05),
+        "early_positive_overlap_ge_0p8": len(positive & aligned_08),
+        "early_positive_above_1e3_and_overlap_ge_0p5": len(positive & resolved_1e3 & aligned_05),
+        "early_positive_above_1e2_and_overlap_ge_0p8": len(positive & resolved_1e2 & aligned_08),
+        "early_positive_below_1e3_floor": len(positive - resolved_1e3),
+        "median_positive_minimum_overlap": statistics.median(minimum_overlap[direction] for direction in positive) if positive else float("nan"),
+        "rank_at_early_first": summary["early_baseline_rank"],
+        "rank_at_early_last": summary["early_rank_at_end"],
+        "late_numerical_rank": summary["late_numerical_rank"],
+        "late_effective_rank": summary["late_effective_rank"],
+        "source_summary": str(summary_path),
+        "source_trajectory": str(trajectory_path),
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root", type=Path, default=Path("results/raw/vit_runs"))
+    parser.add_argument("--output", type=Path, default=Path("results/derived/vit_transfer_diagnostics.csv"))
+    parser.add_argument("--tier", choices=("B_controlled", "C_real_cifar10", "all"), default="B_controlled")
+    args = parser.parse_args()
+    rows = []
+    for summary_path in sorted(args.root.glob("*/summary_seed*.csv")):
+        summaries = read_csv(summary_path)
+        if summaries and (args.tier == "all" or summaries[0]["tier"] == args.tier):
+            rows.append(diagnose(summary_path))
+    if not rows:
+        raise ValueError(f"no final ViT runs in {args.root} for tier {args.tier}")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with args.output.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"wrote {len(rows)} per-run sensitivity rows to {args.output}")
+
+
+if __name__ == "__main__":
+    main()

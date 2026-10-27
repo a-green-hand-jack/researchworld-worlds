@@ -1,0 +1,65 @@
+"""Convergence of composite trapezoid / Simpson / 4-node Gauss-Legendre rules."""
+import json, sys
+import numpy as np
+from scipy import stats
+
+F = {
+    "exp(x)": (np.exp, np.e - 1),
+    "1/(1+25x^2)": (lambda x: 1 / (1 + 25 * x**2), np.arctan(5) / 5),
+    "sqrt(x)": (np.sqrt, 2 / 3),
+}
+GX, GW = np.polynomial.legendre.leggauss(4)
+
+def trap(f, n):
+    x = np.linspace(0, 1, n + 1); y = f(x); h = 1 / n
+    return h * (y.sum() - 0.5 * (y[0] + y[-1]))
+
+def simpson(f, n):  # n panels, each Simpson on [a, a+h] with midpoint
+    x = np.linspace(0, 1, n + 1); h = 1 / n
+    m = (x[:-1] + x[1:]) / 2
+    return h / 6 * (f(x[:-1]) + 4 * f(m) + f(x[1:])).sum()
+
+def gl(f, n):  # composite, 4 nodes per panel
+    a = np.arange(n) / n; h = 1 / n
+    pts = a[:, None] + h * (GX[None, :] + 1) / 2
+    return h / 2 * (f(pts) * GW[None, :]).sum()
+
+RULES = {"trapezoid": trap, "simpson": simpson, "gauss-legendre-4": gl}
+
+def fit(n, e, thr):
+    m = e > thr
+    if m.sum() < 2: return None
+    lx, ly = np.log(n[m]), np.log(e[m])
+    k = m.sum()
+    r = stats.linregress(lx, ly)
+    out = dict(npts=int(k), k_used=[int(np.log2(v)) for v in n[m]], order=-r.slope)
+    if k > 2:
+        t = stats.t.ppf(0.975, k - 2); hw = t * r.stderr
+        out.update(ci_lo=-r.slope - hw, ci_hi=-r.slope + hw, hw=hw, r2=r.rvalue**2)
+    return out
+
+if __name__ == "__main__":
+    ks = np.arange(1, 13); n = 2 ** ks
+    rows, errs = [], {}
+    for fn, (f, I) in F.items():
+        for rn, rule in RULES.items():
+            e = np.array([abs(rule(f, int(v)) - I) for v in n])
+            errs[(fn, rn)] = e
+            for k_, v, ev in zip(ks, n, e):
+                rows.append((fn, rn, k_, v, repr(float(ev))))
+    with open("results/errors.csv", "w") as fh:
+        fh.write("function,rule,k,n,abs_error\n")
+        for r in rows: fh.write(",".join(map(str, r)) + "\n")
+    res = {}
+    for thr in (1e-15, 1e-14, 1e-13):
+        for (fn, rn), e in errs.items():
+            res.setdefault(f"{fn}|{rn}", {})[f"{thr:g}"] = fit(n.astype(float), e, thr)
+    # local (pairwise) orders log2(e_k/e_{k+1}) for diagnostics
+    local = {f"{fn}|{rn}": [None if (e[i] <= 1e-15 or e[i+1] <= 1e-15) else float(np.log2(e[i]/e[i+1])) for i in range(11)]
+             for (fn, rn), e in errs.items()}
+    json.dump({"fits": res, "local_orders_k_to_k+1": local,
+               "convention": "orders in n (panel count); primary threshold 1e-15; CI = t(0.975, npts-2)*se"},
+              open("results/fits.json", "w"), indent=1)
+    print(f"numpy {np.__version__}")
+    for key, d in res.items():
+        p = d["1e-15"]; print(key, {k: (round(v,3) if isinstance(v,float) else v) for k,v in p.items()} if p else None)

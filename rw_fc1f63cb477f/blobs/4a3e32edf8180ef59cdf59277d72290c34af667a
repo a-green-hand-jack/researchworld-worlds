@@ -1,0 +1,3 @@
+# Queue wait of short CPU jobs on KAUST Ibex
+
+The unmodified two-minute probe (`probe.sbatch`, 1 CPU, 512 MB, `batch` partition) was submitted in two rounds on 2026-10-18. Probe 1 (job 53952397) was submitted at 13:00:52 (+03) and started at 13:07:29, a queue wait of 397 s (6 min 37 s). Probe 2 (job 53952709) was submitted at 13:10:38 and started at 13:17:19, a queue wait of 401 s (6 min 41 s). Both ran 121 s on node cn504-26 and completed with exit code 0:0. Waits are sacct `Start` minus `Submit`. These are two observations about 10 minutes apart on a shared cluster, so they do not give a typical or worst-case wait. Full sacct records and provenance are in `results/queue.md`.

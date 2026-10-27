@@ -1,0 +1,60 @@
+{
+ "grid": "dev_adam",
+ "runs": 48,
+ "seconds": 326.02591252326965,
+ "numpy": "2.4.6",
+ "md5": {
+  "e6_r2.py": "1f856838c6c4ef98633e86802cc65446",
+  "linjepa.py": "e7d569d4a3537aa3883ddfe847b3df66",
+  "baselines/dvd_mu.py": "88ed281a7bea8dc0b312f88221ff5f4d",
+  "e4_theory.py": "72f6b4245a46a2a34c773052e5a5e160"
+ },
+ "config": {
+  "data": [
+   "field",
+   "latent"
+  ],
+  "act": [
+   "tanh",
+   "relu"
+  ],
+  "s1": [
+   0.5,
+   1.0,
+   2.0
+  ],
+  "lam": [
+   0.01,
+   0.03
+  ],
+  "p0": [
+   0.5,
+   1.0
+  ],
+  "r": [
+   0.5
+  ],
+  "w0": [
+   0.001
+  ],
+  "opt": [
+   "adamw"
+  ],
+  "eta": 0.02,
+  "horizon": 8.0,
+  "seeds": [
+   604
+  ]
+ },
+ "THR": 0.05,
+ "N": 1024,
+ "n": 32,
+ "H": 64,
+ "d": 32,
+ "EARLY_F": 0.1,
+ "ADAM": {
+  "b1": 0.9,
+  "b2": 0.999,
+  "eps": 1e-08
+ }
+}

@@ -1,0 +1,26 @@
+{
+  "source": "bioRxiv",
+  "url": "https://www.biorxiv.org/",
+  "start_utc": "2026-10-19T21:30:15.663187+00:00",
+  "end_utc": "2026-10-19T21:30:16.091426+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/biorxiv.headers",
+    "-o",
+    "/tmp/tmplgl8acgb/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://www.biorxiv.org/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html; charset=utf-8\n",
+  "stderr": "",
+  "first200": "<!DOCTYPE html>\n<html lang=\"en\" dir=\"ltr\" \n  xmlns=\"http://www.w3.org/1999/xhtml\"\n  xmlns:mml=\"http://www.w3.org/1998/Math/MathML\">\n  <head prefix=\"og: http://ogp.me/ns# article: http://ogp.me/ns/arti",
+  "body_bytes": 32166
+}

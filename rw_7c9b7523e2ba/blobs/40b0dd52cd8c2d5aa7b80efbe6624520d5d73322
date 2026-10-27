@@ -1,0 +1,66 @@
+"""Generate interleaved uniform pairs, checkpointing each independent run."""
+import argparse
+from concurrent.futures import ProcessPoolExecutor
+import csv
+import json
+import math
+from pathlib import Path
+import platform
+import subprocess
+import time
+import numpy as np
+
+NS = [10**k for k in range(3, 8)]
+CHUNK = 250_000
+
+
+def simulate(run_index):
+    start = time.perf_counter()
+    seed = 2026 + run_index
+    rng = np.random.default_rng(seed)
+    previous = hits = 0
+    rows = []
+    for n in NS:
+        remaining = n - previous
+        while remaining:
+            m = min(CHUNK, remaining)
+            points = rng.random((m, 2))
+            hits += int(np.count_nonzero(points[:, 0]**2 + points[:, 1]**2 <= 1))
+            remaining -= m
+        estimate = 4 * hits / n
+        rows.append([run_index, seed, n, hits, estimate, abs(estimate - math.pi)])
+        previous = n
+    return rows, time.perf_counter() - start
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument('--runs', type=int, required=True)
+    p.add_argument('--workers', type=int, default=2)
+    p.add_argument('--output', required=True)
+    args = p.parse_args()
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    begin = time.perf_counter()
+    durations = []
+    with (out / 'runs.csv').open('w') as f, ProcessPoolExecutor(args.workers) as pool:
+        writer = csv.writer(f)
+        writer.writerow(['run_index', 'seed', 'N', 'hits', 'pi_hat', 'absolute_error'])
+        for rows, seconds in pool.map(simulate, range(args.runs)):
+            writer.writerows(rows)
+            f.flush()
+            durations.append(seconds)
+            print(f'completed run {rows[0][0]} seed {rows[0][1]} in {seconds:.3f}s', flush=True)
+    metadata = dict(runs=args.runs, workers=args.workers, N=NS, chunk_size=CHUNK,
+                    elapsed_seconds=time.perf_counter()-begin,
+                    per_run_seconds=durations, python=platform.python_version(),
+                    numpy=np.__version__, bit_generator=type(np.random.default_rng().bit_generator).__name__,
+                    seed_convention='seed=2026+run_index; zero-based run_index',
+                    draw_call='rng.random((m, 2)); contiguous pairs across chunks and N',
+                    code_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip())
+    (out/'metadata.json').write_text(json.dumps(metadata, indent=2)+'\n')
+    print(f'Finished {args.runs} runs in {metadata["elapsed_seconds"]:.3f}s', flush=True)
+
+
+if __name__ == '__main__':
+    main()

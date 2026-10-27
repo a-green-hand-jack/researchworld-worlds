@@ -1,0 +1,18 @@
+# Figure and coefficient table
+
+`fig1.png` is the inspected 1400 × 700 pixel rendering (7 × 3.5 inches at 200 dpi). Use `fig1_caption.md` as the full caption and `../tables/coefficients.md` as the coefficient table. Both panels share series color/marker encodings; the residual panel uses initial OLS residuals even though the selected fit for B is WLS.
+
+The generator consumes existing analysis outputs without fitting models. Input revision, hashes, selected result fields and software versions are recorded in `provenance.json`. Statistical computation lives in the analysis owner's `code/analysis.py`.
+
+From the assembled delivery root (where `results/` is present), reproduce with:
+
+```sh
+python3 -m pip install -r figures/requirements.txt
+python3 figures/generate.py --source . --analysis-revision 3f081036f482b788c52ec61c11d51d216824de52
+```
+
+For separate checkouts, set `--source` to the analysis repository root at that revision. If regenerating from a later analysis revision, pass its full revision identifier and review the new input hashes.
+
+Inspection: opened the delivered PNG; both titles, axis labels, legends and extreme observations are visible, and line styles/markers distinguish the series. Read the generated caption, table, and provenance. Generator assertions verify matching observation/residual coordinates and reconstruct supplied OLS residuals from supplied coefficients to detect mismatched inputs. Table entries use the estimate/lower/upper fields directly and round to three decimals. No confidence band is implied by the fitted lines. No third panel was added because the two-panel figure meets the page constraints and directly displays the required initial residual check.
+
+Source refresh: the corrected Goldfeld–Quandt analysis revision changes diagnostic fields in results.json but leaves the plotted observations, OLS residuals, selected coefficients and intervals unchanged. Regeneration produced byte-identical PNG, caption and table; provenance now records the corrected analysis revision. The assignment includes both figures/ and tables/.

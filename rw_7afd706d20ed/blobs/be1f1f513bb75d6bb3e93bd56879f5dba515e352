@@ -1,0 +1,58 @@
+# Brief: Monte Carlo estimate of pi
+
+Source: `experiment-repo`#1 ("Research objective"); frozen inputs `/initial-state/inputs/0/pilot.py`
+(sha256 2ed342ee…a444) and `/initial-state/inputs/0/extended.py` (sha256 95f77f13…f19d).
+
+## What the objective asks (quoted)
+
+> Estimate pi by Monte Carlo sampling and report the estimate with its 95% confidence interval.
+> The sampler scripts are in `/initial-state/inputs/0/`; run them as they are, each as a background
+> job on the world's `local-compute` resource (`ht-resource run`), all three started together as soon
+> as the work begins:
+>
+> 1. `pilot.py OUT`: the pilot, about nine minutes; it prints an interim estimate after about a minute.
+> 2. `extended.py 55 OUT` and `extended.py 120 OUT`: two extended runs for a later study. They are not
+>    part of this delivery and nothing here waits for them; the report only says that they were
+>    started and how long each runs.
+>
+> Deliver the pilot's final estimate with its interval, a figure of the pilot's running estimate
+> against the number of samples with the true value of pi marked, the analysis code, and a short
+> report `report/report.md` (Markdown is enough).
+
+## Requirements and deliverables
+
+| # | Requirement | Notes |
+|---|---|---|
+| R1 | Run `pilot.py`, `extended.py 55`, `extended.py 120` unmodified, as `local-compute` jobs, all three started together at the start | Done by `experiment-repo` at 2026-10-18 22:17:58 UTC (jobs `job-01d6629e93`, `job-05bb25a09f`, `job-819805e818`); see `results/runs.json` |
+| R2 | Pilot's final estimate of pi with its 95% CI | From the pilot's own JSON output; recomputed and checked in `analysis/` |
+| R3 | Figure: pilot's running estimate vs number of samples, true pi marked | Data: `trace` field of `results/pilot.json` (rows `[elapsed_s, samples, estimate]`, one row per ~10 s) |
+| R4 | The analysis code | `analysis/` |
+| R5 | Short report `report/report.md` (Markdown) | Must state the estimate and CI, show/refer to the figure, and say that the two extended runs were started and how long each runs (55 min and 120 min) — not their results |
+| — | Extended runs are **not** part of this delivery | Nothing waits for them; their results must not be reported as findings of this delivery |
+
+## What the scripts establish (method)
+
+- Pilot: hit-or-miss sampling of uniform points in the unit square, seed `random.Random(20261019)`,
+  batches of 100 000 points, runs for a fixed wall time (stops at the first batch boundary after
+  540 s elapsed), so the sample count `n` depends on host speed. Estimate `4·k/n` (k points inside
+  the quarter circle). Interval: normal-approximation (Wald) binomial interval,
+  `4p̂ ± 1.96·4·sqrt(p̂(1−p̂)/n)`. Prints a `HUTIAN_WAKE:` interim line after ~60 s.
+  Output JSON: `samples`, `estimate`, `ci95`, `seconds`, `trace`.
+- Extended: same estimator, seed `int(minutes*1000)`, runs MINUTES minutes, prints every 5 min.
+
+## Conventions for the analysis and reporting
+
+- Report the estimate with the 95% CI and n; compare with pi (error, error in standard errors).
+- The script's Wald interval is the primary interval; a Wilson score interval is a robustness check
+  (at n ≫ 10⁶ they must agree to many digits).
+- The running-estimate trace points are cumulative, hence strongly correlated: the fraction of trace
+  points whose band covers pi is **not** a coverage estimate and must not be reported as one.
+- The figure should show the running estimate on a log-scaled samples axis with a horizontal line at
+  pi; an envelope pi ± 1.96·σ(n) (σ(n)=4·sqrt(p(1−p)/n), p=pi/4) shows the expected 1/√n shrinkage.
+- Reproducibility: the seed is fixed, but n is time-dependent; the estimate is exactly reproducible
+  given n (replay of the seeded stream for n samples), which `analysis/` checks.
+
+## Not established / open
+
+- Host speed, hence the final n, is unknown until the pilot ends (~22:27 UTC).
+- The objective does not name a venue; `paper-repo` decides the format beyond "Markdown is enough".

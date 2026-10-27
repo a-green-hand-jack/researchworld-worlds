@@ -1,0 +1,44 @@
+# Review
+
+Output of `ht-resource status media-api`:
+
+```json
+{
+  "tracked": [],
+  "available": true,
+  "check": {
+    "reason": "the upstream answered HTTP 404 for its root, which does not tell whether it serves requests; `ht-resource status` says what it answered requests lately",
+    "usable": null
+  },
+  "id": "media-api",
+  "kind": "http",
+  "limits": {},
+  "reason": null,
+  "remaining": {},
+  "this_execution": {},
+  "upstream_refusals": {
+    "last": {
+      "role": "paper-repo",
+      "said": "RESOURCE_EXHAUSTED: Your prepayment credits are depleted.",
+      "status": 402
+    },
+    "last_at": 1792739908.852,
+    "refused": 1,
+    "roles": [
+      "paper-repo"
+    ],
+    "since": 1792739908.852,
+    "statuses": {
+      "402": 1
+    }
+  },
+  "used": {
+    "bytes": 134,
+    "generations": 0,
+    "requests": 1
+  },
+  "ended": []
+}
+```
+
+report.md (paper-repo eb61d1bc0e82) states HTTP 402 and the verbatim body; the status record above shows one 402 refusal from paper-repo, consistent. Approved.

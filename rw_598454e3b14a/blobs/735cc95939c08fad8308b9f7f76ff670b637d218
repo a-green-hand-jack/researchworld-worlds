@@ -1,0 +1,101 @@
+import functools
+import csv, hashlib, json, os
+
+def results_dir():
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.environ.get("RESULTS_DIR", os.path.abspath(os.path.join(here, "..", "..", "results")))
+
+def num(x):
+    return None if x == "" else float(x)
+
+def load_e1():
+    path = os.path.join(results_dir(), "e1", "e1_runs.csv")
+    with open(path) as f:
+        rows = list(csv.DictReader(f))
+    for r in rows:
+        for k in ["d", "lam", "p0", "alpha", "w0", "kappa", "depth", "seed", "t_end", "t_race", "rank_meas", "rank_pred",
+                  "rank_reduced", "rank_window", "rank_bound", "mode_acc", "mode_acc_reduced", "rankme", "p_final"]:
+            r[k] = num(r[k])
+        r["race_finished"] = r["race_finished"] == "True"
+    return rows, path
+
+def record_inputs(outdir, name, paths):
+    """Write <name>.inputs.json next to the output: sha256 of each results file the output was made from."""
+    ent = {os.path.relpath(p, results_dir()): hashlib.sha256(open(p, "rb").read()).hexdigest() for p in paths}
+    os.makedirs(outdir, exist_ok=True)
+    json.dump({"output": name, "inputs_sha256 (paths relative to results/)": ent}, open(os.path.join(outdir, name + ".inputs.json"), "w"), indent=1)
+
+
+def knob_slice(rows, exp, knob, **fixed):
+    """E1 slice (orthogonal init, d=32) varying one knob: [(value, meas mean, meas sd, pred mean, window mean, bound mean, n)]."""
+    import numpy as np
+    base = [r for r in rows if r["init"] == "orthogonal" and r["d"] == 32 and r["exp"] == exp and all(r[k] == v for k, v in fixed.items())]
+    out = []
+    for v in sorted(set(r[knob] for r in base), key=lambda z: (z is None, z or 0)):
+        s = [r for r in base if r[knob] == v]
+        f = lambda k: np.array([r[k] for r in s], float)
+        out.append((v, f("rank_meas").mean(), f("rank_meas").std(), f("rank_pred").mean(), f("rank_window").mean(), f("rank_bound").mean(), len(s)))
+    return out
+
+# the slices shown in the knob-trend figure (same as `trends` in results/e1/summary.json)
+SLICES = {
+    "lam": [("race", "lam", dict(p0=1.0, alpha=1.0, w0=1e-4))],
+    "p0": [("race", "p0", dict(lam=0.0, alpha=1.0, w0=1e-4)), ("race", "p0", dict(lam=0.01, alpha=1.0, w0=1e-4))],
+    "alpha": [("race", "alpha", dict(lam=0.01, p0=1.0, w0=1e-4))],
+    "kappa": [("ema", "kappa", dict(lam=0.01, p0=1.0)), ("ema", "kappa", dict(lam=0.0, p0=0.5))],
+    "depth": [("depth", "depth", dict(lam=0.01, p0=1.0))],
+    "w0": [("race", "w0", dict(lam=0.01, p0=1.0, alpha=1.0))],
+}
+
+def load_e1b_summary():
+    path = os.path.join(results_dir(), "e1b", "summary.json")
+    return json.load(open(path)), path
+
+@functools.lru_cache(maxsize=None)
+def load_e2():
+    """E2 runs (csv + jsonl joined on id), summary.json and the paths used."""
+    d = os.path.join(results_dir(), "e2")
+    with open(os.path.join(d, "e2_runs.csv")) as f:
+        rows = {int(r["id"]): r for r in csv.DictReader(f)}
+    for r in rows.values():
+        for k in ["r", "lam", "p0", "seed", "rank_meas", "rank_pred", "rank_window", "rank_bound", "freq_acc", "target_frac"]:
+            r[k] = num(r[k])
+    with open(os.path.join(d, "e2_runs.jsonl")) as f:
+        for line in f:
+            x = json.loads(line)
+            if x["id"] in rows:
+                rows[x["id"]].update({k: x.get(k) for k in ("rank_t", "surv_freq", "t_end")})
+    S = json.load(open(os.path.join(d, "summary.json")))
+    return list(rows.values()), S, [os.path.join(d, n) for n in ("e2_runs.csv", "e2_runs.jsonl", "summary.json")]
+
+def e2_pred_freq():
+    """Per-run predicted surviving multiplicity per Fourier frequency (0..32), from the per-mode `pred` and the mode->frequency map."""
+    import numpy as np
+    p = json.load(open(os.path.join(results_dir(), "e2", "prediction.json")))
+    freq = np.array(p["spectra"]["bern/0.5"]["freq"])
+    return {r["id"]: np.bincount(freq, weights=np.array(r["pred"], float), minlength=33) for r in p["runs"] if "pred" in r}, os.path.join(results_dir(), "e2", "prediction.json")
+
+
+@functools.lru_cache(maxsize=None)
+def load_e3():
+    """E3 sweep rows by name (numbers parsed, per-seed counts as a list), summary.json, summary_followup.json and the paths used."""
+    d = os.path.join(results_dir(), "e3")
+    rows = {}
+    with open(os.path.join(d, "runs.csv")) as f:
+        for r in csv.DictReader(f):
+            for k in ("count_pred", "count", "count_sd", "dim_collapse", "complete_collapse", "probe_online", "probe_init", "rankme_c", "tv_ratio", "count_init"):
+                r[k] = float(r[k])
+            r["count_seeds"] = [float(x) for x in r["count_seeds"].split()]
+            r["value"] = None if r["value"] == "" else float(r["value"]) if r["value"].replace(".", "", 1).replace("-", "", 1).replace("e", "", 1).isdigit() else r["value"]
+            rows[r["name"]] = r
+    S = json.load(open(os.path.join(d, "summary.json"))); F = json.load(open(os.path.join(d, "summary_followup.json")))
+    return rows, S, F, [os.path.join(d, n) for n in ("runs.csv", "summary.json", "summary_followup.json")]
+
+
+def load_e3_traj(followup=False):
+    """Trajectories by (name, seed): dicts with epoch and logged series (jsonl, one line per run)."""
+    p = os.path.join(results_dir(), "e3", "trajectories_followup.jsonl" if followup else "trajectories.jsonl")
+    out = {}
+    for line in open(p):
+        x = json.loads(line); out[(x["name"], x["seed"])] = x
+    return out, p

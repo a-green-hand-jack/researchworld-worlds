@@ -1,0 +1,45 @@
+"""Review check of E7-G (experiment 846d728): rescore the V100 raw runs (release ext-runs-3 e7__e7g__runs7g.tar.gz,
+sha256 0e8d5c30...) with the frozen code/e7g.py (md5 644603c8) and compare leaf for leaf with the delivered
+results/e7/e7g.json; compare the V100 logs with the P100 production logs of the same seeds (release
+e7__production__runs7.tar.gz); recompute the registered toggle readings with the threshold 3.16."""
+import json, os, sys, subprocess
+W = "/hutian/work/e7g"; EXP = W + "/exp"; PROD = "/hutian/work/e7prod/runs7"
+out = {}
+os.chdir(W)
+r = subprocess.run([sys.executable, "-u", EXP + "/code/e7g.py", "score", "runs7g", "/hutian/work/cifar",
+                    EXP + "/results/e7/score_rows.json", EXP + "/results/e7/score.json", W + "/e7g_rescore.json"],
+                   capture_output=True, text=True)
+out["scorer_exit"] = r.returncode; out["scorer_tail"] = (r.stdout + r.stderr)[-1500:]
+def leaves(x, p=""):
+    if isinstance(x, dict):
+        for k, v in x.items(): yield from leaves(v, p + "/" + str(k))
+    elif isinstance(x, list):
+        for i, v in enumerate(x): yield from leaves(v, p + f"[{i}]")
+    else: yield p, x
+if r.returncode == 0:
+    a = dict(leaves(json.load(open(EXP + "/results/e7/e7g.json"))))
+    b = dict(leaves(json.load(open(W + "/e7g_rescore.json"))))
+    diff = [(k, a.get(k), b.get(k)) for k in sorted(set(a) | set(b)) if k != "/definition" and a.get(k) != b.get(k)]
+    out["leaves"] = [len(a), len(b)]; out["differ"] = len(diff); out["first_diffs"] = diff[:40]
+# V100 vs P100 logs, per check
+def rows(path):
+    return [json.loads(l) for l in open(path) if l.strip()]
+lc = {}
+for s in (20, 21, 22):
+    v = rows(f"{W}/runs7g/T_wd0.0034/s{s}/log.jsonl"); p = rows(f"{PROD}/T_wd0.0034/s{s}/log.jsonl")
+    pv = {r["step"]: r["loss"] for r in p if "loss" in r}; vv = {r["step"]: r["loss"] for r in v if "loss" in r}
+    common = sorted(set(pv) & set(vv)); d = [abs(vv[t] - pv[t]) / max(abs(pv[t]), 1e-30) for t in common]
+    lc[s] = dict(n_checks_v=len(vv), n_checks_p=len(pv), common=len(common), checks_differ=sum(x > 0 for x in d),
+                 max_rel=max(d) if d else None, steps_equal=sorted(vv) == sorted(pv))
+out["loss_logs"] = lc
+# registered readings with 3.16 from the delivered file
+g = json.load(open(EXP + "/results/e7/e7g.json"))
+sc = json.load(open(EXP + "/results/e7/score.json"))
+out["toggle_readings"] = {n: dict(v100=t["mean_error_diff_headroom_200"], v100_reg=t["hypothesis_registered_threshold"],
+                                  v100_field_hypothesis=t["hypothesis"], v100_sd=t["sd_ref_headroom_error"],
+                                  p100=sc["toggles"][n]["mean_error_diff_headroom_200"], p100_hyp=sc["toggles"][n]["hypothesis"],
+                                  p100_sd=sc["toggles"][n]["sd_ref_headroom_error"])
+                          for n, t in g["toggles_v100"].items() if n != "scope"}
+json.dump(out, open("/hutian/repo/checks/e7g/check.json", "w"), indent=1, default=str)
+print(json.dumps({k: out[k] for k in out if k not in ("first_diffs",)}, indent=1, default=str)[:3000], flush=True)
+print("HUTIAN_WAKE: E7-G review check finished", flush=True)

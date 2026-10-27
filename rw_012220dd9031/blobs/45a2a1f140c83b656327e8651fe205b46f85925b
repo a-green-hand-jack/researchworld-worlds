@@ -1,0 +1,44 @@
+# Code that produces every number in the report
+
+Environment: Python 3.11 with `requirements.txt` (numpy 2.1.3, scipy 1.14.1,
+scikit-learn 1.5.2, matplotlib 3.9.2; matplotlib is only needed for the figure).
+
+```sh
+python fetch_data.py              # OpenML data id 61 -> data/iris.arff, md5 checked against OpenML
+python cv.py ../results/local     # full 10 x stratified 5-fold CV, ~20-35 s on one CPU
+sbatch --job-name iris-cv --export=ALL,ENV=/path/to/venv ibex_job.sbatch   # same run on Ibex -> ../results/ibex
+python analyze.py                 # ../results/summary.json, numbers.tex, ../figures/accuracy.pdf, ../tables/results.tex
+```
+
+Design (`cv.py`):
+- Outer: `RepeatedStratifiedKFold(n_splits=5, n_repeats=10, random_state=20261017)`;
+  120 training / 30 test cases per fold, 50 folds.
+- Logistic regression: standardisation + multinomial (softmax) logistic regression,
+  lbfgs, L2 penalty C = 1, fitted on the outer training fold.
+- k-NN: standardisation + Euclidean k-NN (uniform weights); odd k in 1..31 chosen on the
+  outer training fold only, by stratified 5-fold inner CV (accuracy; ties to the
+  smallest k), then refitted on the whole outer training fold.
+- Both methods are scored on the same outer test folds, so differences are paired.
+
+Statistics (`analyze.py`): the primary 95% interval is the corrected resampled t
+(Nadeau & Bengio, 2003, *Machine Learning* 52:239-281): variance (1/J + n_test/n_train) s^2,
+t with J-1 = 49 df. The naive t over the 50 folds (treats folds as independent, too
+narrow) and the t over the 10 repetition means are in `summary.json` as sensitivity checks.
+
+Reproducibility: `analyze.py` compares `results/local` and `results/ibex` byte for byte
+(per-fold results and every test-case prediction) and records the Ibex node name.
+
+Every number in the paper text is a macro in `results/numbers.tex` (accuracies in percent);
+the table is `tables/results.tex`; both are written by `analyze.py`.
+
+Sensitivity to the k grid: the same CV with every k in 1..30 instead of odd k in 1..31
+(same seeds and splits; only the k-NN candidate grid differs):
+
+```sh
+python cv.py ../results/sensitivity_k1-30 --k-grid all   # per-fold results, ~35 s
+python analyze.py                                          # also writes ../results/sensitivity_k1-30/summary.json
+```
+
+It gives LR 95.40, k-NN 94.40, difference +1.00 pp with corrected 95% CI [-2.39, +4.39] and
+naive CI [+0.08, +1.92] (`results/sensitivity_k1-30/summary.json`): the same conclusion as
+the main odd-k grid. The LR per-fold results are identical to the main run's.

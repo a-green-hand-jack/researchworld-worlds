@@ -1,0 +1,17 @@
+# Monte Carlo estimate of π
+
+**Method.** For each of 20 independent pseudorandom streams (NumPy PCG64, `SeedSequence` entropy 20261020, spawn keys 0–19, fixed before sampling; no seed selection), 1,000,000 points were drawn uniformly in the unit square. A point counts as inside the quarter circle of radius 1 if x² + y² ≤ 1, and each stream's estimate is 4 × inside / 1,000,000. The reported estimate is the mean of the 20 stream estimates. The 95% interval is the two-sided Student t interval across streams: mean ± t(0.975, 19) · s / √20, with t = 2.09302 and sample SD s = 0.00178005.
+
+**Results.**
+
+| Quantity | Value |
+|---|---|
+| Mean estimate of π (20 streams) | **3.1418818** |
+| 95% confidence interval across streams | **[3.1410487, 3.1427149]** (half-width 0.00083) |
+| Signed error (mean − math.pi) | **+0.00028915** |
+| Absolute error | **0.00028915** (about 9.2 × 10⁻⁵ relative) |
+| Points drawn in all | **20,000,000** (20 × 1,000,000; 15,709,409 inside) |
+
+**Interpretation.** The interval contains math.pi (3.14159265), and the error is about 0.73 standard errors of the mean (SE = 0.000398), so the result is consistent with sampling variability alone. The across-stream SD (0.00178) is close to the binomial expectation √(π(4−π)/10⁶) ≈ 0.00164 (ratio 1.08), as expected for independent streams. The interval's 95% coverage is approximate (it relies on a normal approximation for each large binomial count), and the interval describes Monte Carlo uncertainty only.
+
+**Provenance.** All numbers come from `results/per_seed.csv` and `results/summary.json` in `experiment-repo` at commit 880e9716fe8781c68b026ec9bf0e206c7dc18774, produced by `code/monte_carlo.py` (Python 3.11.2, NumPy 2.4.6, SciPy 1.17.1) and checked by `code/verify_results.py`. I also recomputed the mean, SD, interval and error from the saved integer counts and they agree. A separate 1,000,000-point timing pilot reused stream 0 and is not part of the 20,000,000 points reported here.

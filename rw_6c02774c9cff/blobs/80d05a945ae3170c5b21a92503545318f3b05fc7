@@ -1,0 +1,19 @@
+# Feasibility assessment (idea-review-repo)
+
+Verdict: feasible within budget; the whole study is seconds of CPU. The risks are procedural, and each is bounded below.
+
+## Risks and bounds
+1. **Ibex data access.** Compute nodes may have no internet. Bound: download Iris (OpenML id 61) once from openml.org (API/ARFF/Parquet), store it with its sha256, and ship the same file to both runs. Record the OpenML source URL, dataset version and retrieval time. Do not substitute sklearn's bundled Iris. If a login node can reach OpenML, fetching there is also acceptable, but both runs must use byte-identical data (check the hash).
+2. **"Identical numbers" across Ibex and local.** BLAS, scikit-learn, numpy or solver differences can change the last digits. Bound: same pinned environment (lockfile, versions recorded in both logs), fixed seeds for the repeated splits, a single_thread setting. Compare per-fold accuracies exactly, and compare aggregate statistics at full float precision, reporting the maximum absolute difference. Accuracy on 30 test points per fold is a count/n, so it is expected to be bit-identical unless a tie or solver difference flips a prediction. Report the finding honestly either way, with the same hash/diff script on both outputs.
+3. **Node name.** Record `hostname` / `$SLURMD_NODENAME` and the job ID inside the job's own output file, not by hand, so the paper can quote it.
+4. **Queueing.** Ibex is shared. Submit early with a small request (1 CPU, a few minutes, CPU partition) and track the job with `ht-resource track`. The local run does not wait on it. Submit as soon as the code is fixed; changing the code afterwards forces a rerun of both.
+5. **Interval validity.** The 50 fold scores (10 x 5) are not independent, so a naive t-interval on them is too narrow. Bound: the plan owner decides the method; I advise a 95% interval that accounts for the correlation (e.g. Nadeau-Bengio corrected resampled t, or a bootstrap/percentile over repetitions) and a plain statement of what it assumes. The paired difference must use identical splits for both methods. The plan must also say whether the repeat-level or the fold-level quantity is the unit.
+6. **Inner CV for k.** Nested: choose k by inner CV inside each outer training fold only (no leakage). Fix the k grid and inner fold count in advance. Ties and k >= inner training size are edge cases to handle in the grid (inner 5-fold on 120 points leaves ~96 training points, so the grid up to ~30 is fine). Standardise features within the pipeline for kNN (and logistic regression); state the choice. Fix regularisation C for logistic regression, or tune it inside the same nested scheme; say which.
+7. **Two-page limit.** One figure, one table, a short methods and results text, and a pointer to the code. Bound: NeurIPS 2026 template must come from neurips.cc, and the compiled PDF must be checked for page count (references and appendix count against the two pages unless the venue says otherwise; keep none). Iris results are near the ceiling (~95-97%) so the paired difference will probably be small and its interval may include 0. The paper must say that rather than claim a winner.
+8. **Deliverables.** `report/report.pdf`, LaTeX source, and code in the delivered tree. Every number in the paper must trace to a script output (generate table values and the figure from a results file, not by hand).
+
+## Scope limits
+Only Iris, only these two methods, no extra datasets or tuning beyond the specified inner CV. Anything extra costs the two-page budget.
+
+## Suggested ordering
+1) pin env + fetch data + hash; 2) experiment code with seed and logging of hostname, versions, data hash; 3) launch Ibex and local runs in parallel; 4) compare outputs by script; 5) figure/table from results file; 6) compile and check page count.

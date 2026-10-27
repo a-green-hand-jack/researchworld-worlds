@@ -1,0 +1,39 @@
+"""usage: python3 make_figure.py PILOT_JSON OUT_PNG  (PILOT_JSON = pilot.py output)"""
+import json, math, sys
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+d = json.load(open(sys.argv[1]))
+n = [t[1] for t in d["trace"]]
+est = [t[2] for t in d["trace"]]
+# 95% envelope around pi for a running estimate with n samples
+sd = 4 * math.sqrt((math.pi / 4) * (1 - math.pi / 4))
+lo = [math.pi - 1.96 * sd / math.sqrt(k) for k in n]
+hi = [math.pi + 1.96 * sd / math.sqrt(k) for k in n]
+
+fig, (a, b) = plt.subplots(1, 2, figsize=(11, 4.2))
+a.fill_between(n, lo, hi, color="#cfd8e6", label="±1.96·σ/√n around π")
+a.plot(n, est, color="#1f4e9c", lw=1.4, marker="o", ms=3, label="running estimate")
+a.axhline(math.pi, color="#c0392b", lw=1.2, label="π = 3.141593")
+a.set_ylabel("estimate of π")
+a.set_title("Running estimate")
+a.legend(fontsize=8)
+sc = 1e4
+b.fill_between(n, [(x - math.pi) * sc for x in lo], [(x - math.pi) * sc for x in hi], color="#cfd8e6", label="±1.96·σ/√n")
+b.plot(n, [(x - math.pi) * sc for x in est], color="#1f4e9c", lw=1.4, marker="o", ms=3)
+b.axhline(0, color="#c0392b", lw=1.2, label="π")
+b.set_ylim(-4, 4)
+b.set_ylabel("estimate − π  (×10$^{-4}$)")
+b.set_title("Deviation from π (zoom)")
+b.legend(fontsize=8, loc="upper right")
+for ax in (a, b):
+    ax.set_xscale("log")
+    ax.set_xlabel("number of samples")
+lo_, hi_ = d["ci95"]
+b.annotate(f"final: {d['estimate']:.6f}\n95% CI [{lo_:.6f}, {hi_:.6f}]\nn = {d['samples']:,}",
+           xy=(0.97, 0.05), xycoords="axes fraction", ha="right", fontsize=8,
+           bbox=dict(fc="white", ec="0.7"))
+fig.suptitle("Pilot Monte Carlo estimate of π (single seed)")
+fig.tight_layout()
+fig.savefig(sys.argv[2], dpi=150)

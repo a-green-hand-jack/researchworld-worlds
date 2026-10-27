@@ -1,0 +1,90 @@
+"""Are E2's measured ranks final? Long-horizon check of the cyclic population arm with the exact reduced flow
+(internal review, finding 1).
+
+For the pop arm with cyclic masks (bern, block, multiblock) the statistics are circulant, W0 = w0 x orthogonal (no
+jitter) and P0 = p0 I, so W = V diag(a) U^T and P = V diag(p) V^T in the real Fourier basis U and every Fourier
+column follows the scalar reduced flow (code/linjepa.py reduced_flow, same Euler step ETA as simulate()); its
+amplitudes start at w0 for every column and seed. Per config (the flow does not depend on the seed): the flow to
+t_end is validated against the measured per-frequency survival in results/e2/e2_runs.jsonl (all 3 seeds), then
+continued to 2 t_end and to T_LONG = 40000, with the 1e-150 flush and without it. The pre-registered N1
+(t_end-capped race) and the same race score without the cap (t_end = inf, nothing fitted) are scored against the
+rank at t_end and at T_LONG. Rank = #Fourier columns with amplitude > 0.05.
+Usage: python3 code/checks/e2_long_horizon.py   -> results/checks/e2_long_horizon.json"""
+import sys, os, json, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))
+from linjepa import reduced_flow, escape_score
+import e2
+
+ROOT = os.path.dirname(os.path.dirname(HERE))
+T_LONG = 40000.0
+
+
+def labels_freq(a):
+    return [int((a[e2.FREQ == f] > e2.SV_THR).sum()) for f in range(e2.n // 2 + 1)]
+
+
+def one(key):
+    fam, r, lam, p0, t_end, w0 = key
+    S11, S21, _ = e2.stats(fam, r)
+    s, c = e2.spectra(S11, S21)
+    a0 = np.full(e2.n, w0)
+    out = dict(fam=fam, r=r, lam=lam, p0=p0, t_end=t_end)
+    for name, t, fl in [("t_end", t_end, 1e-150), ("2t_end", 2 * t_end, 1e-150), ("long", max(T_LONG, 2 * t_end), 1e-150),
+                        ("long_nofloor", max(T_LONG, 2 * t_end), 0.0)]:
+        a, _ = reduced_flow(c, s, a0, p0, lam, lam, alpha=1.0, eta=e2.ETA, T=int(round(t / e2.ETA)), floor=fl)
+        out["rank_" + name] = int((a > e2.SV_THR).sum()); out["freq_" + name] = labels_freq(a)
+    sc = np.array([escape_score(c[k], s[k], lam, lam, 1.0, p0, np.log(w0)) for k in range(e2.n)])
+    out["rank_race_uncapped"] = int((sc >= 0).sum())
+    return out
+
+
+def boot(x, B=2000, seed=0):
+    x = np.asarray(x, float)
+    rng = np.random.default_rng(seed); bs = x[rng.integers(0, x.size, (B, x.size))].mean(1)
+    return [float(x.mean()), float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))]
+
+
+if __name__ == "__main__":
+    t0 = time.time()
+    P = json.load(open(os.path.join(ROOT, "results/e2/prediction.json")))
+    M = {r["id"]: r for r in map(json.loads, open(os.path.join(ROOT, "results/e2/e2_runs.jsonl")))}
+    runs = [c for c in P["runs"] if c["exp"] == "pop" and c["fam"] in ("bern", "block", "multiblock")]
+    keys = sorted({(c["fam"], c["r"], c["lam"], c["p0"], c["t_end"], c["w0"]) for c in runs})
+    with Pool(8) as pool:
+        res = dict(zip(keys, pool.map(one, keys, chunksize=2)))
+    per = []
+    for c in runs:
+        f = res[(c["fam"], c["r"], c["lam"], c["p0"], c["t_end"], c["w0"])]; m = M[c["id"]]
+        per.append(dict(id=c["id"], fam=c["fam"], r=c["r"], lam=c["lam"], p0=c["p0"], seed=c["seed"], t_end=c["t_end"],
+                        capped=bool(c["t_end"] >= e2.T_CAP), rank_meas=m["rank_meas"], rank_pred=c["rank_pred"],
+                        flow_matches_measured=bool(m.get("surv_freq") == f["freq_t_end"]),
+                        **{k: v for k, v in f.items() if k.startswith("rank_")}))
+    S = dict(note=__doc__.split("Usage")[0].strip(), T_long=T_LONG, configs=len(keys), runs=len(per))
+    groups = {"all": lambda r: True, "capped": lambda r: r["capped"]}
+    for lam in e2.LAMS:
+        groups[f"lam={lam:g}"] = (lambda l: (lambda r: r["lam"] == l))(lam)
+    for g, sel in groups.items():
+        rr = [r for r in per if sel(r)]
+        S[g] = dict(runs=len(rr), flow_matches_measured=boot([r["flow_matches_measured"] for r in rr]),
+                    runs_rank_changed_2t=int(sum(r["rank_2t_end"] != r["rank_t_end"] for r in rr)),
+                    runs_rank_changed_long=int(sum(r["rank_long"] != r["rank_t_end"] for r in rr)),
+                    runs_rank_changed_long_nofloor=int(sum(r["rank_long_nofloor"] != r["rank_t_end"] for r in rr)),
+                    runs_rank_gained_long=int(sum(r["rank_long"] > r["rank_t_end"] for r in rr)),
+                    runs_rank_lost_long=int(sum(r["rank_long"] < r["rank_t_end"] for r in rr)),
+                    pred_exact_vs_tend=boot([r["rank_pred"] == r["rank_t_end"] for r in rr]),
+                    pred_mae_vs_tend=boot([abs(r["rank_pred"] - r["rank_t_end"]) for r in rr]),
+                    pred_exact_vs_long=boot([r["rank_pred"] == r["rank_long"] for r in rr]),
+                    pred_mae_vs_long=boot([abs(r["rank_pred"] - r["rank_long"]) for r in rr]),
+                    uncapped_exact_vs_long=boot([r["rank_race_uncapped"] == r["rank_long"] for r in rr]),
+                    uncapped_mae_vs_long=boot([abs(r["rank_race_uncapped"] - r["rank_long"]) for r in rr]),
+                    uncapped_mae_vs_long_nofloor=boot([abs(r["rank_race_uncapped"] - r["rank_long_nofloor"]) for r in rr]))
+    S["seconds"] = time.time() - t0
+    S["per_run"] = per
+    json.dump(S, open(os.path.join(ROOT, "results/checks/e2_long_horizon.json"), "w"), indent=1)
+    for g in groups:
+        print(g, json.dumps(S[g]))
+    print(f"{time.time()-t0:.0f}s")

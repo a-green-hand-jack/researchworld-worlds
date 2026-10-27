@@ -1,0 +1,70 @@
+"""Secondary analyses: does the LR-vs-kNN conclusion depend on analysis choices?
+
+Variants (each a full 10x stratified 5-fold CV, same code as cv_compare.py):
+  k grid all integers 1..30 (the grid of a first run, before adopting the
+  plan's odd grid 1..31), odd 1..15, all 1..50; no standardisation for either
+  method; LR with C tuned by inner CV over 10^-2..10^3; three further outer
+  seeds. Writes results/robustness.json and results/robustness_folds.csv.
+Run from report/: python code/robustness.py
+"""
+import os
+for v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(v, "1")
+import json, pathlib, sys
+from multiprocessing import Pool
+import numpy as np
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import cv_compare as cc
+
+ROOT = cc.ROOT
+C_GRID = list(np.logspace(-2, 3, 11))
+
+
+def tuned_lr(i):
+    inner = StratifiedKFold(n_splits=5, shuffle=True, random_state=cc.OUTER_SEED + 1 + i)
+    return GridSearchCV(cc.make_lr(), {"logisticregression__C": C_GRID}, cv=inner, scoring="accuracy", n_jobs=1)
+
+
+VARIANTS = {
+    "main": {},
+    "k_grid_all_1_30": {"k_grid": list(range(1, 31))},
+    "k_grid_odd_1_15": {"k_grid": list(range(1, 16, 2))},
+    "k_grid_1_50": {"k_grid": list(range(1, 51))},
+    "no_standardisation": {"scale": False},
+    "lr_C_tuned": {"lr_factory": tuned_lr},
+    "outer_seed_1": {"outer_seed": 1},
+    "outer_seed_2": {"outer_seed": 2},
+    "outer_seed_3": {"outer_seed": 3},
+}
+
+
+def one(name):
+    X, y, _ = cc.load_iris_arff()
+    kw = VARIANTS[name]
+    rows, _, n_warn = cc.run(X, y, **kw)
+    s = cc.summarise(rows, kw.get("k_grid", cc.K_GRID))
+    s["convergence_warnings"] = n_warn
+    print(name, round(s["difference_lr_minus_knn"]["mean"], 4), flush=True)
+    return name, rows, s
+
+
+if __name__ == "__main__":
+    with Pool(min(8, len(VARIANTS))) as p:
+        res = p.map(one, list(VARIANTS))
+    out, allrows = {}, []
+    for name, rows, s in res:
+        d = s["difference_lr_minus_knn"]
+        out[name] = {"acc_lr": s["logistic_regression"]["mean"], "acc_knn": s["knn"]["mean"],
+                     "diff_mean": d["mean"], "diff_corrected_lo": d["corrected"]["lo"],
+                     "diff_corrected_hi": d["corrected"]["hi"], "diff_corrected_p": d["corrected"]["p_two_sided_vs_0"],
+                     "folds_lr_better": s["folds_lr_better"], "folds_knn_better": s["folds_knn_better"],
+                     "folds_tied": s["folds_tied"], "k_selected_counts": s["k_selected_counts"],
+                     "k_selected_at_grid_edge": s["k_selected_at_grid_edge"],
+                     "convergence_warnings": s["convergence_warnings"],
+                     "outer_seed": VARIANTS[name].get("outer_seed", cc.OUTER_SEED)}
+        allrows += [{"variant": name, **r} for r in rows]
+    (ROOT / "results" / "robustness.json").write_text(json.dumps(out, indent=2) + "\n")
+    cc.write_csv(allrows, ROOT / "results" / "robustness_folds.csv")
+    print("HUTIAN_WAKE: robustness done", flush=True)

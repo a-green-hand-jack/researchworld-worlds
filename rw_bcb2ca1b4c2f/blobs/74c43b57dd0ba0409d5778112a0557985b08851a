@@ -1,0 +1,55 @@
+"""Early check of the A1b scoring rule (experiment-repo 82264e7 results/e4/a1_tolerance.json) on the committed A1
+development grid (3e1e6d9 code/e4_dev.py, run exactly as committed through run_one): how many of the directions A1b
+scores ("directions with a burst in either", tau_meas = first checked step after K with |a| > 1e-3) are already above
+1e-3 at K = 300, so that tau_meas = K + 10 and phase_model's `first = K` for them (error ln(310/300) = 0.033 < 0.05)
+whatever the theory says; and how many are in the set A1b's claim covers (outside the window, h(p_K) < 0, and
+|a_K| <= 1e-3). Also the spread of tau over the claim set and a constant-wait baseline per beta2.
+
+Usage: python3 checks/e4_dev_a1b_scored_set.py /path/to/experiment-repo/code [NPROC] > checks/e4_dev_a1b_scored_set.json
+"""
+import sys, os, json
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+
+sys.path.insert(0, sys.argv[1])
+import e4_dev  # noqa: E402
+
+
+def one(cfg):
+    r = e4_dev.run_one(cfg)
+    c, s = e4_dev.stats(cfg["stats"])
+    aK = np.abs(np.array(r["state_K"]["a"])); pK = np.array(r["state_K"]["p"])
+    return dict(id=cfg["id"], b2=cfg["b2"], burst=r["burst"], aK=aK.tolist(), hK=(pK * (c - pK * s)).tolist())
+
+
+if __name__ == "__main__":
+    nproc = int(sys.argv[2]) if len(sys.argv) > 2 else 8
+    K, B = e4_dev.K, e4_dev.BURST
+    with Pool(nproc) as pool:
+        rows = pool.map(one, e4_dev.configs())
+    D = [(r["b2"], b, aK, hK) for r in rows for b, aK, hK in zip(r["burst"], r["aK"], r["hK"])]
+    with_burst = [d for d in D if d[1] is not None]
+    above = [d for d in with_burst if d[2] > B]
+    claim = [d for d in with_burst if d[2] <= B and d[3] < 0]
+    out = dict(source="experiment-repo 3e1e6d9 code/e4_dev.py run_one (float64, eps 1e-8), 480 configs x 24 directions",
+               numpy=np.__version__, directions=len(D), no_burst_by_T=len(D) - len(with_burst),
+               with_burst=len(with_burst),
+               above_1e3_at_K=len(above), above_1e3_at_K_share=round(len(above) / len(with_burst), 4),
+               above_1e3_at_K_tau_meas_eq_K_plus_10=sum(1 for d in above if d[1] == K + 10),
+               claim_set_outside_window_below_1e3_at_K=len(claim),
+               below_1e3_at_K_inside_window=sum(1 for d in with_burst if d[2] <= B and d[3] >= 0),
+               median_criterion_note="with a share f of scored directions trivially within 0.05, the median <= 0.05 "
+                                     "holds once (0.5 - f)/(1 - f) of the rest are within 0.05")
+    f = len(above) / len(with_burst)
+    out["rest_needed_for_median"] = round((0.5 - f) / (1 - f), 3)
+    by = {}
+    for b2 in (0.999, 0.99):
+        w = np.array([d[1] - K for d in claim if d[0] == b2], float)
+        cst = np.exp(np.median(np.log(w)))
+        e = np.abs(np.log((K + cst) / (K + w)))
+        by[str(b2)] = dict(n=int(w.size), wait_quantiles_5_25_50_75_95=np.percentile(w, [5, 25, 50, 75, 95]).round().tolist(),
+                           constant_wait_baseline=dict(wait=round(float(cst)), median_err=round(float(np.median(e)), 3),
+                                                       p90_err=round(float(np.percentile(e, 90)), 3)))
+    out["claim_set_by_beta2"] = by
+    json.dump(out, sys.stdout, indent=1)

@@ -1,0 +1,41 @@
+# Release review pass 1
+
+Delivery assembled with `ht-role delivery` (assignment at experiment-repo e3565c493b25):
+report/report.md from paper-repo 8d968d0f6cb36337a7cba2d58baa677c853a3ee4; report/figures/ from figtab-repo
+598ab23553103523a74ca0a599ffdff5c8d65e93. Analysis validated earlier (`review/analysis_check.md`).
+
+## Checked and supported
+- Table: the five MAEs, SEs, benchmark values and ratios match experiment-repo results/summary.json (7d7d6432f3aa) to the shown precision.
+- Exponent -0.501, primary bootstrap CI [-0.516, -0.486], OLS-t CI [-0.519, -0.483], comparison with -1/2: match my reproduction; the claim follows from the intervals.
+- Method text: seeds 2026+i, i=0..199, default_rng, pair draws, nested stream equivalence, unweighted OLS on ln-ln: as specified.
+- Figure link `figures/error_scaling.svg` resolves; `report/figures/input_summary.json` is byte-identical to the analysis summary (sha256 7e8d3d15…bd3d).
+- PNG inspected: log-log axes with decade labels, points, OLS line, -1/2 benchmark, dispersion band labelled as run dispersion, annotation with both intervals. Correct and readable.
+
+## Findings (sent as revise to paper-repo in internal-review-repo#5)
+1. One-page requirement not met. Rendering report.md (markdown -> HTML -> PDF with PyMuPDF Story; PNG
+   at the SVG's 460 pt and at 400 pt width; A4 and Letter; 2 cm margins; body 10-10.5 pt; h1 14-16 pt) gives 2 pages
+   in every case; at the most compact setting about 87 pt (Interpretation tail + Provenance) overflows.
+2. The embedded SVG is font-dependent (make_figure.py sets `svg.fonttype = "none"`, text references DejaVu Sans/Mono).
+   Rendered with cairosvg in an environment without DejaVu, the y-axis label's pi-hat shows a missing-glyph box and the
+   monospace annotation box loses its alignment. The PNG is correct. Fix: embed the PNG in the report, or have
+   figtab-repo regenerate the SVG with `svg.fonttype = "path"`.
+
+# Release review pass 2 (approval)
+
+Delivery: report/report.md from paper-repo d7af46f0890f9d1fbbe0b0eea32541a81bf9bbcf; report/figures/ from
+figtab-repo 598ab23553103523a74ca0a599ffdff5c8d65e93 (unchanged); analysis at experiment-repo 7d7d6432f3aa.
+
+- Finding 1 (length): resolved. With the figure at 60% width, my PyMuPDF render is 1 page on A4 at 10.5 pt
+  (10 pt to spare). paper-repo reports 1 page with weasyprint on A4 and Letter at 10.5–12 pt. My renderer
+  spaces paragraphs more widely and overflows by about 3 lines on Letter. Markdown has no fixed page, so I count
+  the report as one page under ordinary rendering.
+- Finding 2 (font-dependent SVG): resolved for the report. report.md now embeds figures/error_scaling.png;
+  I inspected the PNG at full size and as rendered on the page. Points, fit, -1/2 benchmark, dispersion band,
+  decade axis labels and both intervals are legible. The SVG stays in report/figures/ as a supplementary file only.
+- Numbers re-checked against results/summary.json and my reproduction: table, exponent -0.501, bootstrap
+  [-0.516, -0.486], OLS-t [-0.519, -0.483], comparison with -1/2. Unchanged and correct.
+- Every requirement of the objective is met: 200 runs per N for N = 10^3..10^7 with seeds 2026+i; MAE against math.pi;
+  least-squares log-log fit with a 95% interval; comparison with -1/2; one-page report/report.md with table, exponent
+  and interval, and one log-log figure with the fit.
+
+Conclusion: the delivery meets the objective and supports its claims. Approved.

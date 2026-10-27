@@ -1,0 +1,616 @@
+# Prior work for extension directions A (Adam/AdamW, normalised targets), B (beyond the first escape), C (deep/nonlinear encoders, timing)
+
+Compiled 2026-10-17/18 for objective #3 (brief v4.1, directions 2, 4, 5, 6).
+
+**How this was checked**
+- **Cutoff.** Every work listed was first published on or before 2026-10-17.
+- **arXiv dates.** Each arXiv id was checked against the arXiv export API (`export.arxiv.org/api/query?id_list=...`) on 2026-10-18, 109 ids in four batches. The "v1" date is the API `<published>` field. Every one is ≤ 2026-10-17. The latest are 2610.16868 (2026-10-12), 2610.04249 (2026-10-03) and 2609.35288 (2026-09-28).
+- **Non-arXiv items.** DOIs were checked on Crossref where marked. Items whose venue page I could not load are marked [venue not independently verified].
+- **Statements.** Claims are taken from the abstract plus the HTML/PDF sections named.
+  - Equation-level statements I re-read myself are marked **[checked]**: Neural Mechanics Eq. 19-20; Kleinman "race"; Sabanayagam-Lucey SignGD/Adam laws; Jacobs-Zhou-Burkholz Lemma 4.5; Lyu et al. T⁻; Chen et al. attractivity; Kunin 2024 δ; λ-JEPA Lemma A.2/A.4, Thm 3.1/A.7; the I-JEPA code.
+  - All other statements were extracted by reading sub-agents.
+  - "Means for us" lines are our inference unless they quote the paper.
+- **Not repeated here.** Works already covered in `lit_theory.md`, `lit_tools.md`, `lit_practice.md` and `ijepa_recipe.md` are only cross-referenced: Tian 2021, Wang et al. 2021, Bao 2023, Saxe 2013/2019, Jacot 2021, Simon 2023, Jing 2022, Ziyin 2022/2023, Littwin 2024, Kobayashi 2024, Wang & Jacot 2023, Galanti 2022, LiDAR, RankMe, Busbridge 2023, the I-JEPA recipe.
+
+Notation: encoder amplitude a_k, predictor gain p_k, growth g_k(p) = p c_k − p² σ_k − λ_W, gain decay p_k = p0 e^{−αλ_P t}, balance identity p_k² − a_k² = e^{−2λt}(p0² − a0²).
+
+---
+
+## Direction A: Adam/AdamW, sign/normalised updates, and target normalisation near collapse
+
+### A0. What the practical recipe actually does (official I-JEPA code) [checked]
+
+Source: facebookresearch/ijepa at commit 52c1ae95d05f743e000e8f10a1f3a79b10cff048, read 2026-10-17.
+
+**Target LayerNorm.** `src/train.py`, line 298, inside `forward_target()` under `torch.no_grad()`:
+```python
+h = target_encoder(imgs)
+h = F.layer_norm(h, (h.size(-1),))  # normalize over feature-dim
+```
+This is a non-affine LayerNorm over the feature dimension of every token, with default eps 1e-5, applied before masking (`apply_masks(h, masks_pred)`).
+
+**Other facts relevant to direction A:**
+- **Final LayerNorm inside the encoder.** The target encoder itself already ends with an affine LayerNorm: `self.norm = norm_layer(embed_dim)` with `partial(nn.LayerNorm, eps=1e-6)` (`src/models/vision_transformer.py` l. 374 and 422-423). The target is therefore LayerNormed twice.
+- **Predictor output is not normalised.** The predictor computes `predictor_proj(predictor_norm(x))` (l. 320-324). Its output is a linear map applied after a LayerNorm.
+- **Loss and optimiser.** The loss is `F.smooth_l1_loss(z, h)` (train.py l. 311). The optimiser is `torch.optim.AdamW(param_groups)` (`src/helper.py` l. 142).
+- **No weight decay on biases or 1-D parameters.** Biases and all 1-D parameters (LayerNorm gains) of both encoder and predictor get `weight_decay: 0` (helper.py l. 121-138).
+
+**Means for us** [inference]:
+1. **Collapse can only be dimensional.** In the ViT the per-token target norm is fixed by LayerNorm, so an amplitude collapse a → 0 is impossible on the target side. Only the relative amplitudes a_k/‖a‖ (dimensional collapse) can change. The linear theory's collapsed point corresponds, in the recipe, to a low-rank point on the LayerNorm sphere, not to the origin.
+2. **Which weights carry the gain.** Weight decay acts on matrices but not on LayerNorm gains. The matrices feeding a LayerNorm are scale-invariant, so for them weight decay sets the effective learning rate (A4 below) rather than shrinking a gain. In the I-JEPA predictor, only `predictor_proj` (after `predictor_norm`) carries a gain that weight decay can shrink. The "p_k decays as e^{−αλ_P t}" mechanism maps onto that last projection, together with the undecayed LayerNorm gain γ.
+3. **eps regime.** If the pre-norm features were tiny (rms² ≪ eps), F.layer_norm would act as a fixed linear map with gain eps^{−1/2} ≈ 316, so the linear theory would apply with a rescaled target. In the ViT the residual stream is O(1), so the normalised regime applies.
+
+### A1. Adam as sign descent; growth from small initialisation
+
+**Sabanayagam & Lucey, "Optimizer Geometry Sets the Pace: Spectral Learning Dynamics in Matrix Factorization."** arXiv 2610.04249, v1 2026-10-03. [checked, main text]
+- **Setting.** Depth-L balanced, aligned factorisation, σ = a^L.
+- **Mode laws by optimiser:**
+  - GD: σ̇ = Lσ^p(μ−σ) with p = 2−2/L. For L = 2 the birth time from seed s is log(1/s)-divergent.
+  - SignGD: σ̇ = Lσ^q sign(μ−σ) with q = 1−1/L. Each factor grows linearly in time. Birth time b^{1/L} − s^{1/L} stays bounded as s → 0, and unsupported modes hit exactly 0 in finite time.
+  - Instantaneous Adam: σ̇ = L(μ−σ)σ^p/(|μ−σ|σ^q + ε). It is sign-like when |μ−σ|σ^q ≫ ε and GD-like (exponential, time rescaled by 1/ε) below that.
+- **Limits.** No weight decay and no predictor. Coordinate alignment is needed (Q = I) for SignGD/Adam.
+- **Means for us:** the closest result to "under Adam the escape is linear in time". It removes the log(1/a0) barrier that sets our race clock. It also introduces a new crossover amplitude a* ~ ε/|∂_a L|, below which Adam behaves like gradient descent. Concurrent work (14 days before cutoff); cite it.
+
+**Jacobs, Zhou & Burkholz, "Never Saddle for Reparameterized Steepest Descent as Mirror Flow."** arXiv 2603.02064, v1 2026-03-02 (ICLR 2026 per the agent; venue not re-checked). [checked]
+- **Flow.** dw = −sign(∇f)|∇f|^{q−1} dt − α_t w dt. Here q = 2 is gradient flow, q = 1 is sign flow (an Adam proxy), and α_t is decoupled weight decay as in AdamW (their Eq. 5).
+- **Lemma 4.5 (deep diagonal x = Πw_i).** |w_i|^q − |w_j|^q = (|w_{i,0}|^q − |w_{j,0}|^q) exp(−q∫α_s ds).
+- **Escape claim.** "Steeper descent facilitates saddle escape". There is no closed-form escape time.
+- **Means for us:** the direct AdamW analogue of our balance identity [our inference for the scalar per-mode case, coordinate-aligned]. Under sign flow with decoupled decay, |p_k| − |a_k| = e^{−ηλt}(|p0| − |a0|) replaces p_k² − a_k² = e^{−2λt}(p0² − a0²). The hyperbola becomes a line in (|a|, |p|), so the gain no longer stays pinned at p0 while a grows.
+
+**Ma, Wu & E, "A Qualitative Study of the Dynamic Behavior for Adaptive Gradient Algorithms."** arXiv 2009.06125, v1 2020-09-14.
+- With β₁, β₂ fixed and η → 0, the Adam flow becomes sign-GD flow. This explains Adam's fast initial phase; late spikes or oscillations depend on (β₁, β₂).
+- **Means for us:** the standard justification for modelling early AdamW near collapse as sign flow.
+
+**Malladi, Lyu, Panigrahi & Arora, "On the SDEs and Scaling Rules for Adaptive Gradient Algorithms" (NeurIPS 2022).** arXiv 2205.10287, v1 2022-05-20.
+- **Two limits.** With β fixed and η → 0 Adam is deterministic SignGD. With (1−β_i)/η² fixed and noise ≫ gradient, Adam is gradient descent preconditioned by the noise standard deviation (an Adam SDE).
+- **Square-root scaling rule.** η' = η√κ, 1−β' = κ(1−β), ε' = ε/√κ.
+- **Means for us:** which Adam regime applies near collapse depends on the gradient SNR. In linear JEPA both mean and noise of ∂L/∂a_k scale with the amplitudes, so the SNR is scale-free and set by the data/masking. That is a measurable quantity deciding linear vs exponential escape.
+
+**Balles & Hennig, "Dissecting Adam: The Sign, Magnitude and Variance of Stochastic Gradients" (ICML 2018).** arXiv 1705.07774, v1 2017-05-22.
+- Adam = sign of the stochastic gradient × a variance-adapted magnitude.
+- **Means for us:** gives Δa_k ≈ η·sign(E g_k)·f(SNR_k). The per-step speed is bounded by η however small a_k is.
+
+**Bernstein, Wang, Azizzadenesheli & Anandkumar, "signSGD: Compressed Optimisation for Non-Convex Problems" (ICML 2018).** arXiv 1802.04434, v1 2018-02-13.
+- signSGD attains SGD-like rates, with ℓ1/ℓ2 geometry deciding which method wins. Signum matches Adam on ImageNet.
+- **Means for us:** the standard citation for the sign surrogate.
+
+**Kunstner, Chen, Lavington & Schmidt, "Noise Is Not the Main Factor Behind the Gap Between SGD and Adam on Transformers, but Sign Descent Might Be" (ICLR 2023).** arXiv 2304.13960, v1 2023-04-27.
+- The Adam–SGD gap persists full-batch and grows with batch size. There Adam behaves like sign descent with momentum.
+- **Means for us:** large-batch SSL (batch 2048 in I-JEPA) is the regime where the sign model is best supported.
+
+**Kunstner, Yadav, Milligan, Schmidt & Bietti, "Heavy-Tailed Class Imbalance and Why Adam Outperforms Gradient Descent on Language Models" (NeurIPS 2024).** arXiv 2402.19449, v1 2024-02-29.
+- **Thm 3 (one-hot inputs, W₀ = 0).** Gradient flow gives ℓ_k(t) = Θ(1/(π_k t)). Continuous sign descent gives Θ(e^{−ct}) independent of the class frequency π_k.
+- **Means for us:** sign descent removes the dependence of the rate on per-direction signal strength. AdamW should therefore flatten the spectral selectivity of the race, giving more survivors than gradient flow at equal decay. This is a testable prediction for E1b's AdamW arm.
+
+**Tang, Zhang, Cao & Zou, "Understanding the Generalization of Stochastic Gradient Adam in Learning Neural Networks" (NeurIPS 2025).** arXiv 2510.11354, v1 2025-10-13.
+- **Approximation.** Stochastic Adam/AdamW ≈ SignSGD/SignSGDW when gradient magnitudes dominate noise.
+- **Cor. 4.3 (Adam + coupled L2).** If λ = ω(σ₀^{q−2}), training is "stuck at the initialization".
+- **Cor. 4.6.** The admissible λ for AdamW is Õ(1) and independent of the init scale σ₀.
+- **Means for us:** the closest published analogue of our window threshold. With coupled L2 inside Adam, the decay term beats a gradient that vanishes near collapse. With decoupled decay the comparison becomes η vs ηλa, an O(1) window. Use it to contrast Adam+L2 with AdamW near a_k ≈ 0.
+
+**Li, Huang, Han, Zhou, Suzuki, Zhu & Chen, "On the Optimization and Generalization of Two-layer Transformers with Sign Gradient Descent" (ICLR 2025).** arXiv 2410.04870, v1 2024-10-07.
+- A four-stage SignGD analysis of separate Q and K matrices from small init: sign alignment, majority vote, then fast decay. Adam behaves similarly.
+- **Means for us:** a template for a stage-wise sign-flow analysis of a bilinear (encoder × predictor-like) model from small init.
+
+### A2. Implicit bias of Adam/AdamW
+
+**Xie & Li, "Implicit Bias of AdamW: ℓ∞ Norm Constrained Optimization" (ICML 2024).** arXiv 2404.04454, v1 2024-04-05.
+- **Result.** Full batch, with a non-increasing LR schedule and Σ_t η_t = ∞. If AdamW converges, its limit is a KKT point of min L(x) subject to ‖x‖_∞ ≤ 1/λ. Convergence is assumed, not proved.
+- **Mechanism.** Normalised steepest descent with decay behaves like Frank–Wolfe on the ℓ∞ ball.
+- **Means for us:** under AdamW the predictor gain is not pulled to 0 by decay alone. Its endpoint is a KKT point in the box |p| ≤ 1/λ_P. The pure decay law p0 e^{−αλ_P t} holds only while the sign-push on p averages to zero, i.e. while ∂L/∂p is noise-dominated or below ε.
+
+**Xie, Mohamadi & Li, "Adam Exploits ℓ∞-geometry of Loss Landscape via Coordinate-wise Adaptivity" (ICLR 2025).** arXiv 2410.08198, v1 2024-10-10.
+- Adam's convergence is governed by ℓ∞-smoothness, and Adam is not rotation-invariant.
+- **Means for us:** the sign reduction of the race is exact only if the eigen-directions k align with parameter coordinates. Otherwise the per-direction ODE mixes. This is a modelling caveat for any AdamW race.
+
+**Zhang, Zou & Cao, "The Implicit Bias of Adam on Separable Data" (NeurIPS 2024).** arXiv 2406.10650, v1 2024-06-15.
+- Adam converges to the maximum ℓ∞-margin classifier.
+
+**Wang, Meng, Chen & Liu, "The Implicit Bias for Adaptive Optimization Algorithms on Homogeneous Neural Networks" (ICML 2021).** arXiv 2012.06244, v1 2020-12-11.
+- Adam and RMSProp, with ε-dominated late conditioners, maximise the ℓ2 margin.
+- **Means for us (with Zhang et al.):** ε decides whether Adam is sign-like (ℓ∞) or GD-like (ℓ2) at small gradients. That is exactly the near-collapse question.
+
+**Cattaneo, Klusowski & Shigida, "On the Implicit Bias of Adam" (ICML 2024).** arXiv 2309.00079, v1 2023-08-31.
+- The backward-error ODE of Adam carries ℓ1-type gradient-norm terms.
+- Second order for the race.
+
+**Zhao, Cheng, Masarczyk & Lucchi, "Optimizer choice matters for the emergence of Neural Collapse" (ICLR 2026).** arXiv 2602.16642, v1 2026-02-18.
+- **SGD.** α_t = ‖W_tᵀ1‖² decays, because the CE gradient has zero row-sum.
+- **SignGD + decoupled decay (Thm 3.3).** α_t ↑ (K−2)²/λ² ≠ 0, because the sign step breaks the zero-row-sum structure.
+- **SignGD + coupled decay with decaying LR (Thm 3.4).** α_t → 0.
+- **Means for us:** a proven case where a direction that gradient flow leaves at zero is pushed to an O(1/λ) fixed point under AdamW. Collapsed directions need not be fixed points of sign dynamics.
+  - Caveat for us: in linear JEPA the gradient on a_k is exactly 0 at a_k = 0 and sign(0) = 0.
+  - So this matters through off-diagonal coupling, not on the invariant set itself.
+
+### A3. Decoupled weight decay as an EMA; equilibrium norms
+
+**Loshchilov & Hutter, "Decoupled Weight Decay Regularization" (ICLR 2019).** arXiv 1711.05101, v1 2017-11-14.
+- L2 and weight decay coincide for SGD but not for Adam. The decoupled update is w ← (1−ηλ)w − η·AdamStep.
+- **Means for us:** this sets the per-step decay factor (1−ηλ). In AdamW our λ_W and λ_P are lr × wd per step. They are not scaled by the predictor learning rate α as in gradient flow with L2.
+
+**Wang & Aitchison, "How to set AdamW's weight decay as you scale model and dataset size" (ICML 2025).** arXiv 2405.13698, v1 2024-05-22.
+- **EMA form (Eqs. 4-7).** w_t = (1−ηλ)w_{t−1} − η·m̂/(√v̂+ε) is an EMA with timescale τ_iter = 1/(ηλ) of the updates −(1/λ)·m̂/(√v̂+ε).
+- **Scaling claim.** The optimal τ_epoch is roughly constant across scales.
+- **Means for us:** under AdamW each weight is an EMA of ±1/λ-sized updates with memory 1/(ηλ). A direction survives if its update sign stays consistent long enough relative to τ. This is a clean way to state the AdamW race in its natural time unit.
+
+**Kosson, Messmer & Jaggi, "Rotational Equilibrium: How Weight Decay Balances Learning Across Neural Networks" (ICML 2024).** arXiv 2305.17212, v1 2023-05-26.
+- **Scale-invariant weights under AdamW.** The norm equilibrates at ‖ω‖ ≈ √(ηC/(2λ)) and the angular update at √(2ηλ(1−β₁)/(1+β₁)). The approach is geometric with factor (1−ηλ)² per step.
+- **Non-scale-invariant weights.** A radial gradient acts as an extra decay.
+- **Means for us:** under AdamW a scale-invariant layer (anything feeding a LayerNorm) cannot collapse in norm. For the non-invariant JEPA encoder, the radial drive g_k acts as negative extra decay, so the race becomes the sign of λ_eff = λ − (radial drive).
+
+**Defazio, "Why Gradients Rapidly Increase Near the End of Training."** arXiv 2506.02285, v1 2025-06-02.
+- **Normalised layers under SGD.** ‖g‖/‖x‖ → √(2λ/γ).
+- **AdamW (sign approximation).** Layer-wise ‖x‖_∞ ≈ √(γ/(2λ)). The paper proposes the AdamC correction.
+- **Means for us:** with noisy or uncorrelated update signs, the AdamW equilibrium is √(η/(2λ)), much smaller than the 1/λ KKT box. Which one applies near collapse depends on how consistent the signs are.
+
+**D'Angelo, Andriushchenko, Varre & Flammarion, "Why Do We Need Weight Decay in Modern Deep Learning?" (NeurIPS 2024).** arXiv 2310.04415, v1 2023-10-06. (The task text called it "Andriushchenko et al. 2023"; the first author is D'Angelo.)
+- **Vision/SGD.** ηλ sets an effective regularisation through the loss-stabilisation mechanism.
+- **LLM/AdamW.** Weight decay balances bias and variance through an effective LR ∝ η/‖w‖₂ under sign-like updates.
+- **Means for us:** under sign updates the angular LR scales as 1/‖w‖. Near collapse ‖w‖ is small, so direction selection under Adam is fast.
+
+**Li & Arora, "An Exponential Learning Rate Schedule for Deep Learning" (ICLR 2020).** arXiv 1910.07454, v1 2019-10-16.
+- For scale-invariant losses (BN/LN), SGD + weight decay + momentum is equivalent to an exponentially growing LR without weight decay.
+- **Means for us:** for normalised layers, weight decay is only an LR schedule. Our decay-of-gain mechanism applies only to non-normalised factors (A0, point 2).
+
+**Li, Lyu & Arora, "Reconciling Modern Deep Learning with Traditional Optimization Analyses: The Intrinsic Learning Rate" (NeurIPS 2020).** arXiv 2010.02916, v1 2020-10-06.
+- Intrinsic LR λ_e = ηλ. Equilibrium is reached in about 1/(ηλ) steps (Fast Equilibrium Conjecture).
+- **Means for us:** the same 1/(ηλ) clock as Wang & Aitchison. It is the natural unit for "the gain leaves the window".
+
+**Wan, Zhu, Zhang & Sun, "Spherical Motion Dynamics."** arXiv 2006.08419, v1 2020-06-15.
+- Under SGD with normalisation and weight decay, the weight norm and angular update converge to an equilibrium.
+- SGD counterpart of Kosson et al.
+
+**van Laarhoven, "L2 Regularization versus Batch and Weight Normalization."** arXiv 1706.05350, v1 2017-06-16.
+- With normalisation, L2 only sets the effective LR. Adam removes this dependence only partly.
+
+**Hoffer, Banner, Golan & Soudry, "Norm matters" (NeurIPS 2018).** arXiv 1803.01814, v1 2018-03-05.
+- Normalisation decouples norm from objective; weight decay acts as an LR knob.
+
+### A4. Target and feature normalisation in SSL/JEPA (beyond Bao 2023)
+
+- **Bao 2023** (2309.16109; see `lit_theory.md` #10): the cosine loss turns the eigen-dynamics sixth-order, and a stable non-collapsed equilibrium survives strong weight decay. This is the only dynamics theory of normalised targets, and it is gradient flow only.
+- **Richemond et al. 2020** (2010.10241, in `refs.bib`): BYOL works without batch statistics.
+
+**Colton, "Elucidating the Role of Feature Normalization in IJEPA."** arXiv 2508.02829, v1 2025-08-04.
+- The target LayerNorm equalises token norms, erasing a natural energy hierarchy, with checkerboard loss artefacts. Replacing it with DynTanh improves ViT-S linear probe from 38% to 42.7%.
+- No collapse analysis.
+- **Means for us:** the only I-JEPA-specific study of the target LayerNorm. It supports A0 point 1: LayerNorm removes target amplitude information, so only relative amplitudes enter the drive.
+
+**Lowe, Fuller, Oore, Shelhamer & Taylor, "Self-Distillation of Hidden Layers for Self-Supervised Representation Learning."** arXiv 2603.15553, v1 2026-03-16.
+- With per-token z-scored targets, predicting only the final layer showed kNN accuracy falling and effective rank collapsing after about 200 epochs (Sec. 6.5).
+- The optimiser was not checked.
+- **Means for us:** target normalisation does not prevent late dimensional collapse. Consistent with LiDAR's late RankMe decline and with B (rising weight decay late).
+
+**data2vec** (2202.03555, in `refs.bib`): normalising targets "helps prevent the model from collapsing into a constant representation".
+
+### A. Established vs open
+
+**Established:**
+- Adam is well modelled by sign descent in the fixed-β/small-η and large-batch regimes. In the noise-dominated SDE limit it is instead noise-preconditioned GD (Ma 2020; Malladi 2022; Kunstner 2023; Tang 2025).
+- Under sign descent, mode birth from a small seed takes bounded time, with each factor growing linearly. The ε term restores exponential, GD-like growth at tiny gradients (Sabanayagam-Lucey 2026).
+- Sign descent removes per-direction rate dependence on signal strength (Kunstner 2024).
+- AdamW turns weights into EMAs with τ = 1/(ηλ) (Wang-Aitchison). If it converges, the limit is an ℓ∞-box KKT point, ‖x‖_∞ ≤ 1/λ (Xie-Li). Noise-driven equilibria instead sit at √(η/2λ) (Kosson; Defazio).
+- For sign flow with decoupled decay the conserved quantity is |w_i| − |w_j|, damped by e^{−∫α} (Jacobs-Zhou-Burkholz Lemma 4.5).
+- Coupled L2 inside Adam freezes small-init training above an init-dependent λ, while AdamW's window is O(1) (Tang 2025).
+- Target normalisation is empirically anti-collapse but does not prevent slow dimensional collapse (data2vec; Colton; Lowe 2026). Its only theory is Bao 2023, under gradient flow.
+
+**Open; no paper does it:**
+- **No race theory under AdamW or sign flow.** No SSL/JEPA collapse analysis under Adam/AdamW exists. Several targeted searches by the sub-agent found none.
+- **The predicted AdamW race** [our inference]:
+  - Encoder: a_k' ≈ η sign(g_k(p_k)) − ηλ_W a_k.
+  - Predictor: p_k' ≈ η sign(−∂L/∂p_k) − ηλ_P p_k.
+  - Balance: |p| − |a| decays as e^{−ηλt}.
+  - Survival then depends on the sign of g_k and on how long the window lasts, not on the magnitude of g_k.
+  - The log(1/a0) clock of the gradient-flow race becomes a linear clock a_cap/η, plus an ε-crossover.
+- **Rotation dependence.** What it does to eigen-direction amplitudes is unknown.
+- **LayerNorm on targets.** It makes the drive homogeneous of degree 0 in target amplitude, so the race must be restated on the sphere for relative amplitudes. No theory exists.
+- **Which ViT parameters carry the decaying gain.** Only non-normalised projections such as `predictor_proj` have a gain that weight decay shrinks; LayerNorm gains are not decayed. This is unmeasured.
+
+---
+
+## Direction B: beyond the first escape
+
+### B1. Incremental and saddle-to-saddle learning (deterministic)
+
+Cross-ref: Jacot 2021, Simon 2023, Saxe 2013/2019 (`lit_tools.md` §1).
+
+**Kunin, Marchetti, Chen, Karkada, Simon, DeWeese, Ganguli & Miolane, "Alternating Gradient Flows: A Theory of Feature Learning in Two-layer Neural Networks" (NeurIPS 2025).** arXiv 2506.06489, v1 2025-06-06.
+- **Dormant neurons.** All neurons start dormant. A dormant neuron's norm grows at rate ∝ ‖θ_i‖^{κ−1}U_i, with utility U_i = E⟨f_i, r⟩.
+- **Activation rule.** Accumulated utility S_i(t) = ∫κU_i ds. The neuron activates at τ_i = inf{t : S_i(t) > c_i/η}, where c_i = −log‖θ_i(0)‖ for κ = 2.
+- **Stages.** The first crossing wins and the active set runs to a saddle. The losers carry their current norms into the next round. Active neurons can become dormant again.
+- **Means for us:** the closest published form of our race: an integrated log-growth against a log(1/init) threshold. It has no weight decay and no closing window. Its carry-over rule is what a second-escape theory needs. In our setting weight decay erodes the carried-over amplitudes, so later rounds start from smaller seeds and face a decayed gain.
+
+**Pesme & Flammarion, "Saddle-to-Saddle Dynamics in Diagonal Linear Networks" (NeurIPS 2023).** arXiv 2304.00488, v1 2023-04-02.
+- **Limit.** As init α → 0 with time rescaled t̃ = t·ln(1/α), gradient flow visits a sequence of saddles.
+- **Activation.** Coordinate i activates when the integrated gradient |s_t[i]| = |∫∇L| reaches 1. The first jump is at t₁ = 1/‖∇L(0)‖_∞; later jumps follow a LARS-like recursion. Coordinates can also deactivate.
+- **Means for us:** an exact integrated-drive threshold criterion. Its JEPA analogue with weight decay would be a recursion in which each new direction's race starts with the gain set by the current active set.
+
+**Berthier, "Incremental Learning in Diagonal Linear Networks."** arXiv 2208.14673, v1 2022-08-31. JMLR 24(171), 2023 per the agent.
+- Small init activates coordinates one at a time. Each stage minimises the loss over the active set.
+- Proved for underparametrised, anti-correlated features.
+
+**Gissin, Shalev-Shwartz & Daniely, "The Implicit Bias of Depth: How Incremental Learning Drives Generalization" (ICLR 2020).** arXiv 1909.12051, v1 2019-09-26.
+- Shallow models need exponentially small init for incremental learning; deep models need only polynomially small init.
+- **Means for us:** depth separates successive escapes in time.
+
+**Jin, Li, Lyu, Du & Lee, "Understanding Incremental Learning of Gradient Descent: A Fine-grained Analysis of Matrix Sensing" (ICML 2023).** arXiv 2301.11500, v1 2023-01-27.
+- GD from small init learns rank one at a time through the full sequence of stages.
+- A proof technique for a multi-direction JEPA staircase.
+
+**Zhang, Saxe & Latham, "Saddle-to-Saddle Dynamics Explains A Simplicity Bias Across Neural Network Architectures" (ICLR 2026).** arXiv 2512.20607, v1 2025-12-23.
+- Training moves along invariant manifolds, from saddle to saddle. Linear nets add rank, ReLU nets add kinks, CNNs add kernels, attention adds heads.
+- They predict plateau number and duration, distinguishing data-driven (low-rank) from init-driven (sparse) cases.
+- **Means for us:** the general invariant-manifold language. Our collapsed set {a_k = 0} is such a manifold.
+
+**Bantzis, Simon & Jacot, "Saddle-To-Saddle Dynamics in Deep ReLU Networks: Low-Rank Bias in the First Saddle Escape."** arXiv 2505.21722, v1 2025-05-27.
+- The first escape direction from the origin is low-rank in deep layers.
+- Later saddles, with increasing bottleneck rank, are conjectured.
+
+**Abbe, Boix-Adsera & Misiakiewicz, "SGD learning on neural networks: leap complexity and saddle-to-saddle dynamics" (COLT 2023).** arXiv 2302.11055, v1 2023-02-21.
+- Learning time is Θ̃(d^{max(Leap,2)}), with sequential support learning.
+- **Means for us:** later plateaus can be polynomially long in d and outlast a closing weight-decay window.
+
+**Boix-Adsera, Littwin, Abbe, Bengio & Susskind, "Transformers learn through gradual rank increase" (NeurIPS 2023).** arXiv 2306.07042, v1 2023-06-12.
+- The rank of (trained − initial) weights increases stepwise. Proved for diagonal weights with small init; observed in ViTs and other transformers.
+
+**Karkada, Simon, Bahri & DeWeese, "Closed-Form Training Dynamics Reveal Learned Features and Linear Structure in Word2Vec-like Models."** arXiv 2502.09863, v1 2025-02-14.
+- Quartic word2vec loss: orthogonal subspaces are learned one at a time, and the effective rank rises by one per step.
+- The only post-Simon SSL-type closed-form staircase found. No weight decay or EMA.
+
+**Razin, Maman & Cohen, "Implicit Regularization in Tensor Factorization" (ICML 2021).** arXiv 2102.09972, v1 2021-02-19.
+- Incremental low-tensor-rank learning.
+
+### B2. Weight-decay and EMA schedules: rank and collapse
+
+Cross-ref:
+- LiDAR's late RankMe decline in I-JEPA (`lit_practice.md` §2).
+- I-JEPA's weight-decay ramp ablation, which is mixed (`ijepa_recipe.md`).
+- Busbridge 2023 EMA scaling.
+- Tian 2021 (EMA as curriculum; small τ traps more modes).
+- Wang et al. 2021 (weight decay as implicit threshold).
+
+**Morningstar et al., "Augmentations vs Algorithms: What Works in Self-Supervised Learning."** arXiv 2403.05726, v1 2024-03-08.
+- **Weight decay (DINO ViT-B/16, 400 epochs, AdamW, linear probe).** The 0.04 → 0.4 cosine ramp gives 78.0. Fixed values give 74.5 (0.04), 76.9 (0.1) and 76.5 (0.4); the ramp "could not be matched using a fixed value".
+- **Momentum.** Without a predictor, momentum lifts 75.8 → 78.0. With a predictor and no momentum, training collapses (0.2).
+- **Means for us:** the only quantitative weight-decay-schedule ablation found, and it reports accuracy, not rank.
+  - Our reading: low weight decay early keeps growth windows open, and high weight decay late prunes.
+  - Rank under fixed vs ramped weight decay has not been measured.
+
+**Caron et al., DINO (ICCV 2021).** arXiv 2104.14294 (in `refs.bib`).
+- The origin of the cosine weight-decay ramp 0.04 → 0.4 and the teacher-momentum ramp 0.996 → 1.
+- Neither schedule is ablated. The momentum-teacher ablation (k-NN): student copy 0.1, previous iteration 0.1, previous epoch 66.6, momentum 72.8.
+
+**Grill et al., BYOL** (2006.07733, in `refs.bib`).
+- **τ_base ablation (Table 5a).** τ = 1 gives 18.8, 0.999 gives 69.8, 0.99 gives 72.5, 0.9 gives 68.4, 0 gives 0.3 (collapse).
+- **Weight decay.** Removing it destabilises training.
+- No τ-schedule-vs-rank study.
+
+**Lewkowycz & Gur-Ari, "On the training dynamics of deep networks with L2 regularization" (NeurIPS 2020).** arXiv 2006.08643, v1 2020-06-15.
+- **Peak time.** Test accuracy peaks at t* ≈ c/(λη).
+- **Kernel decay.** For k-homogeneous nets under gradient flow with L2, the NTK decays as Θ_t = e^{−2(k−1)λt}Θ_0. A mode with γ_a/λ > 1 is learned by t ~ 1/γ_a and then decays at t ~ 1/λ.
+- **AutoL2.** Lowers λ over training.
+- **Means for us:** a published precedent for a gain that decays exponentially under weight decay and closes a learning window. Note that AutoL2 decreases weight decay, opposite to the DINO/I-JEPA ramp.
+
+**Xie, Xu, Zhang, Sato & Sugiyama, "On the Overlooked Pitfalls of Weight Decay and How to Mitigate Them: A Gradient-Norm Perspective" (NeurIPS 2023).** arXiv 2011.11152, v1 2020-11-23.
+- Weight decay inflates late gradient norms. The paper proposes Scheduled Weight Decay.
+- No rank analysis.
+
+**Pham et al., "On the Pros and Cons of Momentum Encoder in Self-Supervised Visual Representation Learning."** arXiv 2208.05744, v1 2022-08-11.
+- An EMA on the projector alone suffices. (Abstract-level.)
+
+### B3. SGD noise: attraction to collapsed sets, noise floors, low-rank bias
+
+Cross-ref: Wang & Jacot 2023 (one-way high → low rank jumps), Galanti 2022 (`lit_tools.md` §2).
+
+**Chen, Kunin, Yamamura & Ganguli, "Stochastic Collapse: How Gradient Noise Attracts SGD Dynamics Towards Simpler Subnetworks" (NeurIPS 2023).** arXiv 2306.04251, v1 2023-06-07. [checked]
+- **Invariant sets.** Sign-invariant sets (a neuron's in- and out-weights zero) and permutation-invariant sets are invariant under SGD.
+- **1-D theorem.** Near θ = 0, with gradient-noise variance D(θ), the set is stochastically attractive iff L''(0) + ½D''(0) > 0. Saddles and even local maxima can be attractive.
+- **Teacher–student linear model.** ŝ_i(t)/ŝ_i(0) → exp((2s̃_i − ηζ²)t + 2√(ηζ²)B_t), so modes with s̃_i < ηζ²/2 are never learned. Long large-LR phases strengthen the collapse.
+- **Means for us:** this is the most important B reference.
+  - The collapsed direction {a_k = 0, the matching predictor entries} is sign-invariant.
+  - With multiplicative noise, the Itô log-growth is g_k(p) − D_k/2, so every growth window shrinks: p c_k − p²σ_k − λ_W − D_k/2 > 0.
+  - Multiplicative noise does not reseed a dead direction, because it vanishes on the set.
+
+**Pillaud-Vivien, Reygner & Flammarion, "Label noise (stochastic) gradient descent implicitly solves the Lasso for quadratic parametrisation" (COLT 2022).** arXiv 2206.09841, v1 2022-06-20.
+- **Mirror flow.** For β = θ², label-noise gradient flow is the stochastic mirror flow d log β = −∇L_δ dt + 2√δ Xᵀ dB, with L_δ = ‖Xβ − y‖² + δ⟨h, β⟩ (a weighted Lasso).
+- **Thm 3.** Above a noise threshold every coordinate goes to 0 almost surely.
+- **Means for us:** noise acts as an extra per-direction decay (λ_W + δh_k on a²), with no floor.
+
+**Pesme, Pillaud-Vivien & Flammarion, "Implicit Bias of SGD for Diagonal Linear Networks: a Provable Benefit of Stochasticity" (NeurIPS 2021).** arXiv 2106.09524, v1 2021-06-17.
+- **Effective init.** SGD equals gradient flow started from an effective init α_∞ = α ⊙ exp(−2γ diag(XᵀX/n)∫L), which is smaller than α.
+- **Means for us:** noise during the race effectively lowers a_k(0). That raises the clock log(a_cap/a_0) and makes it harder to win before the window closes.
+
+**Ziyin, Wang, Li & Wu, "Parameter Symmetry and Noise Equilibrium of Stochastic Gradient Descent" (NeurIPS 2024).** arXiv 2402.07193, v1 2024-02-11.
+- **Charge drift.** For an exponential symmetry, the charge C = θᵀAθ drifts as Ċ = −4γC + σ² Tr[ΣA], with a unique attractive "noise equilibrium". For two-layer linear nets this gives W Γ_W Wᵀ = Uᵀ Γ_U U.
+- The paper says explicitly that this is not a sparsity result.
+- **Means for us:** SGD noise adds a source term to our balance identity. Combined with weight decay (−4γC), p² − a² relaxes to a noise-set value, not to 0. This applies only where an exact rescaling symmetry exists, so stop-gradient/EMA targets need checking.
+
+**Ziyin, "Symmetry Induces Structure and Constraint of Learning" (ICML 2024).** arXiv 2309.16932, v1 2023-09-29.
+- **Mirror symmetries.** Every mirror symmetry with surface O yields constrained solutions Oᵀθ = 0, which become attractive under large weight decay or noise.
+- **Special cases.** Rescaling symmetry gives sparsity, rotation gives low rank.
+- **Means for us:** flipping the sign of direction k (row k of W together with row/column k of P) is a mirror symmetry, so our collapsed set is a symmetry constraint that large weight decay or noise makes attractive.
+
+**Ziyin, Xu & Chuang, "Remove Symmetries to Control Model Expressivity and Improve Optimization."** arXiv 2408.15495, v1 2024-08-28.
+- **Invariant set.** At a symmetric point P∇ℓ = 0, so the iterates stay on the set under GD and SGD.
+- **"syre" fix.** Train ℓ(θ + θ₀) + γ‖θ‖² with a fixed random θ₀.
+- **Result.** In SimCLR, last-layer low-rankness goes from 70% to 0% and last-layer probe accuracy from 22.2 to about 31.
+- **Means for us:** a principled reseeding intervention. It moves the collapsed set off the invariant set, so a natural B experiment.
+
+**Corlouer, Semler, Strang & Gietelink Oldenziel, "Stochastic Gradient Descent in the Saddle-to-Saddle Regime of Deep Linear Networks."** arXiv 2604.06366, v1 2026-04-07.
+- **Per-mode SDE.** Balanced, aligned modes follow dw = [L(s − w)w^{2(L−1)/L} + Itô]dt + √D dB, with D ∝ w^{4(L−1)/L}. Diffusion peaks before a mode is learned.
+- **Conclusion.** Noise does not fundamentally change saddle-to-saddle dynamics. No weight decay.
+- **Means for us:** noise vanishes at w = 0, so there is no additive floor.
+
+**Jacobs & Burkholz, "From Parallel to Sequential: Small-Batch Noise Restores Simplicity Bias of Muon."** arXiv 2610.16868, v1 2026-10-12.
+- Full-batch Muon learns features in parallel. Small-batch noise restores sequential, saddle-to-saddle learning in deep linear models.
+- **Means for us:** whether learning is sequential depends on the optimiser and the batch noise. Concurrent work.
+
+**Andriushchenko, Varre, Pillaud-Vivien & Flammarion, "SGD with Large Step Sizes Learns Sparse Features" (ICML 2023).** arXiv 2210.05337, v1 2022-10-11.
+- Large-step SGD bounces in a valley, and the orthogonal noise-driven dynamics sparsify features. A longer large-LR phase gives a stronger effect.
+- **Means for us:** the LR schedule (warmup to peak) also kills marginal directions.
+
+**HaoChen, Wei, Lee & Ma, "Shape Matters: Understanding the Implicit Bias of the Noise Covariance" (COLT 2021).** arXiv 2006.08680, v1 2020-06-15.
+- Parameter-dependent (label) noise recovers sparse solutions. Isotropic Gaussian noise does not.
+- **Means for us:** only isotropic or additive noise reseeds. SGD noise is state-dependent.
+
+**Damian, Ma & Lee, "Label Noise SGD Provably Prefers Flat Global Minimizers" (NeurIPS 2021).** arXiv 2106.06530, v1 2021-06-11.
+
+**Blanc, Gupta, Valiant & Valiant.** arXiv 1904.09080, v1 2019-04-19.
+
+**Li, Wang & Arora, "What Happens after SGD Reaches Zero Loss?"** arXiv 2110.06914, v1 2021-10-13.
+- These three describe late, noise-driven drift along the minimiser manifold toward lower-sharpness points. They govern post-capture drift, not escape.
+
+**Andriushchenko, Bahri, Mobahi & Flammarion, "Sharpness-Aware Minimization Leads to Low-Rank Features."** arXiv 2305.16292, v1 2023-05-25.
+- Lower relevance.
+
+**Ziyin, Li, Simon & Ueda, "SGD with a Constant Large Learning Rate Can Converge to Local Maxima"** (v1 title "SGD May Never Escape Saddle Points"). arXiv 2107.11774, v1 2021-07-25.
+- Escape from saddles can fail, or be arbitrarily slow, at large LR.
+
+### B4. Reseeding dead units (plasticity literature)
+
+**Dohare, Hernandez-Garcia, Lan, Rahman, Mahmood & Sutton, "Loss of plasticity in deep continual learning."** Nature 632, 2024, DOI 10.1038/s41586-024-07711-7 (Crossref checked). arXiv 2306.13812, v1 2023-06-23 (v1 title "Maintaining Plasticity in Deep Continual Learning").
+- Precursor: "Continual Backprop", arXiv 2108.06325, v1 2021-08-13.
+- Plasticity is lost across settings. Shrink-and-perturb or continual backprop (reinitialising low-utility units) restores it; SGD's initial randomness "enables only initial learning".
+- **Means for us:** explicit additive reseeding works empirically; SGD noise alone does not.
+
+**Ash & Adams, "On Warm-Starting Neural Network Training" (NeurIPS 2020).** arXiv 1910.08475, v1 2019-10-18.
+- Shrink-and-perturb, θ ← λθ + noise, fixes warm-start generalisation.
+- **Means for us:** weight decay plus additive noise is exactly the floor that multiplicative SGD noise lacks.
+
+**Sokar, Agarwal, Castro & Evci, "The Dormant Neuron Phenomenon in Deep RL" (ICML 2023).** arXiv 2302.12902, v1 2023-02-24.
+- The fraction of dormant neurons grows during training. ReDo recycles them.
+
+**Lyle, Zheng, Nikishin, Avila Pires, Pascanu & Dabney, "Understanding plasticity in neural networks" (ICML 2023).** arXiv 2303.01486, v1 2023-03-02.
+- Plasticity loss tracks curvature, often without saturated units.
+- A caution that rank is not the only mechanism.
+
+**Kumar, Marklund & Van Roy, "Maintaining Plasticity in Continual Learning via Regenerative Regularization" (L2 Init).** arXiv 2308.11958, v1 2023-08-23.
+- Decaying weights toward the initial values rather than toward 0 keeps plasticity.
+- **Means for us:** moves the weight-decay centre off the collapsed set, close to syre.
+
+**Li, Efros & Pathak 2022** (2209.15007, in `refs.bib`): continual-learning-style data rotation prevents partial collapse in SimSiam. This is empirical evidence that non-stationarity re-opens windows.
+
+### B. Established vs open
+
+**Established:**
+- Without noise or weight decay, learning after the first escape is a saddle-to-saddle staircase. Shown for diagonal nets (Berthier; Pesme-Flammarion), matrix sensing (Jin), deep linear nets (Jacot; covered) and general architectures (Zhang-Saxe-Latham). In ViTs the weights gain rank stepwise (Boix-Adsera).
+- Activation times are integrated-utility thresholds against log(1/init) (AGF; Pesme-Flammarion).
+- Collapsed directions are SGD-invariant sets. Multiplicative noise makes them attractive when L'' + D''/2 > 0 (Chen et al.), acts as extra ℓ1-type decay (Pillaud-Vivien) and shrinks the effective init (Pesme 2021). Noise therefore narrows growth windows and does not reseed.
+- Symmetry plus weight decay or noise traps parameters on symmetric subspaces (Ziyin 2023). What revives dead units in practice is additive reseeding or symmetry breaking (syre, shrink-and-perturb, continual backprop, L2 Init).
+- Empirically, a ramped weight decay (0.04 → 0.4) beats any fixed value in DINO, by 1.1 points over the best fixed value and 3.5 over fixed 0.04. The EMA rate has a narrow good band.
+
+**Open:**
+1. A race theory with a closing window that predicts which later escapes still occur: decaying gain, rising λ_W(t) as in I-JEPA's 0.04 → 0.4, and τ(t) → 1. All saddle-to-saddle and AGF analyses lack weight decay and deadlines.
+2. The noise-corrected window g_k − D_k/2 for JEPA, and the noise level, set by batch size and LR, beyond which a direction cannot escape.
+3. Whether JEPA gradient noise has an additive component along a dead direction, for example through off-diagonal predictor coupling or the EMA target. If so it would give a reseeding floor of order √(η·noise); otherwise there is none. [Our conjecture.]
+4. Rank (not accuracy) as a function of weight-decay and EMA schedules. Not measured anywhere.
+
+---
+
+## Direction C: deep/nonlinear encoders, unbalanced initialisation, timing
+
+### C0. λ-JEPA and our balance identity
+
+**Demirel, Dominé, Maiorca, Fumero, Mondelli & Locatello, "λ-JEPA: Spectral Anti-Collapse Regularization for Self-Supervised Learning."** arXiv 2609.35288, v1 2026-09-28 (v2 exists; in `refs.bib`). [checked: §3.1, App. A.1.2-A.1.5]
+- **Setting.** A supervised two-layer linear net ŷ = W₂W₁x with MSE loss. This is not a JEPA or stop-gradient objective.
+- **Layer imbalance.** Δ = W₂ᵀW₂ − W₁W₁ᵀ; "λ-balanced" means Δ = λ_bal I.
+- **Lemma A.2.** Under gradient flow on any loss ℓ(W₂W₁) without regularisation, dΔ/dt = 0. Remark A.3 notes it is exact only in continuous time.
+- **Lemma A.4 (non-collapse under negative balance).** If Δ = λ_bal I with λ_bal < 0, then W₁W₁ᵀ ⪰ −λ_bal I and σ_min(W₁) ≥ √(−λ_bal). With Σ_x ⪰ κ_x I, the hidden covariance satisfies C_h ⪰ −κ_x λ_bal I.
+- **Thm 3.1 / A.5.** Minimisers of (λ_reg/2)(‖W₁‖² + ‖W₂‖²) − (γ/2) log det(W₁W₁ᵀ) subject to W₂W₁ = M satisfy Δ = −(γ/λ_reg) I.
+- **Thm A.7.** Under gradient flow on MSE + λ_reg-weight-decay + log-det, τΔ̇ = −2λ_reg(Δ − Δ⋆), so Δ(t) − Δ⋆ = e^{−2λ_reg t/τ}(Δ(0) − Δ⋆) with Δ⋆ = −(γ/λ_reg) I. The task-loss terms cancel. The encoder stays full row rank for all t.
+- **SACReg.** A covariance log-det regulariser on view-averaged backbone features. λ-JEPA beats LeJEPA and VISReg on IN-1k and LeVJEPA and V-JEPA 2 on SSv2 and K400.
+
+**Relation to our identity** [our derivation from their equations]:
+1. **Thm A.7 with γ = 0 is our identity.** Setting γ = 0 gives Δ(t) = e^{−2λt}Δ(0), the matrix form of our p_k² − a_k² = e^{−2λt}(p0² − a0²). Take W₁ as encoder, W₂ as predictor, and project onto direction k. That projection needs the per-mode decoupling of our linear model. It holds in JEPA too, because with a stop-gradient target the online loss is ℓ(PW) at each instant, so the task terms cancel in Δ̇ in the same way. Same-rate decay needs λ_W = λ_P in gradient-flow units. With predictor learning-rate ratio α and separate decays the identity changes form, so state that assumption explicitly.
+2. **Opposite sign of imbalance.** λ-JEPA's guarantee uses negative balance (encoder-heavy, Δ < 0), whose floor is a_k² ≥ −Δ_kk. Our regime is the opposite, positive balance (predictor-heavy, p0 ≫ a0, Δ > 0), where the identity gives p_k ≥ a_k and no floor on a_k. Under pure weight decay neither sign is permanent: Δ → 0, so any floor decays as e^{−2λt}. This is why collapse can still win our race, whereas their log-det term makes Δ⋆ ≠ 0 a fixed point.
+3. **What the log-det term does to the race.** In our language it turns the decaying identity into a_k² ≥ γ/λ asymptotically, a permanent floor. That removes the race entirely, since no direction can collapse. λ-JEPA is therefore an anti-collapse intervention that acts directly on the quantity our race is about, but it is not a theory of when collapse happens. It does not model drive c_k, noise σ_k, gain decay or timing.
+4. **Prior sources to cite with it.** The conserved and weight-decay-damped Δ predates λ-JEPA: Du-Hu-Lee 2018 (conservation), Kunin et al. 2021 Eq. 20 and Kobayashi 2024 Lemma B.1 (e^{−2λt} damping), and Dominé 2024 (λ-balanced exact solutions). Cite these for the identity, not λ-JEPA alone.
+
+### C1. Conserved quantities and their damping by weight decay
+
+**Kunin, Sagastuy-Brena, Ganguli, Yamins & Tanaka, "Neural Mechanics: Symmetry and Broken Conservation Laws in Deep Learning Dynamics" (ICLR 2021).** arXiv 2012.04728, v1 2020-12-08. [checked: Eqs. 19-20 in PDF]
+- **Rescale symmetry under gradient flow with weight decay λ and modified loss.** |θ_A1(t)|² − |θ_A2(t)|² = e^{−2λt}(|θ_A1(0)|² − |θ_A2(0)|²) + η∫₀ᵗ e^{−2λ(t−τ)}(|g_θA1|² − |g_θA2|²)dτ.
+- **Scale symmetry.** |θ_A(t)|² = e^{−2λt}|θ_A(0)|² + η∫e^{−2λ(t−τ)}|g_A|²dτ.
+- **Means for us:** our balance identity is the η → 0 case of their Eq. 20. **Cite it as the origin of the damped identity.** The η-term is the finite-learning-rate correction, of order η × the gradient-norm difference. It is what makes the identity approximate in discrete training and adds a positive drift to p² − a² when predictor gradients dominate.
+
+**Kobayashi, Akram & von Oswald 2024** (2410.23819; in `lit_tools.md`).
+- Lemma B.1: AᵀA − BᵀB = Q e^{−2λt/τ}, the matrix form of the identity. Prop. B.2 covers momentum and decoupled weight decay.
+
+**Du, Hu & Lee, "Algorithmic Regularization in Learning Deep Homogeneous Models: Layers are Automatically Balanced" (NeurIPS 2018).** arXiv 1806.00900, v1 2018-06-04.
+- In linear and ReLU homogeneous nets, gradient flow conserves the differences of squared layer norms between adjacent layers, and the matrix W_{h+1}ᵀW_{h+1} − W_hW_hᵀ for linear nets.
+- **Means for us:** the base invariant holds for ReLU encoders per neuron, so the balance part of the race carries over to one-hidden-layer ReLU.
+
+**Marcotte, Gribonval & Peyré, "Abide by the Law and Follow the Flow: Conservation Laws for Gradient Flows" (NeurIPS 2023).** arXiv 2307.00144, v1 2023-06-30.
+- For shallow ReLU and linear nets the known balance laws are the complete set of independent conservation laws.
+
+**Ziyin, Li & Ueda, "Noise Balance and Stationary Distribution of Stochastic Gradient Descent."** arXiv 2308.06671, v1 2023-08-13. Phys. Rev. E per the agent.
+- Under rescaling symmetry, minibatch noise drives solutions to a "noise-balanced" point.
+- **Means for us:** together with Ziyin et al. 2024 (B3), SGD noise is a second, non-weight-decay force on p² − a².
+
+### C2. Unbalanced initialisation; lazy vs rich (sign of the conserved quantity)
+
+**Kunin, Raventós, Dominé, Chen, Klindt, Saxe & Ganguli, "Get rich quick: exact solutions reveal how unbalanced initializations promote rapid feature learning" (NeurIPS 2024).** arXiv 2406.06158, v1 2024-06-10. [checked: definition of δ]
+- **Model.** f = a·wᵀx. The conserved quantity is δ = η_w a² − η_a‖w‖², i.e. last² − first² at equal learning rates. Their experiments set δ = τ²(α² − α⁻²).
+- **Regimes.** δ > 0 is "upstream" (the first layer learns faster); δ < 0 is "downstream".
+- **Exact solution.** With μ = a‖w‖ and φ = cos∠(w, β*):
+  - μ̇ = √(δ² + 4η_aη_wμ²)(φ‖β*‖ − μ)
+  - φ̇ = 2η_aη_wμ‖β*‖(1 − φ²)/(√(δ² + 4η_aη_wμ²) − δ)
+- **Linear nets.** δ ≫ 0 is lazy, δ = 0 is rich, δ ≪ 0 is "delayed rich". Rapid rich learning requires balance.
+- **Piecewise-linear nets.** The per-neuron δ_k is conserved, and upstream init gives an "extremely fast alignment phase", accelerating rich learning. No weight decay.
+- **Means for us:**
+  - **Our regime is upstream.** With equal learning rates our p0² − a0² is exactly their δ, and p0 ≫ a0 means δ > 0.
+  - **Linear picture.** In their linear model upstream means the light layer moves under a nearly frozen heavy layer, which is our a' = a g(p) phase. In supervised regression this is the lazy regime. JEPA differs because the target is self-generated through the EMA or stop-gradient, so "lazy" here means slow exponential growth of a_k rather than kernel fitting.
+  - **Weight decay.** It makes δ(t) = δ0 e^{−2λt}, so the system drifts from upstream toward balanced, which they do not model.
+  - **ReLU.** Their result predicts fast directional alignment of encoder neurons under our init. That is a reason to expect the race to be decided early, and faster, in ReLU encoders.
+
+**Dominé, Anguita, Proca, Braun, Kunin, Mediano & Saxe, "From Lazy to Rich: Exact Learning Dynamics in Deep Linear Networks" (ICLR 2025).** arXiv 2409.14623, v1 2024-09-22.
+- **Exact dynamics.** With λ-balanced init W₂ᵀW₂ − W₁W₁ᵀ = λI conserved, they give an exact matrix-Riccati solution for QQᵀ(t), where Q stacks W₁ᵀ and W₂.
+- **Aligned case.** s_α(t) = s_α(0) + γ_α(t; λ)(s̃_α − s_α(0)). It is sigmoidal (rich) as λ → 0 and 1 − e^{−|λ|t/τ} (lazy) as |λ| → ∞.
+- **Weights.** S₁ = (S_λ − λ/2)^{1/2}, S₂ = (S_λ + λ/2)^{1/2}.
+- Only two layers despite the title; no weight decay.
+- **Means for us:** their λ is our p0² − a0², and the factor formulas are our hyperbola. A weight-decayed solution with λ(t) = λ0 e^{−2λ_wd t} is not available anywhere; deriving it would extend this line.
+
+**Azulay, Moroshko, Nacson, Woodworth, Srebro, Globerson & Soudry, "On the Implicit Bias of Initialization Shape: Beyond Infinitesimal Mirror Descent" (ICML 2021).** arXiv 2102.09769, v1 2021-02-19.
+- **Shape and scale.** δ = a² − ‖w‖² is conserved. Shape s = (|a|/‖w‖ − 1)/(|a|/‖w‖ + 1), scale α = |a|‖w‖. The implicit regulariser q_δ is given in closed form.
+- **Limit.** s → 1 is the NTK regime, because "gradients of a are much smaller than gradients of w".
+- **Means for us:** our init (|p| ≫ |a|) is s → 1. JEPA escapes kernel behaviour only through the self-generated target.
+
+**Jarvis, Lee, Dominé, Saxe & Sarao Mannelli, "A Theory of Initialisation's Impact on Specialisation" (ICLR 2025).** arXiv 2503.02526, v1 2025-03-04. J. Stat. Mech. 2025 114001 per the agent.
+- The conserved imbalance λ = h² − wwᵀ: "output heavy imbalance promotes feature learning" and specialisation.
+- Sign conventions differ between the main text and the appendix (agent warning).
+
+**Nam, Lee, Domine, Park, London, Choi, Goring & Lee, "Position: Solve Layerwise Linear Models First to Understand Neural Dynamical Phenomena…" (ICML 2025).** arXiv 2502.21009, v1 2025-02-28.
+- A review of λ-balanced exact solutions. Large |λ|: "only the lighter layer is trained" (lazy); small |λ|: rich.
+
+**Anguita, Locatello, Saxe, Mondelli, Mancini, Lippl & Domine, "A Theory of How Pretraining Shapes Inductive Bias in Fine-Tuning."** arXiv 2602.20062, v1 2026-02-23. ICML 2026 per the agent.
+- Diagonal linear nets: a smaller init in earlier layers lets the network both reuse and refine features. There are four fine-tuning regimes set by absolute and relative scale.
+
+**Tu, Aranguri & Jacot, "Mixed Dynamics In Linear Networks: Unifying the Lazy and Active Regimes."** arXiv 2405.17580, v1 2024-05-27.
+- Each singular value is lazy below a threshold and balanced/active above it. Values start lazy, align, then become active.
+- **Means for us:** a per-mode lazy-to-active threshold crossing is the supervised analogue of reaching our capture nullcline.
+
+**Min, Tarmoun, Vidal & Mallada, "Convergence and Implicit Bias of Gradient Flow on Overparametrized Linear Networks."** arXiv 2105.06351, v1 2021-05-13.
+- The convergence rate is set by the level of imbalance and the init margin.
+
+**Chizat, Oyallon & Bach, "On Lazy Training in Differentiable Programming" (NeurIPS 2019).** arXiv 1812.07956, v1 2018-12-19.
+
+**Woodworth, Gunasekar, Lee, Moroshko, Savarese, Golan, Soudry & Srebro, "Kernel and Rich Regimes in Overparametrized Models" (COLT 2020).** arXiv 2002.09277, v1 2020-02-20.
+- Background on lazy vs rich; scale (Chizat) and init scale (Woodworth) control the transition.
+
+**Kumar, Bordelon, Gershman & Pehlevan, "Grokking as the Transition from Lazy to Rich Training Dynamics" (ICLR 2024).** arXiv 2310.06110, v1 2023-10-09.
+- An output scale controls the feature-learning rate.
+- Possibly the "Kumar et al. 2024" cited by λ-JEPA for asymmetric scalings; not confirmed.
+
+**Non-arXiv, venue as reported by the agent** [venue not independently verified unless marked]:
+- **Tarmoun, Franca, Haeffele & Vidal, ICML 2021, PMLR 139:10153-10161.** Exact Riccati solution for unbalanced init. The Gramian difference is conserved, and the imbalance accelerates convergence.
+- **Xu, Min, Tarmoun, Mallada & Vidal, AISTATS 2023, PMLR 206:2262-2284.** The gradient-flow imbalance speed-up does not carry over fully to fixed-step GD.
+- **Braun, Dominé, Fitzgerald & Saxe, NeurIPS 2022.** Journal version J. Stat. Mech. 2023 114004, DOI 10.1088/1742-5468/ad01b8 (Crossref checked). Exact deep-linear dynamics from non-small, task-independent init.
+- **Varre, Vladarean, Pillaud-Vivien & Flammarion, "On the spectral bias of two-layer linear networks", NeurIPS 2023, DOI 10.52202/075280-2811 (Crossref checked).** Small init biases the hidden layer to low rank through a hidden mirror flow on singular values.
+
+### C3. Early alignment with small initialisation (ReLU, deep homogeneous)
+
+**Maennel, Bousquet & Gelly, "Gradient Descent Quantizes ReLU Network Features."** arXiv 1803.08367, v1 2018-03-22.
+- With small init and small LR, weights concentrate on a few data-determined directions.
+
+**Boursier, Pillaud-Vivien & Flammarion, "Gradient flow dynamics of shallow ReLU networks for square loss and orthogonal inputs" (NeurIPS 2022).** arXiv 2206.00939, v1 2022-06-02.
+- Small init, orthogonal inputs: early alignment, then saddle-to-saddle, ending in a minimum-variation-norm bias.
+
+**Boursier & Flammarion, "Early alignment in two-layer networks training is a two-edged sword."** arXiv 2401.10791, v1 2024-01-19. JMLR per the agent.
+- **Assumptions.** Init (a_j, w_j) = (λ/√m)(ã_j, w̃_j) with |ã_j| ≥ ‖w̃_j‖. Lemma 1: a_j² − ‖w_j‖² is conserved, so sign(a_j) is fixed and |a_j| ≥ ‖w_j‖.
+- **Alignment phase.** Lasts τ = −ε ln λ / D_max, during which norms stay O(λ^{1−2ε}). Directions w̄ = w/a perform projected ascent on G(w) = ⟨w, D(w, 0)⟩ toward extremal vectors.
+- **Thm 2.** On a 3-point dataset, for any width, gradient flow converges to a spurious stationary point. All neurons align to one extremal vector and "it becomes impossible to activate a new direction".
+- **Means for us:** this is our init sign: output (predictor-like) weight at least as large as input weight, the analogue of p² − a² > 0. The conservation law that freezes sign(a_j) plays the role of "predictor gain keeps its sign". The ReLU early phase lasts about log(1/init) and its outcome is permanent, including failures. That is the ReLU version of losing the race, without a weight-decay deadline.
+
+**Kumar & Haupt, "Directional Convergence Near Small Initializations and Saddles in Two-Homogeneous Neural Networks" (TMLR 2024).** arXiv 2402.09226, v1 2024-02-14.
+- Early on, weights converge in direction to KKT points of the neural correlation function while norms stay small. The same holds near certain saddles.
+
+**Kumar & Haupt, "Early Directional Convergence in Deep Homogeneous Neural Networks for Small Initializations."** arXiv 2403.08121, v1 2024-03-12.
+- For homogeneity order L > 2 the early phase lasts O(1/δ^{L−2}) (time rescaled by δ^{L−2}), versus log(1/δ) for L = 2.
+- NCF flows can blow up in finite time.
+- **Means for us:** for deep encoders the capture time scales as a power law in the init scale, not its log. Our deadline condition t_capture < t_window changes form with depth, and deeper encoders lose races against a fixed weight-decay window more easily.
+
+**Min, Mallada & Vidal, "Early Neuron Alignment in Two-layer ReLU Networks with Small Initialization" (ICLR 2024).** arXiv 2307.12851, v1 2023-07-24.
+- Each first-layer neuron aligns with positive or negative data according to the sign of its second-layer weight, within O(log n/√μ). Afterwards the first layer is approximately low rank.
+- **Means for us:** the downstream weight sign decides which direction an upstream unit grows toward, just as p_k gates a_k.
+
+**Lyu, Li, Wang & Arora, "Gradient Descent on Two-layer Nets: Margin Maximization and Simplicity Bias" (NeurIPS 2021).** arXiv 2110.13905, v1 2021-10-26.
+
+**Zhou, Zhou, Luo, Zhang & Xu, "Towards Understanding the Condensation of Neural Networks at Initial Training."** arXiv 2105.11686, v1 2021-05-25.
+
+**Glasgow, "SGD Finds then Tunes Features in Two-Layer Neural Networks…"** arXiv 2309.15111, v1 2023-09-26.
+- A signal-finding phase where the output is small and neurons evolve independently, then a tuning phase.
+- Same "find early, then amplify" structure as our race-then-capture.
+
+### C4. Is the outcome decided early?
+
+**Kleinman, Achille & Soatto, "Critical Learning Periods Emerge Even in Deep Linear Networks" (ICLR 2024).** arXiv 2308.12221, v1 2023-08-23. [checked: "race" passage]
+- **Model.** Two parallel deep linear pathways compete for the same output. Per mode, τq̇ = q^{D−2}p[S − Ω̄] and τṗ = q^{D−1}[S − Ω̄], with q² − p² conserved.
+- **The "race".** "The learning of the singular values occurs in a 'race', similar to a winner-take-all structure", and the competition sharpens with depth.
+- **Timing of deficits.** An early deficit permanently hands features to the other pathway; a late one has negligible effect. Smaller inits give a longer harmless period but a stronger final effect.
+- **Means for us:** the closest prior use of both the word "race" and the per-mode balance invariant, with direct evidence that the outcome is decided early and irreversibly in deep linear nets. **Must be cited and distinguished.** Their competition is between pathways, ours is against a weight-decay deadline. They have no weight decay, no predictor-gain decay and no SSL.
+
+**Golatkar, Achille & Soatto, "Time Matters in Regularizing Deep Networks: Weight Decay and Data Augmentation Affect Early Learning Dynamics, Matter Little Near Convergence" (NeurIPS 2019).** arXiv 1905.13277, v1 2019-05-30.
+- **Result.** Removing weight decay after the early epochs costs little, while applying it only late is as bad as none.
+- **Proposed mechanism.** Fisher information, i.e. curvature, during the transient.
+- **Means for us:** empirical support for "weight decay decides the outcome in an early window". Supervised nets with BN; the mechanism is not gain decay.
+
+**Achille, Rovere & Soatto, "Critical Learning Periods in Deep Neural Networks" (ICLR 2019).** arXiv 1711.08856, v1 2017-11-24.
+- Early temporary deficits cause permanent impairment. Fisher information rises and then falls.
+
+**Frankle, Schwab & Morcos, "The Early Phase of Neural Network Training" (ICLR 2020).** arXiv 2002.10365, v1 2020-02-24.
+- After a few hundred iterations, weights are no longer re-randomisable while preserving signs.
+
+**Jastrzebski et al., "The Break-Even Point on Optimization Trajectories of Deep Neural Networks" (ICLR 2020).** arXiv 2002.09572, v1 2020-02-21.
+- Early SGD hyperparameters set the later curvature and noise conditioning.
+
+**Fort, Dziugaite, Paul, Kharaghani, Roy & Ganguli, "Deep learning versus kernel learning…" (NeurIPS 2020).** arXiv 2010.15110, v1 2020-10-28.
+- A chaotic transient of 2-3 epochs commits the network to its final basin.
+
+**Kalra & Barkeshli, "Phase diagram of early training dynamics in deep neural networks: effect of the learning rate, depth, and width" (NeurIPS 2023).** arXiv 2302.12250, v1 2023-02-23.
+- Note: the requested "Phase diversity and universality of early training dynamics" title was not found. arXiv 2311.02076 (v1 2023-11-03) is "Universal Sharpness Dynamics in Neural Network Training" by Kalra, He and Barkeshli.
+
+**Kalra & Barkeshli, "Why Warmup the Learning Rate? Underlying Mechanisms and Improvements" (NeurIPS 2024).** arXiv 2406.09405, v1 2024-06-13.
+- Optimiser-level evidence of early commitment (sharpness regimes; warmup lets training tolerate a larger LR). None of it is per-direction.
+
+**Lyu, Jin, Li, Du, Lee & Hu, "Dichotomy of Early and Late Phase Implicit Biases Can Provably Induce Grokking" (ICLR 2024).** arXiv 2311.18817, v1 2023-11-30. [checked]
+- **Setting.** Homogeneous net with large init scale α and weight decay λ.
+- **Result.** Gradient flow behaves like a kernel predictor until T⁻ = (1−c)λ⁻¹ log α and switches to min-norm or max-margin KKT points by (1+c)λ⁻¹ log α. The kernel scale α^L e^{−Lλt} shrinks under weight decay.
+- **Means for us:** the closest formal analogue of our deadline. Weight decay shrinks an O(1) factor exponentially, and the regime switches at t ≈ log(scale)/λ. Our window closes at about log(p0/p_edge)/(αλ_P).
+
+**Also relevant (weight decay with depth; covered):**
+- Ziyin, Li & Meng 2022 (2202.04777): with more than one hidden layer, the origin is a local minimum under weight decay, so the race in deep encoders may become a finite basin.
+- Wang & Jacot 2023 (2305.16038): one-way high → low rank jumps.
+
+### C. Established vs open
+
+**Established:**
+1. The per-direction invariant (output² − input²) holds in deep linear and ReLU homogeneous nets, and in the shallow case there are no other independent invariants (Du 2018; Marcotte 2023).
+2. Under weight decay the invariant decays as e^{−2λt}, plus finite-step and noise terms (Kunin et al. 2021 Eq. 20; Kobayashi 2024 Lemma B.1). λ-JEPA Thm A.7 restates this, with γ = 0, inside a JEPA paper. **Our identity is therefore not new and must be cited.** What is new is using it to build a per-direction deadline.
+3. Our init sign (heavy downstream, i.e. upstream δ > 0) is lazy in linear supervised regression and the fastest-alignment regime in ReLU nets (Kunin 2024; Dominé 2024; Azulay 2021). Boursier-Flammarion 2024 assume exactly this sign.
+4. Small-init ReLU and homogeneous nets have an early phase, lasting log(1/init) for 2-homogeneous nets and 1/init^{L−2} for deeper ones, in which directions commit while norms are small. The commitment can be permanent, including failure to activate a direction (Boursier 2024; Kumar-Haupt; Min 2024).
+5. Modes compete in a winner-take-all "race" that sharpens with depth, and early perturbations are irreversible (Kleinman 2024).
+6. Weight decay matters mostly early (Golatkar 2019), training commits early (Achille; Frankle; Fort; Jastrzebski), and weight decay shrinking a large factor gives a sharp switch at log(scale)/λ (Lyu 2024).
+
+**Open:**
+1. No paper combines a weight-decay-damped invariant with a decaying downstream gain to give a per-direction deadline. The race against weight decay remains new. Kleinman's race (pathway competition), Pesme-Flammarion's and AGF's activation thresholds (no deadline), and Lyu's log α/λ switch (global, not per direction) are the nearest neighbours.
+2. No exact Kunin/Dominé-type solution exists with weight decay, i.e. with δ(t) = δ0 e^{−2λt}.
+3. The race has not been extended to deep encoders, where the capture time is a power law in the init scale (Kumar-Haupt) and the origin is a local minimum under weight decay (Ziyin 2022).
+4. It has not been extended to ReLU encoders, where alignment is to extremal vectors (Boursier) rather than eigendirections.
+5. No SSL or JEPA paper shows that final rank is decided in an early, weight-decay-dependent window.
+6. Finite-η and SGD-noise corrections to the identity (Neural Mechanics' η-term; Ziyin noise balance) are unquantified for JEPA, as is the sign-flow version (|p| − |a| damped; Jacobs et al.) under AdamW.
+
+---
+
+## Could not verify / dropped
+
+- **α-ReQ** (Agrawal et al., NeurIPS 2022): no arXiv id found; not listed.
+- **WERank** (2402.09586, v1 2024-02-14) and Lee et al. (2304.03456, v1 2023-04-07): ids verified, content not read. The second reportedly finds that lowering DINO's weight-decay ceiling from 0.4 to 0.2 stabilises transfer; that claim is from a search snippet and was not checked.
+- **Tarmoun 2021 and Xu 2023:** no arXiv version; PMLR pages could not be loaded, so their venues are as reported.
+- **Unchecked formulas:**
+  - Li & Arora 2019: exact LR-growth factor.
+  - Wan et al.: exact angular-update value.
+  - Kunin et al. 2021: finite-η term, extracted from PDF typesetting.
+- **Proofs not seen:**
+  - Sabanayagam-Lucey: appendix E.5 (SignGD phase laws); main-text statements only.
+  - Tang et al. 2025: the Adam → SignSGD lemma (Appendix C).
+- **Read only from the abstract or search snippets:** Manna et al. 2609.26334 (v1 2026-09-22, last-layer rank in SimCLR), Tian 2201.12680, JoMA 2310.00535. Not used.

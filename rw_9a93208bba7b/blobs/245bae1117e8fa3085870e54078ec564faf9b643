@@ -1,0 +1,45 @@
+"""E4 / A1 development grid 2, for the phase model after v3 (the A1 held-out result showed that v3's "alive from
+the first crossing" misses captured amplitudes that hover at the threshold and second collapses).
+Same ground truth and metrics as the held-out driver code/e4_a1.py (80-bit maps, per-step first crossings,
+30 log-spaced checkpoints, T = 60000), on development statistics and hyperparameters only: the statistics sets
+and hyperparameter values of code/e4_dev.py, per-direction initial amplitudes, b1 = 0.9. Disjoint from the A1
+held-out grid, which is not used for development.
+Usage: python3 code/e4_dev2.py run results/e4/dev2 [NPROC]       (writes dev2_runs.jsonl.gz; no tolerance scoring)"""
+import sys, os, json, time, itertools, gzip
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+sys.path.insert(0, os.path.dirname(__file__))
+import e4_a1 as A
+import e4_dev as dev
+
+A.STATS = dict(dev.STATS)
+A.A1A_SUBSET = lambda cfg: False
+
+
+def configs():
+    out = []
+    for st, p0, lam, a0, eta, b2 in itertools.product(dev.STATS, [0.5, 1.0, 2.0, 3.0], [0.002, 0.005, 0.01, 0.02, 0.05],
+                                                       [1e-4, 1e-2], [0.01, 0.02, 0.05], [0.999, 0.99]):
+        out.append(dict(id=len(out), stats=st, p0=p0, lam=lam, a0=a0, eta=eta, b1=0.9, b2=b2, seed=1000))
+    return out
+
+
+def truth_only(cfg):
+    return dict(cfg, checkpoints=A.CHECKS, **A.truth(cfg))
+
+
+if __name__ == "__main__":
+    outdir = sys.argv[2]; nproc = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    os.makedirs(outdir, exist_ok=True); cfgs = configs(); t0 = time.time(); runs = []
+    with Pool(nproc) as pool:
+        for i, r in enumerate(pool.imap(truth_only, cfgs)):
+            runs.append(r)
+            if (i + 1) % 96 == 0:
+                print(f"{i+1}/{len(cfgs)} {time.time()-t0:.0f}s", flush=True)
+    with gzip.open(os.path.join(outdir, "dev2_runs.jsonl.gz"), "wt") as f:
+        for r in runs:
+            f.write(json.dumps(r) + "\n")
+    json.dump(dict(runs=len(runs), seconds=time.time() - t0, numpy=np.__version__, command=" ".join(sys.argv)),
+              open(os.path.join(outdir, "dev2_meta.json"), "w"), indent=1)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E4 dev2 ground truth done", flush=True)

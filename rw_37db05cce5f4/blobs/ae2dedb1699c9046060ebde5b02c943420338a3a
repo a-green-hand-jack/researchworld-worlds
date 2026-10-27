@@ -1,0 +1,26 @@
+{
+  "source": "npm",
+  "url": "https://www.npmjs.com/",
+  "start_utc": "2026-10-19T21:30:14.315767+00:00",
+  "end_utc": "2026-10-19T21:30:14.804996+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/npm.headers",
+    "-o",
+    "/tmp/tmpbgud_4kg/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://www.npmjs.com/"
+  ],
+  "exit": 0,
+  "curl_output": "403\ntext/html; charset=UTF-8\n",
+  "stderr": "",
+  "first200": "<!DOCTYPE html><html lang=\"en-US\"><head><title>Just a moment...</title><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"><meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\"><meta nam",
+  "body_bytes": 5393
+}

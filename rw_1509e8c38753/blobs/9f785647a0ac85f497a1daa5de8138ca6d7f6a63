@@ -1,0 +1,99 @@
+\documentclass{article}
+% NeurIPS 2026 submission template, default (anonymous submission) mode, as venue-repo specifies.
+\usepackage{neurips_2026}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts,amsmath}
+\usepackage{microtype}
+\usepackage{graphicx}
+
+% Every number in this paper is a macro written by code/summarize.py from the run outputs
+% (results/numbers.tex); see README.md for the mapping. None is typed by hand.
+\input{results/numbers.tex}
+
+\title{Logistic Regression vs.\ $k$-Nearest Neighbours on Iris}
+
+\author{Anonymous Author(s)}
+
+\begin{document}
+\maketitle
+\suppressfloats[t]  % keep floats off the title page top
+
+\begin{abstract}
+We compare multinomial logistic regression (LR) with $k$-nearest neighbours ($k$NN, $k$ chosen by inner
+cross-validation) on the Iris data (OpenML dataset 61) by \nRep{} repetitions of stratified \nSplits-fold
+cross-validation, on splits shared by both methods. With corrected resampled-$t$ 95\% intervals, LR reaches a mean
+accuracy of \accLRMean\% [\accLRLo, \accLRHi] and $k$NN \accKNNMean\% [\accKNNLo, \accKNNHi]. The paired difference
+LR$-$$k$NN is $\accDiffMean$ percentage points (pp) [$\accDiffLo$, $\accDiffHi$]: the interval contains zero, so
+the study detects no accuracy difference between the two methods. Runs on an Ibex CPU node (\texttt{\ibexNode}) and locally gave byte-identical results.
+\end{abstract}
+
+\section{Data and protocol}
+\textbf{Data.} The code downloads Iris \citep{fisher1936} from OpenML \citep{vanschoren2013openml} (dataset 61,
+version 1, ARFF, md5 \texttt{\dataMDFive}, equal to OpenML's checksum): 150 flowers, 4 measurements in cm, 3 classes
+of 50. It is used as downloaded; \nDuplicateRows{} rows repeat an earlier row exactly.
+
+\textbf{Methods.} Both methods are scikit-learn pipelines that standardize the features on the training data only.
+LR is a single softmax (multinomial) model fitted by L-BFGS with an L2 penalty and fixed $C=1$ (not tuned). $k$NN
+uses Euclidean distance and uniform weights. $k\in\{\kGridMin,\dots,\kGridMax\}$ is chosen by stratified 5-fold
+cross-validation \emph{inside each outer training set}, with ties going to the smallest $k$.
+
+\textbf{Protocol and intervals.} \texttt{RepeatedStratifiedKFold} (\nSplits{} folds, \nRep{} repetitions, seed
+\seed) gives $J=\nFolds$ outer splits of $n_\text{train}=\nTrain$ and $n_\text{test}=\nTest$ flowers. Both methods
+are scored on the same splits, so the \nFolds{} per-fold accuracy differences are paired. Fold scores share training
+data, so a $t$-interval treating them as independent is too narrow. We use the
+corrected resampled $t$ \citep{nadeau2003inference,bouckaert2004evaluating},
+$\bar m \pm t_{0.975,J-1}\sqrt{(1/J + n_\text{test}/n_\text{train})\,s^2}$ with $t_{0.975,49}=\tCrit$, for each
+method's fold accuracies and for the paired differences.
+
+\section{Results}
+\begin{table}[t]
+  \caption{Test accuracy over $J=\nFolds$ outer folds (\nRep$\times$ stratified \nSplits-fold CV, local run), with
+  corrected resampled-$t$ 95\% intervals \citep{nadeau2003inference}. Difference in pp.}
+  \label{tab:results}
+  \centering
+  \small
+  \input{tables/table_results.tex}
+\end{table}
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/fig_accuracy.pdf}
+  \caption{(a) Test accuracy of each method in the \nFolds{} outer folds (jittered), with the mean and corrected
+  95\% interval. (b) Paired per-fold difference LR$-$$k$NN in pp; bubble area and labels count the folds at each
+  value. Diamond and bar: mean and corrected 95\% interval; dashed line: zero.}
+  \label{fig:acc}
+\end{figure}
+
+Table~\ref{tab:results} and Figure~\ref{fig:acc} show the results. LR's mean accuracy is \accLRMean\%
+[\accLRLo, \accLRHi] and $k$NN's \accKNNMean\% [\accKNNLo, \accKNNHi]. On the shared splits, LR is more accurate in
+\foldsLRBetter{} folds, ties in \foldsTie{} and is less accurate in \foldsKNNBetter{}. The mean paired difference is
+$\accDiffMean$\,pp [$\accDiffLo$, $\accDiffHi$] (corrected-$t$ $p=\diffCorrectedP$). The interval contains zero and
+also allows differences of a few points either way, so the data neither show that one method is more accurate nor
+establish that the two are equivalent. The naive interval would be [$\accDiffNaiveLo$, $\accDiffNaiveHi$]. The inner cross-validation selected $k$ between \kMin{} and \kMax{} (median
+\kMedian, mode \kMode).
+
+\section{Reproducibility}
+One code base with numpy \verNumpy, scipy \verScipy{} and scikit-learn \verSklearn{} (Python \verPythonIbex{} on
+Ibex, \verPython{} locally) ran the full cross-validation once as a SLURM CPU job on Ibex (job \ibexJobId, partition
+\texttt{\ibexPartition}, node \texttt{\ibexNode}, recorded inside the job from \texttt{SLURMD\_NODENAME}) and once
+locally. The criterion was byte identity of the per-fold results file and the per-case predictions file, plus exact
+equality of every stored value. The two runs are identical: \runsDifferingFolds{} of \nFolds{} folds and
+\runsDifferingPredictions{} of \nPredictionsCompared{} predictions differ. The numbers above are from the local run.
+The code is in \texttt{report/code/}; the logs and per-fold outputs of both runs are in \texttt{report/results/}.
+
+\section{Conclusion and limitations}
+On Iris under this protocol, multinomial logistic regression and $k$NN with tuned $k$ are both about 95\% accurate,
+and their paired difference is not distinguishable from zero. This is one small dataset near the accuracy ceiling,
+so nothing here generalizes beyond it. The corrected resampled $t$ is an approximation, and the duplicate rows
+slightly favour nearest-neighbour methods. The NeurIPS paper checklist is omitted to keep this note to two pages.
+
+{\small
+\bibliographystyle{plainnat}
+\bibliography{references}
+}
+\end{document}

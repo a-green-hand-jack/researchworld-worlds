@@ -1,0 +1,68 @@
+"""Numerical check of the imbalance (balance) identity of the linear JEPA flow.
+
+dW/dt = P^T G - lam W,  dP/dt = alpha (G W^T - lam P),  dWbar/dt = kappa (W - Wbar),  G = Wbar S_tc - P W S_c.
+For alpha = 1, whatever Wbar, S_c, S_tc:  P^T P - W W^T = exp(-2 lam t) (P0^T P0 - W0 W0^T).
+For lam = 0 and any alpha:  P^T P / alpha - W W^T is conserved (Tian et al. 2021).
+RK4 on random statistics with S_tc non-symmetric and not commuting with S_c, a non-normal O(1) predictor,
+an EMA target (kappa > 0), weight decay, W grown to order one. Also reports discrete gradient descent
+(step eta), where the identity holds up to O(eta). Adapted from the referee check
+the internal review's checks/balance_identity.py (726919f).
+Usage: python3 code/checks/balance_identity.py [results/checks/balance_identity.json]
+"""
+import json, sys
+import numpy as np
+
+
+def setup(seed, n=12, d=6, w0=0.05):
+    rng = np.random.default_rng(seed)
+    A = rng.standard_normal((n, n)); Sc = A @ A.T / n + 0.1 * np.eye(n)
+    Stc = rng.standard_normal((n, n)) / np.sqrt(n)
+    W = w0 * rng.standard_normal((d, n)); P = rng.standard_normal((d, d)) / np.sqrt(d)
+    return Sc, Stc, W, P
+
+
+def run(alpha, lam, kappa=0.3, T=40.0, dt=1e-3, seed=0, method="rk4"):
+    Sc, Stc, W, P = setup(seed); Wb = W.copy()
+    D0 = P.T @ P / (alpha if lam == 0 else 1.0) - W @ W.T
+
+    def f(W, P, Wb):
+        G = Wb @ Stc - P @ W @ Sc
+        return P.T @ G - lam * W, alpha * (G @ W.T - lam * P), kappa * (W - Wb)
+    t, worst, Wmax = 0.0, 0.0, 0.0
+    for _ in range(int(round(T / dt))):
+        X = (W, P, Wb)
+        k1 = f(*X)
+        if method == "rk4":
+            k2 = f(*(x + dt / 2 * k for x, k in zip(X, k1)))
+            k3 = f(*(x + dt / 2 * k for x, k in zip(X, k2)))
+            k4 = f(*(x + dt * k for x, k in zip(X, k3)))
+            W, P, Wb = (x + dt / 6 * (a + 2 * b + 2 * c + e) for x, a, b, c, e in zip(X, k1, k2, k3, k4))
+        else:  # plain gradient descent / Euler, as in the E1 simulations
+            W, P, Wb = (x + dt * k for x, k in zip(X, k1))
+        t += dt
+        D = P.T @ P / (alpha if lam == 0 else 1.0) - W @ W.T
+        Dpred = np.exp(-2 * lam * t) * D0
+        worst = max(worst, np.linalg.norm(D - Dpred) / (np.linalg.norm(P.T @ P) + np.linalg.norm(W @ W.T)))
+        Wmax = max(Wmax, np.linalg.norm(W))
+    return dict(alpha=alpha, lam=lam, kappa=kappa, T=T, step=dt, method=method, seed=seed,
+                max_rel_deviation=worst, max_norm_W=Wmax, final_norm_W=float(np.linalg.norm(W)))
+
+
+if __name__ == "__main__":
+    out = sys.argv[1] if len(sys.argv) > 1 else "results/checks/balance_identity.json"
+    Sc, Stc, _, _ = setup(0)
+    cases = []
+    for seed in (0, 1, 2):
+        cases.append(run(1.0, 0.05, seed=seed))
+    cases += [run(0.5, 0.05), run(2.0, 0.05)]                        # identity must fail for alpha != 1
+    cases += [run(0.5, 0.0), run(2.0, 0.0)]                          # lam = 0: P'P/alpha - WW' conserved
+    cases += [run(1.0, 0.05, method="euler", dt=d) for d in (0.02, 0.01, 0.005)]   # discrete GD: O(eta) error
+    res = dict(definition="max over t of ||D(t) - exp(-2 lam t) D(0)||_F / (||P'P||_F + ||WW'||_F), "
+                          "D = P'P - WW' (lam>0) or P'P/alpha - WW' (lam=0)",
+               statistics=dict(n=12, d=6, S_tc_rel_asymmetry=float(np.abs(Stc - Stc.T).max() / np.abs(Stc).max()),
+                               rel_commutator=float(np.abs(Sc @ Stc - Stc @ Sc).max() / (np.abs(Sc).max() * np.abs(Stc).max()))),
+               cases=cases)
+    json.dump(res, open(out, "w"), indent=1)
+    for c in cases:
+        print(f"alpha={c['alpha']} lam={c['lam']} {c['method']} step={c['step']} seed={c['seed']}: "
+              f"dev={c['max_rel_deviation']:.2e} max||W||={c['max_norm_W']:.2f}")

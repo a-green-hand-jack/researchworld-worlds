@@ -1,0 +1,40 @@
+{
+ "version": 2,
+ "supersedes": "results/e4/a1_tolerance.json (82264e7). Revised after internal review: (1) the alive-state metric could not tell the model from 'every direction always alive'; (2) A1b must be scored on the waits of directions that actually collapsed; (3) the float64 ground truth underflows on long waits. Revised before any held-out result was read: the held-out job started from 511249d was stopped after about a minute, before it wrote any output.",
+ "scope": "Aligned basis (W diagonal, P = p0 I), full-batch exact gradients, eps = 1e-8, AdamW with decoupled decay; b1 in {0.9, 0.85}, b2 in {0.995, 0.9995}. Outside the scope: eps large enough that collapse is absorbing (eps > eta (1 - b1) |h| / (2 (1 + b1))), the rotated basis (A3), and minibatch noise.",
+ "ground_truth": "exact scalar AdamW maps in np.longdouble (80-bit x86-64), first-crossing times per step; runs whose min |a| goes below the longdouble normal floor are flagged and reported",
+ "sets": {
+  "K": 300,
+  "burst": 0.001,
+  "thr": 0.05,
+  "collapse_set": "h(p_K) = p_K (c - p_K s) < 0 and |a_K| <= 1e-3 (the directions A-ii' is about)",
+  "window_entry_set": "h(p_K) >= 0 and |a_K| <= 1e-3: reported separately, no tolerance",
+  "dead_at_K_set": "|a_K| <= 0.05",
+  "checkpoints": "30 log-spaced steps from K + 50 to T (np.unique(np.round(np.geomspace(350, T, 30))))"
+ },
+ "A1a": {
+  "what": "aligned matrix AdamW (float64, dense W and P) vs the float64 scalar maps at the checkpoints",
+  "pass": "state agreement >= 0.99 and rank equality >= 0.99"
+ },
+ "A1b": {
+  "what": "burst wait on the collapse set: |ln((t_pred - K) / (t_meas - K))|, t_meas the first step after K with |a| > 1e-3; a miss when exactly one of model and truth bursts by T",
+  "pass": "median <= 0.05, p90 <= 0.15, miss share <= 0.05, and median <= 0.5 x the median of the constant-wait oracle (one wait for all directions, equal to the median measured wait of the scored grid)"
+ },
+ "A1c": {
+  "what": "return wait on the dead-at-K set: |ln((t_pred - K) / (t_meas - K))|, t_meas the first step after K with |a| > 0.05; misses as A1b",
+  "pass": "median <= 0.10, p90 <= 0.30, miss share <= 0.05, and median <= 0.5 x the constant-wait oracle median"
+ },
+ "A1d": {
+  "what": "alive state (|a| > 0.05) per direction and checkpoint, pooled; rank = number alive per checkpoint",
+  "baselines": {
+   "all_alive": "every direction alive",
+   "persistence_K": "alive iff |a_K| > 0.05",
+   "static_bound": "alive iff c^2 >= 4 lam s (delivered static threshold, code/e1b.py rank_bound)",
+   "majority_oracle": "each direction's majority measured state over the checkpoints (best time-independent rule; uses the truth)"
+  },
+  "pass": "agreement >= 0.90, rank within 1 at >= 0.90 of run-checkpoints, error rate <= 0.5 x the best baseline's, and rank-within-1 failure rate <= max(0.5 x the best baseline's, 0.02)"
+ },
+ "nonfinite": "a non-finite run counts as a miss for every direction of its A1b/A1c sets and as wrong at every A1d pair",
+ "reporting": "pooled pass/fail per part; splits by b1, b2 and statistics set reported without tolerance; the model is not refit on the held-out grid",
+ "known_limit_of_model": "the model treats a direction as alive from its first crossing; a burst followed by a second collapse (dev ids 122, 380, k = 23) is scored as an error by A1d"
+}

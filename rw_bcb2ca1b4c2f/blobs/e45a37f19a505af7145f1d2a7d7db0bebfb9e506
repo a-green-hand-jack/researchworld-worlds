@@ -1,0 +1,112 @@
+"""E6 rung 1a, beside the registered held-out verdict (post hoc; internal review of the held-out score, C-1/C-2).
+(1) the share of zero outcomes (final measured count 0) per arm x p0 x a0, on held-out (3 registered seeds; the
+    generic arm also with seeds 313-314) and on development;
+(2) the registered statistics restricted to the informative runs (final count > 0): A1 MAE, exact, within-1 and the
+    paired difference to the early readings (t = 25, 50; on development re-run from the frozen truth to t = 50);
+(3) where the generic A1 misses lie: per a0 (and p0) the misses, signed error and the early_50 MAE, and the A1
+    escape margin ln(k I_max) + m ln a0_k of the directions (A1's per-direction criterion; 0 = on the boundary).
+usage: e6_r1_informative.py OUT.json [nproc]"""
+import os, sys, json, gzip, time
+from multiprocessing import Pool
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.dirname(__file__))
+import e6_r1 as E
+from e6_r1_heldout_post import load, fragile, dev_early
+
+
+def margins(rec):
+    """A1's per-direction escape margin (race_deep_A1, L >= 2) at the run's own a0_k; -inf where lam > lam*_L,k."""
+    cfg = rec["cfg"]; G = E.GRIDS[cfg["grid"]]; c, s = E.stats(G); L, lam, p0, T, al = cfg["L"], cfg["lam"], cfg["p0"], cfg["T"], cfg["alpha"]
+    k = 2 * L - 2; m = 2.0 - 2.0 / L; t = np.linspace(0, T, 40001); dt = t[1]
+    pr = p0 * np.exp(-al * lam * t); f = (pr[:, None] * c[None, :] - pr[:, None] ** 2 * s[None, :]) * np.exp(-k * lam * t)[:, None]
+    I = np.concatenate([np.zeros((1, c.size)), np.cumsum(0.5 * (f[1:] + f[:-1]) * dt, axis=0)]).max(0)
+    with np.errstate(divide="ignore"):
+        mg = np.log(k * np.maximum(I, 0)) + m * np.log(np.asarray(rec["a0"], float))
+    return np.where(lam <= E.lam_star(c, s, L), mg, -np.inf)
+
+
+def score(R, early):
+    """R: finite base runs; early(r) -> {'25': n, '50': n}."""
+    if not R:
+        return dict(runs=0)
+    tru = np.array([r["truth"]["counts"][-1] for r in R]); a1 = np.array([r["pred"]["race_deep_A1"] for r in R]); ep = np.abs(a1 - tru)
+    out = dict(runs=len(R), A1=dict(mae=float(ep.mean()), exact=float((ep == 0).mean()), within1=float((ep <= 1).mean()),
+                                    misses=int((ep > 0).sum()), signed_mean=float((a1 - tru).mean())))
+    for te in ("25", "50"):
+        e = np.abs(np.array([early(r)[te] for r in R]) - tru); d = e - ep
+        out[f"early_{te}"] = dict(mae=float(e.mean()), minus_A1=float(d.mean()), minus_A1_ci=E.boot_ci(d))
+    e = np.abs(np.array([r["truth"]["counts"][1] for r in R]) - tru)
+    out["v1_early_10pct"] = dict(mae=float(e.mean()), minus_A1=float((e - ep).mean()), minus_A1_ci=E.boot_ci(e - ep))
+    return out
+
+
+def table(base, early, a0s, p0s):
+    out = {}
+    for arm in ("aligned", "generic"):
+        R = [r for r in base if r["cfg"]["arm"] == arm and r["cfg"]["L"] >= 2 and r["truth"].get("counts")]
+        if not R:
+            continue
+        z = lambda S: dict(runs=len(S), zero_share=float(np.mean([r["truth"]["counts"][-1] == 0 for r in S])) if S else None)
+        d = dict(zero=dict(all=z(R), by_p0={str(p): z([r for r in R if r["cfg"]["p0"] == p]) for p in p0s},
+                           by_a0={str(a): z([r for r in R if r["cfg"]["a0"] == a]) for a in a0s},
+                           by_p0_a0={f"{p}|{a}": z([r for r in R if r["cfg"]["p0"] == p and r["cfg"]["a0"] == a]) for p in p0s for a in a0s}))
+        inf = [r for r in R if r["truth"]["counts"][-1] > 0]
+        d["all_runs"] = score(R, early); d["informative"] = score(inf, early)
+        d["informative_by_L"] = {f"L{L}": score([r for r in inf if r["cfg"]["L"] == L], early) for L in (2, 3)}
+        d["by_a0"] = {}
+        for a in a0s:
+            S = [r for r in R if r["cfg"]["a0"] == a]
+            x = score(S, early)
+            mg = [margins(r) for r in S]; tru = np.array([r["truth"]["counts"][-1] for r in S])
+            a1 = np.array([r["pred"]["race_deep_A1"] for r in S]); miss = a1 != tru
+            near = np.array([int((np.abs(m) < 0.5).sum()) for m in mg])
+            x["near_boundary_dirs_mean"] = dict(miss=float(near[miss].mean()) if miss.any() else None, hit=float(near[~miss].mean()) if (~miss).any() else None,
+                                                note="directions with |A1 escape margin| < 0.5 per run")
+            # one window for misses and hits: the signed margin of each run's direction closest to A1's boundary
+            fin = [m[np.isfinite(m)] for m in mg]
+            close = np.array([float(f[np.argmin(np.abs(f))]) if f.size else np.nan for f in fin])
+            in015 = np.array([bool((np.abs(f) <= 0.15).any()) for f in fin])
+            inwin = np.array([bool(((f >= -0.15) & (f <= 0.05)).any()) for f in fin])
+            in05 = np.array([bool((np.abs(f) <= 0.5).any()) for f in fin])
+            x["closest_margin"] = dict(
+                misses=[dict(id=r["cfg"]["id"], sign="over" if a > t_ else "under", margin=float(cm) if np.isfinite(cm) else None)
+                        for r, a, t_, cm, ms in zip(S, a1, tru, close, miss) if ms],
+                hit_runs=int((~miss).sum()), hit_any_within_0p15=int(in015[~miss].sum()), hit_any_in_m0p15_0p05=int(inwin[~miss].sum()),
+                miss_any_within_0p15=int(in015[miss].sum()), miss_any_in_m0p15_0p05=int(inwin[miss].sum()),
+                hit_none_within_0p5=int((~in05[~miss]).sum()), miss_none_within_0p5=int((~in05[miss]).sum()),
+                miss_max_abs_closest=float(np.abs(close[miss & np.isfinite(close)]).max()) if (miss & np.isfinite(close)).any() else None,
+                miss_no_finite_margin=int((miss & ~np.isfinite(close)).sum()),
+                note="signed A1 escape margin of the direction with the smallest |margin| per run; the same windows for misses and hits; "
+                     "margin null where the run has no direction with a finite margin (every lam > lam*_L,k), counted in miss_no_finite_margin")
+            fixed = np.array([all(c_ == r["truth"]["counts"][-1] for c_ in r["truth"]["counts"]) for r in S])
+            inf_ = tru > 0
+            x["truth_count_fixed_from_first_checkpoint"] = dict(note="every checkpoint count (the first at 5% of T) equals the final count", runs=int(fixed.sum()), of=len(S),
+                                                                informative=int(fixed[inf_].sum()), informative_of=int(inf_.sum()))
+            x["A1_over"] = int((a1 > tru).sum()); x["A1_under"] = int((a1 < tru).sum())
+            x["misses_by_p0"] = {str(p): int(sum(m for m, r in zip(miss, S) if r["cfg"]["p0"] == p)) for p in p0s}
+            x["misses_by_L"] = {f"L{L}": int(sum(m for m, r in zip(miss, S) if r["cfg"]["L"] == L)) for L in (2, 3)}
+            x["informative"] = score([r for r in S if r["truth"]["counts"][-1] > 0], early)
+            d["by_a0"][str(a)] = x
+        out[arm] = d
+    return out
+
+
+if __name__ == "__main__":
+    outp = sys.argv[1]; nproc = int(sys.argv[2]) if len(sys.argv) > 2 else 8; t0 = time.time()
+    ho = load("heldout", "r1heldout"); g45 = load("heldout_g45", "r1heldout_g45")
+    b_ho = [r for r in ho if not r["cfg"].get("pert")]; b_45 = [r for r in g45 if not r["cfg"].get("pert")]
+    Gh = E.GRIDS["heldout"]; Gd = E.GRIDS["dev"]
+    ee = lambda r: {"25": r["truth"]["early"]["25.0"], "50": r["truth"]["early"]["50.0"]}
+    res = dict(status="post hoc, beside the registered held-out verdict (results/e6/r1heldout/r1_heldout_score.json); not a verdict",
+               thr=E.THR, heldout=table(b_ho, ee, Gh["a0"], Gh["p0"]),
+               heldout_generic_5_seeds=table(b_ho + b_45, ee, Gh["a0"], Gh["p0"]).get("generic"))
+    dev = load("dev", "r1dev"); E.GRIDS["dev_early"] = E.GRIDS["dev"]
+    D = [r for r in dev if r["cfg"]["L"] >= 2]
+    with Pool(nproc) as pool:
+        early = dict(pool.map(dev_early, D, chunksize=4))
+    res["dev"] = table(D, lambda r: {"25": early[r["cfg"]["id"]]["25.0"], "50": early[r["cfg"]["id"]]["50.0"]}, Gd["a0"], Gd["p0"])
+    res.update(seconds=time.time() - t0, numpy=np.__version__, command=" ".join(["code/checks/e6_r1_informative.py"] + sys.argv[1:]),
+               md5={f: E.md5(os.path.join(os.path.dirname(__file__), "..", f)) for f in ("e6_r1.py", "linjepa.py")})
+    json.dump(res, open(outp, "w"), indent=1, allow_nan=False)
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E6 informative-run tables done", flush=True)

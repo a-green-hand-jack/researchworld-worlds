@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""Validate result files and the key qualitative claims without re-running experiments."""
+from __future__ import annotations
+
+import argparse
+import csv
+import gzip
+import json
+import math
+from pathlib import Path
+
+
+def read_csv(path: Path) -> list[dict[str, str]]:
+    opener = gzip.open if path.suffix == ".gz" else open
+    with opener(path, "rt", newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def as_float(row: dict[str, str], key: str) -> float:
+    return float(row[key])
+
+
+def check(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
+
+
+
+def validate_nonlinear(root: Path) -> dict[str, int]:
+    summary_path = root / "raw" / "vit_nonlinear_summary.csv"
+    trajectory_path = root / "raw" / "vit_nonlinear_trajectories.csv.gz"
+    metric_path = root / "derived" / "vit_claim_metrics.csv"
+    provenance_path = root / "derived" / "vit_provenance.json"
+    grid_path = root / "configs" / "vit_grid.json"
+    required_paths = (summary_path, trajectory_path, metric_path, provenance_path, grid_path)
+    check(all(path.exists() for path in required_paths), "nonlinear merge is incomplete")
+    summaries = read_csv(summary_path)
+    trajectories = read_csv(trajectory_path)
+    metrics = read_csv(metric_path)
+    with grid_path.open(encoding="utf-8") as handle:
+        grid = json.load(handle)
+    check(summaries and trajectories and metrics, "nonlinear result files are empty")
+    required_summary = {
+        "tier", "config_id", "seed", "late_effective_rank", "late_numerical_rank",
+        "late_target_effective_rank", "late_target_numerical_rank", "probe_accuracy", "probe_accuracy_init",
+        "early_baseline_rank", "early_rank_at_end", "late_checkpoint_step", "rank_measure",
+        "eigenvector_alignment", "mask_sampler", "mask_geometry", "mask_fraction_semantics",
+        "training_mask_policy", "rank_evaluation_mask_policy", "rank_evaluation_mask_sampler", "status",
+    }
+    required_trajectory = {
+        "config_id", "seed", "step", "direction_index", "representation_eigenvalue",
+        "target_representation_eigenvalue", "theory_growth_rate", "measured_growth_rate",
+        "eigenvector_alignment_overlap", "target_eigenvector_alignment_overlap", "rank_measure",
+    }
+    check(required_summary.issubset(summaries[0]), "nonlinear summary schema missing required columns")
+    check(required_trajectory.issubset(trajectories[0]), "nonlinear trajectory schema missing required columns")
+    tier_b_ids = {item["config_id"] for item in grid["tier_b"]}
+    tier_c_ids = {item["config_id"] for item in grid["tier_c"]}
+    extra_ids = set(grid["extra_seed_configs"])
+    extra_seeds = {key: tuple(int(seed) for seed in value) for key, value in grid.get("extra_seeds", {}).items()}
+    expected: set[tuple[str, int]] = set()
+    for config_id in tier_b_ids:
+        expected.update((config_id, seed) for seed in (0, 1, 2))
+        if config_id in extra_ids:
+            expected.update((config_id, seed) for seed in extra_seeds.get(config_id, (3,)))
+    for config_id in tier_c_ids:
+        expected.update((config_id, seed) for seed in (0, 1, 2))
+    observed = {(row["config_id"], int(row["seed"])) for row in summaries}
+    check(observed == expected, f"nonlinear manifest mismatch: expected {len(expected)} runs, found {len(observed)}")
+    check(all(row["status"] == "final" for row in summaries), "nonlinear summary contains non-final rows")
+    expected_protocol = {
+        "mask_sampler": "independent_patch_bernoulli",
+        "mask_geometry": "independent_per_patch_no_contiguous_blocks",
+        "mask_fraction_semantics": "expected_masked_fraction; per-example masked count is Binomial(64, mask_fraction)",
+        "training_mask_policy": "independent Bernoulli patch visibility resampled for every training batch",
+        "rank_evaluation_mask_policy": "one fixed seeded Bernoulli context mask reused at every checkpoint",
+        "rank_evaluation_mask_sampler": "independent_patch_bernoulli",
+    }
+    check(all(all(row[field] == value for field, value in expected_protocol.items()) for row in summaries), "nonlinear summary mixes masking protocols")
+    check(grid.get("mask_sampler") == expected_protocol["mask_sampler"], "manifest does not declare Bernoulli masking")
+    check(grid.get("mask_geometry") == expected_protocol["mask_geometry"], "manifest claims an unsupported mask geometry")
+    check(grid.get("mask_fraction_semantics") == expected_protocol["mask_fraction_semantics"], "manifest omits expected-fraction semantics")
+    check(grid.get("rank_evaluation_mask_sampler") == expected_protocol["rank_evaluation_mask_sampler"], "manifest rank-mask sampler mismatch")
+    run_root = root / "raw" / "vit_runs"
+    for config_path in sorted(run_root.glob("*/config_seed*.json")):
+        with config_path.open(encoding="utf-8") as handle:
+            config_record = json.load(handle)
+        check(config_record.get("protocol") == {
+            "mask_sampler": expected_protocol["mask_sampler"],
+            "mask_geometry": expected_protocol["mask_geometry"],
+            "mask_fraction_semantics": expected_protocol["mask_fraction_semantics"],
+            "training_mask_policy": expected_protocol["training_mask_policy"],
+            "rank_evaluation_mask_policy": expected_protocol["rank_evaluation_mask_policy"],
+            "rank_evaluation_mask_sampler": expected_protocol["rank_evaluation_mask_sampler"],
+        }, f"run metadata protocol mismatch: {config_path}")
+    for provenance_path in sorted(run_root.glob("*/data_provenance.json")):
+        with provenance_path.open(encoding="utf-8") as handle:
+            provenance = json.load(handle)
+        masking = provenance.get("masking", {})
+        check(masking.get("sampler") == expected_protocol["mask_sampler"], f"data provenance mask mismatch: {provenance_path}")
+        check(masking.get("geometry") == expected_protocol["mask_geometry"], f"data provenance geometry mismatch: {provenance_path}")
+    check(all(math.isfinite(float(row["late_effective_rank"])) for row in summaries), "nonlinear effective rank is non-finite")
+    check(all(math.isfinite(float(row["late_numerical_rank"])) for row in summaries), "nonlinear numerical rank is non-finite")
+    check(all(row["rank_measure"] == "online_encoder_masked_context_covariance" for row in summaries), "nonlinear rank measure is not recorded")
+    late_steps: dict[tuple[str, int], int] = {}
+    for row in trajectories:
+        key = (row["config_id"], int(row["seed"]))
+        late_steps[key] = max(late_steps.get(key, -1), int(row["step"]))
+    check(
+        all(int(row["late_checkpoint_step"]) == int(row["steps"]) == late_steps.get((row["config_id"], int(row["seed"]))) for row in summaries),
+        "nonlinear summary must use a spectrum at the actual final training step",
+    )
+    check(all(0.0 <= float(row["eigenvector_alignment_overlap"]) <= 1.0 for row in trajectories), "invalid eigenvector alignment overlap")
+    check(all(0.0 <= float(row["target_eigenvector_alignment_overlap"]) <= 1.0 for row in trajectories), "invalid target alignment overlap")
+    tier_c_rows = [row for row in summaries if row["tier"] == "C_real_cifar10"]
+    check(tier_c_rows and all(math.isfinite(float(row["probe_accuracy"])) for row in tier_c_rows), "Tier-C probe accuracy is missing")
+    check(all(math.isfinite(float(row["probe_accuracy_init"])) for row in tier_c_rows), "Tier-C initialization probe accuracy is missing")
+    check(all(row["status"] == "final" for row in trajectories), "nonlinear trajectories contain non-final rows")
+    return {"nonlinear_summaries": len(summaries), "nonlinear_trajectories": len(trajectories), "nonlinear_metrics": len(metrics)}
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--require-nonlinear", action="store_true")
+    args = parser.parse_args()
+    root = Path("results")
+    trajectories = read_csv(root / "raw" / "trajectories.csv.gz")
+    summaries = read_csv(root / "raw" / "run_summary.csv")
+    predictions = read_csv(root / "raw" / "theory_predictions.csv")
+    rank_predictions = read_csv(root / "raw" / "rank_prediction.csv")
+    rank_metrics = read_csv(root / "derived" / "rank_prediction_metrics.csv")
+    comparisons = read_csv(root / "raw" / "ode_vs_full.csv")
+    claims = read_csv(root / "derived" / "claim_metrics.csv")
+    check(trajectories, "trajectories.csv is empty")
+    check(summaries, "run_summary.csv is empty")
+    check(predictions, "theory_predictions.csv is empty")
+    check(comparisons, "ode_vs_full.csv is empty")
+    check(claims, "claim_metrics.csv is empty")
+    check(rank_predictions, "rank_prediction.csv is empty")
+    check(rank_metrics, "rank_prediction_metrics.csv is empty")
+    check(not (root / "raw" / "trajectories.csv").exists(), "uncompressed linear trajectories must not be delivered")
+    required_trajectory = {
+        "seed", "step", "mask_fraction", "predictor_scale", "ema_tau", "representation_eigenvalue",
+        "predictor_eigenvalue", "theory_max_cumulative_gain", "theory_fixed_point_eligible",
+    }
+    check(required_trajectory.issubset(trajectories[0]), "trajectory schema missing required columns")
+    required_summary = {
+        "seed", "final_effective_rank", "final_threshold_rank", "final_absolute_rank", "collapse_aware_rank",
+        "theory_fixed_point_rank", "collapsed", "covariance_model",
+    }
+    check(required_summary.issubset(summaries[0]), "summary schema missing required columns")
+    check(all(math.isfinite(as_float(row, "final_effective_rank")) for row in summaries), "non-finite effective rank")
+    check(all(as_float(row, "final_threshold_rank") >= 0 for row in summaries), "negative rank")
+    check(all(as_float(row, "collapse_aware_rank") >= 0 for row in summaries), "negative collapse-aware rank")
+    masking_rows = [row for row in summaries if row["experiment"] == "masking"]
+    check(masking_rows and all(row["covariance_model"] == "stationary_masking_fourier" for row in masking_rows), "masking covariance model is not explicit")
+    required_rank_columns = {
+        "predicted_phi_rank", "predicted_fixed_point_rank", "observed_late_relative_rank",
+        "observed_late_collapse_aware_rank", "phi_relative_absolute_rank_error",
+        "phi_collapse_aware_absolute_rank_error", "fixed_point_relative_absolute_rank_error",
+        "fixed_point_collapse_aware_absolute_rank_error", "phi_prediction_regime",
+    }
+    check(required_rank_columns.issubset(rank_predictions[0]), "rank prediction schema missing correction columns")
+    lambda_zero_rows = [row for row in rank_predictions if row["config_id"] == "lambda_p_lp0p000"]
+    check(lambda_zero_rows and all(row["phi_prediction_regime"] == "out_of_regime" for row in lambda_zero_rows), "lambda_P=0 is not marked out of regime")
+    metric_keys = {(row["prediction"], row["observed_rank_definition"]) for row in rank_metrics}
+    check(
+        {("Phi", "relative"), ("Phi", "collapse_aware"), ("fixed_point", "relative"), ("fixed_point", "collapse_aware")} <= metric_keys,
+        "rank prediction metrics do not cover both predictors and observed ranks",
+    )
+    comparison_errors = [as_float(row, "max_trajectory_relative_error") for row in comparisons]
+    check(max(comparison_errors) < 1.0e-8, f"reduced/full trajectory mismatch: {max(comparison_errors)}")
+    scale = [row for row in summaries if row["experiment"] == "predictor_scale"]
+    scale_by_value: dict[float, float] = {}
+    for row in scale:
+        scale_by_value.setdefault(float(row["predictor_scale"]), 0.0)
+        scale_by_value[float(row["predictor_scale"])] += float(row["final_threshold_rank"])
+    check(scale_by_value[0.1] < scale_by_value[0.5], "small predictor scale did not lose rank")
+    check(scale_by_value[1.5] < scale_by_value[0.5], "large predictor scale did not lose rank")
+    masking = [row for row in summaries if row["experiment"] == "masking"]
+    mask_by_value: dict[float, float] = {}
+    for row in masking:
+        mask_by_value.setdefault(float(row["mask_fraction"]), 0.0)
+        mask_by_value[float(row["mask_fraction"])] += float(row["final_threshold_rank"])
+    check(mask_by_value[0.0] > mask_by_value[0.8], "masking did not reduce rank")
+    ema = [row for row in summaries if row["experiment"] == "target_ema"]
+    ema_by_value: dict[float, float] = {}
+    for row in ema:
+        ema_by_value.setdefault(float(row["ema_tau"]), 0.0)
+        ema_by_value[float(row["ema_tau"])] += float(row["final_threshold_rank"])
+    check(ema_by_value[0.0] >= ema_by_value[0.9999], "slow EMA did not reduce rank")
+    no_stop = [row for row in summaries if row["experiment"] == "stop_gradient_ablation"]
+    check(no_stop and all(row["collapsed"] == "True" for row in no_stop), "target-gradient ablation did not collapse")
+    nonlinear_counts = validate_nonlinear(root) if args.require_nonlinear else {}
+    print(json.dumps({
+        "trajectory_rows": len(trajectories),
+        "run_summaries": len(summaries),
+        "theory_rows": len(predictions),
+        "validation_rows": len(comparisons),
+        "claim_rows": len(claims),
+        "max_reduced_full_relative_error": max(comparison_errors),
+        **nonlinear_counts,
+        "status": "PASS",
+    }, indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

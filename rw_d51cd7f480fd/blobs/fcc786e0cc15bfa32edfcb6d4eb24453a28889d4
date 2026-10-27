@@ -1,0 +1,31 @@
+# Brief: Monte Carlo estimate of pi
+
+Source: `experiment-repo`#1 ("Research objective"); frozen material in `/initial-state/inputs/0/` (`pilot.py` sha256 2ed342ee…a444, `extended.py` sha256 95f77f13…f19d).
+
+## Task, quoted
+
+> Estimate pi by Monte Carlo sampling and report the estimate with its 95% confidence interval. The sampler scripts are in `/initial-state/inputs/0/`; run them as they are, each as a background job on the world's `local-compute` resource (`ht-resource run`), both started together as soon as the work begins:
+>
+> 1. `pilot.py OUT`: the pilot, about nine minutes; it prints an interim estimate after about a minute.
+> 2. `extended.py 40 OUT`: an extended run for a later study. It is not part of this delivery and nothing here waits for it; the report only says that it was started and how long it runs.
+>
+> Deliver the pilot's final estimate with its interval, a figure of the pilot's running estimate against the number of samples with the true value of pi marked, the analysis code, and a short report `report/report.md` (Markdown is enough).
+
+## Requirements / deliverables
+
+1. Both scripts run unmodified as `local-compute` jobs, started together at the start of work (done by `experiment-repo`, 2026-10-19 10:10:23–24 UTC; refs and commands in `results/jobs.md`).
+2. Pilot final estimate of pi with its 95% CI (`results/`).
+3. Figure: pilot running estimate vs number of samples, true pi marked (`figures/`).
+4. Analysis code (`analysis/`, plus figure code in `figures/`).
+5. Short report `report/report.md`: estimate + CI, figure, code reference, and a statement that the extended run (`extended.py 40`, 40 minutes of sampling) was started and how long it runs. The extended run's result is **not** part of this delivery; nothing waits for it.
+
+## What the material establishes
+
+- `pilot.py`: seeded `random.Random(20261019)`; draws points uniformly in the unit square in batches of 100 000, counts hits in the quarter disc; estimate = 4·inside/total. Runs ~540 s, prints a `HUTIAN_WAKE:` interim line after ~60 s. Output JSON: `samples`, `estimate`, `ci95` (Wald / normal approximation: 4·1.96·sqrt(p(1−p)/n)), `seconds`, `trace` = list of `[elapsed_s, samples, estimate]` recorded roughly every 10 s.
+- `extended.py 40 OUT`: same sampler, seed `int(40*1000)=40000`, 40 min, prints every 5 min, writes final JSON.
+- Convention: binomial proportion estimator; 95% CI from the normal approximation (with n ~ 10^8 the Wald and Wilson intervals coincide to many digits; checked in the analysis). Running-estimate plots conventionally use a log-scaled sample axis with a reference line at pi and a ±1.96σ envelope, σ = 4·sqrt(π/4·(1−π/4)/n).
+
+## Not established / open
+
+- Sample count depended on host CPU speed; the pilot finished with 1 759 200 000 samples in 540 s (`results/README.md`).
+- The trace holds only cumulative estimates at ~10 s spacing, so the figure has 55 points: 1e5 samples, then 3.1e7 up to 1.76e9 — not from n=1.

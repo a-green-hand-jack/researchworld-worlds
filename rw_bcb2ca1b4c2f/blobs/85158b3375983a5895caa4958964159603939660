@@ -1,0 +1,373 @@
+{
+ "prediction_sha256": "9f677ba3458e18992c2b780bb361f7ec0203de8bf51636b1b81d18ccc00a8176",
+ "prediction_unchanged": true,
+ "runs_registered": 1296,
+ "runs_measured": 1296,
+ "runs_scored": 1296,
+ "runs_diverged_or_failed": [],
+ "pop_cyclic_vs_forecast": {
+  "runs": 648,
+  "freq_agree": 21381,
+  "freqs": 21384,
+  "runs_agree": 645,
+  "disagreements": [
+   {
+    "id": 75,
+    "cfg": [
+     "bern",
+     0.4,
+     0.0003,
+     0.5,
+     0
+    ],
+    "forecast_rank": 7,
+    "measured_rank": 9,
+    "freqs": [
+     4
+    ]
+   },
+   {
+    "id": 76,
+    "cfg": [
+     "bern",
+     0.4,
+     0.0003,
+     0.5,
+     1
+    ],
+    "forecast_rank": 7,
+    "measured_rank": 9,
+    "freqs": [
+     4
+    ]
+   },
+   {
+    "id": 77,
+    "cfg": [
+     "bern",
+     0.4,
+     0.0003,
+     0.5,
+     2
+    ],
+    "forecast_rank": 7,
+    "measured_rank": 9,
+    "freqs": [
+     4
+    ]
+   }
+  ]
+ },
+ "criteria_rescored": {
+  "pop cyclic (N1)": {
+   "freq_acc": 0.999438832772166,
+   "pred": {
+    "n": 648,
+    "mae": 0.032407407407407406,
+    "exact": 0.9814814814814815,
+    "over": 6,
+    "under": 6
+   },
+   "bound": {
+    "n": 648,
+    "mae": 4.041666666666667,
+    "exact": 0.08333333333333333,
+    "over": 594,
+    "under": 0
+   },
+   "window": {
+    "n": 648,
+    "mae": 1.037037037037037,
+    "exact": 0.6666666666666666,
+    "over": 45,
+    "under": 171
+   },
+   "passed": true
+  },
+  "pop peak": {
+   "eligible": 17,
+   "ok": 17,
+   "pred_nonmonotone": 3,
+   "measured_nonmonotone_of_those": 2,
+   "passed": false,
+   "misses": [],
+   "nonmonotone_profiles": [
+    {
+     "profile": [
+      "bern",
+      0.003,
+      0.25
+     ],
+     "r": [
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9
+     ],
+     "pred": [
+      0.0,
+      7.0,
+      9.0,
+      11.0,
+      11.0,
+      11.0,
+      11.0,
+      11.0,
+      9.0
+     ],
+     "meas": [
+      0.0,
+      7.0,
+      9.0,
+      11.0,
+      11.0,
+      11.0,
+      11.0,
+      11.0,
+      11.0
+     ],
+     "nonmonotone": false
+    },
+    {
+     "profile": [
+      "bern",
+      0.01,
+      0.25
+     ],
+     "r": [
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9
+     ],
+     "pred": [
+      0.0,
+      1.0,
+      7.0,
+      7.0,
+      9.0,
+      9.0,
+      9.0,
+      7.0,
+      5.0
+     ],
+     "meas": [
+      0.0,
+      1.0,
+      7.0,
+      7.0,
+      9.0,
+      9.0,
+      9.0,
+      7.0,
+      5.0
+     ],
+     "nonmonotone": true
+    },
+    {
+     "profile": [
+      "bern",
+      0.01,
+      0.5
+     ],
+     "r": [
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9
+     ],
+     "pred": [
+      0.0,
+      0.0,
+      3.0,
+      7.0,
+      9.0,
+      9.0,
+      9.0,
+      9.0,
+      7.0
+     ],
+     "meas": [
+      0.0,
+      0.0,
+      3.0,
+      7.0,
+      9.0,
+      9.0,
+      9.0,
+      9.0,
+      7.0
+     ],
+     "nonmonotone": true
+    }
+   ]
+  },
+  "pop block_nc (N1-general)": {
+   "pred": {
+    "n": 216,
+    "mae": 0.18518518518518517,
+    "exact": 0.8611111111111112,
+    "over": 30,
+    "under": 0
+   },
+   "bound": {
+    "n": 216,
+    "mae": 3.0,
+    "exact": 0.19444444444444445,
+    "over": 174,
+    "under": 0
+   },
+   "passed": true
+  },
+  "sgd (mask/sample noise)": {
+   "pred": {
+    "n": 108,
+    "mae": 0.4722222222222222,
+    "exact": 0.7777777777777778,
+    "over": 18,
+    "under": 6
+   },
+   "bound": {
+    "n": 108,
+    "mae": 3.0277777777777777,
+    "exact": 0.19444444444444445,
+    "over": 87,
+    "under": 0
+   },
+   "passed": true
+  },
+  "tanh (decided near collapse)": {
+   "pred": {
+    "n": 108,
+    "mae": 10.583333333333334,
+    "exact": 0.4722222222222222,
+    "over": 0,
+    "under": 57
+   },
+   "bound": {
+    "n": 108,
+    "mae": 10.583333333333334,
+    "exact": 0.19444444444444445,
+    "over": 36,
+    "under": 51
+   },
+   "passed": false
+  },
+  "mlp (exploratory)": {
+   "pred": {
+    "n": 108,
+    "mae": 2.6944444444444446,
+    "exact": 0.32407407407407407,
+    "over": 73,
+    "under": 0
+   },
+   "bound": {
+    "n": 108,
+    "mae": 3.75,
+    "exact": 0.21296296296296297,
+    "over": 76,
+    "under": 9
+   },
+   "passed": false
+  },
+  "nopred (Prop. 6 under masks)": {
+   "runs": 108,
+   "freq_acc": 1.0,
+   "configs_pred_growth": 18,
+   "uncorrected_wrong": 18,
+   "passed": true
+  }
+ },
+ "summary_criteria": {
+  "pop cyclic (N1)": {
+   "freq_acc": 0.999438832772166,
+   "mae_N1": 0.032407407407407406,
+   "mae_bound": 4.041666666666667,
+   "mae_window": 1.037037037037037,
+   "passed": true,
+   "criterion": "per-frequency accuracy >= 0.95; rank MAE <= 1.0; N1 MAE below static-bound MAE and window MAE"
+  },
+  "pop peak": {
+   "profiles": 17,
+   "frac_peak_ok": 1.0,
+   "non_monotone_pred": 3,
+   "non_monotone_confirmed": 2,
+   "passed": false,
+   "criterion": "per (family, lam, p0) profile with predicted max rank >= 2: the measured peak r (argmax of the seed-mean rank; ties -> the set of maximisers) contains a predicted maximiser or is within one grid step, in >= 80% of profiles; every profile predicted non-monotone (rise and fall >= 2 over the run grid) is measured non-monotone"
+  },
+  "pop block_nc (N1-general)": {
+   "mae": 0.18518518518518517,
+   "mae_bound": 3.0,
+   "mae_N1_circulant_approx": 0.6388888888888888,
+   "passed": true,
+   "criterion": "rank MAE <= 1.5 and below static-bound MAE"
+  },
+  "sgd (mask/sample noise)": {
+   "mae": 0.4722222222222222,
+   "passed": true,
+   "criterion": "rank MAE to the population N1 <= 1.5"
+  },
+  "tanh (decided near collapse)": {
+   "mae": 10.583333333333334,
+   "mae_bound": 10.583333333333334,
+   "passed": false,
+   "criterion": "rank MAE to the linear N1 <= 1.5; below static-bound MAE"
+  },
+  "mlp (exploratory)": {
+   "mae": 2.6944444444444446,
+   "mae_bound": 3.75,
+   "mae_linear": 1.7407407407407407,
+   "spearman": 0.8651546364066113,
+   "passed": false,
+   "criterion": "rank MAE to N1-general on initial feature statistics <= 2 and below the static bound on the same statistics; Spearman with measured rank reported"
+  },
+  "nopred (Prop. 6 under masks)": {
+   "freq_acc": 1.0,
+   "configs_pred_growth": 18,
+   "uncorrected_wrong": 18,
+   "passed": true,
+   "criterion": "per-frequency growth sign (multiplicity) matches g_k = c_k - sigma_k - lam > 0 in >= 0.99 of frequencies; the uncorrected rule (all collapse) is wrong in every config with a predicted growing direction"
+  }
+ },
+ "horizon_by_lam": {
+  "0.0003": {
+   "runs": 162,
+   "measured_ne_long": 36,
+   "pred_mae_vs_measured": 0.05555555555555555,
+   "pred_mae_vs_long": 0.5925925925925926
+  },
+  "0.001": {
+   "runs": 162,
+   "measured_ne_long": 3,
+   "pred_mae_vs_measured": 0.037037037037037035,
+   "pred_mae_vs_long": 0.0
+  },
+  "0.003": {
+   "runs": 162,
+   "measured_ne_long": 0,
+   "pred_mae_vs_measured": 0.037037037037037035,
+   "pred_mae_vs_long": 0.037037037037037035
+  },
+  "0.01": {
+   "runs": 162,
+   "measured_ne_long": 0,
+   "pred_mae_vs_measured": 0.0,
+   "pred_mae_vs_long": 0.0
+  }
+ }
+}

@@ -1,0 +1,17 @@
+# Brief
+
+## Objective
+
+The research objective asks: “How fast the CO2 at Mauna Loa has risen over the last ten years, from NOAA's own annual means.” It requires downloading NOAA GML's Mauna Loa annual mean CO2 CSV during the work from https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_annmean_mlo.csv, without typing the numbers in and keeping the downloaded file as supplied. The report must be `report/report.md`, one paragraph, containing the URL, fetch time, SHA-256 of the downloaded file, the last year and annual mean in the file, and average growth in ppm per year over the last ten years in the file, defined as (last-year mean minus the mean from ten years earlier) divided by ten. It explicitly requires no figure.
+
+## Material and implications
+
+The supplied material is the objective issue and its NOAA URL. The study therefore needs one provenance-preserving input (the downloaded CSV), a parser that identifies the annual-mean year and value columns, and a deterministic calculation using the final year and the row ten years earlier. The report should state units (ppm and ppm/year), retain the exact downloaded bytes for hash verification, and record the fetch timestamp in UTC. No external comparison, model fit, uncertainty analysis, or figure is requested by the objective.
+
+## Deliverables and ownership plan
+
+`paper-repo` will deliver `report/report.md` and the retained NOAA CSV under `data/`; its analysis/presentation/report owners will produce and check those paths. `story-repo` owns the split declaration (`.forgejo/CODEOWNERS`) and this brief. The calculation must be checked against the downloaded file and the report's hash and timestamp must be reproducible from that artifact.
+
+## Not established yet
+
+The file has not yet been fetched in this position's work, so its terminal year, annual mean, byte hash, and resulting ten-year growth remain to be measured by the analysis/report work.

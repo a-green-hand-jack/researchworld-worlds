@@ -1,0 +1,263 @@
+{
+ "source": "experiment-repo 4b0cd29 results/e1b/{prediction.json,e1b_runs.jsonl}, code/linjepa.py",
+ "T_long": 40000.0,
+ "validation_flushed_flow_vs_measured_at_t_end": {
+  "modes": 15840,
+  "agree": 15840,
+  "runs_rank_agree": 660,
+  "runs": 660
+ },
+ "no_floor_vs_flushed_at_t_end_mode_disagree": 5,
+ "modes_dipping_below_1em150_in_no_floor_flow": 8821,
+ "arms": {
+  "grid lam=0": {
+   "runs": 45,
+   "measured_rank_vs_T_long_flushed_differs": 5,
+   "measured_rank_vs_T_long_no_floor_differs": 5,
+   "N1_vs_measured": {
+    "mode_acc": 1.0,
+    "rank_exact": 1.0,
+    "rank_mae": 0.0,
+    "false_pos": 0,
+    "false_neg": 0
+   },
+   "N1_vs_T_long_flushed": {
+    "mode_acc": 0.9954,
+    "rank_exact": 0.889,
+    "rank_mae": 0.111,
+    "false_pos": 0,
+    "false_neg": 5
+   },
+   "N1_vs_T_long_no_floor": {
+    "mode_acc": 0.9954,
+    "rank_exact": 0.889,
+    "rank_mae": 0.111,
+    "false_pos": 0,
+    "false_neg": 5
+   }
+  },
+  "grid lam>0": {
+   "runs": 315,
+   "measured_rank_vs_T_long_flushed_differs": 11,
+   "measured_rank_vs_T_long_no_floor_differs": 16,
+   "N1_vs_measured": {
+    "mode_acc": 0.9947,
+    "rank_exact": 0.873,
+    "rank_mae": 0.127,
+    "false_pos": 10,
+    "false_neg": 30
+   },
+   "N1_vs_T_long_flushed": {
+    "mode_acc": 0.9946,
+    "rank_exact": 0.87,
+    "rank_mae": 0.13,
+    "false_pos": 5,
+    "false_neg": 36
+   },
+   "N1_vs_T_long_no_floor": {
+    "mode_acc": 0.9952,
+    "rank_exact": 0.886,
+    "rank_mae": 0.114,
+    "false_pos": 0,
+    "false_neg": 36
+   }
+  },
+  "ema_alpha": {
+   "runs": 150,
+   "measured_rank_vs_T_long_flushed_differs": 0,
+   "measured_rank_vs_T_long_no_floor_differs": 0,
+   "N1_vs_measured": {
+    "mode_acc": 0.9892,
+    "rank_exact": 0.76,
+    "rank_mae": 0.26,
+    "false_pos": 2,
+    "false_neg": 37
+   },
+   "N1_vs_T_long_flushed": {
+    "mode_acc": 0.9892,
+    "rank_exact": 0.76,
+    "rank_mae": 0.26,
+    "false_pos": 2,
+    "false_neg": 37
+   },
+   "N1_vs_T_long_no_floor": {
+    "mode_acc": 0.9892,
+    "rank_exact": 0.76,
+    "rank_mae": 0.26,
+    "false_pos": 2,
+    "false_neg": 37
+   }
+  },
+  "depth": {
+   "runs": 90,
+   "measured_rank_vs_T_long_flushed_differs": 0,
+   "measured_rank_vs_T_long_no_floor_differs": 0,
+   "N1_vs_measured": {
+    "mode_acc": 0.9662,
+    "rank_exact": 0.4,
+    "rank_mae": 0.811,
+    "false_pos": 73,
+    "false_neg": 0
+   },
+   "N1_vs_T_long_flushed": {
+    "mode_acc": 0.9662,
+    "rank_exact": 0.4,
+    "rank_mae": 0.811,
+    "false_pos": 73,
+    "false_neg": 0
+   },
+   "N1_vs_T_long_no_floor": {
+    "mode_acc": 0.9662,
+    "rank_exact": 0.4,
+    "rank_mae": 0.811,
+    "false_pos": 73,
+    "false_neg": 0
+   }
+  },
+  "balanced": {
+   "runs": 60,
+   "measured_rank_vs_T_long_flushed_differs": 0,
+   "measured_rank_vs_T_long_no_floor_differs": 0,
+   "N1_vs_measured": {
+    "mode_acc": 1.0,
+    "rank_exact": 1.0,
+    "rank_mae": 0.0,
+    "false_pos": 0,
+    "false_neg": 0
+   },
+   "N1_vs_T_long_flushed": {
+    "mode_acc": 1.0,
+    "rank_exact": 1.0,
+    "rank_mae": 0.0,
+    "false_pos": 0,
+    "false_neg": 0
+   },
+   "N1_vs_T_long_no_floor": {
+    "mode_acc": 1.0,
+    "rank_exact": 1.0,
+    "rank_mae": 0.0,
+    "false_pos": 0,
+    "false_neg": 0
+   }
+  },
+  "aligned N1 arms (grid, ema_alpha, depth)": {
+   "runs": 600,
+   "measured_rank_vs_T_long_flushed_differs": 16,
+   "measured_rank_vs_T_long_no_floor_differs": 21,
+   "N1_vs_measured": {
+    "mode_acc": 0.9894,
+    "rank_exact": 0.783,
+    "rank_mae": 0.253,
+    "false_pos": 85,
+    "false_neg": 67
+   },
+   "N1_vs_T_long_flushed": {
+    "mode_acc": 0.989,
+    "rank_exact": 0.773,
+    "rank_mae": 0.263,
+    "false_pos": 80,
+    "false_neg": 78
+   },
+   "N1_vs_T_long_no_floor": {
+    "mode_acc": 0.9894,
+    "rank_exact": 0.782,
+    "rank_mae": 0.255,
+    "false_pos": 75,
+    "false_neg": 78
+   }
+  }
+ },
+ "depth_capture": {
+  "L=1": {
+   "runs": 30,
+   "measured_mean_rank": 9.333333333333334,
+   "N1_preregistered": {
+    "mode_acc": 1.0,
+    "rank_exact": 1.0,
+    "rank_mae": 0.0,
+    "false_pos": 0,
+    "false_neg": 0
+   },
+   "escape_score_recomputed": {
+    "mode_acc": 1.0,
+    "rank_exact": 1.0,
+    "rank_mae": 0.0,
+    "false_pos": 0,
+    "false_neg": 0
+   },
+   "depthL_nullcline": {
+    "mode_acc": 1.0,
+    "rank_exact": 1.0,
+    "rank_mae": 0.0,
+    "false_pos": 0,
+    "false_neg": 0
+   }
+  },
+  "L=2": {
+   "runs": 30,
+   "measured_mean_rank": 7.3,
+   "N1_preregistered": {
+    "mode_acc": 0.9569,
+    "rank_exact": 0.133,
+    "rank_mae": 1.033,
+    "false_pos": 31,
+    "false_neg": 0
+   },
+   "escape_score_recomputed": {
+    "mode_acc": 0.9569,
+    "rank_exact": 0.133,
+    "rank_mae": 1.033,
+    "false_pos": 31,
+    "false_neg": 0
+   },
+   "depthL_nullcline": {
+    "mode_acc": 0.9944,
+    "rank_exact": 0.867,
+    "rank_mae": 0.133,
+    "false_pos": 0,
+    "false_neg": 4
+   }
+  },
+  "L=3": {
+   "runs": 30,
+   "measured_mean_rank": 6.133333333333334,
+   "N1_preregistered": {
+    "mode_acc": 0.9417,
+    "rank_exact": 0.067,
+    "rank_mae": 1.4,
+    "false_pos": 42,
+    "false_neg": 0
+   },
+   "escape_score_recomputed": {
+    "mode_acc": 0.9417,
+    "rank_exact": 0.067,
+    "rank_mae": 1.4,
+    "false_pos": 42,
+    "false_neg": 0
+   },
+   "depthL_nullcline": {
+    "mode_acc": 0.9861,
+    "rank_exact": 0.667,
+    "rank_mae": 0.333,
+    "false_pos": 0,
+    "false_neg": 10
+   }
+  },
+  "all": {
+   "N1_preregistered": {
+    "mode_acc": 0.9662,
+    "rank_exact": 0.4,
+    "rank_mae": 0.811,
+    "false_pos": 73,
+    "false_neg": 0
+   },
+   "depthL_nullcline": {
+    "mode_acc": 0.9935,
+    "rank_exact": 0.844,
+    "rank_mae": 0.156,
+    "false_pos": 0,
+    "false_neg": 14
+   }
+  }
+ }
+}

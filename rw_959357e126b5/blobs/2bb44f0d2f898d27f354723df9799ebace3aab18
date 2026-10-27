@@ -1,0 +1,26 @@
+{\footnotesize
+\setlength{\tabcolsep}{2pt}
+\renewcommand{\arraystretch}{1.0}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{1.62in}>{\raggedright\arraybackslash}p{0.55in}>{\raggedright\arraybackslash}p{1.28in}>{\raggedright\arraybackslash}p{0.93in}>{\raggedright\arraybackslash}p{0.87in}@{}}
+\toprule
+Test & Runs & Result & Best baseline & Verdict \\
+\midrule
+E1b aligned statistics & 600 & 0.25 [0.21, 0.30] & window 3.7 & \textbf{pass} \\
+E1b random, non-commuting & 195 & 0.42 & static 13.0 & \textbf{pass} \\
+Deep predictors: E1b, E1c & 90/108 & 0.81; 0.19 & depth-1 0.72 & miss; \textbf{pass} \\
+E1b EMA rate, sign test & 14 signs & 13 of 14 & -- & \textbf{fail} \\
+E2 cyclic masks & 648 & 0.03 & window 1.04 & \textbf{pass} \\
+E2 fall; tanh; 2-layer tanh & 3/108/108 & 2 of 3; 10.6; 2.69 & static 10.6; 3.75 & \textbf{fail}, \textbf{fail}, \textbf{fail} \\
+E3 ViT: Arm T; Arm P & 12/20 & $\rho$ 0.83, $\times$2.6; $\rho$ 0.12 & -- & T mixed, P \textbf{fail} \\
+\midrule
+AdamW: horizon; converged & 216/192 & 0.36; $\pm1$ 0.63 & static 5.77; 0.45 & \textbf{pass}, \textbf{fail} \\
+Layer-normalised target & 446 & 0.045 & static 1.95 & \textbf{pass} \\
+Deep linear: aligned; generic & 240/144 & 0.042; 0.090 & 0.204; 0.076 & \textbf{pass}, \textbf{fail} \\
+Deep pred., random factors & 270 & 0.39; 0.23 & depth-1 0.61; 0.79 & \textbf{pass} \\
+MLP enc.: GD; AdamW; LN & 144/64/120 & 0.42; 11.45; 7.95 & 4.17; 7.73; 2.10 & \textbf{pass}, \textbf{fail}, undet. \\
+Schedules; post-loss law & 4890/1650 & 0.984; 0.66 & 0.983; 1.04 & \textbf{fail}, \textbf{fail} \\
+E7 ViT race, step 200 & 40 & 0.0026 vs 0.0027; 5.6, 5.1 & 0.0042; 6.4, 7.0 & \textbf{pass}, undet. \\
+E8 ViT weight-decay switch & 4 cells & 1.00, 0.45, 0.01, 0.07 & $\ge0.5$; $D\le5$: 0 & 1 of 4 hold \\
+\bottomrule
+\end{tabular}
+}

@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""A1/A2: multinomial logistic regression vs k-nearest neighbours on Iris (OpenML 61).
+
+Design (story-repo plan.md D1-D4):
+  outer  RepeatedStratifiedKFold(5 splits, 10 repeats, random_state=20261017): J = 50
+         folds, 120 train / 30 test; both methods use exactly the same folds (paired).
+  LR     StandardScaler + LogisticRegression(L2, C=1, lbfgs, max_iter=10000), multinomial
+         (softmax) loss; not tuned. Any warning (ConvergenceWarning included) is an error.
+  kNN    StandardScaler + KNeighborsClassifier(uniform, Euclidean, brute); k chosen on the
+         outer training fold by GridSearchCV over k = 1, 3, ..., 31 with inner
+         StratifiedKFold(5, shuffle, random_state=1000 + f), accuracy, refit; ties -> smallest k.
+  single-threaded (n_jobs=1, BLAS/OpenMP threads = 1).
+
+Usage: run_cv.py --out DIR   (writes folds.csv, predictions.csv, inner_scores.csv, run_info.json)
+"""
+import os
+
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
+import argparse  # noqa: E402
+import hashlib  # noqa: E402
+import json  # noqa: E402
+import platform  # noqa: E402
+import socket  # noqa: E402
+import sys  # noqa: E402
+import time  # noqa: E402
+import warnings  # noqa: E402
+
+import joblib  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+import scipy  # noqa: E402
+import sklearn  # noqa: E402
+import threadpoolctl  # noqa: E402
+from scipy.io import arff  # noqa: E402
+from scipy.special import softmax  # noqa: E402
+from sklearn.linear_model import LogisticRegression  # noqa: E402
+from sklearn.model_selection import GridSearchCV, RepeatedStratifiedKFold, StratifiedKFold  # noqa: E402
+from sklearn.neighbors import KNeighborsClassifier  # noqa: E402
+from sklearn.pipeline import make_pipeline  # noqa: E402
+from sklearn.preprocessing import StandardScaler  # noqa: E402
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SEED = 20261017
+INNER_SEED_BASE = 1000
+N_SPLITS, N_REPEATS = 5, 10
+K_GRID = list(range(1, 32, 2))  # 1, 3, ..., 31
+DATA_SHA256 = "38110f3fd3cef003ca4909038a4d6b235f36a85d036dc7eedeff67c5925e826c"
+DATA_MD5 = "ad484452702105cbf3d30f8deaba39a9"  # md5_checksum listed by OpenML for dataset 61
+KNN_PARAM = "kneighborsclassifier__n_neighbors"
+
+
+def load_iris_arff(path):
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    sha = hashlib.sha256(raw).hexdigest()
+    if sha != DATA_SHA256 or hashlib.md5(raw).hexdigest() != DATA_MD5:
+        sys.exit(f"data checksum mismatch for {path}: sha256 {sha}")
+    data, _ = arff.loadarff(path)
+    df = pd.DataFrame(data)
+    y_raw = df["class"].map(lambda v: v.decode() if isinstance(v, bytes) else v)
+    X = df.drop(columns=["class"]).to_numpy(dtype=np.float64)
+    classes = sorted(y_raw.unique())
+    y = y_raw.map({c: i for i, c in enumerate(classes)}).to_numpy()
+    assert X.shape == (150, 4) and np.bincount(y).tolist() == [50, 50, 50]
+    return X, y, classes, sha
+
+
+def make_lr():
+    return make_pipeline(StandardScaler(),
+                         # L2 penalty via l1_ratio=0 (the `penalty` argument is deprecated in 1.8+)
+                         LogisticRegression(C=1.0, l1_ratio=0.0, solver="lbfgs", max_iter=10000))
+
+
+def make_knn(f):
+    inner = StratifiedKFold(n_splits=5, shuffle=True, random_state=INNER_SEED_BASE + f)
+    pipe = make_pipeline(StandardScaler(),
+                         KNeighborsClassifier(weights="uniform", p=2, algorithm="brute"))
+    return GridSearchCV(pipe, {KNN_PARAM: K_GRID}, cv=inner, scoring="accuracy",
+                        n_jobs=1, refit=True)
+
+
+def check_multinomial(lr, Xte):
+    """LR must use the softmax (multinomial) loss: 3x4 coefficients, and predicted
+    probabilities equal to the softmax of the decision function (one-vs-rest would not)."""
+    clf = lr[-1]
+    assert clf.coef_.shape == (3, 4), clf.coef_.shape
+    p = lr.predict_proba(Xte)
+    p_soft = softmax(lr.decision_function(Xte), axis=1)
+    assert np.allclose(p, p_soft, rtol=0, atol=1e-12), np.abs(p - p_soft).max()
+    return p
+
+
+RUN_FILES = ("run_cv.py", "requirements.lock", "run_local.sh", "ibex_job.sbatch")
+
+
+def code_hashes():
+    """sha256 of the files that determine a run (this script, the lock and both launchers)."""
+    out = {}
+    for name in RUN_FILES:
+        with open(os.path.join(HERE, name), "rb") as fh:
+            out[name] = hashlib.sha256(fh.read()).hexdigest()
+    return out
+
+
+def cpu_model():
+    try:
+        with open("/proc/cpuinfo") as fh:
+            for line in fh:
+                if line.startswith("model name"):
+                    return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return platform.processor()
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data", default=os.path.join(HERE, "..", "results", "data", "iris.arff"))
+    ap.add_argument("--out", required=True)
+    args = ap.parse_args()
+    warnings.simplefilter("error")  # any warning (ConvergenceWarning included) aborts the run
+    os.makedirs(args.out, exist_ok=True)
+    t0 = time.time()
+    X, y, classes, sha = load_iris_arff(args.data)
+
+    outer = RepeatedStratifiedKFold(n_splits=N_SPLITS, n_repeats=N_REPEATS, random_state=SEED)
+    folds, preds, inner_rows = [], [], []
+    for f, (tr, te) in enumerate(outer.split(X, y)):
+        rep, fold = divmod(f, N_SPLITS)
+        lr = make_lr().fit(X[tr], y[tr])
+        p_lr = check_multinomial(lr, X[te])
+        yhat_lr = lr.predict(X[te])
+        knn = make_knn(f).fit(X[tr], y[tr])
+        yhat_knn = knn.predict(X[te])
+        k = int(knn.best_params_[KNN_PARAM])
+        scores = knn.cv_results_["mean_test_score"]
+        assert k == min(kk for kk, s in zip(K_GRID, scores) if s == scores.max()), "tie-break"
+        acc_lr = float(np.mean(yhat_lr == y[te]))
+        acc_knn = float(np.mean(yhat_knn == y[te]))
+        folds.append(dict(repeat=rep, fold=fold, outer_fold=f, n_train=len(tr), n_test=len(te),
+                          acc_lr=acc_lr, acc_knn=acc_knn, diff_lr_minus_knn=acc_lr - acc_knn,
+                          correct_lr=int((yhat_lr == y[te]).sum()),
+                          correct_knn=int((yhat_knn == y[te]).sum()), k_selected=k,
+                          k_inner_acc=float(scores.max()),
+                          lr_n_iter=int(lr[-1].n_iter_.max())))
+        for i, idx in enumerate(te):
+            preds.append(dict(repeat=rep, fold=fold, test_index=int(idx), y_true=int(y[idx]),
+                              pred_lr=int(yhat_lr[i]), pred_knn=int(yhat_knn[i]),
+                              prob_lr_0=p_lr[i, 0], prob_lr_1=p_lr[i, 1], prob_lr_2=p_lr[i, 2]))
+        for kk, s, sd in zip(K_GRID, scores, knn.cv_results_["std_test_score"]):
+            inner_rows.append(dict(repeat=rep, fold=fold, k=kk, inner_mean_acc=float(s),
+                                   inner_sd_acc=float(sd)))
+        print(f"repeat {rep} fold {fold}: LR {acc_lr:.4f} kNN {acc_knn:.4f} (k={k})", flush=True)
+
+    kw = dict(index=False, float_format="%.17g")
+    pd.DataFrame(folds).to_csv(os.path.join(args.out, "folds.csv"), **kw)
+    pd.DataFrame(preds).to_csv(os.path.join(args.out, "predictions.csv"), **kw)
+    pd.DataFrame(inner_rows).to_csv(os.path.join(args.out, "inner_scores.csv"), **kw)
+    info = dict(
+        hostname=socket.gethostname(), slurm_job_id=os.environ.get("SLURM_JOB_ID"),
+        slurmd_nodename=os.environ.get("SLURMD_NODENAME"),
+        slurm_job_nodelist=os.environ.get("SLURM_JOB_NODELIST"),
+        cpu_model=cpu_model(), os_cpu_count=os.cpu_count(),
+        affinity_cpus=len(os.sched_getaffinity(0)), platform=platform.platform(),
+        python=platform.python_version(), numpy=np.__version__, scipy=scipy.__version__,
+        sklearn=sklearn.__version__, pandas=pd.__version__, joblib=joblib.__version__,
+        threadpoolctl=threadpoolctl.__version__,
+        blas=[{k: d.get(k) for k in ("internal_api", "version", "num_threads", "architecture",
+                                     "filepath")} for d in threadpoolctl.threadpool_info()],
+        thread_env={v: os.environ.get(v) for v in
+                    ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS")},
+        data_file=os.path.abspath(args.data), data_sha256=sha, classes=classes,
+        code_sha256=code_hashes(), outer_seed=SEED, inner_seed_base=INNER_SEED_BASE,
+        n_splits=N_SPLITS, n_repeats=N_REPEATS, k_grid=K_GRID,
+        wall_seconds=round(time.time() - t0, 2),
+        started_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t0)))
+    with open(os.path.join(args.out, "run_info.json"), "w") as fh:
+        json.dump(info, fh, indent=1)
+    print("node:", info["hostname"], "job:", info["slurm_job_id"], "cpu:", info["cpu_model"], flush=True)
+
+
+if __name__ == "__main__":
+    main()

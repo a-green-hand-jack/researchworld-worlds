@@ -1,0 +1,26 @@
+{
+  "source": "GitHub",
+  "url": "https://github.com/",
+  "start_utc": "2026-10-19T21:30:14.316595+00:00",
+  "end_utc": "2026-10-19T21:30:15.026373+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/github.headers",
+    "-o",
+    "/tmp/tmp0_3yzs7y/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://github.com/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html; charset=utf-8\n",
+  "stderr": "",
+  "first200": "\n\n\n\n\n\n\n\n<!DOCTYPE html>\n<html\n  lang=\"en\"\n  data-color-mode=\"dark\" data-dark-theme=\"dark\"\n  data-color-mode=\"light\" data-light-theme=\"light\" data-dark-theme=\"dark\"\n  data-a11y-animated-images=\"system\"",
+  "body_bytes": 572661
+}

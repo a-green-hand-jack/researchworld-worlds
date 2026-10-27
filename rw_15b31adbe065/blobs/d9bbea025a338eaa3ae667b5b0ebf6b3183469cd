@@ -1,0 +1,54 @@
+# Review record (internal-review-repo)
+
+## Pass 1 — assembled delivery at
+- paper-repo 7401d07006ce1c487e8efb9fdd93e2863224e822
+- experiment-repo 624513e12695ee54c60129493cdf02e1fca13929
+- figtab-repo c770cf0238d788645049dad33dc9c7311c787dc4
+
+Conclusion: **not approvable yet** — Section 2 (pi) is pending; the full run is in progress
+(experiment-repo job-10db4ef58a on local-compute, started ~20:59Z, ~13 min). No revise sent:
+the gap waits on that run, which its owner tracks.
+
+| criterion | status | evidence |
+|---|---|---|
+| R1 fit | pass | `results/fit.json` slope 0.748399 [0.670064, 0.826734], intercept 3.944699 [2.169587, 5.719812], t df=38 — identical to my independent recomputation in `standard.md` (default_rng(227), `rng.normal(0,3,40)`). Report table rounds correctly; "both CIs contain generating values" is correct. |
+| R2 figure | pass | `report/figures/fit.png` opened: 40 points, OLS line, 95% band, generating line, labelled axes, legend, annotation matches fit.json; embedded via `figures/fit.png`, resolves in the assembled delivery. |
+| R3 Monte Carlo | open | `code/simulate.py` sha256 f537bb8f…1363 = frozen input. Full run not yet delivered (no log / results.json). `results/simulate_partial_aborted.log` (67/90) is a discarded attempt; its chunks 1 and 45 (3.141499, 3.141283) match my spot-check, and it must not be used for the result. |
+| R4 report | open | Section 2 pending. Also open: software versions (Python, numpy, scipy, matplotlib) are not recorded anywhere in the delivery. |
+
+To check on the next pass: full log (90 chunk lines + final JSON) and `results.json` in `results/`;
+chunks 1/45/90 = 3.141499 / 3.141283 / 3.141756; mean and 1.96·sd/√90 interval recomputed from the
+90 logged values reproduce the printed result; report quotes them and states contains-pi correctly;
+versions recorded.
+
+## Pass 2 — assembled delivery at
+- paper-repo 7401d07006ce1c487e8efb9fdd93e2863224e822
+- experiment-repo 1692bbc729d3e0563ca19a0af7cfcf53e5a391e9
+- figtab-repo c770cf0238d788645049dad33dc9c7311c787dc4
+
+Conclusion: **revise** (report not yet updated; versions missing).
+
+| criterion | status | evidence |
+|---|---|---|
+| R1 fit | pass | unchanged since pass 1. |
+| R2 figure | pass | unchanged since pass 1. |
+| R3 Monte Carlo | pass | `results/simulate.log`: 90 chunk lines + final JSON, 750.5 s, 60,000,000 samples/chunk; `code/simulate.py` = frozen hash. Chunks 1/45/90 = 3.141499/3.141283/3.141756 (match my spot-check). Mean and 1.96·sd/√90 recomputed from the 90 logged (6-dp) values: 3.14156281 [3.14151930, 3.14160632], agreeing with `results/results.json` estimate 3.1415628156 [3.1415193031, 3.1416063280] to rounding. pi = 3.14159265 lies inside. Seeds: chunk i uses `random.Random(227+i)`. |
+| R4 report | open | Section 2 still reads PENDING; provenance line says all numbers come from fit.json; software versions not recorded anywhere in the delivery. → revise to paper-repo (report) and experiment-repo (versions of the environment that produced fit.json and the run). |
+
+## Pass 3 — assembled delivery at
+- paper-repo 16bdcdd647213dbdf4cbcb9127336a47b8745722
+- experiment-repo c50788d4aa1ac2fd104dac76207d4fb04ad8646b
+- figtab-repo c770cf0238d788645049dad33dc9c7311c787dc4
+
+Conclusion: **approve** — the delivery meets the objective (R1–R4).
+
+| criterion | status | evidence |
+|---|---|---|
+| R1 fit | pass | unchanged; `code/fit_line.py` re-run here (Python 3.11.2, numpy 2.4.6, scipy 1.17.1) reproduces `results/fit.json` and `results/data.csv` byte-for-byte (seed default_rng(227)). |
+| R2 figure | pass | `report/figures/fit.png` inspected in pass 1; re-rendering `code/figures/make_fit_figure.py` here with matplotlib 3.11.2 gives a pixel-identical PNG (800×1240). Embedded and resolving in the report. |
+| R3 Monte Carlo | pass | as pass 2 (90-chunk log, results.json, recomputation agrees, contains pi). |
+| R4 report | pass | Section 2 quotes results.json correctly: 3.1415628 [3.1415193, 3.1416063], contains pi = yes; full log named, partial log disclosed as unused; provenance covers both results files; versions quoted from `results/environment.txt`. Report is about one page; every number traceable to delivered code and outputs. |
+
+Note (not blocking): the simulate.py job's interpreter version is inferred from the shared environment, not logged by the job; the script uses only the standard library and its output was verified independently.
+
+Re-assembled at paper-repo 7f8c5f7a5f08ad84c2746a9d559d724547c1d0e8 (other revisions unchanged): delivered files identical to the inspected set (diff -r empty); conclusion stands.

@@ -1,0 +1,66 @@
+{
+  "release": {
+    "repository": "world/paper-repo",
+    "tag": "photons-v1",
+    "title": "Photon arrival times (seed 205, 30M float32)",
+    "assets": [
+      {
+        "name": "photons.f32",
+        "bytes": 120000000
+      },
+      {
+        "name": "photons.sha256",
+        "bytes": 78,
+        "content": "af343d7a740bf6a1631ab06e63eeccb3cdff10e5ecf831e5447e5f6ad362edae  photons.f32"
+      },
+      {
+        "name": "preview.png",
+        "bytes": 47138,
+        "sha256": "fb9eb098b3d18a297be6a2c16c0f4eeab06d31cca592163ca9c709bf828d5f2e"
+      },
+      {
+        "name": "burst.mp4",
+        "bytes": 116122,
+        "sha256": "b0af8c6e7e52293ecebbbf73ac9fe9777ba97fcc38f181a11493d3ed41cdec91"
+      },
+      {
+        "name": "explorer.html",
+        "bytes": 63109,
+        "sha256": "9f1f6b1916e2e514a5b9ba5be7df0100520278431f092b84cae63692c3fa8510",
+        "replaces_sha256": "a4b1f760826aec7ac7b85951cc64e8bb18db5223a28f2f7b64f5c99f74f0a07c (superseded 2026-10-16T23:15Z: slider min excluded the advertised 0.1 s minimum bin width)"
+      },
+      {
+        "name": "figtab-media-source-c4d2af02df4d.tar.gz",
+        "bytes": 328666,
+        "sha256": "23b040a8c566c778a2310eca33099579637927717fb731d3ffd580b9e63c95cf",
+        "note": "byte-identical mirror of figtab-repo release 'media-source' (same tarball, same digest); attached here 2026-10-16T23:17:59Z so reviewers without direct figtab-repo release access can inspect the media generator code and provenance (requested in paper-repo#8)"
+      }
+    ],
+    "download_path": "releases/download/photons-v1/{asset}",
+    "asset_api": "repos/world/paper-repo/releases/tags/photons-v1"
+  },
+  "published_sha256": "af343d7a740bf6a1631ab06e63eeccb3cdff10e5ecf831e5447e5f6ad362edae",
+  "round_trip_check": {
+    "performed_by": "paper-repo (the generating position, checking its own release serves the exact bytes)",
+    "performed_at_utc": "2026-10-16T22:47:29Z",
+    "method": "curl download of both release assets, sha256sum of the downloaded bytes, byte comparison with the locally generated file",
+    "bytes_downloaded": 120000000,
+    "sha256_downloaded": "af343d7a740bf6a1631ab06e63eeccb3cdff10e5ecf831e5447e5f6ad362edae",
+    "matches_published_checksum": true,
+    "byte_identical_to_generated_file": true,
+    "scope": "release integrity only; the likelihood fit and every figure are computed by other positions from their own independent downloads, per the objective"
+  },
+  "generation": {
+    "script": "code/generate_photons.py",
+    "stats": "data-release/generation-stats.json",
+    "seed": 205,
+    "endpoint_quantization": "float32 rounding puts 1 photon at exactly 1200.0 s (last bin [1199,1200) is right-inclusive per NumPy histogram convention); 0 photons below 0 s, 0 above 1200 s"
+  },
+  "media_attachment": {
+    "supplied_by": "figtab-repo at commit c4d2af02df4dbf5bb1cf6463944cd529ebda225f, computed from its own download of photons-v1 (release_media/download_provenance.json; media generation code and provenance published in figtab-repo release 'media-source', tag media-source, tarball sha256 23b040a8c566c778a2310eca33099579637927717fb731d3ffd580b9e63c95cf)",
+    "attached_at_utc": "2026-10-16T22:52:30Z (preview.png, burst.mp4); explorer.html replaced 2026-10-16T23:15:29Z per figtab-repo#5 / paper-repo#8 defect 3 (old asset deleted, corrected file uploaded as a new asset of the same name)",
+    "uploaded_by": "paper-repo (release owner) per paper-repo#7",
+    "verification": "after each upload all media assets were re-downloaded from the release and re-hashed; digests match figtab-repo release_media/SHA256SUMS at the supplying commit exactly (latest check 2026-10-16T23:15:29Z: preview.png fb9eb098..., burst.mp4 b0af8c6e..., explorer.html 9f1f6b19...); the corrected explorer was also inspected: range input min=0 makes widths[0]=1 (0.1 s) reachable; the mirrored media-source tarball was re-downloaded from this release 2026-10-16T23:17:59Z and re-hashed (23b040a8..., byte-identical to figtab-repo's release)",
+    "note": "preview.png (1 s histogram), burst.mp4 (H.264, 960x544, 30 fps, ~9 s, cumulative revealed bins), explorer.html (self-contained, variable bin width) are figtab-repo products, not generator products"
+  }
+}

@@ -1,0 +1,7 @@
+# Presentation package
+
+Run `python3 presentation/render.py` from any working directory to regenerate the three figures and `report/tables/orders.md`. Inputs are exact copies of committed analysis-owner files, identified and hashed in `provenance.json`. No analyses or fits are recomputed here. `versions.json` records the rendering environment.
+
+The figures distinguish the fitted observations from small positive errors and floating-point zeros; no positive surrogate for a zero enters a connected error curve. Reference slopes make the smooth-function hierarchy and the square-root loss of order directly checkable. The smooth-function plots share axes; the square-root plot expands its vertical scale to show its three parallel curves. Captions are in `captions.md`. Designed for three plots in a row, ideally at least 2.3 inches wide each; inspect the final report layout at its intended print size.
+
+The cover is generated through the world's `image-generation` resource (gpt-image-2). `cover_request.json` holds the exact prompt and parameters, `generate_cover.py` holds the API request and deterministic resizing to a shallow 1200 × 200 banner (decorative artwork only), and `cover_original.png` retains the generated source. To regenerate the illustration, run that script from the repository root with the world-provided environment; results are nondeterministic. The script accepts both JSON and event-stream responses. No credentials are recorded. The cover is decorative, not evidence.

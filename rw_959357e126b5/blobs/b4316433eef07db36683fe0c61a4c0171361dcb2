@@ -1,0 +1,33 @@
+"""B1 dev run 2781 (step_down 0.12 -> 0.004 at t = 100, rhoP0.5, p0 1, seed 101), direction 0 (c/s = 1): the measured
+transitions of the exact maps (e5_b1.truth) against the stage model (e5_theory.stage_model), and the exact maps
+re-integrated here to t = 100 for the state at the knot (amplitude a, predictor p) against the race's p_r = p0 e^{-Lam_P}.
+Usage: python3 checks/e5_b1_run2781.py EXPERIMENT_CHECKOUT > checks/e5_b1_run2781.json"""
+import sys, os, json
+import numpy as np
+sys.path.insert(0, os.path.join(sys.argv[1], "code"))
+import e5_b1 as B, e5_theory as th
+cfg = [c for c in B.configs("dev") if c["id"] == 2781][0]
+G = B.GRIDS[cfg["grid"]]; c, s = B.stats(G); n = c.size
+tr = B.truth(cfg); w0 = np.linalg.norm(B.init_amp(cfg, n), axis=0)
+st = th.stage_model(c, s, w0, cfg["p0"], cfg["kW"], cfg["kP"], cfg["alpha"], cfg["kappa"], cfg["T"], dt=B.ETA)
+k = 0
+# exact per-direction gradient-descent map for direction 0 (aligned, copy target, alpha = 1), eta = 0.1, to t = 100
+w = np.longdouble(w0[k]); p = np.longdouble(cfg["p0"]); eta = np.longdouble(B.ETA); ck, sk = np.longdouble(c[k]), np.longdouble(s[k])
+traj = []
+for i in range(int(round(100 / B.ETA))):
+    lw, lp = np.longdouble(0.12), np.longdouble(0.06)
+    g = (p * ck - p * p * sk) * w            # dL/dw with target copy: w (p c - p^2 s) - lam_W w
+    dw = eta * (g - lw * w); dp = eta * ((ck - p * sk) * w * w - lp * p)
+    w, p = w + dw, p + dp
+    if (i + 1) % 100 == 0:
+        traj.append((round((i + 1) * float(eta), 6), float(w), float(p)))
+out = dict(config={kk: v for kk, v in cfg.items()}, direction=k, c=float(c[k]), s=float(s[k]),
+           lam_star=float(c[k] ** 2 / (4 * s[k])),
+           truth_transitions_dir0=[e for e in tr["trans"] if e[0] == k],
+           stage_events_dir0=[list(e) for e in st["events"] if e[0] == k],
+           truth_final_a_dir0=float(np.abs(np.asarray(tr["a"])[-1][k])) if np.ndim(tr["a"]) == 2 else None,
+           stage_final_W_dir0=float(np.asarray(st["W"])[-1][k]) if np.ndim(st["W"]) == 2 else None,
+           p_race_at_100=float(cfg["p0"] * np.exp(-0.06 * 100)),
+           growth_window_after_knot=[float(r) for r in np.sort(np.roots([s[k], -c[k], 0.004]))],  # p c - p^2 s > lam_W = 0.004
+           my_exact_map_every_10=traj)
+print(json.dumps(out, indent=1, default=float))

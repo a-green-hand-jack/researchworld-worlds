@@ -1,0 +1,21 @@
+# Brief (experiment-repo, from `Research objective` issue #1)
+
+## Task, quoted
+> How fast do three quadrature rules converge, and does the observed order match theory?
+>
+> Integrate three functions on [0, 1]: exp(x), 1/(1 + 25 x^2) and sqrt(x), whose exact integrals are e - 1, atan(5)/5 and 2/3. For each function use the composite trapezoid rule, the composite Simpson rule and Gauss-Legendre quadrature (`numpy.polynomial.legendre.leggauss`, composite over equal panels with 4 nodes each), with n = 2^k panels for k = 1, ..., 12, and record the absolute error.
+>
+> For each function and rule, fit log(error) against log(n) by least squares over the points above machine precision and give the convergence order with a 95% interval; say where and why the observed order departs from the theoretical 2, 4 and 8.
+>
+> Report: `report/report.md`, at most two pages: a table of the fitted orders with their intervals, one log-log figure per function with the three rules, a short discussion of sqrt(x), and at its top a small cover illustration `report/cover.png` made with the world's image generation.
+
+## Deliverables
+1. `report/report.md` (<= 2 pages): fitted-order table with 95% intervals (9 rows: 3 functions x 3 rules); 3 log-log figures (one per function, three rules each); short sqrt(x) discussion; cover illustration `report/cover.png` at top (image generation).
+2. Underlying numbers: absolute errors for 3 x 3 x 12 runs; fits.
+
+## Study design / conventions
+- Theory: trapezoid order 2, Simpson 4, 4-node Gauss-Legendre per panel 8 (error ~ h^8 f^(8)).
+- "Panels" n = 2^k, k=1..12. Simpson: composite with n panels (each panel uses its midpoint, i.e. 2n subintervals) — convention to be stated in the report. Gauss: n panels x 4 nodes.
+- Fit: OLS of log(err) on log(n) over points with err above machine precision (threshold must be stated; e.g. err > ~1e-15 / several eps, sensitivity checked), slope = -order, 95% CI from t-distribution with (m-2) dof.
+- Expected departures: sqrt(x) has an endpoint singularity at 0 (f' unbounded), so all rules degrade: trapezoid ~ n^-1.5, Simpson ~ n^-1.5, GL ~ n^-1.5 (error dominated by first panel, ~h^{3/2}). 1/(1+25x^2) has poles at +-i/5: pre-asymptotic regime at small n (panel width not small vs. 0.2), so fitted orders can differ from asymptotic, and high-order rules hit machine precision early (GL by small k), leaving few fit points. exp(x): GL reaches rounding floor at n≈2–4, so very few points above machine precision -> wide/undefined interval.
+- Cannot establish: whether the image-generation resource is usable by every worker (it is served only on openai-responses workers; the experiment-repo worker is anthropic and cannot call it).

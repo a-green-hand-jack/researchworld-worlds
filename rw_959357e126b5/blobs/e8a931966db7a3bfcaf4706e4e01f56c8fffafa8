@@ -1,0 +1,44 @@
+"""Development only (A1 v4 ablation): v3 predictions (from code/checks/e4_dev_v3_on_grid.py, /tmp/<grid>_v3.jsonl.gz)
+with the settled-state rule: alive at t iff crossed by t and (c/s > thr or t - crossing < tau); A1d metrics per tau,
+and on dev3 the breakdown of the remaining errors at tau = 0.
+Usage: python3 code/checks/e4_v4_settled_ablation.py dev2|dev3"""
+import sys, json, gzip, numpy as np; sys.path.insert(0,'code'); import e4_a1 as A
+G=sys.argv[1]
+if G=='dev3': import e4_dev3
+else:
+    import e4_dev as dev; A.STATS=dict(dev.STATS)
+runs=[json.loads(l) for l in gzip.open(f'/tmp/{G}_v3.jsonl.gz','rt')]
+CK=np.array(A.CHECKS)
+for tau in [None, 0, 1000, 3000, 6000, 12000]:
+    err=[]; rk=[]
+    for r in runs:
+        c,s=A.stats(r['stats']); pc=c/s; Al=np.array(r['alive'],bool)
+        af=np.array([np.inf if x is None else x for x in r['pred_alive_from']])
+        P=af[None,:]<=CK[:,None]
+        if tau is not None:
+            P=P&((pc[None,:]>A.THR)|(CK[:,None]-af[None,:]<tau))
+        err.append((P!=Al).mean()); rk.append((np.abs(P.sum(1)-Al.sum(1))<=1).mean())
+    print(G,'tau',tau,'state err %.4f'%np.mean(err),'rank within1 %.4f'%np.mean(rk))
+
+if G == 'dev3':
+    runs=[json.loads(l) for l in gzip.open('/tmp/dev3_v3.jsonl.gz','rt')]
+    CK=np.array(A.CHECKS); cat={}
+    def add(k,n): cat[k]=cat.get(k,0)+int(n)
+    bad_rank=0; bad_by={}
+    for r in runs:
+        c,s=A.stats(r['stats']); pc=c/s; Al=np.array(r['alive'],bool)
+        af=np.array([np.inf if x is None else x for x in r['pred_alive_from']]); tf=np.array([np.inf if x is None else x for x in r['alive_from']])
+        tf[np.abs(np.array(r['state_K']['a']))>A.THR]=A.K
+        P=(af[None,:]<=CK[:,None])&(pc[None,:]>A.THR)
+        W=P!=Al
+        crossed_true=tf[None,:]<=CK[:,None]
+        add('pairs',W.size)
+        add('FN: truth alive, c/s<=thr (transient above)', (W&Al&(pc[None,:]<=A.THR)).sum())
+        add('FN: truth alive, c/s>thr, model crossing late', (W&Al&(pc[None,:]>A.THR)).sum())
+        add('FP: truth dead, not yet crossed in truth (model early)', (W&~Al&~crossed_true).sum())
+        add('FP: truth dead after crossing, c/s>thr (dip/second collapse)', (W&~Al&crossed_true).sum())
+        b=np.abs(P.sum(1)-Al.sum(1))>1; bad_rank+=b.sum()
+        for key in [('lam',r['lam']),('stats',r['stats']),('b2',r['b2']),('eta',r['eta'])]:
+            d=bad_by.setdefault(key,[0,0]); d[0]+=b.sum(); d[1]+=b.size
+    print(json.dumps(cat,indent=0)); print('rank>1',bad_rank, {str(k):round(v[0]/v[1],3) for k,v in bad_by.items()})
+    

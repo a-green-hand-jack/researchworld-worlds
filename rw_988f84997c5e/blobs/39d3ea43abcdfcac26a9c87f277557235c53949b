@@ -1,0 +1,18 @@
+# Brief (from the `Research objective` issue, experiment-repo#1)
+
+## Task, quoted
+"Measure how insertion sort and merge sort scale with input size in pure Python. Time each algorithm on random integer lists of sizes 250, 500, 1000, 2000 and 4000, five repetitions each, and fit the exponent of time against size on a log-log scale for each algorithm. The timing run takes a few minutes, so run it as a background job on the local-compute resource (ht-resource run) rather than inside your turn, and continue when it ends. Deliver the script, the raw timings as CSV, one log-log figure and a one-page report with the two fitted exponents."
+
+## Requirements / deliverables
+1. Script (`time_sorts.py`, plus `analyze.py` for fit and figure).
+2. Raw timings CSV (`timings.csv`: algorithm, n, rep, seconds; 2 x 5 x 5 = 50 rows).
+3. One log-log figure (`loglog.png`) of time vs n for both algorithms with fits.
+4. One-page report (`report.md`) with the two fitted exponents.
+- Timing run must be a background job on local-compute.
+
+## Expectations (no data or related material supplied)
+- Insertion sort: O(n^2) on random input -> exponent ~2. Merge sort: O(n log n) -> local log-log slope slightly above 1 (about 1.1 over this range); the fit will not give exactly 1, which the report must explain.
+- Report exponents with uncertainty (regression standard error / CI), state the fit method, and note the pure-Python/hardware context.
+
+## Not established
+- No related prior work or reference conventions were supplied; conventions chosen: OLS on log10(time) vs log10(n) over all 25 points per algorithm, 95% t-interval.

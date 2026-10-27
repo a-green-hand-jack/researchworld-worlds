@@ -1,0 +1,5 @@
+from PIL import Image
+im = Image.open('presentation/cover-source.png')
+w, h = im.size
+crop_h = round(w * 3 / 8)
+im.crop((0, (h-crop_h)//2, w, (h+crop_h)//2)).resize((1024,384), Image.Resampling.LANCZOS).save('report/cover.png')

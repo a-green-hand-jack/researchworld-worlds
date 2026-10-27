@@ -1,0 +1,21 @@
+"""E8 Arm T lr share after the switch (experiment 7fa7930, README E8 reading; grid_readings.json lr_share_left): the
+logged lr of every T run's log.jsonl at steps inside the would-be warm-up window (step < warmup_frac * full steps),
+and the share of the run's integrated lr after epoch e computed from vit_jepa.hyper's rule (sched 'const' -> lr =
+args.lr at every step, no warm-up) against the delivered lr_share_left (which applies the warm-up to 'const' too).
+Usage: python3 checks/e8_t_lr_share.py RUNS8_DIR EXPERIMENT_CHECKOUT > checks/e8_t_lr_share.json"""
+import sys, os, json, glob, math
+runs, exp = sys.argv[1], sys.argv[2]
+SPE, EP, SW = 195, 50, [2, 5, 10, 20]
+logged, cfgs = [], set()
+for d in sorted(x for x in glob.glob(os.path.join(runs, "T_*", "s*")) if os.path.isdir(x)):
+    c = json.load(open(os.path.join(d, "config.json"))); cfgs.add((c["sched"], c["lr"], c["warmup_frac"], c["full_epochs"]))
+    warm = int(c["warmup_frac"] * c["full_epochs"] * SPE)
+    for l in open(os.path.join(d, "log.jsonl")):
+        r = json.loads(l)
+        if "lr" in r and r["step"] < warm:
+            logged.append(r["lr"])
+lr = [1.0] * (EP * SPE)                     # const: lr = args.lr at every update
+mine = {str(e): sum(lr[e * SPE:]) / sum(lr) for e in SW}
+deliv = json.load(open(os.path.join(exp, "results/e8/grid/posthoc/grid_readings.json")))["arms"]["T"]["lr_share_left"]
+print(json.dumps(dict(T_configs=sorted(cfgs), logged_lr_in_warmup_window=dict(n=len(logged), distinct=sorted(set(logged))),
+                      lr_share_left_const=mine, lr_share_left_delivered=deliv), indent=1))

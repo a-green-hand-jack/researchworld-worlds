@@ -1,0 +1,88 @@
+"""Are E1b's measured ranks final? Long-horizon check with the exact reduced per-mode flow.
+
+For the E1b arms where the per-mode reduction is exact (population GD, depth-1 identity predictor, orthogonal W init,
+co-diagonal statistics, copy or EMA target: arms grid (lam = 0 included), ema_alpha, balanced, depth with depth=1), the reduced flow
+(code/linjepa.py reduced_flow, same Euler step as simulate) is run from each run's own initial column norms
+(init_params with the run's seed, w0, jitter) to (i) the run's t_end, validated against the measured per-mode
+labels in results/e1b/e1b_runs.jsonl, (ii) 2 t_end and (iii) a fixed long horizon T_LONG = 40000 time units,
+and the rank/labels at the three horizons are compared, together with N1 against the long-horizon rank.
+As in simulate(), amplitudes below 1e-150 are flushed to 0 (counted as collapsed); the long horizon is also run without
+the flush (`rank_long_nofloor`), since a direction decaying below 1e-150 can recover under the race.
+Usage: python3 code/checks/e1b_long_horizon.py   -> results/checks/e1b_long_horizon.json"""
+import sys, os, json, time
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(HERE))
+from linjepa import init_params, reduced_flow
+from e1b import C, SIG, n, d, SV_THR
+
+ROOT = os.path.dirname(os.path.dirname(HERE))
+T_LONG = 40000.0
+
+
+def one(args):
+    cfg, meas = args
+    _, W, _ = init_params(cfg["seed"], n, d, cfg["w0"], cfg["p0"], 1, None, "identity", cfg["w_init"], cfg["jitter"])
+    a0 = np.linalg.norm(W, axis=0)
+    eta = cfg["eta"]
+    out = dict(id=cfg["id"], exp=cfg["exp"], lam=cfg["lam"], p0=cfg["p0"], alpha=cfg["alpha"], kappa=cfg["kappa"],
+               seed=cfg["seed"], t_end=meas["t_end"], rank_meas=meas["rank_meas"], rank_pred=cfg["rank_pred"])
+    a = a0; p = None; labels = {}
+    # integrate in segments, continuing from the previous state (reduced_flow restarts p at p0, so run each horizon
+    # from t = 0; cost is dominated by T_LONG anyway)
+    for name, t, fl in [("t_end", meas["t_end"], 1e-150), ("2t_end", 2 * meas["t_end"], 1e-150),
+                        ("long", max(T_LONG, 2 * meas["t_end"]), 1e-150), ("long_nofloor", max(T_LONG, 2 * meas["t_end"]), 0.0)]:
+        aT, _ = reduced_flow(C, SIG, a0, cfg["p0"], cfg["lam"], cfg["lam"], alpha=cfg["alpha"], eta=eta, T=int(round(t / eta)),
+                             kappa=cfg["kappa"], floor=fl)
+        labels[name] = (aT > SV_THR).astype(int)
+    out["valid_vs_measured"] = bool(meas["surv"] is not None and np.array_equal(labels["t_end"], np.array(meas["surv"])))
+    for k, v in labels.items():
+        out["rank_" + k] = int(v.sum())
+    out["changed_2t"] = int((labels["2t_end"] != labels["t_end"]).sum())
+    out["changed_long"] = int((labels["long"] != labels["t_end"]).sum())
+    out["pred_mode_acc_long"] = float(np.mean(np.array(cfg["pred"]) == labels["long"])) if cfg.get("pred") else None
+    return out
+
+
+def boot(x, B=2000, rng=np.random.default_rng(0)):
+    x = np.asarray(x, float)
+    m = rng.integers(0, x.size, (B, x.size)); bs = x[m].mean(1)
+    return [float(x.mean()), float(np.percentile(bs, 2.5)), float(np.percentile(bs, 97.5))]
+
+
+if __name__ == "__main__":
+    t0 = time.time()
+    P = json.load(open(os.path.join(ROOT, "results/e1b/prediction.json")))
+    M = {r["id"]: r for r in map(json.loads, open(os.path.join(ROOT, "results/e1b/e1b_runs.jsonl")))}
+    sel = [(c, M[c["id"]]) for c in P["runs"]
+           if c["exp"] in ("grid", "ema_alpha", "balanced", "depth") and c.get("depth", 1) == 1 and c["optimizer"] == "gd"
+           and c["batch"] is None and c["pred_init"] == "identity" and c["w_init"] == "orthogonal" and c["stopgrad"]
+           and M[c["id"]]["diverged"] is None]
+    with Pool(8) as pool:
+        res = pool.map(one, sel, chunksize=4)
+    S = dict(note=__doc__.split("Usage")[0].strip(), T_long=T_LONG, runs=len(res), seconds=time.time() - t0)
+    for grp in ["all", "all_lam>0", "grid", "grid_lam0", "ema_alpha", "balanced", "depth"]:
+        rr = [r for r in res if grp == "all" or (grp == "all_lam>0" and r["lam"] > 0) or r["exp"] == grp
+              or (grp == "grid_lam0" and r["exp"] == "grid" and r["lam"] == 0)]
+        if not rr:
+            continue
+        S[grp] = dict(runs=len(rr), reduced_matches_measured=boot([r["valid_vs_measured"] for r in rr]),
+                      runs_rank_changed_2t=int(sum(r["rank_2t_end"] != r["rank_t_end"] for r in rr)),
+                      runs_rank_changed_long=int(sum(r["rank_long"] != r["rank_t_end"] for r in rr)),
+                      runs_rank_changed_long_nofloor=int(sum(r["rank_long_nofloor"] != r["rank_t_end"] for r in rr)),
+                      pred_exact_vs_long_nofloor=boot([r["rank_pred"] == r["rank_long_nofloor"] for r in rr]),
+                      pred_over_vs_long=int(sum(r["rank_pred"] > r["rank_long"] for r in rr)),
+                      pred_over_vs_long_nofloor=int(sum(r["rank_pred"] > r["rank_long_nofloor"] for r in rr)),
+                      modes_changed_long=int(sum(r["changed_long"] for r in rr)),
+                      pred_exact_vs_tend=boot([r["rank_pred"] == r["rank_t_end"] for r in rr]),
+                      pred_exact_vs_long=boot([r["rank_pred"] == r["rank_long"] for r in rr]),
+                      pred_mae_vs_tend=boot([abs(r["rank_pred"] - r["rank_t_end"]) for r in rr]),
+                      pred_mae_vs_long=boot([abs(r["rank_pred"] - r["rank_long"]) for r in rr]))
+    S["per_run"] = res
+    json.dump(S, open(os.path.join(ROOT, "results/checks/e1b_long_horizon.json"), "w"), indent=1)
+    for k in ["all", "all_lam>0", "grid", "grid_lam0", "ema_alpha", "balanced", "depth"]:
+        if k in S:
+            print(k, {a: b for a, b in S[k].items()})
+    print(f"{time.time()-t0:.0f}s")

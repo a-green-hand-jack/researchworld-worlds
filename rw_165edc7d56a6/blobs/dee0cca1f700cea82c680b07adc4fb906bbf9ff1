@@ -1,0 +1,21 @@
+# Optimizer provenance fact sheet
+
+Each fact below was read from the cited page during this task (arXiv abstract pages, opened with a web-fetch tool or, for Adam, with curl). "Year first appeared" is the year of the first arXiv submission (v1).
+
+| Optimizer | Introducing paper (title) | First author | Year first appeared | arXiv identifier |
+|---|---|---|---|---|
+| Adam | Adam: A Method for Stochastic Optimization | Diederik P. Kingma (with Jimmy Ba) | 2014 (v1: 22 Dec 2014) | 1412.6980 |
+| AdamW (decoupled weight decay) | Decoupled Weight Decay Regularization (v1 title: "Fixing Weight Decay Regularization in Adam") | Ilya Loshchilov (with Frank Hutter) | 2017 (v1: 14 Nov 2017) | 1711.05101 |
+| Lion (EvoLved Sign Momentum) | Symbolic Discovery of Optimization Algorithms | Xiangning Chen (with 11 co-authors, last Quoc V. Le) | 2023 (v1: 13 Feb 2023) | 2302.06675 |
+
+## Sources (URL each fact was read from)
+
+- AdamW title, first author, v1 date (14 Nov 2017), identifier: https://arxiv.org/abs/1711.05101 ; v1 title and submission history: https://arxiv.org/abs/1711.05101v1
+- Lion title, first author, v1 date (13 Feb 2023), identifier: https://arxiv.org/abs/2302.06675
+- Adam title, first author, v1 date (22 Dec 2014), identifier: https://arxiv.org/abs/1412.6980 (looked up by experiment-repo; record in its `findings/adam.md`, page copy `sources/adam-arxiv.html`; I checked the title, author order, identifier and "Submitted on 22 Dec 2014 (v1)" in that copy).
+
+## Notes
+
+- The AdamW paper was retitled after v1; the current title is "Decoupled Weight Decay Regularization" (read at the first URL above), the v1 title is "Fixing Weight Decay Regularization in Adam" (read at the v1 URL).
+- Adam's 2015 conference (ICLR) appearance is later than its 2014 arXiv v1; the sheet uses the first arXiv submission year.
+- Tools: web fetch worked for arxiv.org; a direct `curl` to the arXiv API returned "unauthorized" and was not used.

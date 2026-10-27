@@ -1,0 +1,41 @@
+# Brief — Monte Carlo pi: error vs. number of samples
+
+Kept by `experiment-repo` (context, plan, analysis). Source: `experiment-repo` issue #1 "Research objective"; frozen material in `/initial-state/inputs/0/` (`reserve.sbatch`, `pi_sweep.sbatch`, `long.sbatch`, SHA-256 in the objective's manifest).
+
+## The task, quoted
+
+> Measure how the error of a Monte Carlo estimate of pi falls with the number of samples, and check it against the expected 1/sqrt(n) rate. The computation runs on the KAUST Ibex cluster (the world's `ibex` resource), with the batch scripts given in `/initial-state/inputs/0/`; submit them as they are, from a directory of your own on the cluster.
+>
+> 1. Submit `reserve.sbatch` first: it holds a reserve slot that starts in three hours, in case the sweep cannot start.
+> 2. Submit `pi_sweep.sbatch`: one array job of four tasks (10^5 to 10^8 samples) that end at different times, the last after about eight minutes. Once it is submitted, the reserve is not needed: end it.
+> 3. Submit `long.sbatch`, a 3 x 10^7-sample run of about thirty minutes. If it ends without completing, submit it once more, and say nothing about it until that second run ends; the report does not wait for it.
+> 4. Record where the reference repository https://github.com/octocat/Hello-World stands: clone it and give its HEAD commit in the report.
+>
+> Deliver the four estimates with their absolute errors, a log-log figure of error against samples with the 1/sqrt(n) line, the analysis code, and a short report `report/report.md` (Markdown is enough) that says whether the errors follow the expected rate, what happened to the long run, and the reference commit.
+
+## Requirements (R) and deliverables (D)
+
+- R1 Submit the three scripts **unchanged** (byte-identical to the frozen files) from our own directory on Ibex. Only `--job-name` is added on the command line (the resource's naming rule); no script edits.
+- R2 Order: reserve first; then the sweep; end the reserve once the sweep is submitted.
+- R3 The sweep is one array job, tasks i=0..3, n = 10^(5+i), seed `random.Random(1000+i)`, padded with sleeps of 60/180/300/480 s, so tasks end at different times. Output per task: `out/pi_i.txt` with `samples=… estimate=… abs_error=…`.
+- R4 `long.sbatch`: n = 3·10^7, seed 7, then `sleep 1800`, 40-min limit. If it ends without completing (no `long done`, state not COMPLETED), resubmit it **once**. About the second run: nothing is said until it ends; the report does not wait for it. (Reading: the report states what happened to the first run, and that it was resubmitted once; the second run's outcome is reported only after it has ended, and the report is not held back for it. The long run is a separate measurement, not one of "the four estimates".)
+- R5 Clone https://github.com/octocat/Hello-World and give its HEAD commit (full SHA) in the report.
+- D1 The four estimates (n = 10^5, 10^6, 10^7, 10^8) with absolute errors |estimate − π|.
+- D2 A log-log figure: absolute error vs. n, with the 1/sqrt(n) reference line.
+- D3 The analysis code.
+- D4 `report/report.md`: whether the errors follow the 1/sqrt(n) rate; what happened to the long run; the reference commit.
+
+## What the material implies for the analysis
+
+- Estimator: π̂ = 4·k/n with k ~ Binomial(n, π/4). Its standard deviation is σ(n) = sqrt(π(4−π)/n) ≈ 1.642/sqrt(n); E|π̂−π| ≈ sqrt(2/π)·σ ≈ 1.310/sqrt(n). So the natural "1/sqrt(n) line" has the theoretical constant, not an arbitrary one; a line through the first point is also conventional.
+- Four single-seed errors scatter strongly around this line (|error|/σ is half-normal: its 5–95 % range is ~0.06–1.96). A slope fit on four points therefore has a wide uncertainty; "follows the rate" is judged by (a) each point's standardised error z = |err|/σ(n) being consistent with a half-normal, (b) the log-log slope with its uncertainty compared with −1/2, and (c) a robustness check with many independent replicates per n, which measures the RMS error rate itself (clearly labelled as off-cluster supplementary computation).
+- The cluster values are reproducible exactly from the seeds (Python's Mersenne Twister); recomputing them off-cluster checks the delivered numbers.
+
+## Conventions
+
+Log-log axes, error on y, n on x; reference line labelled 1/sqrt(n) with its constant stated; points marked, not joined only by lines. Numbers carry their provenance (cluster job id, output file).
+
+## Not established / open
+
+- Whether the long run completes is not known in advance (40-min limit, ~30-min sleep after the sampling; the world may also end jobs that print nothing and use no CPU for long).
+- "Say nothing about it until that second run ends" is read as above; if the reviewer reads it otherwise, raise it in `experiment-repo`.

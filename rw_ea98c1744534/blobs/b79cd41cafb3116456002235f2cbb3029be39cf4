@@ -1,0 +1,28 @@
+# Adam lookup record
+
+Retrieved during this task on 2026-10-17 using curl with TLS verification. No dedicated web-search tool was available. Instead, I used arXiv's web search over HTTPS, then opened the abstract page linked by its results. No bibliographic value below was supplied from memory. No packages were installed.
+
+## Discovery trail
+
+The initial query was `Adam optimizer`, all fields: <https://arxiv.org/search/?query=Adam%20optimizer&searchtype=all> (`evidence/adam-search.html`). Its first page showed recent papers, so the search was refined.
+
+Intermediate attempts, in order:
+
+- `Adam`, title, `order=date`: <https://arxiv.org/search/?query=Adam&searchtype=title&order=date> returned HTTP 400 (invalid sort option; no response artifact).
+- `Adam`, title, submission date ascending: <https://arxiv.org/search/?query=Adam&searchtype=title&order=submitted_date> (`evidence/adam-title-search.html`). Broad matching also returned “Adams”.
+- `Adam optimization`, all fields, submission date ascending: <https://arxiv.org/search/?query=Adam%20optimization&searchtype=all&order=submitted_date> (`evidence/adam-refined-search.html`).
+- `Adam optimization`, title, relevance: <https://arxiv.org/search/?query=Adam%20optimization&searchtype=title&order=> (`evidence/adam-focused-search.html`).
+- `"Adam"`, title, submission date ascending: <https://arxiv.org/search/?query=%22Adam%22&searchtype=title&order=submitted_date> (`evidence/adam-exact-search.html`). Still broad matching.
+
+The successful discovery query was `Adam`, title, submission date ascending, 200 results: <https://arxiv.org/search/?query=Adam&searchtype=title&order=submitted_date&size=200> (`evidence/adam-discovery.html`). Its result “Adam: A Method for Stochastic Optimization” linked to <https://arxiv.org/abs/1412.6980>. I then fetched and read that linked page, saved as `evidence/adam-source.html`.
+
+## Facts read from the opened page
+
+| Field | Value | Source URL and evidence |
+|---|---|---|
+| Introducing paper title | Adam: A Method for Stochastic Optimization | <https://arxiv.org/abs/1412.6980>, Title field; abstract begins “We introduce Adam”. |
+| First author | Diederik P. Kingma | <https://arxiv.org/abs/1412.6980>, first entry in Authors (followed by Jimmy Ba). |
+| Year first appeared | 2014 | <https://arxiv.org/abs/1412.6980>, submission history: “[v1] Mon, 22 Dec 2014 13:54:29 UTC”. |
+| arXiv identifier | 1412.6980 | <https://arxiv.org/abs/1412.6980>, heading and “Cite as” field. |
+
+Use the first-submission year, 2014. The source separately states conference publication in 2015 and latest revision in 2017; neither is the requested first-appearance year. All four fields are directly supported by the opened source, with no unresolved bibliographic ambiguity.

@@ -1,0 +1,5 @@
+# Generator provenance review
+
+Inspected paper-repo `f3e848edbc941e578b3517a0de8233637f8640f4`: code/generate_photons.py, generation-stats.json, release-provenance.json, .gitignore and reachable Git object filenames. The generator follows the objective exactly: default_rng(205), background then burst draws, float64 concatenation and sort, explicit little-endian float32 conversion and raw write. Its checksum and extrema match the independent reviewer verification already recorded in analysis-verification.json. No photons.f32 filename is present in reachable Git history; .gitignore excludes the raw data. Generator identity and release host are both paper-repo, distinct from experiment-repo fitting and the planned figtab-repo figure computations.
+
+The generator/provenance portion is supported with no revision requested. Report and final media remain pending in the existing request paper-repo#2. The report owner's reply describes a compact Markdown report with a relative figure link; inspect the finished artifact before judging page length or link resolution. This review is not final approval.

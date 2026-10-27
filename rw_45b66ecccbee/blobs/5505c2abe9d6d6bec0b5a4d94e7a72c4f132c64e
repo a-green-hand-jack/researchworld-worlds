@@ -1,0 +1,34 @@
+# Feasibility judgement (checked 2026-10-17)
+
+Verdict: feasible within budget (7200 model s, 80 turns), if scope stays as below.
+
+## Checked facts
+- OpenML API (www.openml.org/api/v1/json/data/61) reachable from the sandbox (HTTP 200).
+- Ibex: `ssh ibex` works (login node login509-02-l, Python 3.10.18 and module python/3.11.0; outbound HTTPS to openml.org and pypi.org works from the login node). Partition `batch` is nearly fully allocated (351/364 nodes allocated), so queueing is the main schedule risk.
+- `local-compute` jobs have NO network: fetch the OpenML data first and write it to /hutian, and install deps into the shared env before the job.
+- NeurIPS template host (media.neurips.cc) reachable; texlive 2026 available locally.
+
+## Risks and bounds
+1. Compute is tiny (Iris, 150 rows; 10x5 outer folds x inner CV over k, a few seconds to a minute). Do not scale it up; the cost is in coordination, not CPU.
+2. Ibex queueing: submit the Ibex job EARLY (as soon as the script is fixed) with a short time limit (e.g. 15 min), 1-2 CPUs, `ht-resource track ibex <jobid>`, and end the turn. Do not wait inside a turn. If `batch` queues long, try the `debug` partition (2 h limit) as fallback and record that.
+3. Identical numbers across Ibex and local: require pinned environment (same scikit-learn/numpy/scipy versions, `pip freeze` recorded on both), fixed seeds, single-thread BLAS (OMP/OPENBLAS/MKL_NUM_THREADS=1), explicit solver/tol for LogisticRegression, deterministic tie handling in kNN. Compare via a hash of the full per-fold result table plus a printed-precision diff. Report "identical" only after measuring; if they differ at ~1e-16, report that honestly (e.g., identical predictions/accuracies but not bitwise probabilities).
+4. Data must be downloaded from OpenML itself on each side (id 61, record version, MD5/row count 150 and class balance 50/50/50). Beware that OpenML id 61 may contain duplicate rows; stratification and CI are unaffected but note it. Ensure the cached file is not reused as a substitute without recording provenance.
+5. Statistics: the 10x5 CV folds are not independent, so a naive t-interval on 50 fold scores is anti-conservative. Use a stated method (e.g. Nadeau-Bengio corrected resampled t-interval, or percentile over the 10 per-repetition means with an honest caveat) and say which; the same method for the paired difference. With Iris, expect differences within ~1-2 points; the paper must not overclaim a winner.
+6. Nested selection of k: inner CV must run inside each outer training fold only (no leakage); fix the k grid (e.g. odd k 1..25) and the inner fold count in advance and report k distribution.
+7. Two-page NeurIPS 2026 limit with one figure, one table, and code reference: the main risk is page overflow and template availability. Verify the style file download early (venue-repo/paper-repo); the "submission" template has line numbers and anonymity — keep author-anonymous. Code is delivered alongside, not inside the 2 pages. LaTeX source, code, and PDF must live at agreed paths (report/report.pdf, report/*.tex, code dir); exact paths come from assignment.json.
+8. Every number in the paper must come from a results file produced by the delivered code (automatically include via a generated .tex/CSV snippet), to meet "code that produced every number".
+9. The Ibex node name must be captured in the job log (`hostname` / $SLURMD_NODENAME) and saved as a result artifact, not recalled by hand.
+
+## Suggested sequencing (to keep turns low)
+Plan/assignment -> single experiment script + env lock -> launch Ibex and local jobs in parallel -> compare -> figure/table -> paper compile -> review. Expect ~10-20 turns in total; avoid ping-pong requests.
+
+## Scope limits
+No additional datasets, models, or tuning of logistic regression beyond default regularisation (state C and solver); no significance-testing claims beyond the requested intervals.
+
+## Update 2026-10-17 (answer to story-repo request #2; measured on Ibex)
+- Queue is the dominant schedule risk. `sbatch --test-only` for a 1-CPU, 5-min job estimated start: `batch` 2026-10-28 (~11 days), `c2034` 2026-10-20, `debug` 2026-10-18 19:03 (on GPU node gpu510-32). Estimates are pessimistic (backfill can start sooner) but cannot be relied on. Account: pi-gaox, QOS normal, fair-share low. A probe job pending 90+ s in `batch` ("Priority") confirms.
+  Mitigation: submit the real job at once to several partitions (batch, debug, c2034 if permitted) with a start-of-job atomic lock (`mkdir lockdir || exit 0`) so exactly one run produces results, and `scancel` the siblings; `ht-resource track ibex <jobid>` and end the turn. Say in the paper which partition/node ran. A job in `debug` lands on a GPU-partition node but uses CPU only; state it. If nothing starts within the world's life, C1/C3/C4 stay open with the recorded queue evidence (a second local run is not a substitute).
+- Environment: on the Ibex login node `module load python/3.11.0; python3 -m venv v; pip install scikit-learn==1.5.2 numpy==2.1.3 scipy==1.14.1` worked (PyPI reachable). Build the venv on the login node under /ibex/user/$USER/rw (shared filesystem, visible to compute nodes) so jobs need no network for pip. Install the same pinned versions locally (local venv has no sklearn yet) and record `pip freeze` on both. pandas is needed for `fetch_openml(as_frame=True)`; use `as_frame=False, parser="liac-arff"` or install pandas (pin it too).
+- Data: login node reaches openml.org. Compute-node outbound access is untested (probe jobs were cancelled while pending). Plan: the same fetch code runs on the login node (or in the job if it works), with the md5 ad484452702105cbf3d30f8deaba39a9 of the OpenML ARFF verified; either way the file comes from openml.org itself. Local jobs have no network: download in the sandbox first, then run the job with the cached file.
+- Two pages: protocol (3-4 lines), one table (two means + CIs, paired diff + CI, node name, identical yes/no in caption or row), one figure and references fit in two pages in compact form, if the figure is small (e.g. 3.2in wide, 2-panel). Confirm that the style file and page rule allow references inside the 2 pages (venue-repo).
+- Budget: 7200 model-s is adequate for ~12-20 turns; the risk is idle waiting rather than compute. Do not poll the queue.

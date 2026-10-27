@@ -1,0 +1,40 @@
+"""F7 (appendix): E2 per-frequency survival and the other mask families. (a) multiplicity of each Fourier frequency that survives, measured
+(mean over 3 seeds) vs the pre-registered per-frequency prediction, Bernoulli masks, lambda=1e-2, p0=0.25; (b,c) rank vs r for multiblock and
+non-cyclic block masks (N1-general), as in F6(a,b)."""
+import os, sys
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+from fig6_e2_masking import prof, LAMS, LCOL
+from matplotlib.lines import Line2D
+RCOL = ["0.0", "0.45", "0.7"]
+import matplotlib.pyplot as plt
+
+def make(outdir):
+    fs.setup()
+    rows, S, paths = common.load_e2()
+    pf, ppath = common.e2_pred_freq()
+    fig, axs = plt.subplots(1, 3, figsize=(fs.TEXTWIDTH, 2.0), constrained_layout=True, gridspec_kw=dict(width_ratios=[1.35, 1, 1]))
+    ax = axs[0]
+    for i, r_ in enumerate([0.3, 0.5, 0.9]):
+        z = [r for r in rows if r["exp"] == "pop" and r["fam"] == "bern" and r["lam"] == 0.01 and r["p0"] == 0.25 and r["r"] == r_]
+        M = np.array([r["surv_freq"] for r in z], float).mean(0)
+        P = np.array(pf[int(z[0]["id"])], float)
+        f = np.arange(len(M))
+        ax.plot(f, P, color=RCOL[i], lw=1.0, drawstyle="steps-mid", zorder=2)
+        ax.plot(f, M, color=RCOL[i], marker=fs.MARK[i], ls="none", ms=3, zorder=3, label=f"$r{{=}}${r_:g}")
+    ax.set_xlabel("Fourier frequency $f$"); ax.set_ylabel("surviving multiplicity"); ax.set_xlim(-0.5, 16.5); ax.set_yticks([0, 1, 2])
+    ax.legend(fontsize=6, frameon=False, loc="upper right", title="markers measured, steps predicted", title_fontsize=6)
+    ax.set_title("(a) per frequency, Bernoulli, $\\lambda{=}10^{-2}$", fontsize=7.0)
+    for ax, fam, title in [(axs[1], "multiblock", "(b) multiblock"), (axs[2], "block_nc", "(c) non-cyclic block")]:
+        for i, lam in enumerate(LAMS):
+            P = prof(rows, "pop", fam, lam, 0.25)
+            ax.errorbar(P[:, 7], P[:, 1], yerr=[P[:, 1] - P[:, 2], P[:, 3] - P[:, 1]], color=LCOL[i], marker=fs.MARK[i], ls="none", capsize=1.2, zorder=3)
+            ax.plot(P[:, 7], P[:, 4], color=LCOL[i], lw=1.0)
+        ax.set_title(title, fontsize=7.5); ax.set_xlabel("realised target fraction")
+        if fam == "multiblock": ax.set_ylabel("rank")
+        ax.set_ylim(-0.3, 4.5)
+    hs = [Line2D([], [], color=LCOL[i], marker=fs.MARK[i], ms=3, lw=1.0, label=f"$\\lambda{{=}}${lam:g}") for i, lam in enumerate(LAMS)]
+    fig.legend(handles=hs, fontsize=6, frameon=False, loc="outside lower right", ncol=4, title="(b, c) markers measured (3 seeds, min-max), lines predicted; $p_0{=}0.25$", title_fontsize=6, alignment="right")
+    fs.save(fig, "fig7_e2_appendix", outdir)
+    common.record_inputs(outdir, "fig7_e2_appendix", paths + [ppath])

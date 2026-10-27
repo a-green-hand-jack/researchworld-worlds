@@ -1,0 +1,41 @@
+"""Table: LR vs kNN on Iris (OpenML 61), 10x5 repeated stratified CV.
+Reads ../results/{intervals.csv,reproducibility.json}; writes tab_results.tex (tabular + caption + label)
+and tab_results_provenance.json. Usage: python make_tab_results.py [results_dir]   (default ../results)"""
+import sys, json, hashlib, pathlib
+import pandas as pd
+
+here = pathlib.Path(__file__).resolve().parent
+res = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else here.parent / "results"
+RUN = "local"
+iv = pd.read_csv(res / "intervals.csv")
+iv = iv[iv.run == RUN].set_index(["quantity", "interval"])
+rep = json.loads((res / "reproducibility.json").read_text())
+
+def row(q, signed=False):
+    c, n = iv.loc[(q, "corrected_t")], iv.loc[(q, "naive_t")]
+    f = (lambda x: f"{100 * x:+.2f}".replace("-", "$-$")) if signed else (lambda x: f"{100 * x:.2f}")
+    g = (lambda x: f"{100 * x:+.2f}".replace("-", "$-$")) if signed else (lambda x: f"{100 * x:.2f}")
+    return f"{f(c['mean'])} & [{g(c['lo'])},\\ {g(c['hi'])}] & [{g(n['lo'])},\\ {g(n['hi'])}]"
+
+same = "identical" if rep["identical"] else "not identical"
+maxd = rep["max_abs_diff_per_fold"]
+repro = (f"Ibex job {rep['ibex_job_id']} on node \\texttt{{{rep['ibex_node']}}} vs.\\ local: per-fold results {same} (max.\\ abs.\\ diff.\\ ${maxd:g}$).")
+body = "\n".join([
+    r"\centering",
+    r"\caption{Accuracy (\%) and paired difference (percentage points), 10$\times$5-fold CV. Intervals of record: 95\% corrected resampled-$t$ \citep{nadeau2003inference}; the naive $t$ over 50 folds ignores fold overlap (shown for contrast). The difference is not distinguishable from zero.}",
+    r"\label{tab:results}",
+    r"\small",
+    r"\begin{tabular}{lccc}",
+    r"\toprule",
+    r"& Mean & 95\% corrected $t$ & 95\% naive $t$ \\",
+    r"\midrule",
+    "Logistic regression (LR) & " + row("acc_lr") + r" \\",
+    "$k$NN ($k$ by inner CV) & " + row("acc_knn") + r" \\",
+    "LR $-$ $k$NN (paired) & " + row("diff_lr_minus_knn", signed=True) + r" \\",
+    r"\bottomrule",
+    r"\end{tabular}",
+    r"\par\smallskip{\footnotesize " + repro + "}",
+])
+(here / "tab_results.tex").write_text(body + "\n")
+prov = {n: hashlib.sha256((res / n).read_bytes()).hexdigest() for n in ["intervals.csv", "reproducibility.json"]}
+(here / "tab_results_provenance.json").write_text(json.dumps({"inputs_sha256": prov, "run_used": RUN}, indent=1) + "\n")

@@ -1,0 +1,26 @@
+{
+  "source": "Semantic Scholar",
+  "url": "https://api.semanticscholar.org/graph/v1/paper/arXiv:1706.03762?fields=title",
+  "start_utc": "2026-10-19T21:30:15.017429+00:00",
+  "end_utc": "2026-10-19T21:30:15.662939+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/semantic-scholar.headers",
+    "-o",
+    "/tmp/tmpbbaf2hmk/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://api.semanticscholar.org/graph/v1/paper/arXiv:1706.03762?fields=title"
+  ],
+  "exit": 0,
+  "curl_output": "429\napplication/json\n",
+  "stderr": "",
+  "first200": "{\"message\": \"Too Many Requests. Please wait and try again or apply for a key for higher rate limits. https://www.semanticscholar.org/product/api#api-key-form\", \"code\": \"429\"}",
+  "body_bytes": 174
+}

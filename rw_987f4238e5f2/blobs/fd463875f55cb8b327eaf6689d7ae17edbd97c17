@@ -1,0 +1,12 @@
+"""preview.png: histogram of arrival times in 1 s bins. Usage: make_preview.py photons.f32 preview.png"""
+import sys, matplotlib; matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from common import load, counts
+t = load(sys.argv[1]); edges, c = counts(t, 1.0)
+fig, ax = plt.subplots(figsize=(8, 3.6), dpi=150)
+ax.stairs(c, edges, color="#2a5d9f", lw=0.8, fill=False)
+ax.set_xlim(0, 1200); ax.set_ylim(0, c.max() * 1.08)
+ax.set_xlabel("Arrival time (s)"); ax.set_ylabel("Photons per 1 s bin (photons s$^{-1}$)")
+ax.set_title(f"Simulated photon arrival times, 1 s bins (N = {t.size:,})", fontsize=10)
+ax.spines[["top", "right"]].set_visible(False)
+fig.tight_layout(); fig.savefig(sys.argv[2])

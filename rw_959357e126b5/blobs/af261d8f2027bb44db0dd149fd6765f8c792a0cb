@@ -1,0 +1,389 @@
+# Brief: rewriting the JEPA-collapse paper for clarity, ICLR 2027 (idea-repo, context)
+
+Status: v5.1 (v5.1: citation audit done, Section 4.5; EMA reading of De
+Melo Costa et al. corrected in Section 6). v5.0 written for the research objective `idea-repo`#5 (the old
+objective #3 is closed and stays as history; its brief v4.3 is kept at
+`refs/brief_v4_objective3.md`, including the prior-work map). Owner:
+`idea-repo`. Every position settles its part against #5 and this brief;
+`internal-review-repo` judges the delivery against #5 and this brief.
+
+Sources read for v5 (2026-10-22): #5 itself; the released delivery assembled
+with `ht-role delivery` (paper-repo 771f5a90e56b, figtab-repo 924ea5af4d20,
+experiment-repo 4207193fc02e): `paper/main.tex`, `paper/sections/*.tex`,
+`paper/main.pdf` (47 pages: 9 of main text, statements on p. 10, references
+pp. 10-13, appendices A-F after them), `paper/CLAIMS.md`, `paper/CHANGES.md`;
+the official ICLR 2027 template text (`ICLR/Master-Template`, `iclr2027/
+iclr2027_conference.tex`, fetched 2026-10-22; venue-repo holds the verified
+copy and its hash).
+
+## 1. The objective, quoted in full (idea-repo#5)
+
+> The previous world in this line of work delivered a complete paper, ready to submit to ICLR 2027: "When Do Joint-Embedding Predictive Architectures Collapse? Survival as a Race Against Predictor Decay". Its research, code, results and figures are in your repositories and workspaces, and they are finished.
+>
+> This objective is the writing of that paper, and only the writing. Make it a paper a reviewer would call clearly and convincingly written: the structure and order of the argument, how each claim is stated and supported, the wording, how figures and tables are introduced and interpreted, the captions, and whether each citation sits in a sentence about the cited work. Where the text claims more or less than the evidence in the repositories shows, change the text to match the evidence.
+>
+> Do not run new experiments, do not change the results or the conclusions, and do not add research directions. A figure or table may be redrawn or laid out again only for readability, from results that already exist. Work that is not the writing answers what the writing asks of it, and otherwise has nothing to do in this objective.
+>
+> Deliver the revised paper: the LaTeX source in the ICLR 2027 template and the compiled PDF, within the ICLR 2027 submission requirements, the page limit of the main text included, with the appendices kept as supplementary material. Record next to the paper what was changed and why.
+>
+> Do not use any paper, preprint, code release or other written work first published after 18 October 2026.
+
+## 2. Requirements (numbered "W" for writing, "K" for constraints, "D" for deliverables)
+
+The standard (from #5): a paper **a reviewer would call clearly and
+convincingly written**. Each item below quotes the words of #5 it comes from.
+
+**What the writing must achieve**
+
+- **W1. Structure and order of the argument** ("the structure and order of
+  the argument"). The sections, their order and what each one establishes
+  before the next needs it.
+- **W2. Each claim stated and supported** ("how each claim is stated and
+  supported"). Every claim is stated once, plainly, with its scope, and next
+  to the evidence (theorem, figure, table, test) that supports it.
+- **W3. Wording** ("the wording"). Sentences a reader outside the project can
+  follow: defined terms, no internal labels, readable number density.
+- **W4. Figures and tables introduced and interpreted** ("how figures and
+  tables are introduced and interpreted"). Each is referred to in the text
+  before or where it is needed, and the text says what to read off it and
+  what it shows.
+- **W5. Captions** ("the captions"). Each caption says what is plotted and
+  what it shows; encodings, n and the statistic are stated.
+- **W6. Each citation in a sentence about the cited work** ("whether each
+  citation sits in a sentence about the cited work"). A citation is attached
+  to a statement of what that work does or shows, and that statement is
+  accurate (Section 6 below, and `refs/citation_audit.md` once pushed).
+- **W7. Text matches the evidence** ("Where the text claims more or less than
+  the evidence in the repositories shows, change the text to match the
+  evidence"). Both directions: overclaims weakened, underclaims (results the
+  repositories support but the text hides or understates) stated. The
+  evidence is the delivered `results/`, `theory/` notes and `code/` checks,
+  with `paper/CLAIMS.md` as the existing ledger (Section 5 lists candidates).
+
+**What must not change (constraints)**
+
+- **K1. Writing only** ("the writing of that paper, and only the writing").
+- **K2. No new experiments** ("Do not run new experiments"). Recomputing a
+  quantity from existing result files for a redrawn figure is not a new
+  experiment; new runs, new seeds, new grids or new scoring rules are.
+- **K3. Results and conclusions unchanged** ("do not change the results or
+  the conclusions"). Every number stays as `numbers.tex` generates it from
+  `results/`; every verdict (pass, fail, undetermined, retrospective, post
+  hoc) stays. Where W7 requires a wording change, it changes how a result is
+  stated, not the result. If the writing finds a result that is wrong, that
+  is raised with its owner (experiment-repo), not rewritten.
+- **K4. No new research directions** ("do not add research directions").
+  Future-work sentences may name what is left open; they add no new study.
+- **K5. Figures/tables redrawn or laid out again only for readability, from
+  existing results** ("A figure or table may be redrawn or laid out again
+  only for readability, from results that already exist"). Owner:
+  figtab-repo (assignment: `paper/figures/`, `paper/tables/`,
+  `code/figures/`).
+- **K6. Other functions only answer the writing** ("Work that is not the
+  writing answers what the writing asks of it, and otherwise has nothing to
+  do in this objective").
+- **K7. Cutoff** ("Do not use any paper, preprint, code release or other
+  written work first published after 18 October 2026"): work first
+  published on 2026-10-18 or earlier may be used; later may not. This holds
+  for any citation added or changed during the rewrite.
+
+**What is delivered**
+
+- **D1. The LaTeX source in the ICLR 2027 template.**
+- **D2. The compiled PDF.**
+- **D3. Within the ICLR 2027 submission requirements, the page limit of the
+  main text included.** The template says: "There will be a strict upper
+  limit of **9 pages** for the main text of the initial submission, with
+  unlimited additional pages for citations." The AI use statement is
+  "**required** and does not count toward the page limit"; the ethics and
+  reproducibility statements are "recommended" and do not count. venue-repo
+  owns the full rule set and the checker.
+- **D4. "with the appendices kept as supplementary material."** Read: the
+  appendices stay (they are not cut) and are supplementary, i.e. outside the
+  9-page main text, after the references in the same PDF as the template's
+  `\appendix` section allows, or as a separate supplementary file;
+  venue-repo decides which. **Consequence for the writing (my reading, the
+  most important one):** reviewers are not obliged to read supplementary
+  material, so the 9-page main text must state and support its claims on its
+  own; an appendix may hold proofs, details and further results, but a main
+  claim whose only support is an appendix figure or table is not
+  "supported" in the sense of W2 (Section 4.4).
+- **D5. "Record next to the paper what was changed and why."** A change
+  record in `paper/` beside `main.tex` (paper-repo; e.g. a rewritten
+  `paper/CHANGES.md` section for #5), listing each change and its reason
+  (W1-W7), including every place where W7 changed what a sentence claims
+  and the evidence that required it.
+
+## 3. The starting point (released paper, paper-repo 771f5a90e56b)
+
+Title: "When Do Joint-Embedding Predictive Architectures Collapse? Survival
+as a Race Against Predictor Decay". Main text (pp. 1-9): 1 Introduction,
+2 Related work, 3 Setup, 4 Driving force versus decay: the escape race
+(4.1 exact structure, 4.2 the race), 5 What the heuristics change,
+6 Experiments (6.1 E1b, 6.2 E2 masking, 6.3 E3 ViT), 7 Beyond gradient
+descent, encoder depth and the near-collapse window (7.1 AdamW, 7.2
+layer-normalised target, 7.3 deep linear encoder, 7.4 weight-decay schedules,
+7.5 the race and its premise in the ViT), 8 Limitations and conclusion;
+statements; references; App. A Proofs, B Further limits and predictions
+(incl. Table 1 heuristics, structure of the aligned case, extended related
+work), C-E experimental details (E1-E3), F the extension (derivations, tests,
+Table 8 of all extension tests). Floats in the main text: two figures (Fig. 1
+E1b phase grid, Fig. 2 a composite of AdamW, deep encoder and ViT switch), no
+table. Source word counts: main sections about 5,100 words, appendices about
+11,500. Every number is a macro in `paper/numbers.tex` (893 lines) generated
+by `paper/tools/make_numbers.py` from `results/`.
+
+What the paper claims (fixed by K3; the ledger is `paper/CLAIMS.md`, the
+status per claim in `paper/CHANGES.md`): C1 exact structure near collapse
+(proved; framing credited to De Melo Costa et al. 2026); C2 the race predicts
+collapse and rank (held-out, pre-registered, linear GD: E1b MAE 0.25, masking
+E2 0.03; not the law under AdamW or a deep encoder; in the ViT predicts the
+epoch-50 critical decay but not shown better than the step-0 rule per run);
+C3a-d how predictor, masking, target update and weight decay act (linear GD);
+C4 setting heuristics from the criterion: not supported; C5 where the theory
+fails; N1 AdamW near-collapse dynamics (aligned basis; fixed-horizon count
+passes, converged rank fails); N2 layer-normalised target (passes, linear,
+GD); N3 schedules (fails as registered); N4 the ladder (rung 1a aligned
+passes / generic fails; 1b passes; rung 2 passes; rung 3 fails; rung 4
+undetermined); N5 collapse is not decided early in the ViT (premise D <= 5
+holds in no cell); N6 race vs the mu count of 2610.02344 (retrospective;
+orders their tabular grid worse than their count).
+
+## 4. What a reviewer would find unclear: diagnosis of the released text
+
+My reading of the released PDF and source, given as material for the plan
+(story-repo) and the writing (paper-repo); it is not a verdict (review owns
+that). Locations are released page/line numbers or `sections/<file>.tex`.
+
+### 4.1 Structure and order (W1)
+
+1. **The paper reads as a paper plus an appended extension.** Sections 3-6
+   build and test the race for linear GD; Section 7 then leaves each
+   assumption "in turn" with five unrelated subsections (AdamW, LN target,
+   deep encoder, schedules, ViT premise), and Section 8 is one paragraph. The
+   introduction's three contribution bullets mirror this history (theory,
+   tests, "beyond"). There is no single line of argument a reader can state
+   after the introduction (e.g. "where the race holds, where it is replaced,
+   where its premise fails"), and the ViT material is split between 6.3 (E3,
+   step-0 rule) and 7.5 (race readout and switch experiment).
+2. **The central premise is tested last and fails there.** The paper is
+   built on "collapse is decided early" (Sec. 1 p. 1 l. 46) and Section 7.5
+   ends "the premise fails" in the ViT. The order in which the reader meets
+   the premise, its support (linear models) and its failure (ViT) is a
+   structural choice the plan must make explicitly; the title and abstract
+   must stay consistent with it (Section 5).
+3. **No discussion section.** What the results mean together (which
+   heuristic acts through which term, what a practitioner can and cannot
+   take from them, given C4 not supported and N3 recommending no schedule)
+   is spread over limitations clauses.
+4. **Related work comes before the setup it is positioned against** and
+   positions by equation and section numbers the reader has not seen yet
+   (Sec. 2 cites Definition 4, (13), Section 5, Section 7.1, 7.3).
+
+### 4.2 Claims stated and supported (W2)
+
+5. **Abstract and contributions are lists of numbers.** The abstract has
+   about 15 numbers with baselines in parentheses and 8 results; the second
+   and third contribution bullets repeat them. A reader cannot tell the main
+   claim from the secondary ones.
+6. **Claims carry their test history in the sentence** ("A first frozen
+   model (v3) predicted … with (iv) added (v4) a new grid passes", Sec. 7.1;
+   "known before the last scorer fix", Sec. 7.5; "the word is undetermined
+   (truth ill-posed)", Sec. 7.3). The provenance belongs in the appendix
+   and the change record; the main text needs the claim, its scope and its
+   verdict.
+7. **Scope qualifiers are scattered.** Which results are linear-only, GD-only,
+   aligned-basis-only, retrospective or post hoc is said in many places
+   with different words; the reader needs one consistent convention (e.g.
+   "registered held-out test", "retrospective", "post hoc") defined once.
+
+### 4.3 Wording (W3)
+
+8. **Internal labels in the main text** (counts in main-section sources):
+   "rung" (4), "Arm T/P" (4), E1b/E1c/E2/E3 (17), A1 (5), N2 (3), v3/v4 (3),
+   B1′, B3, "set c", "A2′ sets", "Th", "TOST", "the word", "mu_tight". These
+   are names of the project's work packages and registrations; a reviewer
+   has no use for them unless each is defined, and most need not be.
+9. **Density.** Parenthetical baseline lists with intervals in most
+   sentences of Sections 6-7 (e.g. Sec. 7.2 lists seven errors in two
+   sentences). The numbers stay (K3); the main text can give the comparison
+   that carries the claim and send the rest to a table.
+10. **Inconsistent cross-reference names:** appendices are printed as
+    "Section A", "Section D" by `\cref` and as "App. B" by hand in the same
+    paragraph (Sec. 5, p. 6); ICLR papers conventionally say "Appendix A".
+
+### 4.4 Figures and tables (W4, W5, D4)
+
+11. **The main text leans on appendix floats.** It cites Figure 3b (Sec.
+    4.2, the drive-vs-decay schematic, in App. A), Table 1 (heuristics, App.
+    B), Tables 4, 5, 7 (E1b/E2/E3 criteria, App. E), Figures 7 and 9 (E2,
+    E3, App. E), Figure 13 and Table 8 (App. F). Under D4 the claims these
+    support need their evidence in the 9 pages or a sentence that carries
+    it. Only two figures and no table are in the main text.
+12. **Figure 2 is a composite of three unrelated results** (AdamW count vs
+    weight decay; deep-encoder model vs reading; ViT switch share f(e)),
+    referenced from three subsections, with a caption that is a legend
+    (colour and marker list) without the finding.
+13. **Figure 1's caption** gives encodings but not what the reader should
+    see (the rescue-then-removal in lambda and the boundary far below the
+    static threshold are said in the text, not the caption).
+14. **Figure numbering vs. order**: main-text Figures 1-2, then the reader
+    is sent to Figure 3 (appendix schematic) from Section 4 before Figure 1.
+    K5 allows moving or re-laying out figures for readability (figtab-repo).
+
+### 4.5 Citations (W6)
+
+15. **Citation audit (all 109 citation commands, 54 keys; `refs/citation_audit.md`,
+    each verdict with its source):** 98 OK, 7 vague, 4 misattributed. The
+    four misattributions, which a reviewer would object to most (two of
+    them in the main text):
+    - `related.tex` l. 14 (Sec. 2): De Melo Costa et al. are said to read
+      EMA as a shift of their ratio; they treat EMA as a timescale that does
+      not decide which modes escape (their "Mechanism 3: EMA as a
+      timescale", Prop. J.7). The paper's own `related_ext.tex` l. 31 says
+      it correctly, so the main text contradicts the appendix. (Brief v4
+      and v5.0 repeated the error; corrected in Section 6 below.)
+    - `related.tex` l. 11 (Sec. 2) and `related_ext.tex` l. 16: Ponce et
+      al. (2025) are credited with "an optimal ridge predictor" and the rule
+      c^2 >= 4 lambda; they train the predictor (ridge form only at
+      equilibria, their Eq. 7) and give the threshold for scalar input
+      (Prop. 4.11); and they do not leave EMA stability open (Prop. 4.10).
+      All of it is true of Arbel et al. (PEIRA, 2026).
+    - `related_ext.tex` l. 60: Li, Luo & Lyu (2021) have no weight decay;
+      "with weight decay a mode grows only if its signal exceeds the
+      decay" is our extension.
+    Vague: Xie & Li (2024) KKT point applied to a non-gradient field
+    (`extension.tex` l. 20); Kunstner et al. 2024 / Sabanayagam & Lucey
+    2026 as a tag on our sign-step approximation (l. 19); Bao 2023
+    (`related_ext.tex` l. 19) and Chen et al. 2023 (`discussion.tex` l. 6)
+    without what they show; the introduction's "Several have partial
+    theory (...)" list. The audit gives a minimal rewording for each.
+    Checked and correct: Tian et al.'s eqs. 11-12, 14 and Theorem 1 (the
+    per-mode match is exact at alpha = 1), Jacobs et al.'s Lemma 4.5, the
+    De Melo Costa section/equation pointers. Bibliography: all 54 entries
+    cited, all first published on or before 2026-10-18 (latest:
+    Sabanayagam & Lucey 2026-10-03, De Melo Costa 2026-10-01); three
+    entries give the arXiv version where a published one exists by the
+    cutoff (`ponce2025dual` ICLR 2026, `bisulco2025masked` ICCV 2025,
+    `bao2023feature` Neural Computation).
+
+## 5. Where the text may claim more or less than the evidence (W7): candidates
+
+Candidates found while reading; each is to be checked against the results
+by the writer and review, not taken as established. None changes a result.
+
+1. **Introduction, p. 1 l. 44-45:** "no criterion predicts when a
+   configuration collapses and how much rank it keeps", followed three lines
+   later by De Melo Costa et al. (2026), whose stability count bounds the
+   rank (and on their own tabular grid orders it better than the race, N6).
+   Overclaim about the literature; the gap needs stating as what that count
+   lacks (predictor decay, the race in time), as Section 2 already does.
+2. **Section 7 opening:** "Every prediction was frozen before its held-out
+   runs and scored once" sits beside a post hoc post-loss law (B1′), a
+   retrospective rung-2 score on E2's arm, a post hoc tanh block-mask
+   result, and a ViT ratio "known before the last scorer fix" (CHANGES.md
+   row C2). The sentence is broader than the record; the exceptions are
+   stated later, but the general sentence should not exceed them.
+3. **Limitations, p. 9 l. 483-484:** "5 seeds per row, hardware confounded
+   with row". E3's registered rows have 3 seeds (Sec. 6.3; App. E
+   `sections/appendix.tex` l. 244, "3 seeds (0--2) per configuration"), the
+   E7/E8 rows 5; and the E7-G rerun (`results/e7/e7g.json`; CHANGES.md row C2)
+   found no GPU-family difference on the reference row at 3 seeds. The
+   sentence should give the seeds per experiment and say what the confound
+   is and what E7-G does and does not exclude.
+4. **Abstract, last sentence:** "switching weight decay mid-training shows
+   that collapse is not decided early" generalises from one small ViT on
+   CIFAR-10; the evidence supports "in this ViT" and, for lowering decay,
+   "partly in one arm, not at all in the other" (as written).
+5. **Contribution 1** lists "how predictor learning rate, depth and target
+   speed act" among the race's predictions; the depth prediction failed and
+   was corrected post hoc (E1c), one EMA sign failed (13/14), and in the ViT
+   predictor and EMA predictions failed (Table 7). The bullet states the
+   predictions without their record; the scope must be visible where the
+   claim is made.
+6. **Underclaims:** the E1b collapse-boundary result (λc 0.023-0.088
+   against static 0.375, 1 of 72 cells missed) and the N2 result (MAE 0.045,
+   every run within one) are among the strongest evidence and are buried in
+   long sentences; the rung-2 pass (the race extends to a two-layer MLP
+   encoder when it reads the decaying first layer's features) is given one
+   clause in Sec. 7.3.
+7. **Section 2, p. 2 l. 93:** "We recover these results as limits (Section
+   D)". Section D (extended related work, `sections/related_ext.tex` l. 8-25,
+   58-64) describes those works but derives none of them as a limit. Two
+   are recovered in the main text: the static threshold of Tian, Wang, Ponce
+   and Arbel as Prop. 2(b), the balanced basin of Tian et al. as Cor. 3.
+   Mode-by-mode learning from small initialisation (Saxe; Simon; Li) is not
+   derived anywhere I found. The sentence should name what is recovered and
+   where (checked 2026-10-22).
+8. **Section 6.3:** "Spearman 0.83 [0.45, 0.99], carried by the weight-decay
+   sweep": CLAIMS.md records the post hoc split (1.0 over the six
+   weight-decay configurations, 0.27 [-0.58, 1.0] over the other six); the
+   main text's "carried by" should say this is post hoc.
+
+## 6. Prior work and citation conventions
+
+- The prior-work map of brief v4.3 stands for the cited works (it is in
+  `refs/brief_v4_objective3.md`, Sections 5 and A5, with equation-level notes
+  on arXiv 2610.02344 in `refs/lit_dvd2610.md`). #5 adds no research
+  direction, so no new body of prior work is needed; a citation may be
+  added only where a sentence about existing content needs its source, and
+  then only work first published on or before 2026-10-18 (K7).
+- Positioning to keep (from v4.2-4.3, already in the paper): De Melo Costa
+  et al. 2026 (arXiv 2610.02344, NeurIPS 2026) is prior work; it is credited
+  with the drive-vs-decay framing, the rank as a count of unstable modes, and
+  reading predictor scale, masking and encoder weight decay as shifts of its
+  ratio, and EMA as a timescale that does not decide which modes escape
+  (their "Mechanism 3: EMA as a timescale", Prop. J.7);
+  its escape condition with encoder weight decay coincides with
+  the paper's initial window in the aligned model; it has no predictor weight
+  decay. What stays new: the decaying gain, collapse as an attractor, the
+  race and lambda^race, the need for predictor decay, the held-out tests.
+  Tian et al. 2021 is credited with the per-mode system, the conserved
+  quantity (their Theorem 1) and the static threshold; Prop. 1-2 and Cor. 3
+  are "known in substance".
+- Convention for W6 (what a reviewer checks): each citation sits in a clause
+  that says what the cited work does ("X show that ..."; "as in X, we ...");
+  a group citation is used only for a statement true of each member; a
+  theorem/equation number attributed to a paper is that paper's own.
+- Reference list: 54 entries in `paper/references.bib`; every arXiv id and
+  v1 date was verified in v3-v4 (verified list in
+  `refs/brief_v4_objective3.md`, Appendix B); the date check of every entry
+  against K7 is part of `refs/citation_audit.md`.
+
+## 7. Conventions for a clearly written ICLR theory-and-experiments paper
+
+Field conventions the writing can follow (general practice, not rules of
+#5; the venue rules are venue-repo's):
+- Introduction ends with a short list of contributions, each a claim with
+  its scope and a pointer to where it is supported; numbers only for the
+  headline result.
+- Definitions, assumptions and results as numbered environments; each
+  approximation labelled as such with where its accuracy is measured (the
+  paper already does this; keep it).
+- Experiments sections say, before the results, what is tested, against
+  which baselines and how scored (pre-registered held-out vs development vs
+  post hoc); results paragraphs open with the finding.
+- Every main-text figure/table is referred to in the text, in order, and
+  interpreted there; captions are self-contained: what is shown, the
+  finding, n, statistic and interval type.
+- Appendices are named "Appendix X" and referenced for proofs and details,
+  not for the evidence of a main claim (D4).
+- Limitations and failed predictions stated plainly in the main text (the
+  paper's honesty about failed tests is a strength to keep, not to hide).
+
+## 8. Not established / open
+
+- **D4's reading** (appendices after the references in the same PDF vs a
+  separate supplementary PDF): both keep the appendices as supplementary
+  material; venue-repo decides, paper-repo builds it.
+- **Whether the change record of #5 replaces or extends `paper/CHANGES.md`**
+  (which records the NeurIPS-to-ICLR extension): paper-repo decides; #5
+  asks for "what was changed and why" by this rewrite.
+- **Which candidate in Section 5 is an actual mismatch** needs the result
+  files; review and paper-repo decide, experiment-repo answers questions
+  about what a result file supports.
+- **Title.** #5 names the paper by its title; changing the title is a
+  wording decision that must not change the conclusions (K3). Not
+  established whether the objective intends the title to stay; my reading is
+  that it may change only if W7 requires it (e.g. if the main claim it names
+  is not what the evidence supports), and the change record must say so.

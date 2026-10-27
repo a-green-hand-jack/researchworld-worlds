@@ -1,0 +1,197 @@
+"""Independent check of the A1_v4 scope result on grid H3 (experiment-repo dac0beb results/e4/a1h3/a1h3_score.json,
+a1h3_runs.jsonl.gz; registration results/e4/prediction.json A1_v4_scope at 70c3367; frozen v4 4327b3d, md5 72f6b42...).
+
+1. Rescore A1b/A1c/A1d per eta*lam*T bin with my own code (same scorer as checks/e4_a1h2_check.py).
+2. Re-run the frozen v4 on every run's delivered state at K and compare with the delivered pred_* fields.
+3. Split the bins by statistics set: h3b has c/s = 0.96^k >= 0.282 for all 32 directions, so its alive count can
+   only be wrong through timing; h3a (c/s = 0.87^k) has 10 directions at or below thr and 2 within 25% above it.
+4. Decompose v4's wrong pairs per bin and statistics set, as rates per scored pair:
+   model alive / truth dead on c/s > thr, before the truth's first crossing (timing) or after it (the truth crossed
+   and is below thr again: post-capture drop, where an unsettled amplitude would show);
+   model dead / truth alive on c/s <= thr (truth above its settled level) or on c/s > thr (model late).
+5. Re-simulate the 80-bit truth with my own longdouble map for one run per statistics set x (eta, lam) cell and
+   compare burst / alive_from / checkpoint states; record |a_t| / (c/s) at the checkpoints after the truth's first
+   crossing on the directions with c/s > thr (the unsettled deficit the scope test is about).
+
+Usage: python3 checks/e4_a1h3_check.py /path/to/experiment-repo [NPROC] > checks/e4_a1h3_check.json
+"""
+import sys, os, json, gzip, time, hashlib, subprocess, importlib.util
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+import numpy as np
+from multiprocessing import Pool
+
+ROOT = sys.argv[1]
+sys.path.insert(0, os.path.join(ROOT, "code"))
+import e4_a1h3 as H  # noqa: E402  (configs; sets e4_a1.STATS to h3a/h3b)
+import e4_a1 as A  # noqa: E402  (stats, init_a, CHECKS only)
+
+K, T, THR, BURST = 300, 60000, 0.05, 1e-3
+CK = [int(x) for x in np.unique(np.round(np.geomspace(K + 50, T, 30)))]
+assert CK == A.CHECKS
+
+
+def load_at(commit, name, md5):
+    src = subprocess.run(["git", "-C", ROOT, "show", f"{commit}:code/e4_theory.py"], capture_output=True, check=True).stdout
+    assert hashlib.md5(src).hexdigest() == md5, (commit, hashlib.md5(src).hexdigest())
+    path = f"/tmp/{name}.py"
+    open(path, "wb").write(src)
+    spec = importlib.util.spec_from_file_location(name, path); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    return m
+
+
+V4 = load_at("4327b3d35b86935d161b5c968c0d794c5a78e064", "theory_v4_frozen", "72f6b4245a46a2a34c773052e5a5e160")
+V3 = load_at("ebc17db61082664b4c8f64e9012815d5b6774517", "theory_v3_frozen", "2f894944f71ad618955363ea8e8fe8dd")
+
+
+def sim(cfg, dtype, rel=0.0):
+    c, s = A.stats(cfg["stats"]); D = dtype
+    c = c.astype(D); s = s.astype(D); one = D(1)
+    b1, b2, eta, lam = (D(cfg[k]) for k in ("b1", "b2", "eta", "lam")); eps = D(1e-8)
+    a = A.init_a(cfg).astype(D) * (one + D(rel)); p = np.full(c.shape, D(cfg["p0"]))
+    ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c)
+    burst = np.zeros(c.size, int); alive = np.zeros(c.size, int); at = []; amp = []; cks = set(CK)
+    for t in range(1, T + 1):
+        r = c - p * s
+        ga = -a * p * r; gp = -a * a * r
+        ma = b1 * ma + (one - b1) * ga; va = b2 * va + (one - b2) * ga * ga
+        mp = b1 * mp + (one - b1) * gp; vp = b2 * vp + (one - b2) * gp * gp
+        bc1 = one - b1 ** t; bc2 = one - b2 ** t
+        a = a * (one - eta * lam) - eta * (ma / bc1) / (np.sqrt(va / bc2) + eps)
+        p = p * (one - eta * lam) - eta * (mp / bc1) / (np.sqrt(vp / bc2) + eps)
+        if t > K:
+            Aa = np.abs(a)
+            burst[(burst == 0) & (Aa > BURST)] = t; alive[(alive == 0) & (Aa > THR)] = t
+            if t in cks:
+                at.append(Aa > THR); amp.append(np.array(Aa, float))
+    return dict(burst=burst, alive_from=alive, alive=np.array(at, bool), amp=np.array(amp))
+
+
+def resim(args):
+    cfg, rec = args
+    L = sim(cfg, np.longdouble)
+    nz = lambda x: np.array([0 if v is None else v for v in x])
+    Aa = np.array(rec["alive"], bool)
+    c, s = A.stats(cfg["stats"]); pc = c / s; cki = np.array(CK)
+    after = (L["alive_from"][None, :] > 0) & (cki[:, None] >= L["alive_from"][None, :]) & (pc[None, :] > THR)
+    ratio = (L["amp"] / pc[None, :])[after]
+    near = after & (pc[None, :] <= THR / 0.75)
+    return dict(id=cfg["id"], stats=cfg["stats"], eta_lam_T=cfg["eta_lam_T"],
+                burst_equal=int((L["burst"] == nz(rec["burst"])).sum()),
+                alive_from_equal=int((L["alive_from"] == nz(rec["alive_from"])).sum()),
+                states_equal=int((L["alive"] == Aa).sum()), n=32, pairs=int(Aa.size),
+                a_over_cs_after_crossing_q=[float(x) for x in np.quantile(ratio, [0.01, 0.1, 0.5, 0.9])] if ratio.size else None,
+                pairs_after_crossing_cs_gt_thr=int(after.sum()),
+                near_thr_pairs_after_crossing=int(near.sum()),
+                near_thr_min_a_over_thr=float((L["amp"][near] / THR).min()) if near.any() else None,
+                below_thr_after_crossing_cs_gt_thr=int((after & (L["amp"] <= THR)).sum()))
+
+
+def models(r):
+    c, s = A.stats(r["stats"]); st = {k: np.array(v) for k, v in r["state_K"].items()}
+    kw = dict(b1=r["b1"], b2=r["b2"], checks=CK)
+    o4 = V4.phase_model_v4(c, s, st, K, r["lam"], r["eta"], T, **kw)
+    o3 = V3.phase_model_hybrid(c, s, st, K, r["lam"], r["eta"], T, **kw)
+    fl = lambda x: [None if not np.isfinite(v) else float(v) for v in x]
+    p4 = np.array([o4["alive"][t] for t in CK], bool)
+    p3 = np.array([o3["alive"][t] for t in CK], bool)
+    return dict(id=r["id"], v4_alive_equal=bool((p4 == np.array(r["pred_alive"], bool)).all()),
+                v4_alive_from_equal=fl(o4["alive_from"]) == r["pred_alive_from"], v4_burst_equal=fl(o4["burst"]) == r["pred_burst"],
+                v3=p3.tolist())
+
+
+def waits(pred, meas, mask):
+    e, miss, n = [], 0, 0
+    for k in np.where(mask)[0]:
+        tp, tm = pred[k], meas[k]
+        if tp is None and tm is None:
+            continue
+        n += 1
+        if tp is None or tm is None:
+            miss += 1
+        else:
+            e.append(abs(np.log(max(tp - K, 1.0) / (tm - K))))
+    return e, miss, n
+
+
+def summ(e, miss, n):
+    e = np.array(e)
+    return dict(scored=n, median=float(np.median(e)) if e.size else None,
+                p90=float(np.quantile(e, 0.9)) if e.size else None, misses=miss, miss_share=miss / max(n, 1))
+
+
+def a1d(preds_truth):
+    err = 1 - float(np.mean(np.concatenate([(P == Tr).ravel() for P, Tr in preds_truth])))
+    rk = 1 - float(np.mean(np.concatenate([np.abs(P.sum(1) - Tr.sum(1)) <= 1 for P, Tr in preds_truth])))
+    return dict(error_rate=err, rank_within_1_failure=rk, rank_within_1=1 - rk)
+
+
+def main():
+    nproc = int(sys.argv[2]) if len(sys.argv) > 2 else 8
+    t0 = time.time()
+    runs = [json.loads(l) for l in gzip.open(os.path.join(ROOT, "results/e4/a1h3/a1h3_runs.jsonl.gz"), "rt")]
+    cfgs = {c["id"]: c for c in H.configs()}
+    out = dict(source="experiment-repo dac0beb results/e4/a1h3/a1h3_runs.jsonl.gz", runs=len(runs))
+    with Pool(nproc) as pool:
+        mo = {m["id"]: m for m in pool.map(models, runs)}
+    out["v4_rerun"] = dict(runs=len(mo), alive_equal=sum(m["v4_alive_equal"] for m in mo.values()),
+                           alive_from_equal=sum(m["v4_alive_from_equal"] for m in mo.values()),
+                           burst_equal=sum(m["v4_burst_equal"] for m in mo.values()))
+    bins = {"unsettled_le_2.52": (0, 2.6), "intermediate_4.32": (2.6, 6), "settled_ge_12.6": (6, np.inf)}
+    binof = lambda x: next(b for b, (lo, hi) in bins.items() if lo <= x < hi)
+    acc = {}; pt = {}; dec = {}
+    for r in runs:
+        cfg = cfgs[r["id"]]
+        for k in ("stats", "p0", "lam", "a0", "eta", "b1", "b2", "seed"):
+            assert cfg[k] == r[k]
+        b = binof(cfg["eta_lam_T"])
+        c, s = A.stats(r["stats"]); pc = c / s
+        st = {k: np.array(v) for k, v in r["state_K"].items()}
+        aK = np.abs(st["a"]); hK = st["p"] * (c - st["p"] * s)
+        setb = (hK < 0) & (aK <= BURST); setc = aK <= THR
+        for key, pred, meas, m in (("A1b", r["pred_burst"], r["burst"], setb), ("A1c", r["pred_alive_from"], r["alive_from"], setc)):
+            a = acc.setdefault((b, key), [[], 0, 0]); e, mi, nn = waits(pred, meas, m); a[0] += e; a[1] += mi; a[2] += nn
+        Tr = np.array(r["alive"], bool); P4 = np.array(r["pred_alive"], bool); P3 = np.array(mo[r["id"]]["v3"], bool)
+        first = np.maximum.accumulate(P3, axis=0)
+        P3s = first & np.broadcast_to(pc > THR, Tr.shape)
+        preds = dict(model=P4, all_alive=np.ones_like(Tr), persistence_K=np.broadcast_to(aK > THR, Tr.shape),
+                     static_bound=np.broadcast_to(c ** 2 >= 4 * r["lam"] * s, Tr.shape),
+                     majority_oracle=np.broadcast_to(Tr.mean(0) >= 0.5, Tr.shape), v3_frozen=P3, v3_plus_settled_law=P3s)
+        for k, P in preds.items():
+            pt.setdefault((b, "all", k), []).append((P, Tr)); pt.setdefault((b, r["stats"], k), []).append((P, Tr))
+        af = np.array([0 if v is None else v for v in r["alive_from"]]); cki = np.array(CK)
+        crossed = (af[None, :] > 0) & (cki[:, None] >= af[None, :])
+        hi = np.broadcast_to(pc > THR, Tr.shape); lo = ~hi
+        d = dec.setdefault((b, r["stats"]), dict(runs=0, pairs=0, wrong=0, ma_td_cs_gt_thr_before_truth_crossing=0,
+                                                ma_td_cs_gt_thr_after_truth_crossing=0, ma_td_cs_le_thr=0,
+                                                md_ta_cs_le_thr=0, md_ta_cs_gt_thr=0, rank_bad=0, cks=0))
+        MA_TD = P4 & ~Tr; MD_TA = ~P4 & Tr
+        d["runs"] += 1; d["pairs"] += Tr.size; d["wrong"] += int((P4 != Tr).sum())
+        d["ma_td_cs_gt_thr_before_truth_crossing"] += int((MA_TD & hi & ~crossed).sum())
+        d["ma_td_cs_gt_thr_after_truth_crossing"] += int((MA_TD & hi & crossed).sum())
+        d["ma_td_cs_le_thr"] += int((MA_TD & lo).sum())
+        d["md_ta_cs_le_thr"] += int((MD_TA & lo).sum()); d["md_ta_cs_gt_thr"] += int((MD_TA & hi).sum())
+        d["rank_bad"] += int((np.abs(P4.sum(1) - Tr.sum(1)) > 1).sum()); d["cks"] += Tr.shape[0]
+    out["A1bc_by_bin"] = {f"{b}:{k}": summ(*v) for (b, k), v in acc.items()}
+    out["A1d"] = {f"{b}:{st}:{k}": a1d(v) for (b, st, k), v in pt.items()
+                  if k in ("model", "v3_frozen", "v3_plus_settled_law") or st == "all"}
+    out["wrong_pair_decomposition"] = {f"{b}:{st}": dict(v, wrong_rate=v["wrong"] / v["pairs"],
+                                                         rank_within_1_failure=v["rank_bad"] / v["cks"],
+                                                         rates_per_pair={k: v[k] / v["pairs"] for k in v if k.startswith(("ma_", "md_"))})
+                                       for (b, st), v in sorted(dec.items())}
+    out["exposure"] = {st: dict(cs_le_thr=int((A.stats(st)[0] / A.stats(st)[1] <= THR).sum()),
+                                cs_in_thr_to_thr_over_0p75=int(((A.stats(st)[0] / A.stats(st)[1] > THR) & (A.stats(st)[0] / A.stats(st)[1] <= THR / 0.75)).sum()),
+                                min_cs=float((A.stats(st)[0] / A.stats(st)[1]).min())) for st in ("h3a", "h3b")}
+    rec = {r["id"]: r for r in runs}
+    samp = [c for c in H.configs() if c["p0"] == 0.8 and c["a0"] == 8e-4 and c["b2"] == 0.9975]
+    with Pool(nproc) as pool:
+        rs = pool.map(resim, [(c, rec[c["id"]]) for c in samp])
+    tot = lambda k: int(sum(x[k] for x in rs))
+    out["resim"] = dict(runs=len(rs), directions=tot("n"), burst_equal=tot("burst_equal"), alive_from_equal=tot("alive_from_equal"),
+                        pairs=tot("pairs"), states_equal=tot("states_equal"),
+                        per_run=[{k: v for k, v in x.items() if k not in ("n", "pairs")} for x in rs])
+    out["seconds"] = round(time.time() - t0, 1); out["numpy"] = np.__version__
+    print(json.dumps(out, indent=1))
+
+
+if __name__ == "__main__":
+    main()

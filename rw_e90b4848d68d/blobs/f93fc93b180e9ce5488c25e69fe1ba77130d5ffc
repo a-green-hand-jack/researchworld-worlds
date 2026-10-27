@@ -1,0 +1,41 @@
+# Network checks
+
+## 1. `curl -sS -o /dev/null -w '%{http_code}\n' https://pypi.org/simple/`
+```
+200
+exit=0
+```
+
+## 2. `curl -sS -D - https://example.com/`
+```
+HTTP/1.1 403 Forbidden: example.com:443 is on none of the world's network resources (`ht-resource list`)
+Server: BaseHTTP/0.6 Python/3.12.13
+Date: Mon, 19 Oct 2026 21:29:11 GMT
+Content-Type: application/json
+Content-Length: 174
+Connection: close
+
+curl: (56) CONNECT tunnel failed, response 403
+exit=56
+```
+
+## 3. `curl -sS -D - http://example.com/`
+```
+HTTP/1.1 403 Forbidden: example.com:80 is on none of the world's network resources (`ht-resource list`)
+Server: BaseHTTP/0.6 Python/3.12.13
+Date: Mon, 19 Oct 2026 21:29:11 GMT
+Content-Type: application/json
+Content-Length: 173
+Connection: close
+
+{"error": "network request refused", "reason": "network-target-not-authorized", "message": "example.com:80 is on none of the world's network resources (`ht-resource list`)"}exit=0
+```
+
+## 4. `pip download --no-deps -d /tmp/pkgs tabulate`
+```
+Collecting tabulate
+  Downloading tabulate-0.10.0-py3-none-any.whl (39 kB)
+Saved /tmp/pkgs/tabulate-0.10.0-py3-none-any.whl
+Successfully downloaded tabulate
+exit=0
+```

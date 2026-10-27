@@ -1,0 +1,82 @@
+"""Per-direction trajectories for E1 settings (figure F2(a)): mode amplitudes a_k(t) = |W e_k|, the predictor gain
+along each mode's embedding direction p_k(t) = ahat_k^T P ahat_k (ahat_k = W e_k / |W e_k|), the A1 predictor
+gain p(t) = p0 exp(-alpha lam t), the race prediction log a_k(0) + F_k(t) (closed form, copy target), the race
+score R_k (`escape_score`, the N1 criterion: mode survives iff R_k >= 0), the capture nullcline
+a^2 = lam p / (c_k - p sigma_k) along p(t) (empty where c_k <= p sigma_k), and measured / predicted survival.
+Same statistics, step and initialisation as code/e1_linear.py (c_k = 0.9^k, sigma_k = 1, eta = 0.1, orthogonal W
+init with jitter 0.1, identity predictor). The loop repeats simulate()'s update in the same order and is checked
+against it (max |W - W_simulate| printed and stored).
+Usage: python3 code/e1_traj.py results/e1   -> results/e1/trajectories.csv, results/e1/trajectories_meta.json"""
+import sys, os, json, csv
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+from linjepa import init_params, simulate, escape_score, race_end_time
+from e1_linear import C, S, ETA, SV_THR, T_CAP, n, d
+
+CONFIGS = [dict(config="lam0.01_p01_w01e-4", lam=0.01, p0=1.0, alpha=1.0, w0=1e-4, seed=0),
+           dict(config="lam0.01_p00.25_w01e-4", lam=0.01, p0=0.25, alpha=1.0, w0=1e-4, seed=0)]
+NT = 200
+
+
+def run(cfg):
+    lam, p0, alpha, w0, seed = cfg["lam"], cfg["p0"], cfg["alpha"], cfg["w0"], cfg["seed"]
+    t_end = min(1.3 * race_end_time(C, S, lam, lam, alpha, p0) + 300.0, T_CAP)   # as in e1_linear.py
+    T = int(t_end / ETA)
+    rec = set(np.unique(np.round(np.concatenate([[0], np.geomspace(1, T, NT - 1)])).astype(int)).tolist())
+    _, W, Ps = init_params(seed, n, d, w0, p0, 1, None, "identity", "orthogonal", 0.1)
+    P = Ps[0]; S11, S21 = np.diag(S), np.diag(C)
+    a0 = np.linalg.norm(W, axis=0)
+    rows = []
+    for t in range(T + 1):
+        if t in rec:
+            a = np.linalg.norm(W, axis=0); ah = W / a
+            pk = np.einsum("ik,ij,jk->k", ah, P, ah)
+            rows.append((t, a.copy(), pk))
+        if t == T:
+            break
+        R = P @ W @ S11 - W @ S21
+        gW = P.T @ R; GP = R @ W.T
+        W = W - ETA * (gW + lam * W)
+        P = P - ETA * alpha * (GP + lam * P)
+        if t % 50 == 0:
+            for M in [W, P]:
+                M[np.abs(M) < 1e-150] = 0.0
+    ref = simulate(S11, S21, d, lam, lam, p0=p0, w0=w0, eta=ETA, T=T, alpha=alpha, seed=seed, w_init="orthogonal")
+    dev = float(np.abs(ref["W"] - W).max())
+    scores = np.array([escape_score(C[k], S[k], lam, lam, alpha, p0, np.log(a0[k]), t_end=t_end) for k in range(n)])
+    surv = (np.linalg.norm(W, axis=0) > SV_THR).astype(int)
+    out = []
+    for t, a, pk in rows:
+        tt = t * ETA
+        p = p0 * np.exp(-alpha * lam * tt)
+        F = (C * (p0 - p) - S / 2 * (p0 ** 2 - p ** 2) - lam * np.log(p0 / p)) / (alpha * lam)
+        gap = C - p * S
+        for k in range(n):
+            out.append(dict(config=cfg["config"], seed=seed, k=k, step=t, t=tt, a_k=a[k], p_k=pk[k], p_pred=p,
+                            pred_log_a=np.log(a0[k]) + F[k], F_k=F[k],
+                            nullcline_a=np.sqrt(lam * p / gap[k]) if gap[k] > 0 else None,
+                            g_k=p * C[k] - p ** 2 * S[k] - lam, c_k=C[k], sigma_k=S[k], R_k=scores[k],
+                            pred=int(scores[k] >= 0), surv=int(surv[k])))
+    return out, dict(cfg, t_end=t_end, steps=T, max_dev_from_simulate=dev, rank_meas=int(surv.sum()),
+                     rank_pred=int((scores >= 0).sum()))
+
+
+if __name__ == "__main__":
+    outdir = sys.argv[1]
+    allrows, meta = [], []
+    for cfg in CONFIGS:
+        r, m = run(cfg); allrows += r; meta.append(m); print(m)
+    cols = list(allrows[0].keys())
+    with open(os.path.join(outdir, "trajectories.csv"), "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols); w.writeheader()
+        for r in allrows:
+            w.writerow({k: (f"{v:.6g}" if isinstance(v, float) else v) for k, v in r.items()})
+    json.dump(dict(configs=meta, columns=dict(
+        config="config label", seed="init seed", k="input mode (c_k = 0.9^k, sigma_k = 1)", step="GD step", t="time = 0.1 step",
+        a_k="measured |W e_k|", p_k="measured predictor gain along mode k's embedding direction",
+        p_pred="A1 predictor gain p0 exp(-alpha lam t)", pred_log_a="race prediction log a_k(0) + F_k(t)",
+        F_k="closed-form race exponent F_k(t) (copy target)", nullcline_a="capture nullcline sqrt(lam p/(c_k - p sigma_k)); empty if c_k <= p sigma_k",
+        g_k="growth rate p c_k - p^2 sigma_k - lam at p_pred", R_k="N1 race score (survive iff >= 0)",
+        pred="N1 predicted survival", surv="measured survival |W e_k| > 0.05 at t_end"),
+        command=" ".join(sys.argv), numpy=np.__version__),
+        open(os.path.join(outdir, "trajectories_meta.json"), "w"), indent=1)

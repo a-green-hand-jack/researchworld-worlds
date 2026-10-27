@@ -1,0 +1,9 @@
+from fib import fib
+
+def test_fib_0_to_10():
+    expected = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55]
+    assert [fib(n) for n in range(11)] == expected
+
+if __name__ == "__main__":
+    test_fib_0_to_10()
+    print("ok")

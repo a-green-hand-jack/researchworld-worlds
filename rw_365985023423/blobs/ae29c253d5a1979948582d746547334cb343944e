@@ -1,0 +1,516 @@
+#!/usr/bin/env python3
+"""Render the single log-log figure of the Monte Carlo pi study.
+
+Output: report/figures/mae_loglog.png (plus caption.md and provenance.json
+beside it).
+
+Claim the figure supports: the mean absolute error (MAE) of the Monte Carlo
+pi estimate falls with the sample count N like N^b, and the fitted exponent
+b is consistent with the -1/2 expected for Monte Carlo methods.
+
+All plotted numbers come from experiment-repo's committed results; nothing
+is recomputed here:
+  analysis/mae_table.csv   columns: N, mean_absolute_error,
+                           se_mean_absolute_error (optional),
+                           normal_approximation_mae (optional, analytic
+                           theory line), fit_mae (optional, cross-check)
+  analysis/fit.json        OLS slope/intercept of ln(MAE) vs ln(N), and the
+                           95% intervals: headline = OLS Student-t (df=3);
+                           dependence check = paired bootstrap over runs
+                           (settled priority in world/story-repo PLAN.md)
+
+Usage:
+  python3 plot_mae_loglog.py --inputs <experiment-repo checkout> [--outdir DIR]
+  python3 plot_mae_loglog.py --selftest <out.png>   # synthetic pipeline check
+
+Self-test mode renders from synthetic data and stamps the figure as such;
+it must never be used for the delivered figure.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import math
+import subprocess
+import sys
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+EXPECTED_N = [10**3, 10**4, 10**5, 10**6, 10**7]
+
+N_KEYS = ["n", "samples", "sample_size", "n_samples", "num_samples", "n_points"]
+MAE_KEYS = ["mean_absolute_error", "mae", "mean_abs_error", "mean_abs_err",
+            "abs_err_mean"]
+SE_KEYS = ["se_mean_absolute_error", "se_mean_abs_error", "se", "sem",
+           "mae_se", "se_mae", "std_err", "stderr", "se_of_mae", "mae_std_err"]
+THEORY_KEYS = ["normal_approximation_mae", "theoretical_mae", "theory",
+               "expected_mae", "analytic_mae"]
+FIT_KEYS = ["fit_mae", "fitted_mae", "fitted"]
+
+LOWER_KEYS = ["lower", "lo", "low", "min"]
+UPPER_KEYS = ["upper", "hi", "high", "max"]
+SLOPE_FORBID = ("expected", "reference", "theory", "prior", "leave_one",
+                "delta_method", "bootstrap")
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def pick_column(df: pd.DataFrame, aliases: list[str], what: str) -> str | None:
+    cols = {str(c).strip().lower(): c for c in df.columns}
+    for a in aliases:
+        if a in cols:
+            return cols[a]
+    if what.startswith("optional"):
+        return None
+    raise KeyError(
+        f"mae_table.csv: no column found for {what} (looked for {aliases}); "
+        f"columns present: {list(df.columns)}"
+    )
+
+
+def walk_leaves(node, path=()):
+    """Yield (path, value) for every scalar leaf of a JSON-like tree."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            yield from walk_leaves(v, path + (str(k),))
+    elif isinstance(node, list):
+        for i, v in enumerate(node):
+            yield from walk_leaves(v, path + (str(i),))
+    else:
+        yield path, node
+
+
+def find_scalar(leaves, must, forbid=()):
+    """First match, preferring the shallowest path (document order breaks
+    ties), so top-level values win over nested diagnostics."""
+    best = None
+    for idx, (path, val) in enumerate(leaves):
+        if val is None or isinstance(val, bool):
+            continue
+        key = path[-1].lower() if path else ""
+        full = "/".join(str(p).lower() for p in path)
+        if any(m in key for m in must) and not any(f in full for f in forbid):
+            try:
+                v = float(val)
+            except (TypeError, ValueError):
+                continue
+            cand = (len(path), idx)
+            if best is None or cand < best[0]:
+                best = (cand, "/".join(path), v)
+    if best is None:
+        return None, None
+    return best[1], best[2]
+
+
+def find_intervals(fit: dict) -> list[dict]:
+    """Collect every (lo, hi) interval in fit.json with its path as label."""
+    found = []
+
+    def visit(node, path):
+        if isinstance(node, dict):
+            keys = {str(k).strip().lower(): k for k in node}
+            lo = up = None
+            for lk in LOWER_KEYS:
+                if lk in keys:
+                    try:
+                        lo = float(node[keys[lk]])
+                    except (TypeError, ValueError):
+                        pass
+            for uk in UPPER_KEYS:
+                if uk in keys and uk != "min":
+                    try:
+                        up = float(node[keys[uk]])
+                    except (TypeError, ValueError):
+                        pass
+            if lo is not None and up is not None:
+                found.append({"method": "/".join(str(p) for p in path) or "root",
+                              "lo": lo, "hi": up})
+            for k, v in node.items():
+                visit(v, path + (str(k),))
+        elif isinstance(node, list):
+            if len(node) == 2:
+                try:
+                    lo, hi = float(node[0]), float(node[1])
+                    lbl = "/".join(str(p) for p in path) or "root"
+                    if any(w in lbl.lower() for w in ("ci", "interval", "confidence")):
+                        found.append({"method": lbl, "lo": lo, "hi": hi})
+                except (TypeError, ValueError):
+                    pass
+            for i, v in enumerate(node):
+                visit(v, path + (str(i),))
+
+    visit(fit, ())
+    return found
+
+
+T_TOKENS = ("ols_t", "ols-t", "ols t", "student", "residual", "t_test", "ttest",
+            "t-based", "t_interval", "t_ci")
+
+
+def is_t_method(method: str) -> bool:
+    m = method.lower()
+    if any(tok in m for tok in T_TOKENS):
+        return True
+    last = m.split("/")[-1].strip()
+    return last in ("t",) or last.endswith(("_t", "-t"))
+
+
+def is_bootstrap_method(method: str) -> bool:
+    m = method.lower()
+    return "bootstrap" in m or "paired" in m or "primary" in m
+
+
+def is_half_split(method: str) -> bool:
+    m = method.lower()
+    return any(w in m for w in ("first_half", "second_half", "half_ci"))
+
+
+def classify_intervals(intervals: list[dict]):
+    """Settled priority (story-repo PLAN.md): headline = OLS Student-t;
+    dependence check = paired bootstrap. Legacy key names map onto the same
+    roles (primary_interval was the bootstrap one, ols_t_sensitivity the t
+    one). Returns (headline, dependence_check, other)."""
+    headline = dep = None
+    other = []
+    for it in intervals:
+        if is_half_split(it["method"]):
+            other.append(it)
+        elif "headline" in it["method"].lower() or is_t_method(it["method"]):
+            if headline is None:
+                headline = it
+            else:
+                other.append(it)
+        elif is_bootstrap_method(it["method"]):
+            if dep is None:
+                dep = it
+            else:
+                other.append(it)
+        else:
+            other.append(it)
+    return headline, dep, other
+
+
+def parse_fit(fit: dict) -> dict:
+    leaves = list(walk_leaves(fit))
+    slope_path, slope = find_scalar(leaves, ["slope"], SLOPE_FORBID)
+    if slope is None:
+        slope_path, slope = find_scalar(leaves, ["exponent", "power"], SLOPE_FORBID)
+    intercept_path, intercept = find_scalar(leaves, ["intercept"], SLOPE_FORBID)
+    if slope is None:
+        raise KeyError(
+            "fit.json: no slope/exponent value found. Leaves seen: "
+            + "; ".join(f"{'/'.join(p)}={v}" for p, v in leaves[:40])
+        )
+    intervals = find_intervals(fit)
+    headline, dep, others = classify_intervals(intervals)
+    return {
+        "slope_path": slope_path, "slope": slope,
+        "intercept_path": intercept_path, "intercept": intercept,
+        "headline": headline, "dep": dep, "other_intervals": others,
+    }
+
+
+def load_inputs(inputs_dir: Path | None):
+    if inputs_dir is None:
+        raise SystemExit("--inputs is required (experiment-repo checkout)")
+    csv_path = inputs_dir / "analysis" / "mae_table.csv"
+    fit_path = inputs_dir / "analysis" / "fit.json"
+    if not csv_path.exists() or not fit_path.exists():
+        raise SystemExit(f"missing inputs: {csv_path} / {fit_path}")
+    df = pd.read_csv(csv_path)
+    fit = json.loads(fit_path.read_text())
+    return df, fit, [csv_path, fit_path]
+
+
+def theory_line_params(theory: np.ndarray, n: np.ndarray) -> float:
+    """Return the constant c in c*N^-1/2 that the committed theory column
+    lies on (guard: the column must be exactly that power law)."""
+    c_vals = theory * np.sqrt(n)
+    spread = float(np.max(np.abs(c_vals - c_vals.mean())) / abs(c_vals.mean()))
+    if spread > 1e-9:
+        raise SystemExit(
+            f"theory column is not a pure N^-1/2 power law (c spread {spread:.2e})"
+        )
+    return float(c_vals.mean())
+
+
+def render(df: pd.DataFrame, fit_parsed: dict, out_png: Path, selftest: bool,
+           provenance_extra: dict | None = None) -> None:
+    n_col = pick_column(df, N_KEYS, "N")
+    mae_col = pick_column(df, MAE_KEYS, "MAE")
+    se_col = pick_column(df, SE_KEYS, "optional SE of MAE")
+    theory_col = pick_column(df, THEORY_KEYS, "optional theory column")
+    fit_col = pick_column(df, FIT_KEYS, "optional fitted-MAE column")
+
+    order = np.argsort(df[n_col].to_numpy(dtype=float))
+    n = df[n_col].to_numpy(dtype=float)[order]
+    mae = df[mae_col].to_numpy(dtype=float)[order]
+    se = df[se_col].to_numpy(dtype=float)[order] if se_col else None
+    theory = (df[theory_col].to_numpy(dtype=float)[order]
+              if theory_col else None)
+
+    if not selftest:
+        if len(n) != len(EXPECTED_N) or any(
+            abs(a - b) > 0.0 for a, b in zip(n, EXPECTED_N)
+        ):
+            raise SystemExit(
+                f"objective requires N = {EXPECTED_N}; table has N = {list(n)}"
+            )
+        if np.any(mae <= 0) or (se is not None and np.any(se <= 0)):
+            raise SystemExit("non-positive MAE/SE cannot be plotted on log axes")
+
+    slope = fit_parsed["slope"]
+    intercept = fit_parsed["intercept"]
+    if intercept is None:
+        # OLS line passes through the centroid of (ln N, ln MAE); anchoring
+        # the committed slope there reproduces the fitted line exactly.
+        intercept = float(np.mean(np.log(mae)) - slope * np.mean(np.log(n)))
+
+    # cross-check the drawn fit line against the committed fit_mae column
+    fit_check = None
+    if fit_col is not None:
+        fit_vals = df[fit_col].to_numpy(dtype=float)[order]
+        pred = math.exp(intercept) * n**slope
+        fit_check = float(np.max(np.abs(np.log(pred) - np.log(fit_vals))))
+        if fit_check > 1e-6:
+            raise SystemExit(
+                f"fit line from slope/intercept disagrees with the committed "
+                f"fit_mae column (max |log diff| = {fit_check:.2e})"
+            )
+
+    xs = np.exp(np.linspace(math.log(n[0] * 0.65), math.log(n[-1] * 1.55), 200))
+    fit_line = math.exp(intercept) * xs**slope
+    if theory is not None:
+        ref_c = theory_line_params(theory, n)
+        ref_line = ref_c * xs**(-0.5)
+        ref_label = r"asymptotic theory: $\sqrt{2(4-\pi)}\,N^{-1/2}$"
+    else:
+        # fallback reference: slope -1/2 through the fitted line at the
+        # geometric mean of the N grid (differs from the fit only in slope)
+        n_geo = float(np.exp(np.mean(np.log(n))))
+        ref_c = math.exp(intercept) * n_geo ** (slope + 0.5)
+        ref_line = ref_c * xs**(-0.5)
+        ref_label = r"$N^{-1/2}$ reference (Monte Carlo)"
+
+    fig, ax = plt.subplots(figsize=(6.3, 4.2), dpi=200, layout="constrained")
+
+    if se is not None:
+        ax.errorbar(n, mae, yerr=se, fmt="o", color="black", ms=5, lw=1,
+                    elinewidth=1, capsize=3,
+                    label="MAE, mean of 200 runs (bars: ±1 SE)")
+    else:
+        ax.plot(n, mae, "o", color="black", ms=5, label="MAE, mean of 200 runs")
+    ax.plot(xs, fit_line, "-", color="#1f77b4", lw=1.6,
+            label=f"OLS fit: slope b = {slope:.4f}")
+    ax.plot(xs, ref_line, "--", color="#d62728", lw=1.4, label=ref_label)
+
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("sample count $N$ per estimate", fontsize=11)
+    ax.set_ylabel(r"mean absolute error $|\hat{\pi}-\pi|$", fontsize=11)
+    ax.set_xlim(n[0] * 0.6, n[-1] * 1.6)
+    ax.grid(True, which="major", alpha=0.35, lw=0.5)
+    ax.tick_params(labelsize=9)
+
+    head = fit_parsed["headline"]
+    dep = fit_parsed["dep"]
+    in_h = head is not None and head["lo"] <= -0.5 <= head["hi"]
+    in_d = dep is not None and dep["lo"] <= -0.5 <= dep["hi"]
+    if head is not None and dep is not None:
+        verdict = ("expected -1/2: inside both intervals" if in_h and in_d else
+                   "expected -1/2: INSIDE headline only" if in_h else
+                   "expected -1/2: INSIDE bootstrap only" if in_d else
+                   "expected -1/2: OUTSIDE both intervals")
+    elif head is not None:
+        verdict = f"expected -1/2: {'inside' if in_h else 'OUTSIDE'} headline CI"
+    else:
+        verdict = "expected -1/2: no interval found"
+    lines = [f"b = {slope:.4f}  (OLS, ln MAE on ln N)",
+             "200 runs/N, seeds default_rng(2026+i)"]
+    if head is not None:
+        lines.append(f"95% CI (OLS t, df=3), headline:")
+        lines.append(f"  [{head['lo']:.4f}, {head['hi']:.4f}]")
+    if dep is not None:
+        lines.append(f"95% CI (paired bootstrap), check:")
+        lines.append(f"  [{dep['lo']:.4f}, {dep['hi']:.4f}]")
+    lines.append(verdict)
+    ax.text(0.98, 0.97, "\n".join(lines), transform=ax.transAxes,
+            ha="right", va="top", fontsize=8.2, family="monospace",
+            bbox=dict(boxstyle="round,pad=0.4", fc="white", ec="0.6", alpha=0.9))
+    ax.legend(loc="lower left", fontsize=8.5, framealpha=0.9)
+
+    title = "Monte Carlo $\\pi$: mean absolute error vs. sample count"
+    if selftest:
+        title = "SELF-TEST (synthetic data, pipeline check only)\n" + title
+    ax.set_title(title, fontsize=11)
+
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png)
+    plt.close(fig)
+
+    # caption.md: embeddable caption with the actual numbers
+    cap = [
+        "**Figure 1.** Mean absolute error (MAE) of the Monte Carlo estimate of "
+        "$\\pi$ against the sample count $N$ (log-log axes). Points: mean of "
+        "$|\\hat{\\pi}-\\pi|$ over 200 independent runs at each $N$ "
+        "(seeds `default_rng(2026 + run_index)`)",
+    ]
+    if se is not None:
+        cap[0] += "; error bars: ±1 standard error of the mean"
+    cap[0] += "."
+    cap.append(
+        f"Solid line: least-squares fit of ln(MAE) on ln(N), "
+        f"slope $b = {slope:.4f}$"
+        + (f"; headline 95% interval (OLS Student-t, 3 df): "
+           f"[{head['lo']:.4f}, {head['hi']:.4f}]" if head is not None else "")
+        + ("; dependence-aware check (paired bootstrap over the 200 run "
+           f"vectors): [{dep['lo']:.4f}, {dep['hi']:.4f}]"
+           if dep is not None else "")
+        + "."
+    )
+    if theory is not None:
+        cap.append(
+            "Dashed line: asymptotic (large-$N$) expectation "
+            "$\\sqrt{2(4-\\pi)}\\,N^{-1/2}$, the normal approximation of the "
+            "exact binomial MAE (analytic, not fitted). "
+        )
+    else:
+        cap.append(
+            "Dashed line: $N^{-1/2}$ reference through the fitted line at the "
+            "geometric mean of the $N$ grid. "
+        )
+    cap.append(
+        "Monte Carlo methods predict $b=-1/2$; "
+        + ("both intervals contain $-1/2$, so the measured scaling is "
+           "consistent with $N^{-1/2}$."
+           if in_h and in_d else
+           "see the intervals above for the comparison with $-1/2$.")
+    )
+    if selftest:
+        cap.insert(0, "> SELF-TEST rendering with synthetic data — not results.")
+    (out_png.parent / "caption.md").write_text("\n".join(cap) + "\n")
+
+    # provenance.json: where every plotted number came from
+    prov = {
+        "figure": out_png.name,
+        "rendered_by": Path(__file__).name,
+        "selftest": selftest,
+        "values_used": {
+            "N": [float(v) for v in n],
+            "MAE": [float(v) for v in mae],
+            "SE": None if se is None else [float(v) for v in se],
+            "theory": None if theory is None else [float(v) for v in theory],
+            "slope": slope,
+            "slope_source": fit_parsed["slope_path"],
+            "intercept": intercept,
+            "intercept_source": fit_parsed["intercept_path"]
+            or "anchored at centroid (ln N, ln MAE), OLS identity",
+            "fit_mae_column_max_log_diff": fit_check,
+            "intervals": {
+                "headline_ols_t": None if head is None else {**head},
+                "dependence_check_paired_bootstrap": None if dep is None else {**dep},
+                "other_intervals_ignored": fit_parsed["other_intervals"],
+            },
+        },
+        "environment": {
+            "python": sys.version.split()[0],
+            "numpy": np.__version__,
+            "matplotlib": matplotlib.__version__,
+            "pandas": pd.__version__,
+        },
+    }
+    if provenance_extra:
+        prov.update(provenance_extra)
+    (out_png.parent / "provenance.json").write_text(json.dumps(prov, indent=2) + "\n")
+
+
+def selftest(out_png: Path) -> None:
+    rng = np.random.default_rng(0)
+    n = np.array(EXPECTED_N, dtype=float)
+    mae = 1.31 * n**-0.5 * np.exp(rng.normal(0, 0.01, n.size))
+    se = mae / math.sqrt(200) * 1.1
+    theory = math.sqrt(2 * (4 - math.pi)) * n**-0.5
+    fit_mae = math.exp(0.27) * n**-0.5007
+    df = pd.DataFrame({"N": n, "mean_absolute_error": mae,
+                       "se_mean_absolute_error": se,
+                       "normal_approximation_mae": theory, "fit_mae": fit_mae})
+    fit = {
+        "method": "Unweighted ordinary least squares of natural log(MAE) on natural log(N)",
+        "slope": -0.5007, "intercept": 0.27, "prefactor": 1.31,
+        "headline_interval": {"method": "Residual OLS Student-t interval",
+                              "confidence": 0.95, "df": 3,
+                              "ci": [-0.534, -0.4674]},
+        "paired_bootstrap": {"method": "Paired-run percentile bootstrap",
+                             "confidence": 0.95, "ci": [-0.5189, -0.4831]},
+    }
+    render(df, parse_fit(fit), out_png, selftest=True)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--inputs", type=Path, default=None,
+                    help="experiment-repo checkout containing analysis/")
+    ap.add_argument("--outdir", type=Path, default=Path(__file__).parent,
+                    help="output directory (default: beside this script)")
+    ap.add_argument("--selftest", type=Path, default=None,
+                    help="render a synthetic pipeline check to this PNG")
+    ap.add_argument("--input-commit", default=None,
+                    help="commit of --inputs if it is not a git checkout")
+    args = ap.parse_args()
+
+    if args.selftest is not None:
+        selftest(args.selftest)
+        print(f"self-test figure written to {args.selftest} (synthetic data)")
+        return
+
+    df, fit, input_paths = load_inputs(args.inputs)
+    fit_parsed = parse_fit(fit)
+    if fit_parsed["headline"] is None or fit_parsed["dep"] is None:
+        found = "; ".join(f"{it['method']}: [{it['lo']}, {it['hi']}]"
+                          for it in find_intervals(fit))
+        print(f"WARNING: headline (OLS-t) or dependence-check (paired "
+              f"bootstrap) interval not identified in fit.json; intervals "
+              f"seen: {found or 'none'}. The figure will show only what was "
+              f"found; extend the key aliases in this script if the naming "
+              f"differs.", file=sys.stderr)
+
+    commit = args.input_commit
+    if commit is None and args.inputs is not None:
+        try:
+            commit = subprocess.run(
+                ["git", "-C", str(args.inputs), "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+        except subprocess.CalledProcessError:
+            print("warning: could not read git commit of --inputs; "
+                  "pass --input-commit", file=sys.stderr)
+    inputs_desc = [
+        {"repo": "world/experiment-repo", "commit": commit,
+         "path": str(p.relative_to(args.inputs)), "sha256": sha256_file(p)}
+        for p in input_paths
+    ]
+    out_png = args.outdir / "mae_loglog.png"
+    render(df, fit_parsed, out_png, selftest=False,
+           provenance_extra={
+               "command": " ".join(sys.argv),
+               "inputs": inputs_desc,
+           })
+    print(f"figure written to {out_png}")
+    print(f"caption and provenance written beside it")
+
+
+if __name__ == "__main__":
+    main()

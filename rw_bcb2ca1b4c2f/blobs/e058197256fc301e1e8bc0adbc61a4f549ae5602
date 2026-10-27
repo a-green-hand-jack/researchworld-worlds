@@ -1,0 +1,54 @@
+"""Plateau stage of |a| in the A2 scalar AdamW map (my 80-bit loop of checks/e4_a2_twostage.py), all directions of runs
+187, 27, 3, 100, 186, 63 to 3 T_h: per direction the |a| level where log|a| grows slowest while |a| < 0.5 c/s, when, and
+how many steps |a| stays within 10% of it. Usage: python3 checks/e4_a2_plateau.py EXPERIMENT_CHECKOUT OUT.json"""
+import sys, os, json
+EXP = sys.argv[1]; OUT = sys.argv[2]; sys.argv = [sys.argv[0], EXP]
+import importlib.util
+spec = importlib.util.spec_from_file_location("ts", os.path.join(os.path.dirname(os.path.abspath(__file__)), "e4_a2_twostage.py"))
+ts = importlib.util.module_from_spec(spec); spec.loader.exec_module(ts)
+import numpy as np
+from multiprocessing import Pool
+A, A2 = ts.A, ts.A2
+cf = {c["id"]: c for c in A2.configs()}
+def one(rid):
+    cfg = cf[rid]; A.STATS = dict(A2.A2_STATS)
+    c, s = A.stats(cfg["stats"]); D = np.longdouble; o = D(1)
+    c = c.astype(D); s = s.astype(D)
+    b1, b2, eta, lam = (D(cfg[k]) for k in ("b1", "b2", "eta", "lam")); eps = D(1e-8)
+    a = A.init_a(cfg).astype(D); p = np.full(c.shape, D(cfg["p0"]))
+    ma = np.zeros_like(c); va = np.zeros_like(c); mp = np.zeros_like(c); vp = np.zeros_like(c)
+    Th = cfg["T_h"]; cs = (c/s).astype(float); T = 3*Th
+    H = np.zeros((T, c.size), dtype=np.float32)
+    for t in range(1, T + 1):
+        r = c - p * s; ga = -a * p * r; gp = -a * a * r
+        ma = b1*ma + (o-b1)*ga; va = b2*va + (o-b2)*ga*ga; mp = b1*mp + (o-b1)*gp; vp = b2*vp + (o-b2)*gp*gp
+        bc1 = o - b1**t; bc2 = o - b2**t
+        a = a*(o-eta*lam) - eta*(ma/bc1)/(np.sqrt(va/bc2)+eps); p = p*(o-eta*lam) - eta*(mp/bc1)/(np.sqrt(vp/bc2)+eps)
+        H[t-1] = np.abs(a.astype(float))
+    # plateau: longest window (in steps) where |a| stays within +-10% of a level, among levels < 0.5 c/s
+    out = []
+    for k in range(c.size):
+        h = H[:, k].astype(float)
+        lg = np.log(np.maximum(h, 1e-30))
+        # local growth rate over 200-step windows
+        w = 200
+        rate = (lg[w:] - lg[:-w]) / w
+        idx = np.arange(w, T)
+        mask = (h[w:] < 0.5*cs[k]) & (h[w:] > 1e-3) & (idx > 200)
+        if mask.sum() == 0:
+            out.append(dict(k=k, cs=cs[k], level=None)); continue
+        j = np.argmin(np.where(mask, np.abs(rate), np.inf))
+        lvl = h[w + j]
+        stay = int(((h > 0.9*lvl) & (h < 1.1*lvl)).sum())
+        out.append(dict(k=k, cs=float(cs[k]), level=float(lvl), at=int(w+j+1), steps_within_10pct=stay,
+                        abs_a=[float(h[int(f*Th)-1]) for f in (0.05, 0.1, 0.25, 0.5, 1, 1.5, 2)]))
+    return dict(run=rid, cfg={k: cfg[k] for k in ("stats","lam","eta","b2","p0","a0","T_h")}, rows=out)
+if __name__ == "__main__":
+    ids = [187, 27, 3, 100, 186, 63]
+    with Pool(6) as P: res = P.map(one, ids)
+    json.dump(res, open(OUT, "w"), indent=1)
+    for r in res:
+        print(r["run"], r["cfg"])
+        for x in r["rows"][::3]:
+            if x["level"] is None: print("  k", x["k"], "cs %.3f" % x["cs"], "none"); continue
+            print("  k %2d cs %.3f level %.4f at %6d stay %6d  |a| %s" % (x["k"], x["cs"], x["level"], x["at"], x["steps_within_10pct"], [round(v,3) for v in x["abs_a"]]))

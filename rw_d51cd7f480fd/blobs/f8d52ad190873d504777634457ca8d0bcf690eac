@@ -1,0 +1,36 @@
+# Monte Carlo estimate of pi: pilot run
+
+## Result
+
+Pilot (`pilot.py`, seeded `random.Random(20261019)`, run unmodified as a `local-compute` job, 540.0 s):
+
+| quantity | value |
+|---|---|
+| samples | 1 759 200 000 |
+| hits in quarter disc | 1 381 655 410 |
+| estimate of pi (4 x hits / samples) | **3.1415539** |
+| standard error | 3.92e-05 |
+| 95% CI (Wald, normal approximation) | **[3.1414772, 3.1416307]** (half-width 7.67e-05) |
+| 95% CI (Wilson, cross-check) | [3.1414772, 3.1416306] |
+| true pi | 3.1415927 |
+| error (estimate - pi) | -3.87e-05 (z = -0.99) |
+
+The interval covers the true value of pi. The Wald interval matches the interval the pilot script itself reports, and the Wilson interval agrees to about 8 digits, as expected at this sample size. A single run shows one draw from the sampling distribution; one covered interval does not establish the coverage rate.
+
+Source: `results/estimate.json`, computed from `results/pilot.json`.
+
+## Figure
+
+![Pilot running estimate vs number of samples](../figures/running_estimate.png)
+
+`figures/running_estimate.png` shows the pilot's running estimate against the number of samples (log axis) with true pi marked. It is built from `results/running_estimate.csv`, the pilot's trace recorded about every 10 s, so it starts at roughly 10^7 samples rather than at n = 1.
+
+## Code
+
+- `analysis/analyze.py`: final estimate, CIs and running-estimate table from `results/pilot.json`.
+- `figures/make_figure.py`: the figure from `results/running_estimate.csv`.
+- `results/jobs.md`: job references, commands and start times.
+
+## Extended run
+
+`extended.py 40` (job-3c3878b497) was started together with the pilot at 2026-10-19 10:10:24 UTC. It samples for 40 minutes (2400 s) and was expected to end around 10:50 UTC. It is for a later study; its result is not part of this delivery and nothing here depends on it.

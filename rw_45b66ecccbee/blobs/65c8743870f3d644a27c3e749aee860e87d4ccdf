@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Check a delivered report against the venue requirements. Usage: check_venue.py REPORT_DIR"""
+import re, sys, pathlib, hashlib, zlib
+def page_count(data):
+    """Page count from the root /Pages /Count; reads FlateDecode streams so object-stream PDFs work."""
+    blobs = [data]
+    for m in re.finditer(rb"stream\r?\n", data):
+        end = data.find(b"endstream", m.end())
+        try:
+            blobs.append(zlib.decompress(data[m.end():end]))
+        except Exception:
+            pass
+    counts, kids_of = [], set()
+    for b in blobs:
+        for m in re.finditer(rb"/Type\s*/Pages\b(.*?)(?=>>|$)", b, re.S):
+            c = re.search(rb"/Count\s+(\d+)", m.group(0))
+            parent = re.search(rb"/Parent\b", m.group(0))
+            if c and not parent:
+                counts.append(int(c.group(1)))
+        for m in re.finditer(rb"<<([^<>]*?/Type\s*/Pages[^<>]*?)>>", b, re.S):
+            c = re.search(rb"/Count\s+(\d+)", m.group(1))
+            if c and not re.search(rb"/Parent\b", m.group(1)):
+                counts.append(int(c.group(1)))
+    if counts:
+        return max(counts)
+    return len(re.findall(rb"/Type\s*/Page\b(?!s)", b"".join(blobs)))
+
+d = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "report")
+ok = True
+def chk(c, msg):
+    global ok
+    print(("PASS " if c else "FAIL ") + msg); ok &= bool(c)
+pdf, tex, sty = d/"report.pdf", d/"report.tex", d/"neurips_2026.sty"
+chk(pdf.is_file() and pdf.stat().st_size > 0, "report.pdf exists")
+chk(tex.is_file(), "report.tex exists")
+if pdf.is_file():
+    n = page_count(pdf.read_bytes())
+    chk(0 < n <= 2, f"report.pdf has {n} page(s) (limit 2)")
+if tex.is_file():
+    t = tex.read_text()
+    chk(re.search(r"\\usepackage(\[[^\]]*\])?\{neurips_2026\}", t), "uses neurips_2026 style")
+    chk(not re.search(r"\\(newgeometry|geometry|vspace\*?\{-|setlength\{\\(textheight|textwidth|columnsep))|\\usepackage(\[[^\]]*\])?\{(geometry|fullpage|savetrees|times)\}", t), "no margin/font tampering")
+    chk(len(re.findall(r"\\begin\{figure\*?\}", t)) == 1, "exactly one figure environment")
+    chk(len(re.findall(r"\\begin\{table\*?\}", t)) == 1, "exactly one table environment")
+if sty.is_file():
+    ref = pathlib.Path(__file__).resolve().parent.parent/"report"/"neurips_2026.sty"
+    if ref.is_file():
+        chk(hashlib.sha256(sty.read_bytes()).hexdigest() == hashlib.sha256(ref.read_bytes()).hexdigest(), "neurips_2026.sty unmodified")
+sys.exit(0 if ok else 1)

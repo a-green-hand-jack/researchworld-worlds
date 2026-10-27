@@ -1,0 +1,49 @@
+"""F8: E3 (I-JEPA-style ViT on CIFAR-10), the pre-registered tests of the step-0 horizon rule. (a) Arm T (theory-aligned SGD) count of
+directions vs weight decay with the rule's prediction and the observed/predicted transition; Arm P (I-JEPA recipe, AdamW) wd points.
+(b) rule count vs measured count for every sweep config, both arms. Count = eigenvalues of the online token covariance >= 1e-3 x the
+largest at epoch 20 of a 50-epoch schedule; markers = seed mean, bars = min-max of 3 seeds."""
+import os, sys
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+import matplotlib.pyplot as plt
+
+def bars(ax, x, r, **kw):
+    s = np.array(r["count_seeds"]); ax.errorbar(x, s.mean(), yerr=[[s.mean() - s.min()], [s.max() - s.mean()]], capsize=1.2, zorder=3, **kw)
+
+def make(outdir):
+    fs.setup()
+    rows, S, F, paths = common.load_e3()
+    CT, CP = fs.COL["drive"], fs.COL["decay"]
+    fig, axs = plt.subplots(1, 2, figsize=(fs.TEXTWIDTH, 2.05), constrained_layout=True, gridspec_kw=dict(width_ratios=[1.25, 1]))
+    ax = axs[0]; X0 = 4e-4
+    T = [rows[n] for n in rows if n.startswith("T_wd")]; T.sort(key=lambda r: r["value"])
+    xs = [r["value"] if r["value"] > 0 else X0 for r in T]
+    ax.plot(xs, [r["count_pred"] for r in T], color=CT, ls="--", lw=1.0, zorder=2, label="T: rule")
+    for x, r in zip(xs, T): bars(ax, x, r, color=CT, marker="o", ls="none", ms=3.5)
+    ax.plot([], [], color=CT, marker="o", ls="none", ms=3.5, label="T: measured")
+    P = [rows[n] for n in ("P_wd0", "P_wd0.04", "P_wdlarge")]; xp = [X0 if r["value"] == 0 else r["value"] for r in P]
+    ax.plot(xp, [r["count_pred"] for r in P], color=CP, ls="--", lw=1.0, zorder=2, label="P: rule")
+    for x, r in zip(xp, P): bars(ax, x, r, color=CP, marker="s", ls="none", ms=3.5)
+    ax.plot([], [], color=CP, marker="s", ls="none", ms=3.5, label="P: measured")
+    ax.axhline(0.5 * T[0]["count_init"], color=fs.COL["grey"], lw=0.6, ls=":"); ax.text(2.8e-4, 0.5 * T[0]["count_init"] - 2, "dimensional collapse", fontsize=5.5, color=fs.COL["grey"], ha="left", va="top")
+    L = S["criteria"]["C-loc wd arm T"]
+    ax.axvline(L["observed"], color="k", lw=0.8, label="T transition: observed"); ax.axvline(L["predicted"], color="k", lw=0.8, ls="--", label="T transition: rule")
+    ax.set_xscale("log"); ax.set_xlim(2.5e-4, 1.4e1); ax.set_ylim(0, 130)
+    ax.set_xticks([X0, 1e-3, 1e-2, 1e-1, 1, 10]); ax.set_xticklabels(["0", "$10^{-3}$", "$10^{-2}$", "$10^{-1}$", "1", "10"])
+    ax.set_xlabel("weight decay"); ax.set_ylabel("count at epoch 20"); ax.set_title("(a) weight decay", fontsize=7.5)
+    ax = axs[1]
+    for arm, c, m in (("T", CT, "o"), ("P", CP, "s")):
+        z = [r for r in rows.values() if r["arm"] == arm]
+        for r in z: bars(ax, r["count_pred"], r, color=c, marker=m, ls="none", ms=2.8, alpha=0.9)
+        ax.plot([], [], color=c, marker=m, ls="none", ms=3, label=f"Arm {arm}: $\\rho$ = {S['criteria']['C-rank arm ' + arm]['rho']:.2f}")
+    lo, hi = 1.5, 200; ax.plot([lo, hi], [lo, hi], color="k", lw=0.6, zorder=1)
+    ax.set_xscale("log"); ax.set_yscale("log"); ax.set_xlim(lo, 600); ax.set_ylim(lo, hi)
+    for n, lab in (("T_pinit3", "T: predictor init $\\times$3"), ("P_copy", "P: copy target"), ("P_nosg", "P: no stop-grad")):
+        r = rows[n]; ax.text(r["count_pred"] * 1.2 if n != "T_pinit3" else r["count_pred"] * 1.2, r["count"], lab, fontsize=5.3, ha="left", va="center")
+    ax.set_xlabel("rule count (step 0)"); ax.set_ylabel("measured count"); ax.set_title("(b) rule vs measured", fontsize=7.5)
+    ax.legend(fontsize=5.8, frameon=False, loc="upper left")
+    h, l = axs[0].get_legend_handles_labels()
+    fig.legend(h, l, fontsize=5.8, frameon=False, loc="outside lower center", ncol=6, columnspacing=1.0, handlelength=1.6)
+    fs.save(fig, "fig8_e3_main", outdir)
+    common.record_inputs(outdir, "fig8_e3_main", paths)

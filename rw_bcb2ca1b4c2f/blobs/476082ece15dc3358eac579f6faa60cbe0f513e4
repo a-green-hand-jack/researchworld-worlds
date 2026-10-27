@@ -1,0 +1,35 @@
+"""Companion to checks/e2_prereg.py: does the race criterion without the t_end cap (asymptotic form, max over all
+t while p >= p_-) predict the long-horizon rank of my exact reduced flow (rank_T_long, t = 40000) where E2's capped
+t_end ranks are not final?  Reads the per-config forecast in checks/e2_prereg.json, recomputes the spectra and the
+race score with e2_prereg.py's own functions.
+Usage: python3 checks/e2_uncapped.py PREDICTION_JSON checks/e2_prereg.json
+"""
+import sys, json
+import numpy as np
+pred_path, fc_path = sys.argv[1:3]
+sys.argv = ["e2_prereg.py", pred_path]
+src = open("checks/e2_prereg.py").read().split("# 2. my race score")[0]
+exec(src)
+exec(open("checks/e2_prereg.py").read().split("# 2. my race score")[1].split("def t_race")[0])
+FC = json.load(open(fc_path))["forecast_configs"]
+rows = []
+for x in FC:
+    s, c = spectra(x["fam"], x["r"])
+    unc = int(sum(score(c[j], s[j], x["lam"], x["p0"], np.inf) >= 0 for j in range(n)))
+    rows.append(dict(x, rank_uncapped=unc))
+out = {}
+for lam in sorted({x["lam"] for x in rows}) + ["all"]:
+    R = [x for x in rows if lam == "all" or x["lam"] == lam]
+    rp = np.array([x["rank_pred"] for x in R]); ru = np.array([x["rank_uncapped"] for x in R])
+    rt = np.array([x["rank_t_end"] for x in R]); rl = np.array([x["rank_T_long"] for x in R])
+    out[str(lam)] = dict(configs=len(R), capped_pred_vs_t_end_mae=float(np.abs(rp - rt).mean()),
+                         capped_pred_vs_T_long_mae=float(np.abs(rp - rl).mean()),
+                         uncapped_vs_T_long_mae=float(np.abs(ru - rl).mean()),
+                         uncapped_vs_T_long_exact=float((ru == rl).mean()),
+                         t_end_not_final=int((rt != rl).sum()))
+res = dict(source="experiment-repo db2a53b results/e2/prediction.json; checks/e2_prereg.json forecast_configs",
+           note="per distinct cyclic pop config (seed-independent); MAE over configs, not runs", by_lam=out,
+           changed_configs=[{k: x[k] for k in ("fam", "r", "lam", "p0", "t_end", "rank_pred", "rank_uncapped",
+                                               "rank_t_end", "rank_T_long")} for x in rows
+                            if x["rank_t_end"] != x["rank_T_long"]])
+print(json.dumps(res, indent=1))

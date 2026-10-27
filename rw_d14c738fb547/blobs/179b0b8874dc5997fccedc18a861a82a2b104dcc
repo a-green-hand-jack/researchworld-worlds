@@ -1,0 +1,43 @@
+# Findings — what the numbers say (experiment-repo)
+
+Sources: `estimates.csv`, `rate_analysis.json`, `ensemble.csv`, `runs.md`, `reference_commit.md`; code in `code/`.
+
+## The four cluster estimates (pi_sweep.sbatch, array job 53951131, Ibex)
+
+| n | estimate | abs error | sigma(n) = sqrt(pi(4-pi)/n) | abs error / sigma |
+|---|---|---|---|---|
+| 1e5 | 3.13504000 | 6.553e-3 | 5.193e-3 | 1.26 |
+| 1e6 | 3.14286000 | 1.267e-3 | 1.642e-3 | 0.77 |
+| 1e7 | 3.14166120 | 6.855e-5 | 5.193e-4 | 0.13 |
+| 1e8 | 3.14147752 | 1.151e-4 | 1.642e-4 | 0.70 |
+
+Each value equals its off-cluster re-derivation from the seed in the script (`offcluster/`).
+
+## Do the errors follow 1/sqrt(n)? Yes, within what four single estimates can show.
+
+- Each error is within its expected spread: all |err|/sigma lie in 0.13-1.26 (under the model |err|/sigma is
+  half-normal; 90 % of draws fall in 0.06-1.96). Sum of squares 2.70 on 4 dof, p = 0.61.
+- Log-log OLS slope over the four points: -0.65 (SE 0.21). Under the exact 1/sqrt(n) law, a 4-point slope
+  from single estimates falls in [-0.94, -0.06] 95 % of the time (simulated); -0.65 is well inside
+  (two-sided p = 0.42). With slope fixed at -1/2 the fitted constant is 0.90 (expected mean 1.31; sigma constant 1.64).
+- Four points cannot pin the exponent down (the t-interval is [-1.54, +0.24]); the 1e7 error is smaller than the
+  1e8 error, an ordinary fluctuation (z = 0.13), not a departure from the rate.
+- Robustness check (off-cluster, numpy, independent replicates, n = 1e2..1e8): the RMS error follows
+  1.659 n^(-0.5017 +- 0.0019) (weighted fit, chi2 = 2.7 on 5 dof), against the theory 1.642 n^(-1/2);
+  RMS/sigma = 0.98-1.01 for n <= 1e7 (0.84 at 1e8 with only 20 replicates, SE ~ 0.12). This measures the
+  rate itself, which the four single draws can only be consistent with.
+
+## Long run (long.sbatch, 3e7 samples)
+
+First submission, job 53951217: started 12:47:26, cancelled by SIGTERM at 12:48:23 (57 s) during its
+30-minute padding sleep; it did not complete (no `long done`; sacct `CANCELLED`). No command of this
+position cancelled it. Its sampling had already finished: estimate 3.14108947, abs error 5.032e-4
+(|err|/sigma = 1.68). Resubmitted once, unchanged, as job 53951746: started 12:51:12, **COMPLETED** at 13:21:17 (30:05,
+exit 0, `long done`). Same estimate as the first submission (same seed): 3.14108947, abs error 5.032e-4,
+|err|/sigma = 1.68 (sigma = 3.00e-4 at n = 3e7), within the expected spread and consistent with the
+1/sqrt(n) rate (it lies between the 1e7 and 1e8 sweep points in n). Record: `runs.md`, `raw/long_run2/`.
+
+## Reference repository
+
+https://github.com/octocat/Hello-World HEAD = `7fd1a60b01f91b314f59955a4e4d4e80d8edf11d` (master,
+"Merge pull request #6 from Spaceghost/patch-1", 2012-03-06), cloned 2026-10-18.

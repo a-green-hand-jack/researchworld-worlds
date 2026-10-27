@@ -1,0 +1,41 @@
+"""Generate the decorative cover with the authorized world image resource."""
+import os,json,base64,urllib.request
+from pathlib import Path
+from PIL import Image
+prompt='A restrained editorial illustration for a mathematics research note about numerical integration: a flowing dark blue curve above a pale ivory baseline, translucent teal and ochre narrow panels suggesting quadrature beneath the curve, subtle geometric points, generous negative space, elegant flat vector-like texture. Wide shallow panoramic composition. No text, no letters, no numbers, no axes labels, no legend. Decorative conceptual artwork, not a scientific chart.'
+body={'model':'gpt-image-2','prompt':prompt,'size':'1536x512','quality':'medium'}
+Path('presentation/cover_request.json').write_text(json.dumps(body,indent=2)+'\n')
+req=urllib.request.Request(os.environ['OPENAI_BASE_URL'].rstrip('/')+'/images/generations',data=json.dumps(body).encode(),headers={'Authorization':'Bearer '+os.environ['OPENAI_API_KEY'],'Content-Type':'application/json'})
+with urllib.request.urlopen(req,timeout=180) as response:
+ raw=response.read()
+ info={'status':response.status,'content_type':response.headers.get('Content-Type'),'bytes':len(raw)}
+ Path('presentation/cover_response_status.json').write_text(json.dumps(info,indent=2)+'\n')
+ print(info,flush=True)
+ Path('presentation/cover_response.raw').write_bytes(raw)
+ try:
+  result=json.loads(raw)
+ except json.JSONDecodeError:
+  events=[]
+  for line in raw.decode().splitlines():
+   if line.startswith('data: '):
+    try: events.append(json.loads(line[6:]))
+    except json.JSONDecodeError: pass
+  def find_image(obj):
+   if isinstance(obj,dict):
+    if 'b64_json' in obj: return obj['b64_json']
+    for value in obj.values():
+     found=find_image(value)
+     if found: return found
+   elif isinstance(obj,list):
+    for value in obj:
+     found=find_image(value)
+     if found: return found
+  encoded=next((find_image(e) for e in reversed(events) if find_image(e)),None)
+  if not encoded:
+   raise ValueError('No b64_json found in saved event stream')
+  result={'data':[{'b64_json':encoded}], 'response_format':'event-stream'}
+Path('presentation/cover_original.png').write_bytes(base64.b64decode(result['data'][0]['b64_json']))
+with Image.open('presentation/cover_original.png') as im:
+ im.convert('RGB').resize((1200,200),Image.Resampling.LANCZOS).save('report/cover.png')
+Path('presentation/cover_metadata.json').write_text(json.dumps({k:v for k,v in result.items() if k!='data'},indent=2)+'\n')
+print('Cover generated and resized to 1200 x 200.')

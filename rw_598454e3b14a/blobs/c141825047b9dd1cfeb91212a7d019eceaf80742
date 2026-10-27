@@ -1,0 +1,36 @@
+"""A2 diagnostic (post hoc, after the registered A2 score was read; not a score): what the 71 non-converged runs are.
+Reads results/e4/a2/a2_runs.jsonl.gz; writes results/e4/a2/nonconvergence.txt.
+Usage: python3 code/checks/e4_a2_nonconv.py"""
+import sys, os, gzip, json
+from collections import Counter
+import numpy as np
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import e4_a2 as M
+
+A = M.A
+root = os.path.join(os.path.dirname(__file__), "..", "..", "results", "e4", "a2")
+runs = [json.loads(l) for l in gzip.open(os.path.join(root, "a2_runs.jsonl.gz"), "rt")]
+out = []; P = out.append
+nc, err, rng, strong, cells, tot = [], Counter(), Counter(), 0, Counter(), Counter()
+for r in runs:
+    c, s = A.stats(r["stats"]); al = np.array(r["alive"], bool); cnt = al.sum(1)
+    key = (r["stats"], r["lam"], r["eta"]); tot[key] += 1
+    if len(set(cnt)) == 1:
+        continue
+    nc.append(r); cells[key] += 1
+    rng[int(cnt.max() - cnt.min())] += 1; err[int(abs(r["pred_rank"]["model"] - cnt[-1]))] += 1
+    fl = al.any(0) & ~al.all(0)
+    strong += bool((fl & (c / s > 2 * A.THR)).any())
+n = len(runs); k = len(nc)
+P(f"runs {n}, non-converged (true alive count not constant over the 8 checkpoints in [T_h/2, T_h]) {k}")
+P(f"range of the true count over [T_h/2, T_h]: {sorted(rng.items())}")
+P(f"non-converged runs with a flickering direction of c/s > 2 thr (a captured direction that dies and returns): {strong}/{k}")
+P(f"model |rank error| at T_h on the non-converged runs: {sorted(err.items())}")
+w1 = sum(v for e, v in err.items() if e <= 1)
+P(f"model rank-within-1 at T_h counting every run (non-converged scored at T_h; not the registered scoring): "
+  f"{(n - k + w1) / n:.3f} = ({n - k} converged, all within 1, + {w1} of {k})")
+P("non-converged / runs per (stats, lam, eta), T_h = K + ceil(5/(eta lam)):")
+for key in sorted(tot):
+    P(f"  {key}: {cells[key]}/{tot[key]}  T_h {A.K + int(np.ceil(5 / (key[1] * key[2])))}")
+open(os.path.join(root, "nonconvergence.txt"), "w").write("\n".join(out) + "\n")
+print("\n".join(out))

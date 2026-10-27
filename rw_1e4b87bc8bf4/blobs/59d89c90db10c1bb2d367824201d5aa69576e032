@@ -1,0 +1,10 @@
+# report/figures
+
+`make_figtab.py` renders `fig_main.pdf` (Figure 1), `table_main.tex` (tabular fragment for Table 1) and `table_main.csv`
+from `report/results/` (`folds_long.csv`, `summary.json`, `numbers.tex`, `identity.json`). Run from `report/`:
+`python3 figures/make_figtab.py` (needs numpy, pandas, matplotlib). It asserts that its numbers equal `numbers.tex`.
+Re-run after `report/results/identity.json` changes: the table's last row (Ibex node, identical or not) is only written when that file exists.
+
+- Fig. 1(a): the 50 outer-fold accuracies per method (equal values are placed side by side, so ties stay visible), with the mean and
+  95% corrected resampled-t interval (J = 50, df = 49). 1(b): the 50 paired differences LR - kNN, same interval, dashed zero line.
+- Table 1: mean and interval per method and for the paired difference; naive t interval shown as a labelled comparison.

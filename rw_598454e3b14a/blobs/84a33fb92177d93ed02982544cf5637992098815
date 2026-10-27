@@ -1,0 +1,26 @@
+{\footnotesize
+\newcolumntype{R}[1]{>{\raggedright\arraybackslash}p{#1}}
+\begin{tabular}{@{}R{0.21\linewidth}R{0.24\linewidth}R{0.31\linewidth}R{0.10\linewidth}@{}}
+\toprule
+Test & Pre-registered criterion & Observed & Verdict \\
+\midrule
+rule vs measured count, Arm T & Spearman $\ge0.5$, bootstrap CI excludes 0 & $\rho=0.83$ [0.45, 0.99], 12 configs & \textbf{pass} \\ \addlinespace[1.5pt]
+post hoc split of the Arm T ranking & not registered & wd sweep $\rho=1.00$ (6 configs); other factors 0.27 (6) & post hoc \\ \addlinespace[1.5pt]
+rule vs measured count, Arm P & same & $\rho=0.12$ [$-$0.32, 0.47], 20 configs & \textbf{fail} \\ \addlinespace[1.5pt]
+critical weight decay, Arm T & observed transition within $\times2$ of the rule's & observed 0.0055, rule 0.014 ($\times$2.6) & \textbf{fail} \\ \addlinespace[1.5pt]
+C-dir: signed pairs & measured $\Delta$RankMe has the predicted sign in $\ge2$ of 3 seeds & 5 of 6 hold; fails: P init 1$\to$3 & 5/6 \\ \addlinespace[1.5pt]
+C-dir: registered nulls & measured counts differ by $\le\max(2,\mathrm{sd}_a{+}\mathrm{sd}_b)$ & 7 of 20 hold; fail: pred depth (1), pred lr mult P (1), pred init scale P (1), wd P (1), ema P (3), wd T (2), mask P (4) & 7/20 \\ \addlinespace[1.5pt]
+theory: rank falls with weight decay & each adjacent pair, both arms & T 5/5 pairs, P 2/2 pairs; P: 116, 116, 28 & \textbf{pass} \\ \addlinespace[1.5pt]
+theory: rank falls with predictor lr & both arms, lr $\times0.1,1,10$ & P 1/2: 62, 115, 113; T 1/2: 9.3, 8.7, 8.3 & \textbf{fail} \\ \addlinespace[1.5pt]
+theory: rank falls with predictor depth & Arm P, depth 1, 3, 6 & 0/2 pairs: 99, 115, 115 & \textbf{fail} \\ \addlinespace[1.5pt]
+theory: no stop-gradient collapses completely & total variance $<10^{-6}$ of init, or RankMe $<1.5$ & 0 of 3 seeds; variance ratio $1.5\times10^{-4}$ (P), $1.5\times10^{-3}$ (T) & \textbf{fail} \\ \addlinespace[1.5pt]
+theory: frozen target does not collapse & count $\ge0.5\times$ init & collapsed seeds: P 0/3, T 3/3 & \textbf{fail} \\ \addlinespace[1.5pt]
+theory: EMA rate changes the count by less than the seed spread & Arm P & range 99 vs seed s.d.\ 16: 17, 84, 117, 110 (base 115) & \textbf{fail} \\ \addlinespace[1.5pt]
+C4, Arm T, interventions from the theory & sign of $\Delta$RankMe in $\ge2$ of 3 seeds; rescue/break crosses the collapse line & direction 0/3, crossing 0/3 & \textbf{dir.\ fail, cross fail} \\ \addlinespace[1.5pt]
+C4, Arm T, interventions from the rule & sign of $\Delta$RankMe in $\ge2$ of 3 seeds; rescue/break crosses the collapse line & direction 3/3, crossing 0/3 & \textbf{dir.\ pass, cross fail} \\ \addlinespace[1.5pt]
+C4, Arm P, copy target & sign of $\Delta$RankMe in $\ge2$ of 3 seeds; rescue/break crosses the collapse line & direction 2/2, crossing: no eligible pair & \textbf{dir.\ pass} \\ \addlinespace[1.5pt]
+full length (50 ep.): collapse flag & rule's flag equals measured collapse ($\ge2$ of 3 seeds) & 3 of 3 right; counts 127, 4, 4 (rule 98, 9, 4) & \textbf{pass} \\ \addlinespace[1.5pt]
+full length: linear probe & collapsing config below the baseline in $\ge2$ of 3 seeds & 3 of 3 seeds; probe 16.7\% vs 32.6\% (random init 43.7\%) & \textbf{pass} \\ \addlinespace[1.5pt]
+\bottomrule
+\end{tabular}
+}

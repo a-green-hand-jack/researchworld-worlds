@@ -1,0 +1,15 @@
+# Checked results and handoff
+
+The local-compute job `job-bcec31f3b5` completed successfully using `analysis/monte_carlo.py`. Its first full-size stream took 0.07293 seconds; the 20-stream sampling and summary took 0.23843 seconds. All streams were retained. `results/pi_mc.json` records the raw counts, estimates, stream keys, versions and summary.
+
+Mean estimate: **3.1417146**. The 95% Student t interval across 20 seeds is **[3.140917046261387, 3.1425121537386125]**. The signed error (estimate minus math.pi) is **+0.00012194641020668584**, equal here to the absolute error. Exactly **20,000,000 points** were drawn, of which **15,708,573** were inside.
+
+Checks completed after the run:
+
+- Recomputed every estimate from integer counts and checked total points.
+- Independently aggregated those estimates with Python statistics.mean and statistics.stdev, and recomputed the t interval (19 df); values agree to floating-point precision.
+- Pooled-count estimate equals the mean of equal-size seed estimates.
+- Observed per-seed SD is 0.0017041221972492941 versus theoretical binomial SD 0.001642183367736324 (ratio 1.0377). This is a plausibility check, not a hypothesis-test result or seed selection rule.
+- math.pi is contained in the interval. No extra sampling or changes to the planned interval were needed.
+
+The t interval is approximate, relying on the near-normal distribution of each million-point estimate. It quantifies simulation uncertainty; it does not make the exact constant pi uncertain. The objective was re-read before this handoff and every numerical requirement is satisfied. Final report authorship and independent review remain with their assigned owners.

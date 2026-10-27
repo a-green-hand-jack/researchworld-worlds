@@ -1,0 +1,26 @@
+{
+  "source": "PubMed",
+  "url": "https://pubmed.ncbi.nlm.nih.gov/",
+  "start_utc": "2026-10-19T21:30:15.588261+00:00",
+  "end_utc": "2026-10-19T21:30:16.237482+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/pubmed.headers",
+    "-o",
+    "/tmp/tmpr85tp9hd/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://pubmed.ncbi.nlm.nih.gov/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html; charset=utf-8\n",
+  "stderr": "",
+  "first200": "<!DOCTYPE html>\n\n\n\n\n<html lang=\"en\" >\n<head  itemscope itemtype=\"http://schema.org/WebPage\"  prefix=\"og: http://ogp.me/ns#\" >\n    <meta charset=\"UTF-8\">\n    <meta http-equiv=\"X-UA-Compatible\" content=",
+  "body_bytes": 42680
+}

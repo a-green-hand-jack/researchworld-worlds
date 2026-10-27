@@ -1,0 +1,42 @@
+"""Data + OLS line figure. Reads experiment-repo results (copied alongside: data.csv, fit.json)."""
+import json, os
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+here = os.path.dirname(os.path.abspath(__file__))
+d = np.genfromtxt(os.path.join(here, "data.csv"), delimiter=",", names=True)
+f = json.load(open(os.path.join(here, "fit.json")))
+x, y = d["x"], d["y"]
+n = len(x)
+b, a, t = f["slope"], f["intercept"], f["t_crit_df38"]
+
+# consistency check: stored fit must equal an independent OLS on the stored data
+b2, a2 = np.polyfit(x, y, 1)
+assert abs(b - b2) < 1e-8 and abs(a - a2) < 1e-8
+
+xs = np.linspace(x.min(), x.max(), 200)
+s = f["residual_sd"]
+se_mean = s * np.sqrt(1 / n + (xs - x.mean()) ** 2 / np.sum((x - x.mean()) ** 2))
+fit = a + b * xs
+
+fig, ax = plt.subplots(figsize=(6.4, 4.4), dpi=200)
+ax.fill_between(xs, fit - t * se_mean, fit + t * se_mean, color="#9ecae1", alpha=0.6, lw=0,
+                label="95% CI for the mean line")
+ax.plot(xs, a + b * xs, color="#08519c", lw=2, label="OLS fit")
+ax.plot(xs, 2.5 + 0.8 * xs, color="0.4", lw=1.2, ls="--", label="true line (2.5 + 0.8x)")
+ax.scatter(x, y, s=22, color="#d94801", edgecolor="white", linewidth=0.5, zorder=3,
+           label=f"data (n = {n})")
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+ax.set_xlim(-1, 40)
+txt = (f"slope = {b:.3f}  (95% CI {f['slope_ci95'][0]:.3f} to {f['slope_ci95'][1]:.3f})\n"
+       f"intercept = {a:.2f}  (95% CI {f['intercept_ci95'][0]:.2f} to {f['intercept_ci95'][1]:.2f})\n"
+       f"R$^2$ = {f['r_squared']:.3f}")
+ax.text(0.03, 0.97, txt, transform=ax.transAxes, va="top", ha="left", fontsize=8.5,
+        bbox=dict(boxstyle="round", fc="white", ec="0.7"))
+ax.legend(loc="lower right", fontsize=8, frameon=False)
+ax.spines[["top", "right"]].set_visible(False)
+fig.tight_layout()
+fig.savefig(os.path.join(here, "fit.png"))

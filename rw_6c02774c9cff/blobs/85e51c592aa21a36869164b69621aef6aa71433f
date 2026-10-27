@@ -1,0 +1,74 @@
+"""Compare the local and the Ibex run of the full cross-validation.
+
+Usage (from report/): python code/compare_runs.py LOCAL_RUNDIR IBEX_RUNDIR OUT.json
+"Identical" means: per_fold.csv and predictions.csv are byte-identical, every
+per-fold field is equal as written (accuracies at full float precision, chosen k,
+inner-CV score, LR iteration count, LR test log-loss as an exact float hex, LR
+coefficient hash), and the summaries' numbers are equal exactly.
+"""
+import csv
+import hashlib
+import json
+import sys
+
+NUMERIC = ("acc_lr", "acc_knn", "diff_lr_minus_knn", "k_knn", "inner_acc_chosen_k", "correct_lr", "correct_knn")
+
+
+def sha(path):
+    return hashlib.sha256(open(path, "rb").read()).hexdigest()
+
+
+def flat(d, prefix=""):
+    if isinstance(d, dict):
+        for k, v in d.items():
+            yield from flat(v, f"{prefix}{k}.")
+    elif isinstance(d, list):
+        for i, v in enumerate(d):
+            yield from flat(v, f"{prefix}{i}.")
+    else:
+        yield prefix[:-1], d
+
+
+def main(a, b, out):
+    res = {"local_run": a, "ibex_run": b, "files": {}, "fields_differing": {}}
+    for f in ("per_fold.csv", "predictions.csv"):
+        ha, hb = sha(f"{a}/{f}"), sha(f"{b}/{f}")
+        res["files"][f] = {"local_sha256": ha, "ibex_sha256": hb, "identical": ha == hb}
+    ra, rb = (list(csv.DictReader(open(f"{d}/per_fold.csv"))) for d in (a, b))
+    assert len(ra) == len(rb)
+    max_abs = 0.0
+    for x, y in zip(ra, rb):
+        for k in x:
+            if x[k] != y[k]:
+                res["fields_differing"].setdefault(k, []).append(
+                    {"repetition": x["repetition"], "fold": x["fold"], "local": x[k], "ibex": y[k]})
+            if k in NUMERIC:
+                max_abs = max(max_abs, abs(float(x[k]) - float(y[k])))
+    pa, pb = (list(csv.DictReader(open(f"{d}/predictions.csv"))) for d in (a, b))
+    res["predictions_differing"] = sum(p != q for p, q in zip(pa, pb))
+    sa, sb = (json.load(open(f"{d}/summary.json")) for d in (a, b))
+    fa = dict(flat({k: sa[k] for k in ("lr", "knn", "diff", "k_knn", "pooled_correct")}))
+    fb = dict(flat({k: sb[k] for k in ("lr", "knn", "diff", "k_knn", "pooled_correct")}))
+    res["summary_values_differing"] = sorted(k for k in fa if fa[k] != fb.get(k))
+    for k in fa:
+        if isinstance(fa[k], (int, float)) and not isinstance(fa[k], bool):
+            max_abs = max(max_abs, abs(fa[k] - fb[k]))
+    ia, ib = (json.load(open(f"{d}/run_info.json")) for d in (a, b))
+    keys = ("hostname", "slurm_job_id", "slurmd_nodename", "slurm_job_nodelist", "slurm_partition", "cpu_model",
+            "python", "platform", "numpy", "scipy", "sklearn", "blas", "env_threads", "wall_seconds", "started_utc")
+    res["local_info"] = {k: ia.get(k) for k in keys}
+    res["ibex_info"] = {k: ib.get(k) for k in keys}
+    res["same_data_sha256"] = ia["data"]["sha256"] == ib["data"]["sha256"]
+    res["same_design_and_settings"] = ia["design"] == ib["design"] and ia["settings"] == ib["settings"]
+    res["ibex_node"] = ib.get("slurmd_nodename") or ib.get("hostname")
+    res["ibex_job_id"] = ib.get("slurm_job_id")
+    res["max_abs_diff"] = max_abs
+    res["identical"] = (all(v["identical"] for v in res["files"].values()) and not res["fields_differing"]
+                        and not res["summary_values_differing"] and res["predictions_differing"] == 0)
+    res["definition_of_identical"] = __doc__.split('"Identical" means: ')[1].strip().replace("\n", " ")
+    open(out, "w").write(json.dumps(res, indent=1) + "\n")
+    print(json.dumps({k: res[k] for k in ("ibex_node", "ibex_job_id", "identical", "max_abs_diff", "files")}, indent=1))
+
+
+if __name__ == "__main__":
+    main(*sys.argv[1:4])

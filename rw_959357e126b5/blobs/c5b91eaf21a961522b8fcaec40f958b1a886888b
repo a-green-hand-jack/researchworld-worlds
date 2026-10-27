@@ -1,0 +1,22 @@
+{
+ "test": "E6 rung 1b (deep predictor with random factors; limitation L6)",
+ "primary": "n1g_K (code/e6_r1b.py): N1-general's near-collapse linear integration with the general-factor capture rule s_i^2 (c_i - p_i sig_i) K_i >= M lam |p_i|",
+ "statistic": "final count (#singular values of W above 0.05 at T) per run; MAE and within-1 share; paired bootstrap 95% CI (2000 resamples over runs) of |baseline - truth| - |n1g_K - truth|",
+ "cells": "per arm (gauss, nearid) on predictor depth M >= 2 pooled (the verdict); M = 2, 3, 4 separately reported with the same rule; M = 1 is the control (all three capture rules coincide there)",
+ "pass": "within-1 share >= 0.90 (a non-finite base run counts as a miss) and MAE below every baseline with the paired CI's lower bound above 0",
+ "baselines": {
+  "n1g_d1": "the delivered N1-general (E1b) with the depth-1 capture rule, = linjepa.n1_general(depth=M): the comparison that decides whether the depth correction holds for random factors (L6)",
+  "race_id": "the delivered depth-M race (E1c's capture correction) treating P0 as identity factors of nominal gain p0",
+  "static": "#{c^2 >= 4 lam s}",
+  "window_P0": "initial window with the actual P0 (top eigenvalue of sym(c P0^T - s P0^T P0) > lam)",
+  "early_25.0, early_50.0": "the measured count at fixed times t = 25 and 50 (independent of M and of the race)",
+  "mu (P2)": "dvd, dvd_signed, dvd_sorted, dvd_pq, dvd_pq_signed, dvd_exact, dvd_nowd of 2610.02344 on P0 (code/baselines/dvd_mu.py)"
+ },
+ "reported_beside": {
+  "n1g_pL": "E1c's identity-factor correction with the effective p_i (a second candidate of the same family; development cannot separate it from n1g_K)",
+  "early_f0.10": "the count at 10% of T; under the rung 1a reading rule a pass is stated as 'the criterion gives at t = 0 the count a measurement gives only from about f* of T', never as 'beats measurement'",
+  "trajectory": "the measured count at 5, 10, 15, 20, 30, 50% of T against the final count"
+ },
+ "floor": "each base run has two truth-floor re-runs (W0 columns x (1 + U(-1e-3, 1e-3)); lam x (1 +- 0.005)); a base run is fragile if either re-run's final count differs; a cell with > 5% fragile runs is ill-posed; misses on fragile runs are counted and reported, the verdict is on all runs",
+ "informative": "the same comparison restricted to runs with final count > 0 is reported"
+}

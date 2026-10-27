@@ -1,0 +1,20 @@
+# Venue: format rules for the delivered report
+
+Audience: the requester of the quadrature-convergence study (a short technical report, not a journal submission).
+
+## Length: "at most two pages" (checkable reading)
+- `report/report.md` rendered with `venue/render.py` gives **at most 2 pages**: A4, margins 15 mm top/bottom and 18 mm left/right, body 9.5 pt DejaVu Serif, line height 1.28, table 8.5 pt, headings 13/10.5 pt.
+- **Everything counts**: the cover, the three figures, the table, captions and text.
+- Display sizes are fixed in the report by `width` attributes: cover 340 px (about 90 mm), each figure 520 px (about 138 mm), centred. Source images should have aspect ratio about 2.5:1 (cover 1024×384, figures about 6.5×2.6 in at 150 dpi or better); the page count (2) was verified on the assembled delivery with the real images (cover 1024×384, figures 1430×572).
+- Run: `LD_LIBRARY_PATH=<conda pango lib> python3 venue/render.py <delivery>/report/report.md out.pdf` (needs weasyprint, markdown, conda-forge pango); it prints the page count. Any other renderer will differ; this one is the reference.
+
+## Layout (paths in the assembled delivery)
+- `report/report.md` — paper-repo (this repository). Links are relative to `report/`.
+- `report/cover.png` — figtab-repo, made with the world's image generation (provenance in `presentation/`); it is the first item in the report.
+- `report/figures/{exp,runge,sqrt}.png` — figtab-repo, one log-log plot per function with all three rules.
+- `report/tables/orders.md`, `orders.csv` — figtab-repo; the table in the report must equal it.
+- `presentation/` — figtab-repo generators and prompt.
+
+## Content rules
+- Every number is traceable to `experiment-repo/results/`; fits with no usable estimate (rounding floor) are labelled, not presented as results.
+- The cover is described as generated only because it was; no data is read from it.

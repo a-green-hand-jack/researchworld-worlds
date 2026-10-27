@@ -1,0 +1,114 @@
+{
+ "grid": "b1p_pilot",
+ "words": {
+  "B1_prime": false,
+  "B1a_prime": false,
+  "B1b_prime": false,
+  "B1d": false,
+  "B1d_class_1-2": false,
+  "B1d_class_<1": true,
+  "B1d_class_=1": false,
+  "B1d_class_>2": false,
+  "B1d_vs_qs": true,
+  "rate": false,
+  "rate_vs_qs": "no difference shown"
+ },
+ "nonfinite": 0,
+ "rate": {
+  "pooled": 0.37887027247588567,
+  "stage_qs_pooled": 0.3995452323209938,
+  "no_decay_null_pooled": 42.27231443630091,
+  "pooled_pass": true,
+  "by_class": {
+   "1-2": {
+    "model": 0.6111623712813748,
+    "stage_qs": 0.5892965143424052,
+    "no_decay_null": 35.724318839087374,
+    "pass_": false
+   },
+   "<1": {
+    "model": 0.20953178808319972,
+    "stage_qs": 0.21329035034997473,
+    "no_decay_null": 48.26075009533449,
+    "pass_": true
+   },
+   "=1": {
+    "model": 0.38267749241029114,
+    "stage_qs": 0.42828922650744194,
+    "no_decay_null": 44.59750699648983,
+    "pass_": true
+   },
+   ">2": {
+    "model": 0.39269537079828365,
+    "stage_qs": 0.4884837115980507,
+    "no_decay_null": 30.96736053070436,
+    "pass_": true
+   }
+  },
+  "label": "a check stage_qs shares (dead-direction decay at its own weight-decay rate); not evidence for the post-loss law on its own",
+  "pass_": false,
+  "stage_qs_pass_": false
+ },
+ "B1d_vs_qs": {
+  "ci_cluster": [
+   0.1760862569631262,
+   0.44602804428328885
+  ],
+  "ci_runs": [
+   0.1760862569631262,
+   0.44602804428328885
+  ],
+  "pass_": true
+ },
+ "rate_vs_qs": {
+  "ci_cluster": [
+   -0.00631771760379047,
+   0.07479212813698802
+  ],
+  "ci_runs": [
+   -0.00631771760379047,
+   0.07479212813698802
+  ],
+  "reading": "no difference shown"
+ },
+ "B1a": {
+  "overall": 0.9290322580645162,
+  "overall_ok": true,
+  "pairs": 13640,
+  "union_overall": 0.9603252431151426,
+  "union_pairs": 24474,
+  "cells_failing": [
+   "short_pulse|a0.6",
+   "short_pulse|rP0.4",
+   "short_pulse|base",
+   "short_pulse|a0.8rP1.25",
+   "short_pulse|a1.6",
+   "short_pulse|rP1.6"
+  ],
+  "cells_ill_posed": [
+   "short_pulse|a1.6"
+  ],
+  "beats_baselines": false,
+  "pass_": false
+ },
+ "B1b": {
+  "median": 0.09946541794407583,
+  "p90": 0.2392954300868105,
+  "unmatched": 0.13721804511278196,
+  "unmatched_capture_static": 0.6888745148771022,
+  "cells_ill_posed": [
+   "pulse|rP1.6",
+   "short_pulse|rP0.4",
+   "short_pulse|base",
+   "short_pulse|a0.8rP1.25",
+   "short_pulse|a1.6",
+   "short_pulse|rP1.6",
+   "short_pulse|rP3"
+  ],
+  "pass_": false
+ },
+ "B1d": {
+  "median_abs": 0.6561469406355604,
+  "pass_": false
+ }
+}

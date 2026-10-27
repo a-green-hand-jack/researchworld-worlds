@@ -1,0 +1,30 @@
+"""Download the Iris data (OpenML dataset 61) from OpenML and verify it.
+
+Writes results/openml_61/openml_61_description.json and results/openml_61/iris_openml_61.arff and checks
+the ARFF file's md5 against the checksum OpenML publishes for the dataset.
+"""
+import hashlib
+import json
+import pathlib
+import urllib.request
+
+DATA = pathlib.Path(__file__).resolve().parent.parent / "results" / "openml_61"
+META_URL = "https://www.openml.org/api/v1/json/data/61"
+
+
+def main():
+    DATA.mkdir(exist_ok=True)
+    meta_raw = urllib.request.urlopen(META_URL).read()
+    (DATA / "openml_61_description.json").write_bytes(meta_raw)
+    desc = json.loads(meta_raw)["data_set_description"]
+    arff = urllib.request.urlopen(desc["url"]).read()
+    md5 = hashlib.md5(arff).hexdigest()
+    if md5 != desc["md5_checksum"]:
+        raise SystemExit(f"md5 mismatch: got {md5}, OpenML says {desc['md5_checksum']}")
+    (DATA / "iris_openml_61.arff").write_bytes(arff)
+    print(json.dumps({"name": desc["name"], "version": desc["version"], "url": desc["url"],
+                      "md5": md5, "sha256": hashlib.sha256(arff).hexdigest()}, indent=1))
+
+
+if __name__ == "__main__":
+    main()

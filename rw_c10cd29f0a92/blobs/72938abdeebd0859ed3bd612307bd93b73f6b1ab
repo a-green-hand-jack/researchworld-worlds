@@ -1,0 +1,243 @@
+{
+ "inputs": [
+  "data/extra_long256/summary-L256.json",
+  "data/extra_long256/series/*.npz",
+  "data/extra_long/summary-L32.json",
+  "data/extra_long/summary-L64.json",
+  "data/extra_long/summary-L128.json",
+  "data/extra_long/series/*.npz",
+  "results/stage2_crossing.json"
+ ],
+ "method": "single-histogram reweighting of each run to T' near its T (nearest run, Kish fraction >= 0.1 for every seed), grid step 0.0005; block bootstrap (20000-sweep blocks, 1000 draws)",
+ "L256_runs": {
+  "temps": [
+   2.2293,
+   2.2443,
+   2.2593,
+   2.2743,
+   2.2893
+  ],
+  "seeds": [
+   11,
+   12,
+   13,
+   14
+  ],
+  "sweeps": 100000,
+  "burn": 30000,
+  "U_direct": [
+   0.6656077128714893,
+   0.6640218702417329,
+   0.6586966675421,
+   0.5449129661589232,
+   0.25389841726315665
+  ],
+  "U_first_half_second_half": {
+   "2.2293": [
+    0.665615498551472,
+    0.6656004816327968
+   ],
+   "2.2443": [
+    0.6640625336907091,
+    0.6639813363459681
+   ],
+   "2.2593": [
+    0.659589017630752,
+    0.6578135084742871
+   ],
+   "2.2743": [
+    0.5487314735836557,
+    0.5419429607335058
+   ],
+   "2.2893": [
+    0.2992865283306607,
+    0.20764838527053087
+   ]
+  },
+  "tau_abs_m_max": 2464.047426467952,
+  "N_over_tau_min": 40.58363444056892,
+  "burn_over_tau_min": 12.175090332170678,
+  "tau_abs_m": {
+   "2.2293-s11": 125.26319168352533,
+   "2.2293-s12": 119.2207199975116,
+   "2.2293-s13": 101.56149240583156,
+   "2.2293-s14": 78.62735082056278,
+   "2.2443-s11": 291.4923908632793,
+   "2.2443-s12": 290.68806091208467,
+   "2.2443-s13": 233.12070579595192,
+   "2.2443-s14": 288.0144322108744,
+   "2.2593-s11": 424.80221861158975,
+   "2.2593-s12": 516.3262917474322,
+   "2.2593-s13": 765.4181472956016,
+   "2.2593-s14": 603.4563640031577,
+   "2.2743-s11": 1164.749625964978,
+   "2.2743-s12": 2464.047426467952,
+   "2.2743-s13": 1762.0530630866028,
+   "2.2743-s14": 1676.4860787009043,
+   "2.2893-s11": 857.7780919808768,
+   "2.2893-s12": 1097.8269615081324,
+   "2.2893-s13": 1479.4506141992629,
+   "2.2893-s14": 1277.8248858490435
+  },
+  "windows_not_converged": 0
+ },
+ "half_run_drift_in_sigma": {
+  "2.2293": -0.28446991403194816,
+  "2.2443": 0.09166937620093167,
+  "2.2593": -1.573196455840941,
+  "2.2743": -0.5475234200514963,
+  "2.2893": -1.720482372638721
+ },
+ "reweighting_consistency": {
+  "32": {
+   "points": 221,
+   "max_abs_diff": 0.006805723280875364,
+   "max_abs_diff_in_sigma": 2.106102352299271
+  },
+  "64": {
+   "points": 215,
+   "max_abs_diff": 0.02876843543173524,
+   "max_abs_diff_in_sigma": 3.146715511913104
+  },
+  "128": {
+   "points": 44,
+   "max_abs_diff": 0.008542211881718664,
+   "max_abs_diff_in_sigma": 3.442677887619109
+  },
+  "256": {
+   "points": 21,
+   "max_abs_diff": 0.07284966931323722,
+   "max_abs_diff_in_sigma": 3.5052155093186452
+  }
+ },
+ "validity_problems": [],
+ "caveats": [
+  "N/tau_max = 41 (< 50) at the highest-tau point; its errors are less certain"
+ ],
+ "decisive_point": {
+  "T": 2.2593,
+  "tau_abs_m_max": 765.4181472956016,
+  "N_over_tau": 130.6475425926639,
+  "burn_over_tau": 39.194262777799175,
+  "U256_direct": 0.6586966675421
+ },
+ "U_by_L_at_stage2_Tc": {
+  "32": [
+   0.6219093580258397,
+   0.0013056398556528417
+  ],
+  "64": [
+   0.6323300390694386,
+   0.0019045354426568595
+  ],
+  "128": [
+   0.6387005925356337,
+   0.0029020920940432396
+  ],
+  "256": [
+   0.6587199671766722,
+   0.0005511008697177372
+  ]
+ },
+ "U256_minus_U128_at_stage2_Tc_in_sigma": 6.7771425127985125,
+ "U128_at_stage2_Tc_reweighted": 0.6387005925356337,
+ "U128_at_stage2_Tc_err": 0.015245556523887916,
+ "stage2_Tc": 2.2592630568951466,
+ "stage2_ci95": [
+  2.2542888800379948,
+  2.2683747652572017
+ ],
+ "stage2_U_at_crossing": 0.620349995718909,
+ "stage2_U_sigma": 0.005638580818944684,
+ "U256_at_stage2_Tc": 0.6587199671766722,
+ "U256_at_stage2_Tc_err": 0.0005511008697177372,
+ "U256_minus_Ustar_in_sigma": 6.772627442858991,
+ "crossings_with_256": {
+  "32/256": {
+   "T": 2.268032067129382,
+   "U": 0.613581326315853,
+   "ci95": [
+    2.266890513551248,
+    2.2701728718778735
+   ],
+   "boot_sd": 0.0009366235653603159,
+   "ci95_seed_bootstrap": [
+    2.2668973405532444,
+    2.271662132333895
+   ],
+   "failed_draws": 0,
+   "overlaps_stage2_ci": true,
+   "contains_stage2_Tc": false,
+   "contains_exact": true
+  },
+  "64/256": {
+   "T": 2.2670808677969534,
+   "U": 0.6206211293318409,
+   "ci95": [
+    2.2668210084899236,
+    2.2696017800596473
+   ],
+   "boot_sd": 0.0007715910841210859,
+   "ci95_seed_bootstrap": [
+    2.2668347310130637,
+    2.271457466274014
+   ],
+   "failed_draws": 0,
+   "overlaps_stage2_ci": true,
+   "contains_stage2_Tc": false,
+   "contains_exact": true
+  },
+  "128/256": {
+   "T": 2.2691306692522164,
+   "U": 0.6043407001321546,
+   "ci95": [
+    2.266871831573487,
+    2.275719335198386
+   ],
+   "boot_sd": 0.002584699603750601,
+   "ci95_seed_bootstrap": [
+    2.266880352795296,
+    2.2815801453587956
+   ],
+   "failed_draws": 0,
+   "overlaps_stage2_ci": true,
+   "contains_stage2_Tc": false,
+   "contains_exact": true
+  }
+ },
+ "crossings_long_smaller_sizes": {
+  "32/64": {
+   "T": 2.274264993484133,
+   "U": 0.6068419366518774,
+   "ci95": [
+    2.2665054585822015,
+    2.2845303551892893
+   ],
+   "failed_draws": 0
+  },
+  "32/128": {
+   "T": 2.2668394606888516,
+   "U": 0.6147908918696272,
+   "ci95": [
+    2.263853618666488,
+    2.2705419981635417
+   ],
+   "failed_draws": 0
+  },
+  "64/128": {
+   "T": 2.2639309309567417,
+   "U": 0.6257257977399181,
+   "ci95": [
+    2.2595737826425544,
+    2.269772646231049
+   ],
+   "failed_draws": 0
+  }
+ },
+ "tc_exact": 2.269185314213022,
+ "U_star_literature": 0.61069,
+ "robust_test": "at the stage-2 T_c (a simulated L=256 point, L=128 reweighted by 0.011 from its run at 2.27) a crossing of all sizes requires U equal for all L; U increasing with L means T* is below the crossing (U_by_L_at_stage2_Tc, U256_minus_U128_at_stage2_Tc_in_sigma)",
+ "criterion": "inconclusive if the L=256 runs fail a validity check (tau_int at the stage-2 T_c point, burn-in, half-run drift); otherwise agree if U_256(stage-2 T_c) is within 2 sigma of the stage-2 crossing value U* and the L=128/L=256 crossing and the stage-2 T_c lie in each other's 95% interval, disagree if not",
+ "errors": "per T': larger of the block-bootstrap and the seed standard error; crossing intervals from the block bootstrap (ci95) and from resampling whole seeds (ci95_seed_bootstrap)",
+ "verdict": "disagree"
+}

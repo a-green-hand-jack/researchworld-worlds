@@ -1,0 +1,26 @@
+{
+  "source": "conda-forge",
+  "url": "https://conda.anaconda.org/conda-forge/",
+  "start_utc": "2026-10-19T21:30:14.298140+00:00",
+  "end_utc": "2026-10-19T21:30:15.632958+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/conda-forge.headers",
+    "-o",
+    "/tmp/tmpekzwatvq/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://conda.anaconda.org/conda-forge/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html\n",
+  "stderr": "",
+  "first200": "<html>\n<head>\n  <title>conda-forge</title>\n  <style type=\"text/css\">\n    a, a:active {\n      text-decoration: none; color: blue;\n    }\n    a:visited {\n      color: #48468F;\n    }\n    a:hover, a:focus ",
+  "body_bytes": 13803915
+}

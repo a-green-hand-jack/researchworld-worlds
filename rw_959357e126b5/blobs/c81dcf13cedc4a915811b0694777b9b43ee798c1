@@ -1,0 +1,14 @@
+seg_post default 600 seconds 42.2
+{"A1b": {"median": 0.002184003052119134, "p90": 0.010117689928340817, "miss_share": 0.0005436998776675275, "pass": true}, "A1c": {"median": 0.008462673918733728, "p90": 0.13611768671510777, "miss_share": 0.0, "pass": true}}
+ A1d error rate {"model": 0.006, "all_alive": 0.2796, "persistence_K": 0.4165, "static_bound": 0.331, "majority_oracle": 0.2194}
+ A1d rank-within-1 failure {"model": 0.0153, "all_alive": 0.4124, "persistence_K": 0.612, "static_bound": 0.7921, "majority_oracle": 0.4408}
+seg_post 300 seconds 41.2
+ A1d error rate {"model": 0.006, "all_alive": 0.2796, "persistence_K": 0.4165, "static_bound": 0.331, "majority_oracle": 0.2194}
+ A1d rank-within-1 failure {"model": 0.0153, "all_alive": 0.4124, "persistence_K": 0.612, "static_bound": 0.7921, "majority_oracle": 0.4408}
+seg_post 1500 seconds 50.3
+ A1d error rate {"model": 0.0059, "all_alive": 0.2796, "persistence_K": 0.4165, "static_bound": 0.331, "majority_oracle": 0.2194}
+ A1d rank-within-1 failure {"model": 0.0153, "all_alive": 0.4124, "persistence_K": 0.612, "static_bound": 0.7921, "majority_oracle": 0.4408}
+seg_post 3000 seconds 72.4
+ A1d error rate {"model": 0.0059, "all_alive": 0.2796, "persistence_K": 0.4165, "static_bound": 0.331, "majority_oracle": 0.2194}
+ A1d rank-within-1 failure {"model": 0.0153, "all_alive": 0.4124, "persistence_K": 0.612, "static_bound": 0.7921, "majority_oracle": 0.4408}
+wrong pairs by kind (default): {"truth alive, model not yet crossed (model late)": 989, "truth alive, model crossed, c/s <= thr (transient above)": 0, "truth alive, model crossed, c/s > thr (model re-dead)": 56, "truth dead, truth not yet crossed (model early)": 721, "truth dead after its first crossing (dip or second collapse)": 292}

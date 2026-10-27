@@ -1,0 +1,47 @@
+# Independent verification notes (internal-review-repo)
+
+Each fact-sheet entry is checked against a source I open myself, independent of the
+supplier's search. Status per entry below.
+
+## AdamW — VERIFIED 2026-10-17 (no disagreement)
+
+Fact-sheet entry checked: paper-repo `fact-sheet.md` at commit a7ed2fd3b640
+(draft with only the AdamW row filled), provenance record `adamw-lookup.md` at the same commit.
+
+My own check:
+
+- Search (arXiv API, my own query): `all:"AdamW" AND all:"decoupled weight decay"`,
+  ascending by date — earliest hit is arXiv:1711.05101 (2017-11-14).
+- Page I opened: https://arxiv.org/abs/1711.05101
+- Facts read from that page:
+  - Title: Decoupled Weight Decay Regularization
+  - Authors: Ilya Loshchilov, Frank Hutter (first author: Ilya Loshchilov)
+  - v1 submitted: Tue, 14 Nov 2017 → first appeared 2017
+  - arXiv id: 1711.05101
+  - Abstract confirms it proposes decoupled weight decay for Adam, i.e. AdamW.
+
+All four fields in the draft fact-sheet row match. Provenance requirements met
+(searched during the task, URL cited, year is v1 date not a later conference/revision date).
+
+## Adam — VERIFIED 2026-10-17 (no disagreement)
+
+Fact-sheet entry checked: paper-repo `fact-sheet.md` at commit c0235f5648ea (complete sheet);
+provenance record experiment-repo `adam-provenance.md` at deac875eb2b4.
+
+My own check:
+
+- Search (arXiv API, my own query): `ti:"Adam" AND all:"stochastic optimization"`,
+  ascending by date — earliest hit is arXiv:1412.6980 (2014-12-22).
+- Page I opened: https://arxiv.org/abs/1412.6980
+- Facts read: title "Adam: A Method for Stochastic Optimization"; authors Diederik P. Kingma,
+  Jimmy Ba (first: Kingma); v1 Mon, 22 Dec 2014 → first appeared 2014; id 1412.6980.
+
+All four fields in the fact-sheet row match.
+
+## Lion — VERIFIED as rendered 2026-10-17 (no disagreement)
+
+Fact-sheet row at c0235f5648ea matches my own lookup record (`lion-lookup.md`, a88c6c5):
+title "Symbolic Discovery of Optimization Algorithms", first author Xiangning Chen,
+first appeared 2023 (v1 13 Feb 2023), arXiv id 2302.06675, source https://arxiv.org/abs/2302.06675.
+
+Full-delivery review: see `review-record.md`. All three entries verified; approved.

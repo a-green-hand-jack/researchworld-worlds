@@ -1,0 +1,26 @@
+{
+  "source": "Hugging Face",
+  "url": "https://huggingface.co/",
+  "start_utc": "2026-10-19T21:30:14.316855+00:00",
+  "end_utc": "2026-10-19T21:30:15.017171+00:00",
+  "command": [
+    "curl",
+    "-sS",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "30",
+    "-D",
+    "checks/sources/hugging-face.headers",
+    "-o",
+    "/tmp/tmpybzwsvjl/body",
+    "-w",
+    "%{http_code}\n%{content_type}\n",
+    "https://huggingface.co/"
+  ],
+  "exit": 0,
+  "curl_output": "200\ntext/html; charset=utf-8\n",
+  "stderr": "",
+  "first200": "<!doctype html>\n<html class=\"\">\n\t<head>\n\t\t<meta charset=\"utf-8\" />\n\n\t\t<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\" />\n\n\t\t<meta name=\"description\" content=\"We",
+  "body_bytes": 181130
+}

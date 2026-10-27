@@ -1,0 +1,31 @@
+# Research brief
+
+## Objective (verbatim)
+
+> How fast the CO2 at Mauna Loa has been rising, from NOAA's own annual means.
+>
+> Download NOAA GML's annual mean CO2 for Mauna Loa (https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_annmean_mlo.csv) during the work; do not type the numbers in. Keep the file as downloaded, with its URL, the time it was fetched and its SHA-256.
+>
+> Fit the annual means from 1960 on with a straight line and with a quadratic in the year, and give the growth rate in ppm per year for the 1960s and for the last ten years in the file, each with a 95% interval from the quadratic fit.
+>
+> Report: `report/report.md`, half a page: where the data came from (URL, fetch time, SHA-256, last year in the file), both fits, the two growth rates with their intervals, and one figure of the data with both fits.
+
+## Supplied material and conventions
+
+The sole supplied input is the live NOAA CSV URL. It was fetched during this work, retained byte for byte in `data/co2_annmean_mlo.csv`, and read in full (comments and 67 annual records, 1959–2025). `data/provenance.json` records URL, UTC fetch completion time, bytes and SHA-256. No papers or other related material were supplied.
+
+The CSV identifies CO2 as dry-air mole fraction, micromol/mol (ppm). Its `unc` column is described as the standard deviation of differences between independently determined NOAA/ESRL and Scripps annual means; it is not a supplied regression error covariance. It credits Scripps measurements for March 1958–April 1974. The last year's data are provisional and earlier values may be revised. The header says measurements were suspended after November 29, 2022, resumed in July 2023, and observations December 2022–July 4, 2023 came from Maunakea, approximately 21 miles north. File creation is October 9, 2026.
+
+## Analysis and handoff plan
+
+Use all 66 available annual means for 1960–2025. Fit ordinary least squares line and quadratic with centered year, retain coefficients and goodness of fit, and supply observations plus fitted curves for one figure. Define the growth rate for each ten-year window as the average derivative of the fitted quadratic at its annual year labels: 1960–1969 and 2016–2025, equivalently derivative at 1964.5 and 2020.5 or fitted endpoint difference divided by nine years. Distinguish that trend estimate from observed endpoint changes or NOAA's separate growth-rate series.
+
+Compute 95% coefficient-based intervals for these linear contrasts of the quadratic coefficients. Assess residual serial dependence and provide an appropriate covariance sensitivity analysis; explain interval assumptions and do not treat NOAA measurement uncertainties as the entire regression residual variance. No extrapolation is required. The half-page report should state both fitted equations, both window definitions and rate intervals, provenance, last year, one figure, and a compact caveat on intervals/data revisions. Figure uses year and CO2 (ppm), clearly distinguishes both fits and observed annual means.
+
+The experiment position supplies data/provenance, reproducible analysis and checkable numerical handoff; figtab supplies the finished figure; paper supplies half-page report and embedding; internal-review independently checks these against the objective. No scientific result is asserted before fitting.
+
+## Settled split and completed analysis
+
+All owners accepted the functional split (paper ownership in experiment-repo#2; figtab acceptance in figtab-repo#2; review acceptance in internal-review-repo#2). Analysis is supplied as `analysis/results.json`, `analysis/annual_fits.csv`, reproducible `analysis/analyze.py`, and interpretation in `analysis/README.md`. Headline intervals are conventional OLS coefficient-covariance t intervals (63 df); strong residual serial correlation is explicitly disclosed and HAC lags 1,3,5,10 provide sensitivity. The requested model fits and decadal estimates are complete; final reporting and figure remain their owners' deliveries.
+
+Independent review requested that `analysis/` accompany the delivery because the report cites results.json and the delivered figure generator consumes it. The assignment now includes the reproducible analysis package under experiment-repo, with unchanged verified numerical results.

@@ -1,0 +1,21 @@
+# paper-repo — the report
+
+`report/report.pdf` is the short paper (NeurIPS 2026 template, at most two
+pages) comparing multinomial logistic regression with k-nearest neighbours on
+Iris (OpenML 61). Its LaTeX source (`report/report.tex`, `report/references.bib`),
+the number generator (`report/make_numbers.py`) and the build (`report/build.sh`)
+sit next to it; the figure, table, style file and experiment code are
+assembled into `report/` from their owners' repositories per the work
+assignment.
+
+Rebuild (from the assembled delivery): `sh report/build.sh` regenerates
+`report/numbers.tex` from `report/results/` (experiment-repo) and compiles
+`report/report.tex` with latexmk/pdflatex (TeX Live 2026). The figure and
+table are regenerated from the same results by `report/figures/make_figure.py`
+and `report/tables/make_table.py`; the
+experiment itself by `report/code/run_all.sh`.
+
+`report/neurips_2026.sty` is the unmodified official style file (sha256
+c3fc2894e83d2517ca18b66741d6c595986d97957dc08ec08bb2125a7ec4555a), used in the
+default anonymous submission mode; the NeurIPS checklist is omitted because
+the objective caps the paper at two pages (venue-repo's ruling).

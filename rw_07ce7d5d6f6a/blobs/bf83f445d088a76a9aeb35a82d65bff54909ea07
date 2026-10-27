@@ -1,0 +1,18 @@
+# Brief
+
+## Objective
+
+“How fast the CO2 at Mauna Loa has risen over the last ten years, from NOAA's own annual means.”
+
+Required method and delivery, quoted from issue #1:
+
+- “Download NOAA GML's annual mean CO2 for Mauna Loa (https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_annmean_mlo.csv) during the work; do not type the numbers in. Keep the file as downloaded.”
+- “Report: `report/report.md`, one paragraph: the URL, the time the file was fetched and its SHA-256, the last year in the file and its annual mean, and the average growth in ppm per year over the last ten years in the file (the difference between the last year and the year ten years before it, divided by ten). No figure.”
+
+## Supplied material and implications
+
+The only supplied source is NOAA GML's annual-mean Mauna Loa CSV at the URL above. The study must preserve the downloaded file, identify its fetch time and SHA-256, parse the annual year and mean columns, and calculate the endpoint difference over a ten-year interval divided by ten. The final report is a single paragraph and contains no figure. The relevant comparison is the last record to the record exactly ten years earlier.
+
+During this work the downloaded file was saved unchanged as `material/co2_annmean_mlo.csv`, fetched at 2026-10-27 07:09:45 UTC, SHA-256 `bdd956e8d7e05ebc3c61ac1f8f8c8cea4a505df56724fba5200b4eb1e0089b2b`. Its last record is 2025 with annual mean 427.35 ppm; the 2015 record is 401.01 ppm, giving `(427.35 - 401.01) / 10 = 2.634 ppm/year` (2.63 ppm/year rounded to two decimals).
+
+No other related material, figures, or prior findings were supplied, and no additional requirements could be established.

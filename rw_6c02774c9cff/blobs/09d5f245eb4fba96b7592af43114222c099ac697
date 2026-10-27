@@ -1,0 +1,11 @@
+# Figure and table generators
+
+Run from `report/figures/` (table: `python ../tables/make_table.py`) after `report/results/` exists (per-fold files from the local and Ibex runs):
+
+    pip install numpy scipy matplotlib   # versions used: numpy 2.4.6, scipy 1.17.1, matplotlib 3.11.2
+    python make_figure.py   # -> report/figures/fig_main.pdf, fig_main_caption.tex
+    python ../tables/make_table.py    # -> report/tables/tab_main.tex
+
+Inputs: `results/local/per_fold.csv` (primary run), `results/ibex/per_fold.csv`, `results/reproducibility.json`,
+optional `results/summary.json` (cross-checked against the recomputation, 1e-9). Set `FIGTAB_RESULTS` to read another directory.
+Intervals: corrected repeated-CV t (Nadeau & Bengio 2003; factor 1/n + n_test/n_train, df = n - 1), recomputed from the per-fold file.

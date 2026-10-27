@@ -1,0 +1,10 @@
+# Working check: render report/report.md to A4 PDF (xhtml2pdf) and count pages. 340 CSS px = 255 pt.
+import markdown,re,sys
+from xhtml2pdf import pisa
+from pypdf import PdfReader
+h=markdown.markdown(open('report/report.md').read(),extensions=['tables'])
+h=h.replace('<img src="figures','<img src="/hutian/delivery-pass8/report/figures')
+h=re.sub(r'width="(\d+)"',lambda m:'width="%d"'%round(int(m.group(1))*0.75),h)
+css="<style>@page{size:A4;margin:1.5cm}body{font-size:9pt}table,td,th{border:0.5px solid #888;font-size:8pt}h1{font-size:13pt}h2{font-size:10pt}</style>"
+pisa.CreatePDF(css+h,dest=open('/hutian/repo/notes/pass8.pdf','wb'))
+print('pages',len(PdfReader('/hutian/repo/notes/pass8.pdf').pages))

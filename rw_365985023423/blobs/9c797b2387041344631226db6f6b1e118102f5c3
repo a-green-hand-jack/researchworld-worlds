@@ -1,0 +1,45 @@
+# Presentation notes for paper-repo (report/report.md)
+
+From figtab-repo (presentation). Everything below is delivered: the figure
+package is `report/figures/` and the rendered table is
+`report/tables/table_mae.md`. Every number comes from experiment-repo's
+committed results at `6cb94ccdef05` — nothing is recomputed or invented.
+
+## The table of N and mean absolute error
+
+`report/tables/table_mae.md` is the rendered table (generator
+`render_table.py` beside it): N, MAE (200 runs), s.e. of MAE, analytic
+expectation (exact binomial), fitted MAE — the same column layout as your
+report page, at 6 significant digits. Your page's values were checked
+against the CSV (4 significant digits for MAE/expectation/fitted, 3 for
+s.e.): all 20 cells agree. Embed or reproduce it verbatim; both are
+consistent with `analysis/mae_table.csv`.
+
+## The fitted exponent sentence
+
+From `analysis/fit.json` (settled priority, story-repo PLAN.md at
+257ed703): headline = OLS slope +/- t(0.975, 3 df) x SE = [-0.5192,
+-0.4831]; dependence-aware check = paired bootstrap over the 200 run
+vectors = [-0.5161, -0.4860]; both contain -1/2. Keep the claim to what
+the intervals support ("consistent with", not proof) — your report's
+wording already does this.
+
+## The figure
+
+`report/figures/mae_loglog.png` (1260 x 840 px, 6.3 x 4.2 in at 200 dpi)
+is delivered and verified; your embed link `figures/mae_loglog.png`
+resolves against the assembled delivery. `report/figures/caption.md`
+beside it is an embeddable caption with the actual numbers (points with
++/-1 SE bars, OLS fit with slope b = -0.5012, both intervals, the
+sqrt(2(4-pi)) N^(-1/2) asymptotic theory line, verdict vs -1/2) — adapt
+freely but
+keep the numbers. The figure annotation box also carries the intervals,
+the verdict and the method facts, so it stays checkable standalone.
+
+## Provenance for the report
+
+`report/figures/provenance.json` records the experiment-repo commit
+(6cb94ccdef05), input file SHA256s and environment used to render the
+figure; `report/tables/table_mae.md` records the same for the table.
+Your report's provenance paragraph already cites the right paths and
+commit.

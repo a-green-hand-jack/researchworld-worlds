@@ -1,0 +1,30 @@
+# World-command verification report
+
+Worlds made by paper-repo: **rw_e8317dec902a** (step 3, continuing rw_399c28e983a7 from g1). No NoteWorld was ever created (steps 1, 2, 5).
+Note: commands run from `/tmp` were refused ("/tmp is not seen on the host"); the inputs are at `/initial-state/inputs/0/...`, not `/initial-state/note` as the objective writes.
+
+## Step 1 — install the note definition
+- `researchworld definition install /initial-state/note` → exit 1, `{"error": "/initial-state/note holds no definition.json"}` (wrong path).
+- `researchworld definition install /initial-state/inputs/0/note` → exit 1: `the system image of note could not be built: ... pull access denied, repository does not exist or may require authorization: ... insufficient_scope: authorization failed`.
+- Same command via `ht-resource run worlds -- ...` (cmd-262c345778) → ended failed with the identical error.
+- Outcome: definition not installed; `noteworld` does not exist (`noteworld: command not found`).
+
+## Step 2 — NoteWorld
+Not possible: `noteworld run ...` → `/bin/bash: noteworld: command not found`. No world id; no execute/status/artifacts/monitor.
+
+## Step 3 — continue rw_399c28e983a7 from g1
+- `researchworld continue rw_399c28e983a7 --checkpoint g1 --config /initial-state/inputs/0/continue-config.json` → succeeded; new world **rw_e8317dec902a**.
+- `researchworld status`: topic "Write a one-paragraph report on why the sum of the first n odd numbers is n squared.", continues rw_399c28e983a7 (checkpoint g1, world_status stopped at export), roles paper-repo and internal-review-repo, `bootstrap.status: infrastructure-ready`, `world_status: waiting-for-execution`, scheduler `starting` (HTTP 503), container running; later container_status `exited`.
+- `researchworld stop rw_399c28e983a7` → refused (HTTP 422): "given you to read: it takes status, checkpoints, monitor, graph, topic, artifacts, export, continue, instruction, config ..., not stop".
+- `researchworld capture rw_399c28e983a7` → refused (HTTP 422): "a world given you to read stays as it is".
+
+## Step 4 — drive rw_e8317dec902a through capped
+- `ht-resource run capped -- researchworld execute rw_e8317dec902a --loop` (cmd-fcff007d3b) → failed, exit 1: `invalid configuration sources; this code cannot drive this world (its record was written by other code). Reading and closing it still work (status, checkpoints, capture, stop, stop --release, finish); to go on with it on this code: researchworld continue rw_e8317dec902a`.
+- `ht-resource status capped`: tracked [], limit max_spend 30, remaining spend 30.0, used 0.0 — the drive spent nothing.
+- I also ran `researchworld stop rw_e8317dec902a` on my own world (output not inspected beyond status afterwards: container_status `exited`).
+
+## Step 5 — one more world
+`noteworld run --topic "Another note." ...` → `noteworld: command not found`. The world limit (max_worlds 2) was therefore not exercised.
+
+## Summary
+Steps 1, 2, 5 blocked by the failed image build (registry authorization). Step 3 worked; stop/capture on a given world are refused by design. Step 4's drive was refused because the continued world's record was written by other code.

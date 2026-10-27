@@ -1,0 +1,106 @@
+"""E7-G (E7 registration amendment 6, results/e7/prediction.json): a same-GPU-family reference for E7's toggles.
+The production toggles ran on V100 and their reference row (Arm T, wd 0.0034, seeds 20-22) on P100. E7-G reruns that
+reference row unchanged (code/e7_grid.py row T_wd0.0034, frozen vit_jepa.py, 50 epochs, seeds 20-22, three runs packed
+on one GPU as the toggles were) on a V100, and scores it with the frozen per-run scorer (code/e7_score.py score_run).
+Reading (fixed before the run):
+  gpu_check   per seed and seed-mean, the V100 reference's measured count at the last horizon minus the P100 one (and at
+              epoch 20). |seed-mean difference| <= 2 sd (3.16, the registered toggle threshold: 2 x the C5 reference
+              row's seed sd of the race's error, score.json toggles.*.sd_ref_headroom_error) -> 'no GPU-family difference
+              beyond 2 sd detectable at 3 seeds' (amendment 7: wording only; low power, not 'same count'); otherwise
+              'GPU-family sensitivity' and the toggles are read against the V100 row. Amendment 7 also reports the
+              paired per-seed differences with their mean, sd and t interval (2 df) at both horizons.
+  toggles_v100  the registered toggle statistic (e7_score.toggles: mean over seeds of toggle error - reference error,
+              headroom_200 and early_200, last horizon) recomputed with the V100 rows as the reference, read with the
+              registered threshold 3.16 and the registered directions; reported beside the registered (P100) reading.
+Scope: the comparison is hardware plus packing and run-to-run nondeterminism, on shared seeds 20-22 (the P100 runs were
+packed with other rows' runs, the V100 runs with each other). Per run: GPU name, memory, driver, node (as an md5 prefix; names are redacted), torch, the pip
+freeze hash and its agreement with results/e3/cluster_env.json, code commit and seed.
+No registered verdict is re-scored.
+Usage: python3 code/e7g.py sbatch DIR COMMIT | score RUNS_DIR DATA_DIR PROD_ROWS.json PROD_SCORE.json OUT.json"""
+import sys, os, json, glob
+import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from e3_grid import sbatch
+from e8_grid import PROV
+import e7_grid as EG
+
+ROW, SEEDS, ROOT = "T_wd0.0034", [20, 21, 22], "runs7g"
+THR2SD = 3.1622776601683795
+GRES = "#SBATCH --gres=gpu:v100:1"
+
+
+def cmd_sbatch(d, commit):
+    G = EG.grid(); lines = [PROV, f"export CODE_COMMIT={commit}"]
+    for s in SEEDS:
+        lines.append(EG.run_line(ROW, G[ROW][3], s, root=ROOT))
+    lines.insert(2, f"mkdir -p {ROOT}; nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=csv "
+                    f"> {ROOT}/gpu_env.csv; echo node,$(hostname) >> {ROOT}/gpu_env.csv")
+    txt = sbatch("e7g", lines, "02:00:00").replace("#SBATCH --gres=gpu:1", GRES)
+    open(os.path.join(d, "e7g.sbatch"), "w").write(txt)
+    print(os.path.join(d, "e7g.sbatch"), len(SEEDS), "runs")
+
+
+def cmd_score(rdir, data, rows_path, score_path, outp):
+    import e7_score as S
+    X, _ = S.M.V.load(data, "train"); X = X[:S.M.N_IMG]
+    rds = [rd for rd in sorted(glob.glob(os.path.join(rdir, ROW, "s*", ""))) if os.path.exists(os.path.join(rd, "log.jsonl"))]
+    v100 = [S.score_run(rd, X) for rd in rds]
+    prod = json.load(open(rows_path)); sc = json.load(open(score_path))
+    p100 = {r["seed"]: r for r in prod[ROW] if r["seed"] in SEEDS}
+    hl = list(S.HORIZONS)[-1]
+    import hashlib
+    nh = lambda n: hashlib.md5(str(n).encode()).hexdigest()[:8]  # node names are redacted in the delivery
+    env = os.path.join(rdir, "gpu_env.csv")
+    ce = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results", "e3", "cluster_env.json")))
+    pins = {k.lower(): v["version"] for k, v in ce["packages"].items()}
+    for r, rd in zip(v100, rds):
+        pv = json.load(open(os.path.join(rd, "provenance.json")))
+        fr = {l.split("==")[0].lower(): l.split("==")[1] for l in pv.get("pip_freeze", []) if "==" in l}
+        r["provenance"].update(node_md5=nh(pv.get("node")), slurm_job=pv.get("slurm_job"),
+                               cluster_env_mismatch={k: [v, fr.get(k)] for k, v in pins.items() if fr.get(k) != v})
+    out = dict(definition=__doc__, gpu_env=[l if not l.startswith("node,") else "node_md5," + nh(l[5:])
+                                                for l in open(env).read().splitlines()] if os.path.exists(env) else None,
+               scope="hardware plus packing and run-to-run nondeterminism, shared seeds 20-22", rows=v100, gpu=sorted({r["provenance"]["gpu_family"] for r in v100}),
+               status={str(r["seed"]): r["status"] for r in v100})
+    gc = {}
+    for h in S.HORIZONS:
+        d = {str(r["seed"]): r[h]["measured"] - p100[r["seed"]][h]["measured"] for r in v100 if r[h] and r["seed"] in p100}
+        gc[h] = dict(per_seed=d, mean=float(np.mean(list(d.values()))) if d else None,
+                     v100={str(r["seed"]): r[h]["measured"] for r in v100 if r[h]},
+                     p100={str(s): p100[s][h]["measured"] for s in SEEDS if s in p100})
+    for h in S.HORIZONS:
+        v = np.array(list(gc[h]["per_seed"].values()), float)
+        if len(v) >= 2:
+            from scipy.stats import t as tdist
+            sd = float(v.std(ddof=1)); hw = float(tdist.ppf(0.975, len(v) - 1) * sd / np.sqrt(len(v)))
+            gc[h].update(sd=sd, n_seeds=len(v), t_interval=[float(v.mean() - hw), float(v.mean() + hw)])
+    m = gc[hl]["mean"]
+    gc["reading"] = (None if m is None else "no GPU-family difference beyond 2 sd detectable at 3 seeds" if abs(m) <= THR2SD
+                     else "GPU-family sensitivity: toggles read against the V100 reference")
+    out["gpu_check"] = gc
+    runs = {n: v for n, v in prod.items() if not n.startswith("T_wd")}
+    runs[ROW] = v100
+    tv = S.toggles(runs, EG.grid())
+    direction = {"T_ema": "holds", "T_pln": "holds", "T_tln": "holds", "T_nodn": "breaks", "T_adamw": None}
+    for n, res in tv.items():
+        if n == "scope":
+            continue
+        mm, dd = res["mean_error_diff_headroom_200"], direction[n]
+        res["hypothesis_registered_threshold"] = ("no direction registered" if dd is None else "not scorable" if mm is None
+                                                  else ("borne out" if mm >= THR2SD else "not borne out") if dd == "breaks"
+                                                  else ("borne out" if abs(mm) < THR2SD else "not borne out"))
+        res["registered_p100_reading"] = dict(mean_error_diff_headroom_200=sc["toggles"][n]["mean_error_diff_headroom_200"],
+                                              hypothesis=sc["toggles"][n]["hypothesis"])
+    out["toggles_v100"] = tv
+    json.dump(out, open(outp, "w"), indent=1, default=str)
+    print(json.dumps(dict(gpu=out["gpu"], gpu_check=gc, toggles={n: (r.get("mean_error_diff_headroom_200"),
+          r.get("hypothesis_registered_threshold")) for n, r in tv.items() if n != "scope"}), indent=1))
+    print(os.environ.get("JOB_DONE_PREFIX", "done:"), "E7-G scored")
+
+
+if __name__ == "__main__":
+    c = sys.argv[1]
+    if c == "sbatch":
+        cmd_sbatch(sys.argv[2], sys.argv[3])
+    elif c == "score":
+        cmd_score(*sys.argv[2:7])

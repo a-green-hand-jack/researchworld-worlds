@@ -1,0 +1,103 @@
+"""Derived results files for the figure, the table and the paper text.
+
+Reads ../results/local/run.json and folds.csv, ../results/ibex/ (if present)
+and ../results/comparison.json, and writes into ../results/:
+  folds_long.csv      tidy per-fold accuracies: run, repeat, fold, method, accuracy, k_chosen
+  intervals.csv       per run: quantity, mean, 95% interval by each method
+  reproducibility.json  Ibex job id and node, local host, identical or not, max abs diff, versions
+  numbers.tex         \newcommand macros for every number the paper cites (accuracies in percent)
+Usage: python make_outputs.py
+"""
+import collections
+import json
+import pathlib
+
+import pandas as pd
+
+RES = pathlib.Path(__file__).resolve().parent.parent / "results"
+
+
+def pct(x, nd=1):
+    t = f"{100 * x:.{nd}f}"
+    return "$-$" + t[1:] if t.startswith("-") else t
+
+
+def pp(x):  # differences in percentage points, two decimals
+    return pct(x, 2)
+
+
+def main():
+    runs = {r: RES / r for r in ("local", "ibex") if (RES / r / "run.json").exists()}
+    meta = {r: json.loads((p / "run.json").read_text()) for r, p in runs.items()}
+
+    long, rows = [], []
+    for r, p in runs.items():
+        f = pd.read_csv(p / "folds.csv")
+        for m, col in (("logistic_regression", "acc_lr"), ("knn", "acc_knn")):
+            long.append(pd.DataFrame({"run": r, "repeat": f.repeat, "fold": f.fold, "method": m,
+                                      "accuracy": f[col], "k_chosen": f.k_chosen if m == "knn" else pd.NA}))
+        for q in ("acc_lr", "acc_knn", "diff_lr_minus_knn"):
+            s = meta[r]["summary"][q]
+            for how in ("corrected_t", "naive_t", "bootstrap"):
+                rows.append({"run": r, "quantity": q, "interval": how, "primary": how == "corrected_t",
+                             "mean": s["mean"], "lo": s[how][0], "hi": s[how][1]})
+    pd.concat(long).to_csv(RES / "folds_long.csv", index=False, float_format="%.17g")
+    pd.DataFrame(rows).to_csv(RES / "intervals.csv", index=False, float_format="%.17g")
+
+    cmp_path = RES / "comparison.json"
+    cmp = json.loads(cmp_path.read_text()) if cmp_path.exists() else None
+    ib = meta.get("ibex", {}).get("environment", {})
+    lo = meta["local"]["environment"]
+    rep = {
+        "ibex_job_id": ib.get("slurm_job_id"), "ibex_node": ib.get("slurmd_nodename") or ib.get("hostname"),
+        "ibex_hostname": ib.get("hostname"), "ibex_environment": ib or None,
+        "local_environment": lo,
+        "identical": cmp["identical"] if cmp else None,
+        "max_abs_diff_per_fold": max(v["max_abs_diff"] for v in cmp["files"].values()) if cmp else None,
+        "summary_max_abs_diff": cmp["summary_max_abs_diff"] if cmp else None,
+        "comparison_file": "comparison.json" if cmp else None,
+        "status": "complete" if cmp else "Ibex run pending",
+    }
+    (RES / "reproducibility.json").write_text(json.dumps(rep, indent=2) + "\n")
+
+    run = meta["local"]
+    s, d, data = run["summary"], run["design"], run["data"]
+    kc = {int(k): v for k, v in s["k_chosen_counts"].items()}
+    kmode = max(kc, key=lambda k: (kc[k], -k))
+    ks = sorted(collections.Counter({k: v for k, v in kc.items()}).elements())
+    desc = json.loads((RES.parent / "code" / "data" / "openml_61_description.json").read_text())["data_set_description"]
+    macros = {
+        "LRMean": pct(s["acc_lr"]["mean"]), "LRLo": pct(s["acc_lr"]["corrected_t"][0]), "LRHi": pct(s["acc_lr"]["corrected_t"][1]),
+        "KNNMean": pct(s["acc_knn"]["mean"]), "KNNLo": pct(s["acc_knn"]["corrected_t"][0]), "KNNHi": pct(s["acc_knn"]["corrected_t"][1]),
+        "LRNaiveLo": pct(s["acc_lr"]["naive_t"][0]), "LRNaiveHi": pct(s["acc_lr"]["naive_t"][1]),
+        "KNNNaiveLo": pct(s["acc_knn"]["naive_t"][0]), "KNNNaiveHi": pct(s["acc_knn"]["naive_t"][1]),
+        "DiffMean": pp(s["diff_lr_minus_knn"]["mean"]),
+        "DiffLo": pp(s["diff_lr_minus_knn"]["corrected_t"][0]), "DiffHi": pp(s["diff_lr_minus_knn"]["corrected_t"][1]),
+        "DiffNaiveLo": pp(s["diff_lr_minus_knn"]["naive_t"][0]), "DiffNaiveHi": pp(s["diff_lr_minus_knn"]["naive_t"][1]),
+        "DiffBootLo": pp(s["diff_lr_minus_knn"]["bootstrap"][0]), "DiffBootHi": pp(s["diff_lr_minus_knn"]["bootstrap"][1]),
+        "DiffP": f"{s['diff_lr_minus_knn']['corrected_t_p_two_sided_vs_0']:.2f}",
+        "LRSD": pct(s["acc_lr"]["sd"]), "KNNSD": pct(s["acc_knn"]["sd"]), "DiffSD": pp(s["diff_lr_minus_knn"]["sd"]),
+        "NWinsLR": str(s["folds_lr_better"]), "NTies": str(s["folds_tied"]), "NWinsKNN": str(s["folds_knn_better"]),
+        "NFolds": str(s["acc_lr"]["n_folds"]), "NTrain": str(d["n_train"]), "NTest": str(d["n_test"]),
+        "LRErrors": f"{s['errors_per_repeat_mean']['lr']:.1f}", "KNNErrors": f"{s['errors_per_repeat_mean']['knn']:.1f}",
+        "KGrid": f"{d['k_grid'][0]}--{d['k_grid'][-1]}", "KModal": str(kmode), "KModalCount": str(kc[kmode]),
+        "KMedian": f"{pd.Series(ks).median():g}", "KRange": f"{min(ks)}--{max(ks)}", "InnerFolds": "5",
+        "LRSettings": "lbfgs, $C=1$, max\\_iter$=10^4$, standardised features",
+        "Seed": "20261017",
+        "IbexNode": rep["ibex_node"] or "PENDING", "IbexJobID": rep["ibex_job_id"] or "PENDING",
+        "RunsIdentical": ("give identical numbers" if rep["identical"] else "differ") if cmp else "PENDING",
+        "MaxAbsDiff": (f"{rep['max_abs_diff_per_fold']:g}") if cmp else "PENDING",
+        "SklearnVersion": lo["sklearn"], "NumpyVersion": lo["numpy"], "ScipyVersion": lo["scipy"],
+        "PythonVersion": lo["python"], "PythonVersionIbex": ib.get("python", "PENDING"),
+        "DataMDFive": data["md5"], "OpenMLVersion": str(desc["version"]),
+    }
+    lines = ["% Generated by report/code/make_outputs.py from report/results/ -- do not edit.",
+             "% Accuracies, intervals and differences are in percent (differences in percentage points).",
+             "% Primary 95% intervals: Nadeau-Bengio corrected repeated-CV t over the 50 outer folds."]
+    lines += [f"\\newcommand{{\\{k}}}{{{v}}}" for k, v in macros.items()]
+    (RES / "numbers.tex").write_text("\n".join(lines) + "\n")
+    print("\n".join(lines))
+
+
+if __name__ == "__main__":
+    main()

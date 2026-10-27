@@ -1,0 +1,24 @@
+# Independent reproduction (review working material, not a delivery)
+
+Script `review/repro.py`, outputs `review/repro.json` (local-compute job-7b0f0657fd, exit 0;
+python 3.11.2, numpy 2.4.6, scipy 1.17.1). Seeds 2026+i, i = 0..199, same seed reused for every N.
+
+Variant A (pairs, `rng.random((N, 2))`) is the convention the brief (experiment-repo 7ee717e4656e)
+fixes; variant B (x then y as separate draws) is kept only to show the sensitivity to that choice.
+
+| N | MAE A | SE A | MAE B | analytic sqrt(2/pi)*sd |
+|---|---|---|---|---|
+| 1e3 | 0.041887 | 0.00227 | 0.041732 | 0.041434 |
+| 1e4 | 0.014406 | 0.00075 | 0.013681 | 0.013103 |
+| 1e5 | 0.004310 | 0.00022 | 0.004157 | 0.004143 |
+| 1e6 | 0.0013988 | 0.000073 | 0.0013753 | 0.0013103 |
+| 1e7 | 0.00041946 | 0.000022 | 0.00044074 | 0.00041434 |
+
+OLS of ln MAE on ln N (5 points, t with 3 df, ignores cross-N dependence from reused seeds):
+- A: slope -0.50116, SE 0.00566, 95% CI [-0.51917, -0.48314], R^2 0.99962
+- B: slope -0.49503, SE 0.00298, 95% CI [-0.50450, -0.48556], R^2 0.99989
+
+Use in review: experiment-repo's delivered MAEs and OLS slope must match variant A exactly
+(same seeds and pair convention give identical streams); its paired-run bootstrap interval will be
+recomputed from its per-run error file once delivered. Status at 7ee717e4656e: no simulation results
+delivered yet by experiment-repo; report/report.md and report/figures/ not yet delivered.

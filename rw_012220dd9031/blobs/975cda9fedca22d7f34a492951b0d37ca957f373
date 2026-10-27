@@ -1,0 +1,25 @@
+# Review standard (internal-review-repo)
+
+Source: the objective (internal-review-repo#1); to be re-read against story-repo's
+brief and assignment once they exist. The delivery is approved only when every item
+holds in the assembled delivery (`ht-role delivery`) at the revisions inspected.
+
+1. **Data** - Iris = OpenML dataset 61, downloaded from OpenML by the delivered code
+   (not a bundled copy); URL/version and checksum recorded; 150 x 4, 3 classes of 50.
+2. **Methods** - multinomial logistic regression (solver, penalty, C stated); kNN with k
+   chosen by inner CV inside each outer training fold only (nested; scaling, if any,
+   inside the pipeline); candidate k grid stated.
+3. **Protocol** - 10 repetitions of stratified 5-fold CV (50 outer folds), the same
+   splits for both methods, seeds fixed and recorded; per-fold accuracies delivered.
+4. **Uncertainty** - per-method mean accuracy with a 95% interval; paired per-fold
+   difference with its 95% interval; interval method named and suitable for
+   overlapping CV training sets (e.g. Nadeau-Bengio corrected resampled t) or the
+   limitation stated; text claims stay within the intervals.
+5. **Ibex vs local** - the full CV run once as an Ibex CPU SLURM job (job id and node
+   name from the job's own log, delivered) and once locally; identity judged on
+   per-fold results; the paper states the node name and the outcome, matching logs.
+6. **Paper** - `report/report.pdf` compiled from the delivered LaTeX with the official
+   NeurIPS 2026 style in submission mode, <= 2 pages as rendered; exactly one figure
+   and one table, readable, labelled, consistent with results files and text; LaTeX
+   source and the code for every number next to the PDF; no placeholders, `??`, or
+   broken citations.

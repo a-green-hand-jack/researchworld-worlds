@@ -1,0 +1,155 @@
+{
+  "protocol": {
+    "data": "OpenML dataset 61 (iris, version 1), ARFF from openml.org, md5 ad484452702105cbf3d30f8deaba39a9",
+    "outer": "10x stratified 5-fold CV, sklearn RepeatedStratifiedKFold",
+    "outer_seed": 20261017,
+    "inner": "stratified 5-fold CV (shuffled, random_state = outer_seed + 1 + outer_fold_index), on the outer training set only; max mean inner accuracy, ties -> smallest k; refit on outer train",
+    "k_grid": [
+      1,
+      3,
+      5,
+      7,
+      9,
+      11,
+      13,
+      15,
+      17,
+      19,
+      21,
+      23,
+      25,
+      27,
+      29,
+      31
+    ],
+    "knn": "Euclidean distance, uniform weights",
+    "lr": "multinomial (softmax) logistic regression, lbfgs, L2, C=1.0, max_iter=10000, not tuned",
+    "preprocessing": "StandardScaler fitted on the training part, inside the pipeline, for both methods",
+    "n_train": 120,
+    "n_test": 30,
+    "interval_primary": "corrected resampled t (Nadeau & Bengio 2003; Bouckaert & Frank 2004): mean +- t(0.975, 49) * s * sqrt(1/50 + 30/120)",
+    "interval_secondary": [
+      "naive t over 50 folds (df 49)",
+      "t over 10 repetition means (df 9)"
+    ],
+    "amendments_to_plan": []
+  },
+  "logistic_regression": {
+    "mean": 0.9540000000000001,
+    "sd_folds": 0.03681787005729086,
+    "n_folds": 50,
+    "corrected": {
+      "lo": 0.9155545619880852,
+      "hi": 0.992445438011915,
+      "se": 0.01913112646970899,
+      "df": 49,
+      "t_crit": 2.0095752371292392,
+      "t": 49.86637883088082,
+      "p_two_sided_vs_0": 1.170274971249184e-43
+    },
+    "naive": {
+      "lo": 0.9435364771036676,
+      "hi": 0.9644635228963325,
+      "se": 0.005206833117271102,
+      "df": 49,
+      "t_crit": 2.0095752371292392,
+      "t": 183.22077518397418,
+      "p_two_sided_vs_0": 3.659771388079151e-71
+    },
+    "repeat": {
+      "lo": 0.9512928690797093,
+      "hi": 0.9567071309202908,
+      "se": 0.0011967032904743405,
+      "df": 9,
+      "t_crit": 2.262157162798205
+    }
+  },
+  "knn": {
+    "mean": 0.9446666666666669,
+    "sd_folds": 0.04597643091352877,
+    "n_folds": 50,
+    "corrected": {
+      "lo": 0.8966578051560827,
+      "hi": 0.992675528177251,
+      "se": 0.023890054287873663,
+      "df": 49,
+      "t_crit": 2.0095752371292392,
+      "t": 39.54225701136936,
+      "p_two_sided_vs_0": 7.700638682075409e-39
+    },
+    "naive": {
+      "lo": 0.9316003095741253,
+      "hi": 0.9577330237592084,
+      "se": 0.006502049214742202,
+      "df": 49,
+      "t_crit": 2.0095752371292392,
+      "t": 145.28752943376819,
+      "p_two_sided_vs_0": 3.0978080304638043e-66
+    },
+    "repeat": {
+      "lo": 0.9391369491576046,
+      "hi": 0.9501963841757292,
+      "se": 0.002444444444444455,
+      "df": 9,
+      "t_crit": 2.262157162798205
+    }
+  },
+  "difference_lr_minus_knn": {
+    "mean": 0.009333333333333334,
+    "sd_folds": 0.029385235467698115,
+    "n_folds": 50,
+    "corrected": {
+      "lo": -0.021350903611416186,
+      "hi": 0.04001757027808285,
+      "se": 0.015269016246728443,
+      "df": 49,
+      "t_crit": 2.0095752371292392,
+      "t": 0.6112596373281811,
+      "p_two_sided_vs_0": 0.5438532071846753
+    },
+    "naive": {
+      "lo": 0.0009821418154119365,
+      "hi": 0.017684524851254733,
+      "se": 0.004155699853194557,
+      "df": 49,
+      "t_crit": 2.0095752371292392,
+      "t": 2.245911317719118,
+      "p_two_sided_vs_0": 0.02925232548830853
+    },
+    "repeat": {
+      "lo": 0.004206762881812562,
+      "hi": 0.014459903784854105,
+      "se": 0.0022662308949301267,
+      "df": 9,
+      "t_crit": 2.262157162798205
+    }
+  },
+  "folds_lr_better": 13,
+  "folds_knn_better": 5,
+  "folds_tied": 32,
+  "pooled_correct": {
+    "lr": 1431,
+    "knn": 1417,
+    "of": 1500
+  },
+  "k_selected_counts": {
+    "1": 4,
+    "3": 4,
+    "5": 11,
+    "7": 10,
+    "9": 9,
+    "11": 3,
+    "13": 3,
+    "15": 4,
+    "17": 2
+  },
+  "k_selected_median": 7.0,
+  "k_selected_at_grid_edge": 0,
+  "classes": [
+    "Iris-setosa",
+    "Iris-versicolor",
+    "Iris-virginica"
+  ],
+  "lr_multinomial_verified": true,
+  "convergence_warnings": 0
+}

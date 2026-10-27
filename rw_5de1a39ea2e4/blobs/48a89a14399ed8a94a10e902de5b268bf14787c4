@@ -1,0 +1,60 @@
+"""Convergence of composite trapezoid, Simpson and 4-node Gauss-Legendre rules."""
+import json, numpy as np
+from scipy import stats
+from numpy.polynomial.legendre import leggauss
+
+F = {"exp(x)": (np.exp, np.e - 1),
+     "1/(1+25x^2)": (lambda x: 1/(1+25*x**2), np.arctan(5)/5),
+     "sqrt(x)": (np.sqrt, 2/3)}
+
+def trap(f, n):
+    x = np.linspace(0, 1, n+1); y = f(x); h = 1/n
+    return h*(y.sum() - 0.5*(y[0]+y[-1]))
+
+def simpson(f, n):  # n panels, each Simpson on [a,b] with midpoint
+    x = np.linspace(0, 1, n+1); h = 1/n
+    m = (x[:-1]+x[1:])/2
+    return h/6*(f(x[:-1]) + 4*f(m) + f(x[1:])).sum()
+
+def gauss(f, n):
+    t, w = leggauss(4); x = np.linspace(0, 1, n+1); h = 1/n
+    a = x[:-1, None]; nodes = a + h*(t[None, :]+1)/2
+    return (h/2*(w[None, :]*f(nodes))).sum()
+
+RULES = {"trapezoid": (trap, 2), "Simpson": (simpson, 4), "Gauss-Legendre (4 nodes)": (gauss, 8)}
+
+def fit(n, err, thr):
+    m = err > thr
+    x, y = np.log(n[m]), np.log(err[m]); k = m.sum()
+    if k < 2: return dict(order=None, lo=None, hi=None, npts=int(k))
+    if k == 2:
+        return dict(order=float(-np.polyfit(x, y, 1)[0]), lo=None, hi=None, npts=int(k))
+    r = stats.linregress(x, y); t = stats.t.ppf(0.975, k-2)
+    return dict(order=float(-r.slope), lo=float(-r.slope - t*r.stderr), hi=float(-r.slope + t*r.stderr),
+                lo_ci=float(-r.slope - t*r.stderr), npts=int(k), kmin=int(np.log2(n[m].min())), kmax=int(np.log2(n[m].max())))
+
+ks = np.arange(1, 13); n = 2**ks
+eps = np.finfo(float).eps
+out = {"errors": {}, "fits": {}, "sensitivity": {}}
+for fn, (f, ex) in F.items():
+    for rn, (r, th) in RULES.items():
+        err = np.array([abs(r(f, int(m)) - ex) for m in n])
+        out["errors"][f"{fn}|{rn}"] = err.tolist()
+        # main threshold: 10*eps*|I| ... use absolute error > 1e-15 (~4.5 eps)
+        out["fits"][f"{fn}|{rn}"] = dict(theory=th, **fit(n, err, 1e-15))
+        out["sensitivity"][f"{fn}|{rn}"] = {str(t): fit(n, err, t) for t in (1e-16, 1e-14, 1e-13)}
+json.dump(out, open("results/results.json", "w"), indent=1)
+with open("results/errors.csv", "w") as fh:
+    fh.write("function,rule,k,n,abs_error,above_threshold_1e-15\n")
+    for key, e in out["errors"].items():
+        fn, rn = key.split("|")
+        for k, m, v in zip(ks, n, e): fh.write(f'"{fn}","{rn}",{k},{m},{v:.6e},{int(v > 1e-15)}\n')
+with open("results/fits.csv", "w") as fh:
+    fh.write("function,rule,theory_order,fitted_order,ci95_lo,ci95_hi,n_points,k_min,k_max\n")
+    for key, d in out["fits"].items():
+        fn, rn = key.split("|")
+        fh.write(f'"{fn}","{rn}",{d["theory"]},{d["order"]},{d["lo"]},{d["hi"]},{d["npts"]},{d.get("kmin")},{d.get("kmax")}\n')
+for key, d in out["fits"].items(): print(key, d)
+print()
+for key, d in out["sensitivity"].items(): print(key, {t: (None if v["order"] is None else round(v["order"],3), v["npts"]) for t, v in d.items()})
+for key, e in out["errors"].items(): print(key, ["%.1e" % v for v in e])

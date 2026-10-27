@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Stage 3 (check): L=256 at 5 temperatures from 0.03 below to 0.03 above the stage-2 estimate
+# (data/stage2/crossing.json: stage3_temps), seeds 1 and 2, 10000 measured sweeps after the default
+# 2000 burn-in. Per-sweep series are kept as well (not required by the design) so that each point
+# gets a block-bootstrap error and tau_int. One process per seed. Run from the repository root.
+set -euo pipefail
+TEMPS=$(python3 -c "import json; print(' '.join(f'{t:.4f}' for t in json.load(open('data/stage2/crossing.json'))['stage3_temps']))")
+mkdir -p data/stage3/raw data/stage3/series_raw
+for s in 1 2; do
+  python3 -u code/ising.py --L 256 --temps $TEMPS --seeds $s --sweeps 10000 --burn 2000 \
+    --out data/stage3/raw/L256-s$s.json --series data/stage3/series_raw > data/stage3/raw/L256-s$s.log 2>&1 &
+done
+wait
+echo "HUTIAN_WAKE: stage 3 finished"

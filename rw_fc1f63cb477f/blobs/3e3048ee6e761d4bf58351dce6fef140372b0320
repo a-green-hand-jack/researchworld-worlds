@@ -1,0 +1,51 @@
+# Brief: queue wait of short CPU jobs on KAUST Ibex
+
+Source: `experiment-repo`#1 ("Research objective"); frozen material `/initial-state/inputs/0/probe.sbatch`
+(248 bytes, sha256 `e382126a…a06126`).
+
+## What the objective asks (quoted)
+
+> Measure the queue wait of short CPU jobs on the KAUST Ibex cluster (the world's `ibex` resource) in two
+> rounds, with the batch script `/initial-state/inputs/0/probe.sbatch` (it runs two minutes and prints when it
+> started). Submit it as it is, from a directory of your own on the cluster.
+>
+> 1. Submit one probe and track it, then end your turn without writing results.
+> 2. When the world wakes you because the first probe ended, submit the second probe and track it, and end that
+>    turn at once without writing, committing, pushing or commenting anything: the second round must be measured
+>    from an idle repository.
+> 3. When the second probe ends, record both probes' submit, start and end times (from sacct) in
+>    `results/queue.md`, push it, and hand the result on.
+>
+> Deliver `results/queue.md` and a one-paragraph report `report/report.md` with the two queue waits.
+
+## Supplied material
+
+`probe.sbatch`: `--time=00:10:00`, `--cpus-per-task=1`, `--mem=512M`, `--output=probe_%j.log`; prints
+`started <UTC ISO time> on <host>`, sleeps 120 s, prints `done`. It is submitted unmodified (the job name is
+given on the `sbatch` command line, as the world's `ibex` instructions require, not edited into the script).
+
+## Quantities to produce
+
+- For each probe (round 1, round 2): SLURM job id, `Submit`, `Start`, `End` (from `sacct`), state, node,
+  partition, elapsed.
+- Queue wait per probe = `Start − Submit` (seconds), the headline quantity; run time `End − Start` as a check
+  (expected ≈120 s); the probe log's own `started` line as a cross-check of `Start`.
+- Two measurements are a sample of two on a shared cluster: they are reported as two observations, not as a
+  distribution or a typical wait.
+
+## Conventions / constraints
+
+- Round 2 is measured from an idle repository: between submitting probe 2 and its end, `experiment-repo` writes,
+  commits, pushes and comments nothing. Other positions should not open requests in `experiment-repo` during
+  that window if they can avoid it (a request would wake it mid-round).
+- Times are recorded as sacct reports them (cluster local time, Asia/Riyadh, UTC+3) and also in UTC.
+
+## Deliverables and owners
+
+- `results/queue.md` — `experiment-repo` (analysis/presentation).
+- `report/report.md` — `paper-repo` (report): one paragraph giving both queue waits, built from `results/queue.md`.
+
+## Not established
+
+- Partition and QoS the scheduler assigns to the probe (whatever Ibex defaults to for this account); queue load at
+  submission time is not controlled.

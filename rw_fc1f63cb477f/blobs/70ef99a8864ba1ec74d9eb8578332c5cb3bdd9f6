@@ -1,0 +1,42 @@
+# Queue wait of a short CPU job on KAUST Ibex: two probe rounds
+
+Probe: `/initial-state/inputs/0/probe.sbatch` submitted unmodified (sha256 `e382126a1a242d2a1355a70da3b07d39321153ee72c55b3f37e11fb1d9a06126`,
+checked on the cluster before each submission) from `/ibex/user/wuj0c/rw/rw-fc1f63cb477f/`, job name given on the command line
+(`sbatch --job-name rw-fc1f63cb477f-probeN probe.sbatch`). Requests: 1 CPU, 512 MB, 10 min wall limit; runs `sleep 120`.
+Round 1 was submitted in turn `5ee9ec7c8e8f`; round 2 in turn `b08eb32ee4e3`, right after the world reported probe 1 ended,
+and nothing was written, committed, pushed or commented in `experiment-repo` from that submission until probe 2 ended.
+
+## sacct record (cluster local time, +03:00)
+
+| Round | JobID | Partition / QOS | State | Submit | Start | End | Elapsed | Node |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 53952397 | batch / normal | COMPLETED (0:0) | 2026-10-18T13:00:52 | 2026-10-18T13:07:29 | 2026-10-18T13:09:30 | 00:02:01 | cn504-26 |
+| 2 | 53952709 | batch / normal | COMPLETED (0:0) | 2026-10-18T13:10:38 | 2026-10-18T13:17:19 | 2026-10-18T13:19:20 | 00:02:01 | cn504-26 |
+
+Same times in UTC: round 1 submit 10:00:52Z, start 10:07:29Z, end 10:09:30Z; round 2 submit 10:10:38Z, start 10:17:19Z, end 10:19:20Z.
+`Eligible` equalled `Submit` for both jobs (no dependency or hold), so the whole wait is scheduler queueing.
+
+## Derived quantities
+
+| Round | Queue wait (Start − Submit) | Run time (End − Start) | Probe log `started` line |
+|---|---|---|---|
+| 1 | **397 s (6 min 37 s)** | 121 s | `started 2026-10-18T10:07:30Z on cn504-26` |
+| 2 | **401 s (6 min 41 s)** | 121 s | `started 2026-10-18T10:17:20Z on cn504-26` |
+
+Checks: each log's `started` time is 1 s after sacct's `Start` (job launch; sacct has 1 s resolution), and run times match the
+script's 120 s sleep plus ~1 s overhead, so the sacct Start is the job's real start. Probe 2 was submitted 68 s after probe 1 ended.
+
+## Reading
+
+The two rounds waited 397 s and 401 s, a difference of 4 s (1%). Both ran on the same node in the default `batch` partition.
+These are two observations about 10 minutes apart on one shared cluster, under queue load that was not controlled or recorded.
+They show that a 1-CPU, 2-minute job waited about 6.6 minutes both times on this morning (UTC). They do not give a typical or
+worst-case wait, a distribution, or a trend. Round 2 differed from round 1 in being measured from an idle repository, but with one job per round the 4 s gap cannot be attributed to that or to anything else.
+
+## Provenance
+
+```
+sacct -j 53952397,53952709 -X -P --format=JobID,JobName%40,Partition,QOS,State,ExitCode,Submit,Eligible,Start,End,Elapsed,NodeList,Reason
+```
+Run on Ibex after probe 2 ended; logs `probe_53952397.log` and `probe_53952709.log` are in the submission directory above.
+Waits are computed as the difference of the sacct `Start` and `Submit` timestamps.

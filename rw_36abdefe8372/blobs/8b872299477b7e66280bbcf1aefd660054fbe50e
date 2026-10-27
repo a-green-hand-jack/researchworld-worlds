@@ -1,0 +1,35 @@
+# Drive-and-stop of a child ResearchWorld
+
+- **Child world id:** `rw_d681c4044338` (created by my `researchworld run`, command ref `cmd-ad067b8299`; its output named this id as `world_id`). `internal-review-repo` ran the same command (`cmd-1c8078101d`) and created its own world, `rw_1296e49a0c4c`; that one is not reported here.
+- **Drive reference:** `cmd-333cbaf66b` (`researchworld execute rw_d681c4044338 --loop`). `ht-resource status worlds` listed it as `running` before I stopped it. When I read the child's status just before starting the drive, it showed 0 turns, 0 model seconds, scheduler `waiting-for-execution`.
+
+## Full answer of `ht-resource stop worlds cmd-333cbaf66b` (exit code 0)
+
+```json
+{
+  "changed_at": 1792739201.5445428,
+  "checked_at": 1792739176.014792,
+  "closed_at": 1792739201.5445428,
+  "created_at": 1792739172.2554045,
+  "note": "researchworld execute rw_d681c4044338 --loop",
+  "output": "",
+  "ref": "cmd-333cbaf66b",
+  "resource": "worlds",
+  "role": "paper-repo",
+  "spend": 0.0,
+  "state": "torn-down"
+}
+```
+
+## `researchworld status rw_d681c4044338` after the stop
+
+- `container_status`: **`exited`**, so the child world's container is **not running**. Before the drive it was `running`.
+- The output has no scheduler section after the stop (the pre-drive read had `scheduler_status: waiting-for-execution`). It has no field that names a drive explicitly. The drive command `cmd-333cbaf66b` is `torn-down` in `ht-resource status worlds`, so the child is **not being driven**.
+- The child **did run turns** before the stop. Its `usage` in the status output (`cmd-4e8b382298`, re-read from a later `researchworld status`) is `{"turns": 2, "model_seconds": 5.8, "roles": {"internal-review-repo": {"model_seconds": 3.2, "turns": 1}, "paper-repo": {"model_seconds": 2.6, "turns": 1}}, "source": "record", "as_of": 1792739192.4396987}`. `as_of` is before the stop at 1792739201. The 0 turns / 0 seconds I quoted earlier came from the status read before the drive started, not after the stop.
+- The `exited` value is the `container_status` field of that same `researchworld status rw_d681c4044338` output: `"container_status": "exited"`.
+- I did not find a `report/report.md` or reviewed sections produced by the child.
+
+## Caveats
+
+- `ht-resource status worlds` showed no `running` state for any command after the stop, apart from my earlier run command, which it listed as `succeeded`. The run command stayed `running` for about 70 s while the world was already created.
+- I stopped the drive about 25 s after starting it. I did not poll.

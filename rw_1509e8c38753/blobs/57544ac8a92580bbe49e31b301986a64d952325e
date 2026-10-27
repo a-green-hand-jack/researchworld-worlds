@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Compare the local and Ibex runs of cv_compare.py fold by fold.
+
+Usage (from report/code/): python compare_runs.py --a ../results/run_local --b ../results/run_ibex --out ../results/reproducibility.json
+Checks byte identity of folds.csv and predictions.csv and the max absolute
+difference of every numeric per-fold column; any difference is reported.
+"""
+import argparse, hashlib, json
+import numpy as np
+import pandas as pd
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--a", required=True)
+    ap.add_argument("--b", required=True)
+    ap.add_argument("--out", required=True)
+    args = ap.parse_args()
+    fa, fb = (pd.read_csv(f"{d}/folds.csv") for d in (args.a, args.b))
+    ma, mb = (json.load(open(f"{d}/run.json")) for d in (args.a, args.b))
+    md5 = [hashlib.md5(open(f"{d}/folds.csv", "rb").read()).hexdigest() for d in (args.a, args.b)]
+    pmd5 = [hashlib.md5(open(f"{d}/predictions.csv", "rb").read()).hexdigest() for d in (args.a, args.b)]
+    pa, pb = (pd.read_csv(f"{d}/predictions.csv") for d in (args.a, args.b))
+    pred_cols = [c for c in pa.columns if c.startswith("pred_")]
+    n_pred_diff = int((pa[pred_cols] != pb[pred_cols]).to_numpy().sum())
+    num = [c for c in fa.columns if c != "test_idx_md5"]
+    diff = {c: float(np.max(np.abs(fa[c].to_numpy(float) - fb[c].to_numpy(float)))) for c in num}
+    res = {
+        "run_a": {k: ma.get(k) for k in ("hostname", "python", "platform", "numpy", "sklearn", "wall_seconds", "finished_utc")},
+        "run_b": {k: mb.get(k) for k in ("hostname", "slurm_job_id", "slurmd_nodename", "slurm_job_nodelist", "slurm_partition",
+                                          "python", "platform", "numpy", "sklearn", "wall_seconds", "finished_utc")},
+        "folds_csv_md5": md5,
+        "folds_csv_byte_identical": md5[0] == md5[1],
+        "predictions_csv_md5": pmd5,
+        "predictions_csv_byte_identical": pmd5[0] == pmd5[1],
+        "n_differing_predictions": n_pred_diff,
+        "n_predictions_compared": int(pa[pred_cols].size),
+        "same_test_splits": bool((fa.test_idx_md5 == fb.test_idx_md5).all()),
+        "max_abs_difference_per_column": diff,
+        "n_differing_folds": int((fa[num].to_numpy(float) != fb[num].to_numpy(float)).any(axis=1).sum()),
+        "all_numbers_identical": all(v == 0.0 for v in diff.values()) and n_pred_diff == 0,
+        "criterion": "exact equality of every stored per-fold value (accuracies at 17 significant digits, chosen k, inner-CV score) and every test-case prediction",
+    }
+    json.dump(res, open(args.out, "w"), indent=2)
+    print(json.dumps(res, indent=2))
+
+
+if __name__ == "__main__":
+    main()

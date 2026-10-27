@@ -1,0 +1,61 @@
+"""F3: E1 knob trends: measured rank (mean +- sd over 5 seeds) vs race-criterion prediction and static baselines.
+Orthogonal init, d=32 (same slices as the trends in results/e1/summary.json)."""
+import os, sys
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+import matplotlib.pyplot as plt
+
+def make(outdir):
+    fs.setup()
+    rows, path = common.load_e1()
+    sl = lambda exp, knob, **fixed: common.knob_slice(rows, exp, knob, **fixed)
+    panels = [
+        ("(a) weight decay $\\lambda$", [("$p_0{=}1$", sl("race", "lam", p0=1.0, alpha=1.0, w0=1e-4))], "log0"),
+        ("(b) predictor gain $p_0$", [("$\\lambda{=}0$", sl("race", "p0", lam=0.0, alpha=1.0, w0=1e-4)),
+                                     ("$\\lambda{=}0.01$", sl("race", "p0", lam=0.01, alpha=1.0, w0=1e-4))], "log"),
+        ("(c) predictor lr ratio $\\alpha$", [("$\\lambda{=}0.01,p_0{=}1$", sl("race", "alpha", lam=0.01, p0=1.0, w0=1e-4))], "log"),
+        ("(d) target EMA rate $\\kappa$", [("$\\lambda{=}0.01,p_0{=}1$", sl("ema", "kappa", lam=0.01, p0=1.0)),
+                                          ("$\\lambda{=}0,p_0{=}0.5$", sl("ema", "kappa", lam=0.0, p0=0.5))], "kappa"),
+        ("(e) predictor depth $L$", [("$\\lambda{=}0.01,p_0{=}1$", sl("depth", "depth", lam=0.01, p0=1.0))], "lin"),
+        ("(f) init scale $w_0$", [("$\\lambda{=}0.01,p_0{=}1$", sl("race", "w0", lam=0.01, p0=1.0, alpha=1.0))], "log"),
+    ]
+    fig, axs = plt.subplots(2, 3, figsize=(fs.TEXTWIDTH, 3.7), constrained_layout=True, sharey=True)
+    cols = [fs.COL["drive"], fs.COL["decay"]]
+    for ax, (title, series, scale) in zip(axs.flat, panels):
+        for i, (lab, s) in enumerate(series):
+            v = np.array([z[0] if z[0] is not None else np.nan for z in s], float)
+            if scale == "kappa":
+                top = np.nanmax(v) * 3; x = np.where(np.isnan(v), top, v)  # empty kappa = stop-gradient copy, drawn at right end
+            elif scale == "log0":
+                x = np.where(v == 0, np.nanmin(v[v > 0]) / 3, v)
+            else:
+                x = v
+            m = np.array([z[1] for z in s]); sd = np.array([z[2] for z in s])
+            pr = np.array([z[3] for z in s]); wi = np.array([z[4] for z in s]); bo = np.array([z[5] for z in s])
+            ax.errorbar(x, m, yerr=sd, color=cols[i], marker=fs.MARK[i], ls="none", capsize=1.5, zorder=3)
+            ax.plot(x, pr, color=cols[i], ls=fs.LS[i], lw=1.0)
+            ax.plot(x, wi, color=fs.COL["grey"], ls=":", lw=1.0)
+            ax.plot(x, bo, color=fs.COL["grey"], ls="-.", lw=0.8, alpha=0.8)
+            ax.text(0.97, 0.95 - 0.09 * i, lab, color=cols[i], transform=ax.transAxes, ha="right", va="top", fontsize=6.5)
+        if scale in ("log", "log0", "kappa"):
+            ax.set_xscale("log")
+        if scale == "log0":
+            ax.minorticks_off(); ax.set_xticks([x[0]] + list(x[1:])); ax.set_xticklabels(["0"] + [f"{t:g}" for t in v[1:]], fontsize=6)
+        if scale == "kappa":
+            ticks = [t for t in x]; ax.set_xticks(ticks); ax.set_xticklabels([f"{t:g}" if t != top else "sg" for t in ticks], fontsize=6)
+            ax.minorticks_off()
+        if scale == "log":
+            ax.set_xticks(v); ax.set_xticklabels([f"{t:g}" for t in v], fontsize=6); ax.minorticks_off()
+        if scale == "lin":
+            ax.set_xticks([1, 2, 3])
+        ax.set_title(title, fontsize=7.5); ax.set_ylim(-1, 33)
+    for ax in axs[:, 0]: ax.set_ylabel("rank (of 32)")
+    from matplotlib.lines import Line2D
+    gen = [Line2D([], [], color="k", marker="o", ls="none", ms=3, label="measured (mean $\\pm$ sd, 5 seeds)"),
+           Line2D([], [], color="k", ls="-", label="race criterion (solid; dashed for 2nd series)"),
+           Line2D([], [], color=fs.COL["grey"], ls=":", label="static initial window"),
+           Line2D([], [], color=fs.COL["grey"], ls="-.", lw=0.8, label="static bound")]
+    fig.legend(handles=gen, loc="outside lower center", ncol=2, frameon=False, fontsize=6)
+    fs.save(fig, "fig3_e1_knobs", outdir)
+    common.record_inputs(outdir, "fig3_e1_knobs", [path])

@@ -1,0 +1,52 @@
+"""F10 (appendix): E3 follow-up (pre-registered in bd947e1). (a) The C4 interventions: for each, the parent's count, the intervention's count
+per seed (dots) and mean (bar), and the rule's pre-registered count (open diamond); rescue/break as registered. (b) The three full-length
+(50-epoch) runs: linear-probe accuracy over training, 3 seeds each, against the random-init probe; legend gives the epoch-20 and epoch-50 counts."""
+import os, sys
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+import matplotlib.pyplot as plt
+
+def make(outdir):
+    fs.setup()
+    rows, S, F, paths = common.load_e3()
+    tr, tpath = common.load_e3_traj(followup=True)
+    R = {r["name"]: r for r in F["rows"]}
+    CT, CP = fs.COL["drive"], fs.COL["decay"]
+    fig, axs = plt.subplots(1, 2, figsize=(fs.TEXTWIDTH, 2.5), constrained_layout=True, gridspec_kw=dict(width_ratios=[1.35, 1]))
+    ax = axs[0]
+    I = [r for r in F["rows"] if r["name"].startswith("I_")]
+    names = {"I_T_wd0.1_plr0.1": "T wd 0.1, pred. lr $\\times$0.1", "I_T_wd0.1_pinit3": "T wd 0.1, pred. init $\\times$3", "I_T_wd0.03_plr0.1": "T wd 0.03, pred. lr $\\times$0.1",
+             "I_T_wd0.03_pinit3": "T wd 0.03, pred. init $\\times$3", "I_T_wd0.001_plr10": "T wd 0.001, pred. lr $\\times$10", "I_T_wd0.001_pinit0.3": "T wd 0.001, pred. init $\\times$0.3",
+             "I_P_copy_wd0": "P copy target, wd 0", "I_P_copy_plr0.1": "P copy target, pred. lr $\\times$0.1"}
+    y = np.arange(len(I))[::-1]
+    for yy, r in zip(y, I):
+        par = r["parent_count"]
+        ps = [t["online_tok_count_1e3"] for (n, sd), t in tr.items() if n == r["name"]]
+        e20 = []
+        for (n, sd), t in tr.items():
+            if n == r["name"]:
+                k = max(i for i, e in enumerate(t["epoch"]) if e <= 20.0 + 1e-9); e20.append(t["online_tok_count_1e3"][k])
+        c = CT if r["arm"] == "T" else CP
+        ax.plot([par, r["count"]], [yy, yy], color=fs.COL["grey"], lw=0.8, zorder=1)
+        ax.plot(par, yy, marker="s", color=fs.COL["grey"], ms=3.2, ls="none", zorder=2)
+        ax.plot(e20, [yy] * len(e20), marker="o", mfc="none", mec=c, ms=2.4, ls="none", mew=0.6, zorder=3, alpha=0.8)
+        ax.plot(r["count"], yy, marker="o", color=c, ms=3.4, ls="none", zorder=4)
+        ax.plot(r["count_pred"], yy, marker="D", mfc="white", mec="k", ms=3.2, mew=0.7, ls="none", zorder=3)
+    ax.set_yticks(y); ax.set_yticklabels([names[r["name"]] + (" (rescue)" if r["kind"] == "rescue" else " (break)") for r in I], fontsize=5.6)
+    ax.set_xscale("symlog", linthresh=10, linscale=0.6); ax.set_xlim(0, 130); ax.set_xticks([0, 5, 10, 30, 100]); ax.set_xticklabels(["0", "5", "10", "30", "100"])
+    ax.set_xlabel("count at epoch 20"); ax.set_title("(a) interventions", fontsize=7.5)
+    ax.plot([], [], marker="s", color=fs.COL["grey"], ls="none", ms=3.2, label="parent"); ax.plot([], [], marker="o", color="k", ls="none", ms=3.4, label="intervention (mean; rings: seeds)")
+    ax.plot([], [], marker="D", mfc="white", mec="k", ls="none", ms=3.2, mew=0.7, label="rule's prediction")
+    ax.legend(fontsize=5.4, frameon=False, loc="upper center", bbox_to_anchor=(0.55, -0.2), ncol=1)
+    ax = axs[1]
+    C = {"F_P_base": (CP, "-", "P baseline"), "F_T_wd0.01": (CT, "-", "T wd 0.01"), "F_T_wd0.03": (CT, "--", "T wd 0.03")}
+    for n, (c, ls, lab) in C.items():
+        r = R[n]
+        for i, ps in enumerate(r["per_seed"]):
+            a = np.array(ps["probe_curve"]); ax.plot(a[:, 0], 100 * a[:, 1], color=c, ls=ls, lw=0.9, alpha=0.9, label=(f"{lab}: mean count {np.mean([q['count_epoch20'] for q in r['per_seed']]):.0f}$\\to${np.mean([q['count_final'] for q in r['per_seed']]):.0f}" if i == 0 else None))
+    ax.axhline(100 * rows["P_base"]["probe_init"], color=fs.COL["grey"], lw=0.6, ls=":"); ax.text(50, 100 * rows["P_base"]["probe_init"] + 1, "random init", fontsize=5.5, color=fs.COL["grey"], ha="right", va="bottom")
+    ax.set_xlabel("epoch"); ax.set_ylabel("linear probe accuracy (%)"); ax.set_title("(b) full-length runs", fontsize=7.5); ax.set_xlim(0, 50); ax.set_ylim(10, 58)
+    ax.legend(fontsize=5.6, frameon=False, loc="lower left")
+    fs.save(fig, "fig10_e3_interventions", outdir)
+    common.record_inputs(outdir, "fig10_e3_interventions", paths + [tpath])

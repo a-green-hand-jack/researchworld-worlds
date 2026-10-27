@@ -1,0 +1,74 @@
+# Review record: release of the LR vs k-NN on Iris report
+
+Judged against: objective (`internal-review-repo`#1), brief (`idea-repo` 28d514222378877441d54725031e654a9231f746),
+assignment (`story-repo` a9b3a8e2dbc8d14a859d8b82bf66478ca236bc84), venue requirements (`venue-repo`
+bda2e4164133c85ec3a8e9130b2cb83c42d5c22a, VENUE.md), and `review/standard.md` (R1-R5).
+
+Assembled delivery inspected (`ht-role delivery`, no assembly errors):
+- `paper-repo` 668b17e6c821268115e755a90e2245bdc5b93b1e: README.md, report/{report.tex, report.pdf, numbers.tex, make_numbers.py, references.bib, neurips_2026.sty, build.sh}
+- `experiment-repo` 554fef8f8f190a0e87173c2d09779dd381bd3b48: report/code/, report/results/
+- `figtab-repo` 4ea3532cfe5c1ee9d96607e7ed380a36f6828433: report/figures/, report/tables/
+
+Environment for re-execution: Python 3.11.2, numpy 2.4.6, scipy 1.17.1, scikit-learn 1.9.1,
+joblib 1.6.0, threadpoolctl 3.7.0, matplotlib 3.11.2 (pinned as in report/code/requirements.txt),
+OMP/OPENBLAS/MKL_NUM_THREADS=1; TeX Live 2026.
+
+## Checks and outcomes
+
+R1 Data - pass.
+- `code/fetch_data.py` re-run: downloads OpenML 61 (iris, version 1) from www.openml.org, md5
+  ad484452702105cbf3d30f8deaba39a9 equal to OpenML's checksum; the fresh ARFF is byte-identical to the delivered one.
+  150 x 4, 3 classes of 50. UCI transcription errors acknowledged in the text; data used as is.
+
+R2 Methods - pass.
+- LR: StandardScaler + LogisticRegression(lbfgs, C=1) in a pipeline. Verified multinomial: coef_ shape (3,4), and
+  softmax of the linear scores equals predict_proba.
+- k-NN: GridSearchCV over odd k 1..31 with stratified 5-fold inner CV, fit on the outer training set only
+  (nested). Scaling inside the pipeline, so it is fit inside each fold. Tie rule (smallest k) stated.
+
+R3 Protocol and uncertainty - pass.
+- RepeatedStratifiedKFold(5, 10, seed 20261017): 50 outer splits, the same for both methods, so the
+  difference is paired per split.
+- 95% intervals: the corrected repeated-CV t interval (variance factor 1/50 + 30/120, df 49), named and justified
+  in the text. The naive and repetition-mean intervals are reported only as secondary. I recomputed them
+  independently from the integer correct counts: LR 0.954 [0.916, 0.992], k-NN 0.951 [0.906, 0.996],
+  difference +0.003 [-0.029, +0.036], naive [-0.005, +0.012]. All match the paper.
+- The claim ("we detect no difference"; "differences of a few percentage points either way cannot be ruled out";
+  "We claim neither method is better") follows from the interval, and the text does not overclaim.
+- Robustness: re-ran `code/sensitivity.py`. All 8 variants equal the delivered sensitivity_summary.json exactly
+  (differences +0.001..+0.009, every interval includes zero), as stated.
+
+R4 Ibex and local runs - pass.
+- SLURM accounting on Ibex (`sacct -j 53910855`): job rw-6c02774c9cff-iriscv, partition batch, NodeList
+  cn504-26, COMPLETED 0:0, 1 CPU, 2026-10-17T15:26:53-15:27:08 (cluster local time). Consistent with
+  results/ibex/slurm_53910855.out and run_info.json (started 12:26:56 UTC, AMD EPYC 9655).
+- reproducibility.json: per_fold.csv and predictions.csv sha256 equal between Ibex and local, no differing
+  fields, max_abs_diff 0. My own local re-run reproduces both files byte for byte
+  (per_fold e485c7a7..., predictions a6977911...).
+- The paper reports node cn504-26, job 53910855 and "identical", and scopes the identity claim (CPU, Python
+  patch versions, single-threaded BLAS) in the Limitations.
+
+R5 Paper - pass.
+- report/report.pdf: 2 pages (US letter), pdfTeX, Times + CM fonts, anonymous NeurIPS 2026 submission layout
+  (line numbers, "Submitted to ... NeurIPS 2026" footer). neurips_2026.sty sha256 c3fc2894... is identical to
+  venue-repo's official template. The checklist is omitted under the 2-page cap, per venue-repo's ruling (VENUE.md).
+- Rebuilt from the delivery (`sh build.sh`, exit 0). make_numbers.py regenerates numbers.tex identically.
+  The rebuilt PDF is 2 pages with extracted text identical to the delivered PDF.
+- Exactly one figure and one table. make_figure.py and make_table.py regenerate fig_main.pdf (pixel-identical
+  at 100 dpi), fig_main_caption.tex and tab_main.tex (identical).
+- Figure opened and inspected, standalone and in the PDF:
+  - (a) per-fold accuracies with mean and corrected 95% interval per method; axes labelled.
+  - (b) per-fold paired differences with mean and interval against a zero line.
+  - Legible at print size, and shows what the text says (interval spans zero).
+- Table: means, intervals, chosen-k summary, W/T/L and the Ibex/local line. Values match summary.json.
+- No identifying user paths in the delivered files. Code, results, LaTeX source and generators sit next to the PDF.
+
+## Non-blocking notes (no action required for release)
+- Figure caption labels panel (b) but not (a). The panel titles carry (a).
+- The 1/n + n_test/n_train form for r x k-fold CV is Bouckaert & Frank's (2004) application of Nadeau & Bengio.
+  Only the latter is cited.
+- Figure text is DejaVu Serif rather than Times. Cosmetic.
+
+## Conclusion
+The assembled delivery at the revisions above meets every requirement of the objective (brief R1-R14), and its
+claims are supported by the delivered evidence, which I reproduced independently. Approved for release.

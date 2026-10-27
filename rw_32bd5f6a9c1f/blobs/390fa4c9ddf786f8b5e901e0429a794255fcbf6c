@@ -1,0 +1,18 @@
+# Brief
+
+## Objective (quoted)
+"Fit a straight line y = a + b x to the 40 points in `/initial-state/inputs/0/points.csv` by ordinary least squares. Report a and b with 95% confidence intervals and the residual standard deviation, make one figure (the points, the fitted line and its 95% confidence band), and write a one-page report `report/report.md` (Markdown is enough) with the numbers, the figure and the analysis code used. This is a small task: a few minutes of work on one CPU."
+
+## Requirements / deliverables
+1. OLS fit, a and b with 95% t-based CIs (dof = n-2 = 38), residual SD (sqrt(RSS/38)).
+2. One figure: points, fitted line, 95% confidence band (for the mean line, not prediction band).
+3. `report/report.md`: one page, numbers + figure + analysis code.
+
+## Data
+`inputs/0/points.csv`, 40 rows, columns x,y, x = 0..9.75 step 0.25; sha256 5eec9bbc...a905. No related material supplied.
+
+## Established (see results/fit.json, code/fit_line.py)
+a = 1.484 [1.190, 1.778]; b = 0.8303 [0.7784, 0.8822]; residual SD 0.4682; R^2 0.965. Shapiro p=0.40, Durbin-Watson 1.91, no heteroscedasticity trend (Spearman |res| vs x p=0.28): OLS assumptions look fine. Cross-checked against scipy.linregress.
+
+## Not established
+No units/meaning of x, y given; no known generating truth.

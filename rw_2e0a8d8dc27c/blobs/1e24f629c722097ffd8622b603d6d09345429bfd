@@ -1,0 +1,35 @@
+# Growth of insertion sort and merge sort running time
+
+Pure-Python implementations of both algorithms (`code/bench.py`), random integers, n = 1000…16000, 5 repeats per n, single machine. Raw timings: `results/timings.csv`; summary: `results/summary.csv`. Figure: `figures/` (log-log plot of both curves).
+
+## Timing table (mean ± sd of 5 runs, seconds)
+
+| n | insertion | merge |
+|---|---|---|
+| 1000 | 0.0253 ± 0.0004 | 0.00219 ± 0.00002 |
+| 2000 | 0.0668 ± 0.0147 | 0.00285 ± 0.00015 |
+| 4000 | 0.2587 ± 0.0150 | 0.00632 ± 0.00043 |
+| 8000 | 1.108 ± 0.050 | 0.01446 ± 0.00120 |
+| 16000 | 4.392 ± 0.182 | 0.03039 ± 0.00322 |
+
+## Growth against expected shapes
+
+Log-log least-squares slopes of mean time against n, with 95% CI (`results/slopes.csv`):
+
+| algorithm | all n (1000–16000) | n ≥ 2000 |
+|---|---|---|
+| insertion | 1.896 [1.827, 1.965] | 2.029 [1.967, 2.090] |
+| merge | 0.992 [0.921, 1.063] | 1.142 [1.096, 1.188] |
+
+The figure `figures/loglog_runtime.png` shows both curves with n² and n log n references and these slopes in its legend.
+
+Time divided by the reference shape:
+
+- Insertion / n²: about 1.7e-8 for n ≥ 2000 (1.67, 1.62, 1.73, 1.72 ×10⁻⁸), i.e. flat. n = 1000 gives 2.5e-8, above the trend (likely fixed overhead/noise at small n; not investigated).
+- Merge / (n log₂ n): about 1.3–1.4e-7 for n ≥ 2000 (1.30, 1.32, 1.39, 1.36 ×10⁻⁷), flat; n = 1000 is 2.2e-7, again above the trend.
+
+## Conclusion
+
+Insertion sort matches quadratic growth: the slope is 2.03 (CI 1.97–2.09, containing 2) for n ≥ 2000 and the time/n² ratio is constant. The full-range slope of 1.90 (CI 1.83–1.97, excluding 2) is pulled down by the n = 1000 point, which is relatively slow. Merge sort matches n log n: its time/(n log n) ratio is constant for n ≥ 2000, and the slope of 0.99–1.14 (n ≥ 2000 CI 1.10–1.19) is what n log n gives over this narrow range (local exponent of n log n is slightly above 1), far from 2. A log-log slope alone cannot separate n log n from n over this range; the flat ratio is the stronger evidence.
+
+Caveats: one machine, pure Python, 5 repeats; the sd at n = 2000 for insertion sort is large (0.0147 s), so that point is noisy. The CIs come from the 5-point (4-point for n ≥ 2000) fits and are approximate.

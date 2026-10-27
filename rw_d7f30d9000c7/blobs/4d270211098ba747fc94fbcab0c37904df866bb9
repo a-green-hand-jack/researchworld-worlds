@@ -1,0 +1,79 @@
+# Report figure: Mauna Loa annual mean CO2, 1960–2025, with linear and quadratic fits
+
+This directory is the `figtab-repo` delivery (work assignment, `report/figures/`):
+the report's single figure and its generator. The report text (`report/report.md`)
+is `paper-repo`'s; the data and the fits are `experiment-repo`'s.
+
+## Files
+
+- `co2_mlo_fits.png` — the figure, ~300 dpi raster, the file `report.md` links.
+- `co2_mlo_fits.pdf` — the same figure as vector, kept alongside.
+- `make_figure.py` — the generator (see below for reproducing).
+- `README.md` — this contract.
+
+## Inputs and exactness
+
+- Data: `experiment-repo`'s canonical download, `data/co2_annmean_mlo.csv` with
+  `data/provenance.json` (URL, fetch time 2026-10-20T01:17:51 UTC, SHA-256
+  bdd956e8d7e05ebc3c61ac1f8f8c8cea4a505df56724fba5200b4eb1e0089b2b, last year
+  2025). The generator verifies the CSV's SHA-256 against that record, and the
+  handoff's recorded input hash, before plotting — the plotted points are the
+  committed download.
+- Fits: `experiment-repo`'s analysis handoff, `analysis/results.json`
+  (`figtab-fits-handoff-1` schema, at its main c13de75; the assembled delivery
+  binds their `data/` only, so the handoff is read from their repository).
+  66 annual means, 1960–2025, x = year − 1992.5. Linear: slope 1.686 ppm/yr.
+  Quadratic: 357.073 + 1.686x + 0.013401x². Window rates (average quadratic
+  derivative over the window's annual labels = derivative at the midpoint):
+  1960s 0.935 ppm/yr, 95% CI [0.901, 0.969]; 2016–2025 2.436 ppm/yr, 95% CI
+  [2.402, 2.470]. The figure prints these values verbatim from the handoff
+  (3-decimal display) and never recomputes them; the curves are evaluated from
+  the handoff's coefficients and match its `annual_fits.csv` predictions to
+  1e-13 ppm.
+
+## Layout constraints (paper-repo's answer on the report slot)
+
+Rendered for the report's half-page slot: 6.5 in wide x 3.2 in tall (full text
+width, low height), fonts >= 8 pt at final size (ticks 8, legend 8, annotations
+8.2); fits distinguishable in grayscale as well as color (dashed grey line vs
+solid red line vs dark markers); the PNG is the file `report.md` embeds, the PDF
+rides along. The figure carries axis labels, the legend, the two ten-year
+windows and their growth rates — no provenance text (the report body carries
+URL, fetch time, SHA-256, and the caption) and no fit-quality annotation (per
+the analysis owner's answer); the conditional nature of the conventional
+intervals and the residual serial correlation are stated in the report, not the
+figure.
+
+## What the figure shows, and why
+
+The claim it makes checkable: observed annual means rising, and rising faster
+in the last ten years than in the 1960s, with the reported numbers readable
+off the plot.
+
+- Year on the x-axis, CO2 annual mean (ppm) on the y-axis, per the field's
+  convention (NOAA GML's own annual-mean trend plots).
+- Observed 1960–2025 annual means as dark markers; the OLS line as a grey
+  dashed line (the constant-growth baseline, its average slope in the legend);
+  the OLS quadratic as a red solid line.
+- The two ten-year windows lightly shaded, each with a tangent segment at the
+  window midpoint (1964.5 / 2020.5) whose slope is the handoff's stated rate,
+  so the two rates can be seen, not just read.
+- Each rate annotated verbatim with its 95% interval, exactly as committed.
+
+Layout is asserted at render time: the generator refuses to save a figure
+whose legend or annotations would overlap the observed points or the fitted
+curves. The rendered outputs were inspected programmatically (page size, verbatim
+strings, nothing off-page, curve agreement with the handoff predictions, pixel
+size, both fit colors present); the inspection harness lives in `work/`.
+
+## Regenerating
+
+```sh
+python3 report/figures/make_figure.py \
+  --data <co2_annmean_mlo.csv> --provenance <provenance.json> \
+  --fits <results.json> --outdir report/figures
+```
+
+Requires matplotlib + numpy. Defaults point at the assembled-delivery layout;
+override `--data/--provenance/--fits` for local runs (the data and handoff are
+`experiment-repo`'s files).

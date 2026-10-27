@@ -1,0 +1,12 @@
+# Task Brief: HuTian Issue #326 Synthetic Check
+
+## Objective
+A synthetic check for HuTian issue #326 (Antigravity CLI as a system under test). It is not research: do only this, briefly.
+
+In its first turn, `paper-repo` writes `probe.md` in its repository with each command below, its exact output or error (trimmed to 20 lines), and pushes it. Run them as written; do not try other ways around a failure.
+
+1. `curl -fsSL https://antigravity.google/cli/install.sh | bash` (the official installer), then `~/.local/bin/agy --version`
+2. `AGY_LLM_GATEWAY_URL="$(ht-resource url gemini-api)" AGY_LLM_GATEWAY_API_KEY="$HT_RESOURCE_TOKEN" ~/.local/bin/agy -p 'What is 6 times 7? Answer with the number only.' --model gemini-3.8-flash --output-format json --print-timeout 180s`
+
+## Review and Acceptance Standard
+`internal-review-repo` reviews `probe.md`: it accepts when step 2's JSON has status `SUCCESS` and response `42`, and says what failed otherwise.

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Build report.pdf from the assembled delivery (TeX Live 2026).
+set -e
+cd "$(dirname "$0")"
+latexmk -pdf -interaction=nonstopmode -halt-on-error report.tex

@@ -1,0 +1,60 @@
+# Presentation package
+
+The three figures and nine-row order table render experiment-repo results from
+commit `9a9b92a22be3aad4841569ba38c064e2807700d2`, files `results/errors.csv`,
+`results/orders.csv`, and `results/fits.json`. Immutable local copies are in
+`inputs/`; `input_hashes.json` records their SHA-256 digests. No fits or new
+quadrature experiments are performed by this package.
+
+## Reproduction
+
+Install `requirements.txt`, then run from the repository root:
+
+```
+python3 presentation/render.py
+python3 presentation/generate_cover.py
+```
+
+The second command deterministically crops the retained generated source to a
+6.5:1 central strip, then resizes to 1950×300. To generate a new source through
+the world's authenticated image-generation resource, explicitly run
+`python3 presentation/generate_cover.py --generate`. This requires the resource's
+OPENAI_BASE_URL and OPENAI_API_KEY environment variables. It uses gpt-image-2,
+1536×1024, medium quality, with the exact prompt in `cover_prompt.txt`. Generation
+is nondeterministic; the retained source is the provenance for this delivery.
+`cover_request.json` records the nonsecret request. The client accepts JSON or
+server-sent event responses. Two earlier calls returned streaming responses that
+the initial JSON-only reader could not decode; neither produced a retained asset.
+The final call is decoded by the updated reader.
+
+## Encoding and use
+
+Each 960×720 figure is intended at 3.2×2.4 inches (300 dpi), with 8-point text.
+Color and marker shapes consistently identify rules. Panel count is base-2 log;
+absolute error is log-scaled. Filled points enter the supplied fit; hollow points
+are positive excluded errors. Solid colored lines only connect measurements. Gray dotted guides show nominal slopes 2, 4 and 8 for smooth functions, and 1.5 for sqrt(x), with arbitrary normalization. The dashed
+10ε cutoff is explicit in the smooth-function plots; it is below the sqrt plot's
+frame. All positive measurements remain visible, and omitted computed zeros are
+listed exactly in `report/figures/captions.md` and `.json`. Axes are dimensionless.
+The sqrt plot has a different y-range to expose its persistent algebraic decay.
+
+The table preserves analysis-owner rounding and fit ranges. Its notes distinguish
+nominal OLS intervals from stochastic uncertainty, identify why the two-point exp
+GL4 fit has no interval, and warn about mixed convergence regimes and rounded
+coincident interval endpoints. GL4 means four Gauss–Legendre nodes per panel;
+Simpson uses three nodes per panel.
+
+The cover is decorative generated art, not a plot or an encoded research result.
+It should be displayed at the top of the report, without treating its stylized
+curves as data. The report owner controls final two-page composition.
+
+## Inspection
+
+All three final PNG plots were opened and visually inspected: tick labels, units,
+legend/data separation, marker discrimination, and clipping were checked. The
+rendered Markdown and CSV table and both caption files were read against the
+source fit results; the generator asserts the included-point counts. Cover
+inspection is recorded separately in `cover_inspection.md` after generation.
+
+Venue filenames are `fig_exp.png`, `fig_runge.png`, and `fig_sqrt.png`;
+`exp.png`, `rational.png`, and `sqrt.png` are identical compatibility copies.

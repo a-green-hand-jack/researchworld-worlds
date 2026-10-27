@@ -1,0 +1,82 @@
+# Ordinary least-squares line fit to 40 points
+
+**Data.** `points.csv` (40 rows, columns x, y; x = 0 to 9.75 in steps of 0.25; SHA-256 `5eec9bbc34f6996cd84748d85e95d9114bd263ff6bafda0cfcda8aa80a5c2905`). No units or generating process were supplied.
+
+**Model.** y = a + b x fitted by ordinary least squares; n = 40, 38 degrees of freedom. Confidence intervals are t-based (t = 2.0244, 97.5th percentile of t with 38 df). The residual SD is sqrt(RSS/38). All numbers below are from `results/fit.json`, produced by `code/fit_line.py`.
+
+## Results
+
+| Quantity | Estimate | SE | 95% CI |
+|---|---|---|---|
+| a (intercept) | 1.484 | 0.145 | [1.190, 1.778] |
+| b (slope) | 0.8303 | 0.0257 | [0.7784, 0.8822] |
+| Residual SD | 0.4682 | | |
+
+R² = 0.965. The slope is clearly positive: the CI excludes 0 by a wide margin. The intercept CI excludes 0 as well.
+
+![OLS fit with 95% confidence band](../figures/fit.png)
+
+*Figure: the 40 points (black), the OLS line (blue) and the 95% pointwise confidence band for the mean line (shaded). The band is for the fitted line, not a prediction band, so it is not expected to contain most of the points. It is narrowest near the mean of x (about 4.9) and widens towards both ends.*
+
+## Checks
+
+Residual diagnostics give no sign that the OLS assumptions fail: Shapiro–Wilk normality p = 0.40, Durbin–Watson = 1.91 (no first-order autocorrelation), and no trend of |residual| with x (Spearman p = 0.28). The estimates match `scipy.stats.linregress` (a = 1.48396, b = 0.83031, SE of b = 0.02565). These tests have limited power with n = 40, so they are consistent with the assumptions rather than proof of them. Since x is on a regular grid and no units or mechanism were given, the CIs describe sampling uncertainty in this linear model only; the report makes no claim about extrapolation beyond x in [0, 9.75].
+
+## Analysis code
+
+Identical to `code/fit_line.py`; run from the repository root so that `results/` and `figures/` exist.
+
+```python
+import json, hashlib
+import numpy as np
+from scipy import stats
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+SRC = "/initial-state/inputs/0/points.csv"
+d = np.genfromtxt(SRC, delimiter=",", names=True)
+x, y = d["x"], d["y"]
+n = len(x)
+X = np.column_stack([np.ones(n), x])
+XtXi = np.linalg.inv(X.T @ X)
+beta = XtXi @ X.T @ y
+res = y - X @ beta
+dof = n - 2
+s2 = res @ res / dof
+s = np.sqrt(s2)
+cov = s2 * XtXi
+se = np.sqrt(np.diag(cov))
+t = stats.t.ppf(0.975, dof)
+ci = [[beta[i] - t * se[i], beta[i] + t * se[i]] for i in range(2)]
+
+# residual diagnostics
+sw = stats.shapiro(res)
+dw = np.sum(np.diff(res) ** 2) / np.sum(res ** 2)
+bp_r = stats.spearmanr(x, np.abs(res))
+r2 = 1 - res @ res / np.sum((y - y.mean()) ** 2)
+ref = stats.linregress(x, y)  # cross-check
+
+out = {
+    "source": SRC, "sha256": hashlib.sha256(open(SRC, "rb").read()).hexdigest(),
+    "n": n, "dof": dof, "t_crit_975": t,
+    "a": beta[0], "a_se": se[0], "a_ci95": ci[0],
+    "b": beta[1], "b_se": se[1], "b_ci95": ci[1],
+    "resid_sd": s, "r2": r2,
+    "shapiro_p": sw.pvalue, "durbin_watson": dw,
+    "spearman_absres_vs_x_p": bp_r.pvalue,
+    "crosscheck_scipy": {"a": ref.intercept, "b": ref.slope, "b_se": ref.stderr},
+}
+json.dump(out, open("results/fit.json", "w"), indent=2, default=float)
+
+xg = np.linspace(x.min(), x.max(), 200)
+Xg = np.column_stack([np.ones_like(xg), xg])
+fit = Xg @ beta
+half = t * np.sqrt(np.einsum("ij,jk,ik->i", Xg, cov, Xg))
+fig, ax = plt.subplots(figsize=(6, 4), dpi=150)
+ax.fill_between(xg, fit - half, fit + half, color="#4C78A8", alpha=0.3, label="95% CI of fitted line")
+ax.plot(xg, fit, color="#4C78A8", lw=2, label=f"OLS fit: y = {beta[0]:.3f} + {beta[1]:.3f} x")
+ax.scatter(x, y, s=18, color="k", zorder=3, label=f"data (n={n})")
+ax.set_xlabel("x"); ax.set_ylabel("y"); ax.legend(frameon=False, fontsize=8)
+fig.tight_layout(); fig.savefig("figures/fit.png")
+```

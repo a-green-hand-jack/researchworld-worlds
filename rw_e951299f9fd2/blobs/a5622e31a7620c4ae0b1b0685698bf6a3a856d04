@@ -1,0 +1,11 @@
+# Analysis handoff
+
+The required experiment is complete. In results/summary.csv, mean absolute errors are 0.04427111843077518, 0.013161469282041382 and 0.004538481569224828 at N=1,000, 10,000 and 100,000, respectively. Full 150-run counts, pi estimates and absolute errors are in results/runs.csv. Source and interpretation are in analysis/estimate_pi.py and analysis/README.md; measured environment and source digest are in results/provenance.json.
+
+The unweighted natural-log fit with an intercept gives slope **-0.4946049588386314** and intercept 0.27446426742460517. This is close to the expected **-0.5**, differing by +0.0053950411613685745. The observed errors decrease approximately as N^(-1/2) across this range; this finite three-point experiment is consistent with the theoretical rate, not proof of an asymptotic law.
+
+Diagnostic evidence in results/fit.json: adjacent-decade slopes are -0.5268161192966371 and -0.46239379838062566. A 10,000-replicate paired run-index bootstrap gives an approximate percentile 95% interval [-0.5621338034098582, -0.4232016801720395] for the slope; this includes -0.5. This optional diagnostic does not assume independence across N. Its role is to document finite-run variation, and it need not expand the requested short report.
+
+Checks passed: exactly 150 rows, 50 distinct seeds 2026–2075 at each N, estimates reconstructed from inside counts, all absolute errors against math.pi, aggregates recomputed with math.fsum, OLS slope checked against the endpoint formula (valid because these log N values are equally spaced), and source SHA-256 matched against run provenance. The 100,000-point pilot took 0.0128 seconds, and full analysis including bootstrap took 0.1985 seconds on the tracked resource. No missing inputs or failed evaluation requirements remain in the analysis package.
+
+Settlement: all positions accepted the published functional split. Only report/report.md is assembled as required; table source, analysis source and independent-review evidence remain working material in their owning repositories.

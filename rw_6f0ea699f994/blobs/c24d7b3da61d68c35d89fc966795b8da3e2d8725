@@ -1,0 +1,42 @@
+# Methods and interpretation for the report and figure
+
+## Provenance and reproduction
+
+The only input is the analytic problem in Research objective #1, quoted in `brief.md`: f(x)=exp(x)sin(3x), x in [0,2], n=2^k for k=2,...,12. Run `python3 analysis/compute.py` from the repository root. This produces `results/errors.csv`, `results/fits.json`, and `results/validation.json`. The completed tracked run is job-188816baf1 (exit 0). Package versions and measured timings are in validation.json. No measured datasets or external literature are used.
+
+## Exact integral and quadrature
+
+An antiderivative is F(x)=exp(x)[sin(3x)-3cos(3x)]/10 (differentiation gives f). Thus I=F(2)-F(0)=[exp(2)(sin(6)-3cos(6))+3]/10 = -2.03488731288601525349264692566805101378089043574235... . The exact expression and 80-digit evaluation are recorded in validation.json.
+
+With h=2/n and y_j=f(jh), T_n=h[(y_0+y_n)/2+sum_{j=1}^{n-1}y_j] and S_n=(h/3)[y_0+y_n+4 sum_{j odd}y_j+2 sum_{j even, interior}y_j]. errors.csv contains all eleven absolute errors |T_n-I| and |S_n-I|, plus signed quadrature estimates. Its column names are n,trapezoid_error,simpson_error,trapezoid_integral,simpson_integral. Node-weight sums and I use 60 decimal digits; CSV entries retain 45 significant digits.
+
+## Fits and 95% intervals
+
+For each rule separately, retain only E_n>1e-13 and regress y=ln(E_n) on x=ln(n) with an intercept, using unweighted ordinary least squares in binary64. The plotted fit is exp(intercept)*n**slope. With m retained points, Sxx=sum((x-xbar)^2), s²=sum(residual²)/(m-2), SE=sqrt(s²/Sxx), interval=slope +/- t_(0.975,m-2)*SE. fits.json supplies exact retained n lists, coefficients, SEs, degrees of freedom, t quantiles, residuals and R². The intervals describe the assumed linear regression model; these deterministic errors are neither independent random measurements nor exactly a power law at coarse n, so the intervals are not probabilistic bounds on the integration error or on the true asymptotic order.
+
+| Rule | Retained powers of two | Slope | 95% regression interval |
+|---|---|---:|---|
+| Trapezoidal | 4 through 4096 (11 points, 9 df) | -2.0010802592053376 | [-2.0020779069904426, -2.0000826114202326] |
+| Simpson | 4 through 2048 (10 points, 8 df) | -3.8935765130456246 | [-4.017580581710217, -3.769572444381033] |
+
+Simpson's n=4096 error is 1.7692665975818344e-14: display it, but exclude it from the fit. Its n=2048 error is 2.8308234344973923e-13 and is included. All trapezoidal points exceed the threshold.
+
+## Claims, diagnostics and comparison with theory
+
+Both errors decrease at every refinement. The required global trapezoidal fit is close to -2, but its interval narrowly excludes -2; do not claim both expected slopes lie inside their intervals. Simpson's global slope is less negative than -4 and its interval includes -4. Coarse-grid curvature matters, especially for Simpson (local order 2.37849 on n=4 to 8). The saved log residuals show systematic departures from a straight line, so the intervals must be qualified as model-based descriptive summaries.
+
+Sensitivity fits use subsets of the eligible n, without replacing the prescribed fits. For n>=64, slopes are -2.0000102975641902 (trapezoidal) and -3.9996402472827715 (Simpson). For n>=256, they are -2.0000011286895822 and -3.9999573557261248. Local orders log2(E_n/E_2n) approach 2 and 4; on the final refinement they are 2.000000059405823 and 3.99999840909797. These results support convergence toward the expected asymptotic orders despite finite-grid global-fit deviations.
+
+For smooth f, the Euler–Maclaurin leading errors are T_n-I=h²[f'(2)-f'(0)]/12+O(h⁴), and S_n-I=h⁴[f'''(2)-f'''(0)]/180+O(h⁶). Here f'=exp(x)(sin(3x)+3cos(3x)) and f'''=exp(x)(-26sin(3x)-18cos(3x)); both endpoint differences are nonzero. Since h=2/n, these give exponents -2 and -4. This is an analytic explanation, not a replacement for the measured fits.
+
+## Numerical checks
+
+Repeating the full node-weight evaluation at 90 digits changes any error by at most 6.0187986e-48 in relative terms. An independent geometric-series evaluation for exp((1+3i)x), taking the imaginary part and using S_n=(4T_n-T_(n/2))/3, agrees with 90-digit node-weight estimates to at most 9.4352776e-88 absolute. Both checks assert tolerances in compute.py and passed.
+
+An IEEE binary64 sensitivity calculation uses math.fsum. It selects the same fit points and gives slopes -2.001080259168367 and -3.8936379469891125. Relative error discrepancies peak at about 5.46e-10 for trapezoidal and 0.00401 for Simpson (the latter at n=4096). Even the smallest Simpson error is well resolved in the primary high-precision computation; there is no observed flattening in those primary errors. Do not claim a measured round-off plateau.
+
+## Presentation handoff
+
+Plot n against absolute error on log-log axes. Show all eleven points per rule, each fitted power law only across its retained domain, and the 1e-13 threshold. Expected-slope guides may be normalized at a fine-grid point but should be labeled as guides, not additional fits. Natural logs were used for fitting; log-base choice does not change slopes. Use enough interval digits to preserve the trapezoidal upper endpoint's exclusion of -2 (for example six decimal places).
+
+The final figure is owned by figtab-repo at report/figures/error_scaling.png; the assignment already covers report/figures/. Table formatting is working material figtab supplies to paper for embedding in report/report.md, the required final report. All quantitative claims above are analysis supplied to those owners, not a final report or final figure.

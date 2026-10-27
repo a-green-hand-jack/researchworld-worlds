@@ -1,0 +1,45 @@
+# report/figures — convergence figures for the quadrature study
+
+- `exp_neg_x2.png` — `exp(-x^2)` on `[0,1]`: absolute error vs number of panels
+  `n = 2^k` (k = 1..10) for the composite trapezoid rule, the composite Simpson
+  rule and 4-node Gauss-Legendre panels, with the fitted convergence order
+  annotated on each curve and the 1e-14 fit cutoff marked.
+- `x_cube_root.png` — the same for `x^(1/3)` on `[0,1]`.
+
+Filenames and size (1800x1100 px PNG, 9x5.5 in at 200 dpi) match what
+`report/report.md` links (`figures/exp_neg_x2.png`, `figures/x_cube_root.png`).
+
+## Encoding
+
+- Log-log axes; x ticks at n = 2, 4, ..., 1024; y in decades of absolute error
+  `|I_n - I_ref|`.
+- One color/marker per rule: trapezoid blue circles, Simpson orange squares,
+  Gauss-Legendre-4 green triangles; the legend names the rules as the plan
+  defines them.
+- **Filled markers** are the points that entered the fitted order (error >
+  1e-14); **open markers with a dashed connector** are the excluded points
+  (error at or below the cutoff, where float64 roundoff dominates).
+- The thin translucent band along each fitted segment is the least-squares line
+  of ln(error) on ln(n); the annotated **order** is minus its slope, taken
+  verbatim from the `order` column of `results/fits.csv` (not recomputed).
+  The Gauss-Legendre 4 curve on the smooth function is annotated
+  "2 points" because only n = 2, 4 lie above the cutoff.
+- The dashed gray horizontal line is the fit cutoff `1e-14`.
+
+## Provenance and reproduction
+
+- `data/` is a snapshot of experiment-repo `results/errors.csv`,
+  `results/fits.csv`, `results/reference.csv` and `results/PROVENANCE.md` at
+  commit `a56ccf8919b86dee2bf361d25cef6215d7033384` (final sweep job
+  `job-325ee65149`). Every plotted point is a row of `errors.csv`; every
+  annotated order is the `order` column of `fits.csv`.
+- `make_figures.py` regenerates both PNGs from `data/` (python3 with
+  matplotlib 3.11.2 and numpy 2.4.6). Before rendering it re-fits each series
+  over the fit points recorded in `fits.csv` and exits nonzero unless the
+  refitted orders reproduce the committed ones; it also fails on label/legend
+  collisions or text outside the canvas. Results are logged in
+  `render_checks.txt`.
+- Rendering was additionally verified pixel-wise: 1800x1100 px, marker
+  positions recomputed from the CSV values, cutoff line, order labels and
+  legends all checked present at their expected pixel locations
+  (figtab-repo `notes/inspect_pixels.py`).

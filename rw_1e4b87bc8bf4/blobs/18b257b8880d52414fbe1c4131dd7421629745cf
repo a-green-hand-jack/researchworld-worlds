@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""A4: are the local and the Ibex runs identical? (plan.md D6)
+
+L1 raw:     per-fold predicted labels (both methods), selected k and per-fold accuracies
+            exactly equal; sha256 of a canonical serialisation of each run's raw results.
+L2 printed: every result macro of make_numbers.result_macros equal as printed.
+Diagnostics: max |difference| of per-fold accuracies, of all summary numbers (full float
+            precision) and of LR predicted probabilities; byte equality of each output CSV.
+Usage: compare_runs.py RUN_A RUN_B SUMMARY_A SUMMARY_B --out identity.json
+"""
+import argparse
+import hashlib
+import json
+import os
+import sys
+
+import numpy as np
+import pandas as pd
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from make_numbers import result_macros  # noqa: E402
+
+RAW_COLS = {"folds.csv": ["repeat", "fold", "acc_lr", "acc_knn", "k_selected", "correct_lr",
+                          "correct_knn"],
+            "predictions.csv": ["repeat", "fold", "test_index", "y_true", "pred_lr", "pred_knn"]}
+
+
+def sha_file(p):
+    with open(p, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
+def canonical_sha(df, cols):
+    return hashlib.sha256(df[cols].to_csv(index=False, float_format="%.17g").encode()).hexdigest()
+
+
+def flat_numbers(d, prefix=""):
+    out = {}
+    if isinstance(d, dict):
+        for k, v in d.items():
+            out.update(flat_numbers(v, f"{prefix}{k}."))
+    elif isinstance(d, list):
+        for i, v in enumerate(d):
+            out.update(flat_numbers(v, f"{prefix}{i}."))
+    elif isinstance(d, (int, float)) and not isinstance(d, bool):
+        out[prefix[:-1]] = float(d)
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("run_a")
+    ap.add_argument("run_b")
+    ap.add_argument("summary_a")
+    ap.add_argument("summary_b")
+    ap.add_argument("--out", required=True)
+    args = ap.parse_args()
+    res = dict(run_a=os.path.basename(os.path.normpath(args.run_a)),
+               run_b=os.path.basename(os.path.normpath(args.run_b)), files={}, canonical_sha256={})
+    l1 = True
+    tabs = {}
+    for name in ["folds.csv", "predictions.csv", "inner_scores.csv"]:
+        pa, pb = os.path.join(args.run_a, name), os.path.join(args.run_b, name)
+        a, b = pd.read_csv(pa), pd.read_csv(pb)
+        tabs[name] = (a, b)
+        res["files"][name] = dict(sha256_a=sha_file(pa), sha256_b=sha_file(pb),
+                                  byte_identical=sha_file(pa) == sha_file(pb),
+                                  shape_a=list(a.shape), shape_b=list(b.shape))
+        if name in RAW_COLS:
+            cols = RAW_COLS[name]
+            eq = a.shape == b.shape and all(np.array_equal(a[c].to_numpy(), b[c].to_numpy())
+                                            for c in cols)
+            res["files"][name]["raw_columns_equal"] = bool(eq)
+            res["canonical_sha256"][name] = dict(a=canonical_sha(a, cols), b=canonical_sha(b, cols),
+                                                 columns=cols)
+            l1 &= bool(eq)
+    fa, fb = tabs["folds.csv"]
+    pa_, pb_ = tabs["predictions.csv"]
+    prob = [f"prob_lr_{i}" for i in range(3)]
+    with open(args.summary_a) as fh:
+        sa = json.load(fh)
+    with open(args.summary_b) as fh:
+        sb = json.load(fh)
+    na, nb = flat_numbers(sa), flat_numbers(sb)
+    ma, mb = result_macros(sa), result_macros(sb)
+    l2_diff = {k: (ma[k], mb.get(k)) for k in ma if ma[k] != mb.get(k)}
+    res["diagnostics"] = dict(
+        max_abs_diff_fold_accuracy=float(max(np.abs(fa.acc_lr - fb.acc_lr).max(),
+                                             np.abs(fa.acc_knn - fb.acc_knn).max())),
+        n_folds_k_differs=int((fa.k_selected != fb.k_selected).sum()),
+        n_predictions_differ=int(((pa_.pred_lr != pb_.pred_lr) | (pa_.pred_knn != pb_.pred_knn)).sum()),
+        max_abs_diff_lr_probability=float(np.abs(pa_[prob].to_numpy() - pb_[prob].to_numpy()).max()),
+        max_abs_diff_inner_scores=float(np.abs(tabs["inner_scores.csv"][0].inner_mean_acc
+                                               - tabs["inner_scores.csv"][1].inner_mean_acc).max()),
+        max_abs_diff_summary=float(max(abs(na[k] - nb[k]) for k in na)),
+        summary_keys_compared=len(na))
+    res["L1_raw_identical"] = bool(l1)
+    res["L2_printed_identical"] = not l2_diff
+    res["L2_macros_compared"] = len(ma)
+    res["L2_differences"] = l2_diff
+    res["identical"] = bool(l1 and not l2_diff)
+    for side, d in [("a", args.run_a), ("b", args.run_b)]:
+        with open(os.path.join(d, "run_info.json")) as fh:
+            info = json.load(fh)
+        res[f"info_{side}"] = {k: info.get(k) for k in
+                               ["hostname", "slurm_job_id", "slurmd_nodename", "cpu_model",
+                                "python", "numpy", "scipy", "sklearn", "pandas", "joblib",
+                                "threadpoolctl", "platform", "data_sha256", "code_sha256",
+                                "thread_env", "wall_seconds", "started_utc"]}
+        res[f"info_{side}"]["blas"] = [(x["internal_api"], x["version"], x["architecture"],
+                                        x["num_threads"]) for x in info["blas"]]
+    res["same_code"] = res["info_a"]["code_sha256"] == res["info_b"]["code_sha256"]
+    res["same_data"] = res["info_a"]["data_sha256"] == res["info_b"]["data_sha256"]
+    with open(args.out, "w") as fh:
+        json.dump(res, fh, indent=1)
+    print(json.dumps({k: res[k] for k in ["identical", "L1_raw_identical", "L2_printed_identical",
+                                          "same_code", "same_data", "diagnostics"]}, indent=1))
+
+
+if __name__ == "__main__":
+    main()

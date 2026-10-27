@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""Intervals for per-method mean accuracy and the paired difference (LR - kNN).
+
+Input: folds.csv from run_cv.py (J = 50 outer folds = 10 repetitions x 5 folds).
+
+Primary interval: corrected repeated-CV t interval (Nadeau & Bengio, 2003; the
+"corrected repeated k-fold cv test" of Bouckaert & Frank, 2004):
+    mean +- t_{0.975, J-1} * sqrt((1/J + n_test/n_train) * s^2)
+where s^2 is the sample variance of the J fold values. The correction term
+n_test/n_train accounts for the overlap of training sets across folds, which
+makes the naive interval too narrow.
+Robustness checks reported alongside: naive t over the J folds (known to be
+anti-conservative), t over the 10 repetition means (df = 9), and a percentile
+bootstrap over repetitions (10,000 resamples of the 10 repetition means).
+"""
+import argparse
+import json
+
+import numpy as np
+import pandas as pd
+from scipy import stats
+
+
+def corrected_t(x, n_train, n_test, level=0.95):
+    x = np.asarray(x, float)
+    J = len(x)
+    m, v = x.mean(), x.var(ddof=1)
+    se = np.sqrt((1.0 / J + n_test / n_train) * v)
+    t = stats.t.ppf(0.5 + level / 2, J - 1)
+    p = float(2 * stats.t.sf(abs(m) / se, J - 1)) if se > 0 else float("nan")
+    return dict(mean=m, lo=m - t * se, hi=m + t * se, se=se, df=J - 1, p_two_sided_vs_0=p)
+
+
+def naive_t(x, level=0.95):
+    x = np.asarray(x, float)
+    J = len(x)
+    m, se = x.mean(), x.std(ddof=1) / np.sqrt(J)
+    t = stats.t.ppf(0.5 + level / 2, J - 1)
+    p = float(2 * stats.t.sf(abs(m) / se, J - 1)) if se > 0 else float("nan")
+    return dict(mean=m, lo=m - t * se, hi=m + t * se, se=se, df=J - 1, p_two_sided_vs_0=p)
+
+
+def boot_reps(rep_means, n_boot=10000, seed=0, level=0.95):
+    rng = np.random.default_rng(seed)
+    r = np.asarray(rep_means, float)
+    bs = rng.choice(r, size=(n_boot, len(r)), replace=True).mean(axis=1)
+    a = (1 - level) / 2
+    return dict(mean=r.mean(), lo=float(np.quantile(bs, a)), hi=float(np.quantile(bs, 1 - a)),
+                n_boot=n_boot)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("folds")
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--long", help="also write a long-format per-fold CSV (one row per fold x method)")
+    args = ap.parse_args()
+    df = pd.read_csv(args.folds)
+    n_train, n_test = int(df.n_train.iloc[0]), int(df.n_test.iloc[0])
+    assert (df.n_train == n_train).all() and (df.n_test == n_test).all()
+    res = dict(n_folds=len(df), n_repetitions=int(df["repeat"].nunique()),
+               n_train=n_train, n_test=n_test, level=0.95, quantities={})
+    for col, name in [("acc_lr", "LR"), ("acc_knn", "kNN"), ("diff_lr_minus_knn", "LR_minus_kNN")]:
+        rep_means = df.groupby("repeat")[col].mean().to_numpy()
+        q = dict(corrected_t=corrected_t(df[col], n_train, n_test),
+                 corrected_t_covers_0=None,
+                 naive_t=naive_t(df[col]),
+                 repetition_t=naive_t(rep_means),
+                 repetition_bootstrap=boot_reps(rep_means),
+                 fold_sd=float(df[col].std(ddof=1)),
+                 repetition_means=rep_means.tolist())
+        c = q["corrected_t"]
+        q["corrected_t_covers_0"] = bool(c["lo"] <= 0 <= c["hi"])
+        res["quantities"][name] = q
+    d = df.diff_lr_minus_knn
+    res["paired_fold_counts"] = dict(lr_better=int((d > 0).sum()), tie=int((d == 0).sum()),
+                                     knn_better=int((d < 0).sum()))
+    ks = df.k_selected
+    res["k_selected"] = dict(counts={int(k): int(c) for k, c in ks.value_counts().sort_index().items()},
+                             median=float(ks.median()), min=int(ks.min()), max=int(ks.max()),
+                             mode=int(ks.mode().min()), n_distinct=int(ks.nunique()))
+    if args.long:
+        long = pd.concat([pd.DataFrame(dict(repeat=df["repeat"], fold=df.fold, method=m,
+                                            accuracy=df[c], correct=df[cc], n_test=df.n_test,
+                                            k_selected=df.k_selected if m == "kNN" else pd.NA))
+                          for m, c, cc in [("LR", "acc_lr", "correct_lr"),
+                                           ("kNN", "acc_knn", "correct_knn")]])
+        long.to_csv(args.long, index=False, float_format="%.17g")
+    with open(args.out, "w") as f:
+        json.dump(res, f, indent=1, default=float)
+
+    def fmt(q):
+        return f"{q['mean']:.4f} [{q['lo']:.4f}, {q['hi']:.4f}]"
+    for name, q in res["quantities"].items():
+        print(f"{name:13s} corrected {fmt(q['corrected_t'])}  naive {fmt(q['naive_t'])}  "
+              f"rep-t {fmt(q['repetition_t'])}  rep-boot {fmt(q['repetition_bootstrap'])}")
+    print("p (corrected, diff):", res["quantities"]["LR_minus_kNN"]["corrected_t"]["p_two_sided_vs_0"])
+    print("paired folds:", res["paired_fold_counts"], "k:", res["k_selected"])
+
+
+if __name__ == "__main__":
+    main()

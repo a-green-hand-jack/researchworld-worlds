@@ -1,0 +1,62 @@
+# Provenance: report/figures/
+
+## What this directory holds
+
+- `error_scaling.svg` — primary delivered figure: log-log mean absolute error
+  vs N for the Monte Carlo π estimate, with the OLS fitted line, both 95%
+  intervals, the −1/2 asymptotic benchmark, and the run-to-run dispersion band.
+- `error_scaling.png` — raster copy (200 dpi) of the same figure for embedding
+  where SVG is unsupported.
+- `error_table.md` — table material and the figure caption, formatted for
+  direct inclusion in `report/report.md`.
+- `input_summary.json` — the exact analysis input used, a verbatim copy of
+  `results/summary.json` from experiment-repo commit
+  `7d7d6432f3aa8b561323880db811d3910c1b78d1`
+  (sha256 `7e8d3d15d2a95d75a3942b69fc98c64dd2647c56b9a067489a475ca211c6bd3d`,
+  byte-identical to the source).
+- `make_figure.py` — the generator; rerunning it on `input_summary.json`
+  reproduces `error_scaling.svg`, `error_scaling.png` and `error_table.md`.
+
+## Data chain (all upstream values owned by experiment-repo)
+
+- Simulation: `code/simulate.py` at commit
+  `463dba3745d8731efe508a5d73a821f6aa0646a4`; raw data
+  `results/full/runs.csv` (1,000 rows; sha256
+  `0061120c28890572abf8779956c4d14f9b731775474b93f3e0b6dcc027fdf79c`
+  as recorded in the summary's provenance block).
+- Analysis: `code/analyze.py` at commit
+  `03cbc342ca6926a8a65cfc43a0353122de8b7763`; produced
+  `results/summary.json`, `results/diagnostics.json`,
+  `results/bootstrap_slopes.csv`, `methods.md` at commit `7d7d6432f3aa`.
+- Figure/table generation: this repository, `make_figure.py` (in this
+  directory), run on the copy of `results/summary.json` above.
+
+## Reproduction
+
+From the root of this repository:
+
+```
+python3 report/figures/make_figure.py report/figures/input_summary.json
+```
+
+Writes `error_scaling.svg`, `error_scaling.png` and `error_table.md` into
+`report/figures/` (the script's own directory).
+
+Environment used for the delivered files: Python 3.11.2, matplotlib 3.11.2
+(Agg backend, `svg.fonttype = "none"` so the SVG text stays selectable text).
+Upstream numbers were produced with NumPy 2.4.6 / SciPy 1.17.1
+(PCG64 bit generator, seeds 2026 + zero-based run index 0–199).
+
+## No-recomputation statement
+
+Every number plotted or tabulated here is copied from `input_summary.json`
+(experiment-repo's committed `results/summary.json`); no statistic is
+recomputed by this repository. The fitted line is the committed OLS
+intercept/slope evaluated at the five committed sample sizes (a power law is
+exactly straight on log-log axes, so this renders the committed fit, not a
+new estimate); the benchmark curve is the committed analytic benchmark
+values; the shaded band is the committed 2.5/97.5 percentiles of the 200 run
+errors (a run-to-run dispersion summary, not a confidence interval for the
+mean). Displayed values are rounded forms of the committed full-precision
+values (4 significant digits for the table, 3–4 in annotations); the
+full-precision sources are in `input_summary.json`.

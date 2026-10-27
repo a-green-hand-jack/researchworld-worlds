@@ -1,0 +1,30 @@
+"""F2: measured vs predicted rank for all E1 runs (results/e1/e1_runs.csv): race criterion vs the two static criteria."""
+import os, sys, collections
+import numpy as np
+sys.path.insert(0, os.path.dirname(__file__))
+import figstyle as fs, common
+import matplotlib.pyplot as plt
+
+PANELS = [("rank_pred", "(a) race criterion"), ("rank_window", "(b) static initial window"), ("rank_bound", "(c) static fixed-point bound")]
+
+def make(outdir):
+    fs.setup()
+    rows, path = common.load_e1()
+    fig, axs = plt.subplots(1, 3, figsize=(fs.TEXTWIDTH, 2.05), sharex=True, sharey=True, constrained_layout=True)
+    n = len(rows)
+    for ax, (key, title) in zip(axs, PANELS):
+        cnt = collections.Counter((int(r[key]), int(r["rank_meas"])) for r in rows)
+        xs, ys = zip(*cnt.keys()); cs = np.array(list(cnt.values()))
+        ax.plot([0, 32], [0, 32], color=fs.COL["grey"], lw=0.7, zorder=0)
+        sc = ax.scatter(xs, ys, s=4 + 3.5 * np.sqrt(cs), c=cs, cmap="viridis_r", norm=plt.matplotlib.colors.LogNorm(1, 1500),
+                        edgecolor="k", linewidth=0.2, zorder=2)
+        err = np.array([r["rank_meas"] - r[key] for r in rows])
+        ax.set_title(title, fontsize=7.5)
+        ax.text(0.04, 0.96, f"exact {np.mean(err == 0):.2f}\nMAE {np.mean(np.abs(err)):.2f}", transform=ax.transAxes,
+                va="top", fontsize=6.5)
+        ax.set_xlabel("predicted rank"); ax.set_xlim(-1, 33); ax.set_ylim(-1, 33)
+    axs[0].set_ylabel("measured rank")
+    cb = fig.colorbar(sc, ax=axs, shrink=0.85, pad=0.01, aspect=25); cb.set_label("runs", fontsize=7); cb.ax.tick_params(labelsize=6)
+    fs.save(fig, "fig2_e1_pred_vs_meas", outdir)
+    common.record_inputs(outdir, "fig2_e1_pred_vs_meas", [path])
+    return n

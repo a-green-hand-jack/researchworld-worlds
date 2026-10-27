@@ -1,0 +1,70 @@
+"""Check and summarise the pilot's Monte Carlo estimate of pi.
+
+Reads the pilot's own output (results/pilot.json, written by the unmodified
+/initial-state/inputs/0/pilot.py), recomputes its estimate and Wald 95% interval
+from the inside count, adds a Wilson score interval as a robustness check, compares
+with pi, and writes results/summary.json and results/trace.csv (the running estimate,
+with the expected +/-1.96 sigma(n) envelope around pi, for the figure).
+
+usage: python3 analysis/analyze.py [results/pilot.json] [results/]
+"""
+import csv
+import json
+import math
+import sys
+from pathlib import Path
+
+src = Path(sys.argv[1] if len(sys.argv) > 1 else 'results/pilot.json')
+outdir = Path(sys.argv[2] if len(sys.argv) > 2 else 'results')
+Z = 1.959963984540054  # two-sided 95% normal quantile; the pilot script uses 1.96
+
+d = json.loads(src.read_text())
+n = d['samples']
+k = round(d['estimate'] * n / 4)  # estimate = 4k/n exactly, so k is recovered exactly
+assert 4 * k / n == d['estimate'], 'inside count not recoverable'
+p = k / n
+est = 4 * p
+
+se = 4 * math.sqrt(p * (1 - p) / n)
+wald = [est - 1.96 * se, est + 1.96 * se]  # the script's interval
+assert all(math.isclose(a, b, rel_tol=0, abs_tol=1e-15) for a, b in zip(wald, d['ci95'])), (wald, d['ci95'])
+
+# Wilson score interval for p, scaled by 4
+den = 1 + Z * Z / n
+centre = (p + Z * Z / (2 * n)) / den
+half = Z * math.sqrt(p * (1 - p) / n + Z * Z / (4 * n * n)) / den
+wilson = [4 * (centre - half), 4 * (centre + half)]
+
+err = est - math.pi
+se_true = 4 * math.sqrt((math.pi / 4) * (1 - math.pi / 4) / n)  # sd of the estimator at the true p
+summary = {
+    'source': str(src),
+    'samples': n,
+    'inside': k,
+    'seconds': d['seconds'],
+    'samples_per_second': round(n / d['seconds']),
+    'estimate': est,
+    'standard_error': se,
+    'ci95_wald': wald,
+    'ci95_half_width': 1.96 * se,
+    'ci95_wilson': wilson,
+    'pi': math.pi,
+    'error': err,
+    'relative_error': err / math.pi,
+    'error_in_standard_errors': err / se_true,
+    'pi_in_ci95_wald': wald[0] <= math.pi <= wald[1],
+    'pi_in_ci95_wilson': wilson[0] <= math.pi <= wilson[1],
+    'wald_wilson_max_endpoint_difference': max(abs(a - b) for a, b in zip(wald, wilson)),
+    'trace_points': len(d['trace']),
+}
+outdir.mkdir(parents=True, exist_ok=True)
+(outdir / 'summary.json').write_text(json.dumps(summary, indent=1) + '\n')
+
+with open(outdir / 'trace.csv', 'w', newline='') as f:
+    w = csv.writer(f)
+    w.writerow(['elapsed_s', 'samples', 'estimate', 'error', 'pi_minus_1.96sigma', 'pi_plus_1.96sigma'])
+    for t, m, e in d['trace']:
+        s = 4 * math.sqrt((math.pi / 4) * (1 - math.pi / 4) / m)
+        w.writerow([t, m, repr(e), repr(e - math.pi), repr(math.pi - 1.96 * s), repr(math.pi + 1.96 * s)])
+
+print(json.dumps(summary, indent=1))

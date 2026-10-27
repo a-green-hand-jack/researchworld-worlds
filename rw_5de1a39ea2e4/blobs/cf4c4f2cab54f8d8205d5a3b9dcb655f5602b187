@@ -1,0 +1,59 @@
+"""Render committed analysis inputs; never refit rounded CSV errors."""
+import csv
+from pathlib import Path
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.ticker import LogLocator, LogFormatterMathtext
+ROOT=Path(__file__).resolve().parents[1]
+rows=list(csv.DictReader((ROOT/'presentation/inputs/errors.csv').open()))
+fits=list(csv.DictReader((ROOT/'presentation/inputs/fits.csv').open()))
+assert len(rows)==108 and len(fits)==9
+rules=['trapezoid','Simpson','Gauss-Legendre (4 nodes)']
+colors=['#0072B2','#D55E00','#009E73']; markers=['o','s','D']
+labels=['Trapezoid','Simpson','Gauss–Legendre (4)']
+plt.rcParams.update({'font.size':9,'axes.titlesize':10,'axes.labelsize':9,'legend.fontsize':8,'font.family':'DejaVu Sans'})
+for func,slug,title in [('exp(x)','exp',r'$f(x)=e^x$'),('1/(1+25x^2)','runge',r'$f(x)=1/(1+25x^2)$'),('sqrt(x)','sqrt',r'$f(x)=\sqrt{x}$')]:
+    fig,ax=plt.subplots(figsize=(6.5,2.6))
+    for rule,col,mark,label in zip(rules,colors,markers,labels):
+        data=[r for r in rows if r['function']==func and r['rule']==rule]
+        n=np.array([int(r['n']) for r in data]); e=np.array([float(r['abs_error']) for r in data])
+        good=e>1e-15; pos=(e>0)&~good; zero=e==0
+        expected=next(int(r['n_points']) for r in fits if r['function']==func and r['rule']==rule)
+        assert good.sum()==expected
+        ax.plot(n[good],e[good],color=col,marker=mark,ms=3.8,lw=1.2,label=label)
+        ax.plot(n[pos],e[pos],ls='none',marker=mark,ms=4,color=col,mfc='white',mew=1)
+        ax.plot(n[zero]*{'trapezoid':.97,'Simpson':1.,'Gauss-Legendre (4 nodes)':1.03}[rule],np.full(zero.sum(),1e-18),ls='none',marker='v',ms=4.5,color=col,mfc='none',mew=1)
+    ax.set_xscale('log',base=2); ax.set_yscale('log'); ax.set_xlim(1.7,4900)
+    ax.set_xticks([2,8,32,128,512,2048]); ax.set_xticklabels(['2','8','32','128','512','2048'])
+    ax.set_xlabel('Equal panels, n'); ax.set_ylabel('Absolute integral error')
+    ax.set_title(title,loc='left',pad=6)
+    ax.grid(axis='both',color='#dddddd',lw=.5,zorder=0)
+    if slug!='sqrt':
+        ax.set_ylim(4e-19,.3)
+        ax.set_yticks([1e-2,1e-6,1e-10,1e-14,1e-18])
+        ax.axhspan(4e-19,1e-15,color='#eeeeee',zorder=-1)
+        ax.axhline(1e-15,color='#777777',lw=.6,ls=':')
+        for p,y in [(2,.07),(4,2e-5),(8,5e-9)]:
+            x=np.array([128,512.]); ax.plot(x,y*(x/128)**(-p),'--',color='#555555',lw=.9)
+            ax.text(280,y/1.6,rf'$n^{{-{p}}}$',fontsize=8,color='#444444',va='top')
+        ax.text(2.1,2e-17,'Hollow: excluded; ▽: computed zero',fontsize=7,color='#555555')
+    else:
+        ax.set_ylim(1e-9,.2); ax.set_yticks([1e-2,1e-4,1e-6,1e-8])
+        x=np.array([16,512.]); ax.plot(x,.04*(x/16)**(-1.5),'--',color='#555555',lw=.9)
+        ax.text(70,.014,r'$n^{-3/2}$',fontsize=9,color='#444444')
+    ax.yaxis.set_major_formatter(LogFormatterMathtext())
+    ax.legend(loc='upper right',frameon=False,handlelength=1.6,borderaxespad=.2)
+    fig.subplots_adjust(left=.105,right=.985,bottom=.22,top=.86)
+    fig.savefig(ROOT/f'report/figures/{slug}.png',dpi=220)
+    plt.close(fig)
+lines=['| Function | Rule | Order | 95% interval | Points |','|---|---|---:|---|---:|']
+for r in fits:
+    digits=9 if r['function']=='sqrt(x)' and r['rule']==rules[2] else 6
+    ci='Undefined (2 points)' if r['ci95_lo']=='None' else f"[{float(r['ci95_lo']):.{digits}f}, {float(r['ci95_hi']):.{digits}f}]"
+    name={'exp(x)':'exp(x)','1/(1+25x^2)':'1/(1+25x²)','sqrt(x)':'√x'}[r['function']]
+    lines.append(f"| {name} | {r['rule']} | {float(r['fitted_order']):.{digits}f} | {ci} | {r['n_points']} |")
+lines+=['','Order is minus the OLS slope of ln(error) on ln(n), using absolute error > 10⁻¹⁵. Intervals use Student t with m−2 degrees of freedom; they describe regression uncertainty, not independent stochastic measurement error. Interval endpoints rounded to six or nine decimals can conceal small deviations from theory; full precision is retained in orders.csv. Simpson uses a midpoint per panel (2n subintervals).']
+(ROOT/'report/tables/orders.md').write_text('\n'.join(lines)+'\n')
+(ROOT/'report/tables/orders.csv').write_bytes((ROOT/'presentation/inputs/fits.csv').read_bytes())

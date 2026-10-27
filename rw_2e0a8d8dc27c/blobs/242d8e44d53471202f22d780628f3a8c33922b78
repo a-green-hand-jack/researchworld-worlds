@@ -1,0 +1,37 @@
+import random, time, csv, math, statistics as st
+def ins(a):
+    for i in range(1,len(a)):
+        k=a[i]; j=i-1
+        while j>=0 and a[j]>k:
+            a[j+1]=a[j]; j-=1
+        a[j+1]=k
+def msort(a):
+    if len(a)<=1: return a
+    m=len(a)//2; l=msort(a[:m]); r=msort(a[m:]); o=[]; i=j=0
+    while i<len(l) and j<len(r):
+        if l[i]<=r[j]: o.append(l[i]); i+=1
+        else: o.append(r[j]); j+=1
+    o+=l[i:]; o+=r[j:]; return o
+rows=[]
+for n in [1000,2000,4000,8000,16000]:
+    for rep in range(5):
+        rng=random.Random(n*10+rep); d=[rng.randrange(10**9) for _ in range(n)]
+        for name,f in [("insertion",lambda x:(ins(x),x)[1]),("merge",msort)]:
+            x=list(d); t=time.perf_counter(); r=f(x); dt=time.perf_counter()-t
+            assert r==sorted(d); rows.append((name,n,rep,dt))
+with open("results/timings.csv","w") as fh:
+    w=csv.writer(fh); w.writerow(["algorithm","n","repeat","seconds"]); w.writerows(rows)
+out=[]
+for name in ["insertion","merge"]:
+    ns=[1000,2000,4000,8000,16000]
+    means=[st.mean(r[3] for r in rows if r[0]==name and r[1]==n) for n in ns]
+    sds=[st.stdev(r[3] for r in rows if r[0]==name and r[1]==n) for n in ns]
+    lx=[math.log(n) for n in ns]; ly=[math.log(m) for m in means]
+    mx=st.mean(lx); my=st.mean(ly)
+    s=sum((a-mx)*(b-my) for a,b in zip(lx,ly))/sum((a-mx)**2 for a in lx)
+    for n,m,sd in zip(ns,means,sds):
+        ref=n*n if name=="insertion" else n*math.log2(n)
+        out.append((name,n,m,sd,m/ref,s))
+with open("results/summary.csv","w") as fh:
+    w=csv.writer(fh); w.writerow(["algorithm","n","mean_s","sd_s","mean_over_reference","loglog_slope"]); w.writerows(out)
+for o in out: print(o)

@@ -1,0 +1,7 @@
+# Monte Carlo study provenance
+
+Run from the repository with `python3 code/estimate_pi.py`. The frozen design is 20 streams, each with 1,000,000 pairs from NumPy PCG64. Streams are children 0–19 of `SeedSequence(20261019).spawn(20)`; these provide independently initialized pseudorandom streams. Per-stream seed identifiers are root entropy 20261019 plus the listed spawn key.
+
+The first required replicate is timed as an execution pilot and retained regardless of its result. Remaining replicates use two workers. No additional pilot points are drawn, and timing does not alter the sample sizes or seeds. Each stream generates its own array, so scheduling does not affect the results. Summary software versions and script SHA-256 identify the implementation. The CSV retains all integer hit counts; no external input file is used.
+
+The confidence interval uses sample SD with denominator 19 and the Student t 0.975 quantile with 19 degrees of freedom. This approximate across-seed interval assumes independent, approximately normal replicate estimates; each estimate averages one million bounded indicators. Known binomial variance supplies a diagnostic, not a selection rule. Its chi-square variance diagnostic is itself a normal approximation. The nominal 95% level concerns repeated experiments, not a probability that the fixed constant pi lies in this realized interval.

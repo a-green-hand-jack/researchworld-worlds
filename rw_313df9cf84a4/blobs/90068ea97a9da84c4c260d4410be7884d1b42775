@@ -1,0 +1,9 @@
+% Stand-in for the ICLR 2025 style (official file not supplied): ICLR page geometry.
+\ProvidesPackage{iclr2025_conference}
+\RequirePackage[numbers,sort&compress]{natbib}
+\usepackage[paper=letterpaper,top=1.0in,bottom=1.0in,left=1.5in,right=1.5in,headheight=0pt,headsep=0pt]{geometry}
+\setlength{\parindent}{0pt}\setlength{\parskip}{5.5pt}
+\makeatletter\renewcommand{\@maketitle}{\vbox{\hsize\textwidth\linewidth\hsize\vskip 0.1in\centering{\LARGE\bf \@title\par}\vskip 0.2in {\large\bf\@author\par}\vskip 0.2in}}\makeatother
+\newcommand{\iclrfinalcopy}{}
+\renewenvironment{abstract}{\centerline{\large\bf Abstract}\begin{quote}}{\end{quote}}
+\endinput

@@ -1,0 +1,132 @@
+{
+  "params": {
+    "background_rate": {
+      "value": 20003.079389939474,
+      "ci95": [
+        19994.44982741662,
+        20011.7112743881
+      ],
+      "unit": "photons/s",
+      "fisher_se": 4.4035361620922195,
+      "observed_hessian_se": 4.403511246186563,
+      "generating_value": 20000.0
+    },
+    "burst_counts": {
+      "value": 5996304.7320726365,
+      "ci95": [
+        5990134.486129241,
+        6002477.916669485
+      ],
+      "unit": "photons",
+      "fisher_se": 3148.942317124085,
+      "observed_hessian_se": 3148.892143550884,
+      "generating_value": 6000000.0
+    },
+    "centre": {
+      "value": 599.9710585419646,
+      "ci95": [
+        599.9370678485337,
+        600.005049247237
+      ],
+      "unit": "s",
+      "fisher_se": 0.017342803584437058,
+      "observed_hessian_se": 0.01734250749320597,
+      "generating_value": 600.0
+    },
+    "width": {
+      "value": 29.970446081445214,
+      "ci95": [
+        29.939547287944002,
+        30.00138034356639
+      ],
+      "unit": "s",
+      "fisher_se": 0.015774965829618685,
+      "observed_hessian_se": 0.01577402158419098,
+      "generating_value": 30.0
+    }
+  },
+  "interval_method": "95% one-parameter profile likelihood, 2 delta NLL = chi2_1(0.95), other three parameters reoptimized",
+  "model": "mu_i = b*(right-left) + A*(Phi((right-c)/sigma)-Phi((left-c)/sigma))",
+  "binning": "1200 one-second bins on [0,1200]; final bin includes right edge",
+  "provenance": {
+    "repository": "world/paper-repo",
+    "tag": "photons-v1",
+    "release_id": 1,
+    "downloaded_at": "2026-10-16T22:44:07.473062+00:00",
+    "download_url": "http://172.17.0.1:44857/world/paper-repo/releases/download/photons-v1/photons.f32",
+    "sha256": "af343d7a740bf6a1631ab06e63eeccb3cdff10e5ecf831e5447e5f6ad362edae",
+    "published_sha256": "af343d7a740bf6a1631ab06e63eeccb3cdff10e5ecf831e5447e5f6ad362edae",
+    "matches": true,
+    "bytes": 120000000,
+    "analysing_position": "experiment-repo",
+    "generating_position": "paper-repo"
+  },
+  "data_audit": {
+    "n": 30000000,
+    "minimum": 4.815454303752631e-05,
+    "maximum": 1200.0,
+    "at_1200": 1,
+    "outside": 0,
+    "sorted": true,
+    "binned": 30000000
+  },
+  "diagnostics": {
+    "deviance": 1214.3422525904473,
+    "degrees_of_freedom": 1196,
+    "poisson_reference_deviance_p": 0.34947093691931996,
+    "pearson_statistic": 1214.550209076456,
+    "max_abs_pearson": 3.302495807763255,
+    "lag1_pearson_correlation": 0.028611884273173318,
+    "gradient_scaled": [
+      4.553385224426165e-09,
+      7.479457053705119e-10,
+      -3.7842255551368e-08,
+      -1.0732037480920553e-10
+    ],
+    "multistart": [
+      {
+        "success": true,
+        "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+        "nll": 607.1711262952236,
+        "parameters": [
+          20003.079389939474,
+          5996304.7320726365,
+          599.9710585419646,
+          29.970446081445214
+        ]
+      },
+      {
+        "success": true,
+        "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+        "nll": 607.1711262951872,
+        "parameters": [
+          20003.079389332193,
+          5996304.733238785,
+          599.9710585523063,
+          29.97044609413538
+        ]
+      },
+      {
+        "success": true,
+        "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+        "nll": 607.17112629521,
+        "parameters": [
+          20003.079389941282,
+          5996304.732065916,
+          599.9710585419587,
+          29.970446081423283
+        ]
+      }
+    ],
+    "profile_all_success": true,
+    "fit_total": 30000000.0,
+    "observed_total": 30000000
+  },
+  "coverage_caveat": "Component counts are fixed by the simulator, so Poisson profile intervals and goodness-of-fit reference are model-based, not exact repeated-sampling calibration for this generator.",
+  "environment": {
+    "python": "3.11.2",
+    "numpy": "2.4.6",
+    "scipy": "1.17.1"
+  },
+  "elapsed_seconds": 2.7481546620838344
+}

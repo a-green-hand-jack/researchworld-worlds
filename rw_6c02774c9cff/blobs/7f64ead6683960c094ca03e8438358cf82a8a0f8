@@ -1,0 +1,17 @@
+# Code: logistic regression vs k-NN on Iris (OpenML 61)
+
+Every number in the report comes from these scripts; run them from `report/`
+with `OMP_NUM_THREADS=OPENBLAS_NUM_THREADS=MKL_NUM_THREADS=1` (`run_all.sh` does this).
+
+| step | script | writes |
+|---|---|---|
+| download OpenML 61 and check md5 against OpenML's | `fetch_data.py` | `results/openml_61/` |
+| full 10x stratified 5-fold CV, local | `cv_compare.py results/local` | `results/local/{per_fold.csv,predictions.csv,run_info.json}` |
+| same, as a 1-CPU SLURM job on Ibex | `ibex_job.sbatch` | `results/ibex/` (+ `slurm_<jobid>.out`) |
+| intervals and summaries | `summarize.py RUNDIR OUT RUN_INFO` | `results/{local,ibex}/summary.json`; `results/summary.json` = local |
+| Ibex vs local identity check | `compare_runs.py` | `results/reproducibility.json` |
+| robustness checks (local only) | `sensitivity.py` | `results/sensitivity/` |
+
+`common.py` holds the data loader, the models, the seeds and the CV design
+(`SETTINGS` is copied into every `run_info.json`); `arff_lite.py` parses the ARFF file.
+Environment: Python 3.11 with `requirements.txt` (pip wheels, bundled OpenBLAS) on both hosts.

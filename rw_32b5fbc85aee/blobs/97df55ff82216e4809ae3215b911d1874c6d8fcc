@@ -1,0 +1,10 @@
+# Review record
+
+Inspected: paper-repo d0570364ac728177e70adbeedf935c3c60c4064a, assembled delivery (README.md, report/note.md, venue-artifacts.json).
+
+Checks (2026-10-17, by independent fetch):
+- NeurIPS CfP: HTTP 200, 53,570 bytes. Quote "Full paper submission deadline, including all supplementary materials: May 6, 2026 AOE" matches the page text. Abstract deadline and notification quotes match. No page limit appears on the page (only "MainTrackHandbook" and "Paper template" links); the note correctly reports this rather than guessing.
+- example.com: https:// fails with "curl: (56) CONNECT tunnel failed, response 403"; http:// returns {"error":"unauthorized"}. Matches the note; no first paragraph invented.
+- Note is under one page, states fetch method for each page.
+
+Conclusion: meets the objective; the page limit and example.com paragraph are honestly reported as not obtainable. Approved.
